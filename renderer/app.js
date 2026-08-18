@@ -284,6 +284,38 @@ function analyzeEmotion(text) {
 }
 const MOOD_EMOJI = { joy: '😄', excitement: '🤩', love: '🥰', gratitude: '🙏', confident: '😎', hope: '🌟', relief: '😮‍💨', curiosity: '🤔', neutral: '😊', boredom: '😑', tired: '😴', anxiety: '😰', sadness: '😔', fear: '😨', anger: '😠', guilt: '😞', embarrassment: '😳' };
 
+// Language detection (Devanagari Hindi / Arabic Urdu / Hinglish / English)
+function detectLanguage(text) {
+  const t = String(text || '');
+  const devanagari = (t.match(/[\u0900-\u097F]/g) || []).length;
+  const arabic = (t.match(/[\u0600-\u06FF\u0750-\u077F]/g) || []).length;
+  if (devanagari > arabic && devanagari > 2) return 'hi';
+  if (arabic > devanagari && arabic > 2) return 'ur';
+  const hinglish = /\b(kaise|kya|hai|hain|nahi|nahin|mujhe|tumhara|aap|mera|meri|accha|theek|shukriya|kyun|kab|kahan|bhai|yaar|zaroor|bilkul)\b/i.test(t);
+  if (hinglish) return 'hinglish';
+  return 'en';
+}
+
+// Empathetic support engine (mirror)
+const CRISIS_SIGNALS = /\b(suicid|kill myself|end my life|end it all|don'?t want to (live|be here|exist)|no reason to live|better off dead|hurt myself|self.?harm|cut myself|give up on life)\b/i;
+
+function supportGuidance(emotion, crisis) {
+  if (crisis) {
+    return "I'm really glad you told me. What you're feeling matters, and you deserve support — you are not alone in this.\n\n" +
+      "Please reach out to someone who can be with you right now: a trusted friend or family member, or a crisis helpline. In India you can call iCall (9152987821) or Vandrevala Foundation (1860-266-2345 / 9999666555). Internationally, find support at findahelpline.com. If you're in immediate danger, please contact local emergency services.\n\nI'm here with you — but I'm not a substitute for a human or professional who can help in person.";
+  }
+  const map = {
+    sadness: "I can hear how heavy this feels, and I'm really sorry you're going through it. It's completely okay to feel this way — you don't have to be strong all the time. I'm here, and I'm listening without any judgment. Would you like to just talk it through with me?",
+    guilt: "Thank you for being honest with me — that takes real courage. Everyone makes mistakes; a mistake is something you did, not who you are. The fact that you feel bad about it says something good about your character. If it's possible, we can talk about making it right — and then about forgiving yourself. Would you like to work through it together?",
+    embarrassment: "That uncomfortable feeling will pass — I promise it feels much bigger to you than it does to anyone else. People are mostly focused on themselves, not judging you. One deep breath — you're human, and this one moment doesn't define you.",
+    anger: "It's okay to be angry — it usually means something important to you was crossed. Let's not act on it while it's hot. Want to tell me what happened? Getting it out often cools the fire enough to respond well instead of react.",
+    anxiety: "That worried, overwhelmed feeling is awful, and I hear you. Most of what anxiety predicts never actually happens — but telling you to 'calm down' never helps. Let's name the single most concrete worry right now, then figure out the smallest possible next step together.",
+    fear: "Fear is your mind trying to protect you, and it's okay to feel it. You've faced hard things before and come through them. Tell me what's scaring you — putting it into words shrinks it a little.",
+    tired: "You sound exhausted, and that's a completely valid signal, not a weakness. Rest is a requirement, not a reward. Maybe the kindest thing right now is to step back, drink some water, and rest — you don't have to solve everything today."
+  };
+  return map[emotion] || "I'm here with you, and I'm listening. Tell me what's on your mind — however big or small.";
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -295,6 +327,7 @@ let profile = {
 };
 let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
+let currentLang = 'en';
 
 let listening = false, recognition = null, isRunning = false;
 const chatHistory = []; // working context window
@@ -319,6 +352,14 @@ const NEURAL_VOICES = [
 ];
 
 let speechQueue = Promise.resolve();
+let currentNeuralAudio = null; // allows interrupting neural speech
+let speechGen = 0;             // monotonic generation to cancel stale speech
+
+function stopSpeaking() {
+  speechGen++;
+  try { speechSynthesis.cancel(); } catch (e) {}
+  if (currentNeuralAudio) { try { currentNeuralAudio.pause(); currentNeuralAudio = null; } catch (e) {} }
+}
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -599,6 +640,24 @@ function addMessage(role, text, opts = {}) {
   return div;
 }
 
+// Render a "Sources" footer with clickable links for any URLs cited in a reply
+function renderSources(msgDiv, text) {
+  const urls = [...new Set(String(text || '').match(/https?:\/\/[^\s"'<>()]+/g) || [])].filter(u => !/\.(png|jpe?g|webp|gif)$/i.test(u)).slice(0, 5);
+  if (!urls.length) return;
+  const foot = document.createElement('div');
+  foot.className = 'msg-sources';
+  foot.innerHTML = '<span class="src-label">SOURCES</span> ';
+  urls.forEach((u) => {
+    const a = document.createElement('a');
+    a.className = 'src-link';
+    a.textContent = (() => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } })();
+    a.title = u;
+    a.addEventListener('click', (e) => { e.preventDefault(); api.openExternal(u); });
+    foot.appendChild(a);
+  });
+  msgDiv.appendChild(foot);
+}
+
 // Render an inline image when the reply is/contains an image URL
 function renderImageIfAny(p, text) {
   const urlMatch = String(text).match(/(https?:\/\/[^\s"'<>]+\.(?:png|jpe?g|webp|gif)(?:\?[^\s"'<>]*)?)/i);
@@ -716,6 +775,7 @@ function buildSystemPrompt() {
       `You are the user's friend, mentor, life coach and career advisor — genuinely caring, perceptive and wise. ` +
       `The user's name is ${profile.name || 'Commander'}. ` +
       `Personality — warmth ${s.warmth ?? 60}/100, wit ${s.wit ?? 40}/100, brevity ${s.brevity ?? 70}/100. ` +
+      `LANGUAGE: Respond in the user's language. They are currently writing in ${currentLang === 'hi' ? 'Hindi' : currentLang === 'ur' ? 'Urdu' : currentLang === 'hinglish' ? 'Hinglish (Roman Hindi/Urdu)' : 'English'} — mirror it, including for Hindi/Urdu speakers. ` +
       `TRUTH & ACCURACY (non-negotiable): Always be truthful. Never fabricate facts, citations, quotes, statistics or events. ` +
       `For anything factual, current or uncertain, verify with web_search / verify_claim / fetch_webpage and CITE your sources inline. ` +
       `If you do not know or cannot verify something, say so plainly rather than guessing. Distinguish clearly between verified facts, opinions and estimates. ` +
@@ -745,6 +805,11 @@ const humanError = (err) => {
   return String(err).slice(0, 140);
 };
 
+// Don't treat tool commands as emotional distress
+function hasToolIntent(text) {
+  return /\b(search|google|weather|open|launch|translate|convert|define|remind|note|screenshot|volume|what time|calculate|bitcoin|price|todo|goal|email|whatsapp|organize|rename|archive|list|find|show|status)\b/i.test(text);
+}
+
 // Local heuristic memory extraction (for offline mode)
 function localExtract(text) {
   const facts = [];
@@ -765,6 +830,8 @@ async function sendMessage(text) {
 
   // Understand the user's emotion — always, automatically
   const emo = await api.analyzeEmotion(text);
+  const lang = detectLanguage(text);
+  currentLang = lang;
   if (emo) {
     currentEmotion = emo;
     updateMoodIndicator(emo);
@@ -776,15 +843,62 @@ async function sendMessage(text) {
     }
   }
 
+  // Empathetic support: if the user is in distress or expresses regret/guilt,
+  // respond compassionately first (and always stay available).
+  const crisis = CRISIS_SIGNALS.test(text.toLowerCase());
+  const needsSupport = crisis || ['sadness', 'guilt', 'anxiety', 'anger', 'fear', 'embarrassment', 'tired'].includes(emo.emotion);
+  if (needsSupport && !hasToolIntent(text)) {
+    const support = supportGuidance(emo.emotion, crisis);
+    const typing = addMessage('ai', '', { typing: true });
+    const replyEl = typing.querySelector('p');
+    typewriterToken++;
+    await renderReply(replyEl, support);
+    await api.memoryAppend('user', text);
+    await api.memoryAppend('assistant', support);
+    await api.memoryAddMood(emo.emotion, text.slice(0, 120));
+    await loadMemory();
+    renderMood();
+    speak(support);
+    return;
+  }
+
   const cfg = profile.ai || {};
   const hasKey = !!(cfg.apiKey && cfg.baseURL);
   const isLocal = !!(cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL));
   const useAI = hasKey || isLocal;
 
+  // @Agent routing — hand the task to that agent's own brain (Stonic-style)
+  const agentMatch = text.match(/^@(Alice|Bob|Carol|Dave)\s+(.*)$/i);
   const typing = addMessage('ai', '', { typing: true });
 
   let reply;
-  if (useAI) {
+  if (agentMatch) {
+    // Task routed to a specific resident agent (independent brain)
+    const agentName = agentMatch[1][0].toUpperCase() + agentMatch[1].slice(1);
+    const task = agentMatch[2].trim();
+    if (window.__assignAgentTask) window.__assignAgentTask(agentName, task);
+    addActivity(agentName, 'working on: ' + task);
+    chatHistory.push({ role: 'user', content: text });
+    const replyEl = typing.querySelector('p');
+    typewriterToken++;
+    if (useAI && window.gemai) {
+      const sys = buildSystemPrompt();
+      const res = await window.gemai.aiAgentChat(agentName, cfg, chatHistory.slice(-16));
+      if (res.ok) { reply = res.reply; chatHistory.push({ role: 'assistant', content: reply }); }
+      else { reply = '⚠ ' + humanError(res.error); }
+    } else if (useAI) {
+      // web mode: no per-agent backend — use main brain but tag the agent role
+      reply = await (async () => {
+        const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a resident agent of GemAI. Help with: ${task}. Be truthful and concise.` }, ...chatHistory.slice(-14)]);
+        return res.ok ? res.reply : '⚠ ' + humanError(res.error);
+      })();
+      chatHistory.push({ role: 'assistant', content: reply });
+    } else {
+      reply = `[${agentName}] I'll take this one. ${(await api.aiOffline(task)).reply}`;
+      chatHistory.push({ role: 'assistant', content: reply });
+    }
+    await renderReply(replyEl, reply);
+  } else if (useAI) {
     // Use the user's key ONLY — no silent fallback. Stream tokens live.
     chatHistory.push({ role: 'user', content: text });
     const sys = buildSystemPrompt();
@@ -823,8 +937,9 @@ async function sendMessage(text) {
     }
   }
 
-  // image rendering if the reply contains an image URL
+  // image rendering + sources footer if the reply contains URLs
   renderImageIfAny(typing.querySelector('p'), reply);
+  renderSources(typing, reply);
   $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
 
   await api.memoryAppend('user', text);
@@ -866,12 +981,15 @@ const VOICE_SENTINELS = ['female', 'zira', 'aria', 'samantha', 'hazel', 'susan',
 function speak(text) {
   const clean = String(text || '').replace(/```[\s\S]*?```/g, '(code).').replace(/[#*_`]/g, '').replace(/\s+/g, ' ').trim();
   if (!clean) return;
+  stopSpeaking(); // interrupt prior speech so new replies cut in cleanly
+  const gen = ++speechGen;
   const mode = profile.voice?.mode || 'neural';
   speechQueue = speechQueue.then(async () => {
+    if (gen !== speechGen) return; // superseded
     if (mode === 'neural') {
-      try { await speakNeural(clean); return; } catch (e) { /* fall back to system voice */ }
+      try { await speakNeural(clean, gen); return; } catch (e) { /* fall back to system voice */ }
     }
-    speakSystem(clean);
+    if (gen === speechGen) speakSystem(clean);
   }).catch(() => {});
 }
 
@@ -920,27 +1038,30 @@ function chunkForSpeech(text, max = 280) {
   return chunks;
 }
 
-function playAudioUrl(url) {
+function playAudioUrl(url, gen) {
   return new Promise((resolve) => {
     const audio = new Audio();
     let settled = false;
-    const done = (ok) => { if (!settled) { settled = true; try { audio.pause(); } catch (e) {} resolve(ok); } };
+    const done = (ok) => { if (!settled) { settled = true; try { audio.pause(); } catch (e) {} if (currentNeuralAudio === audio) currentNeuralAudio = null; resolve(ok); } };
     audio.onended = () => done(true);
     audio.onerror = () => done(false);
     audio.src = url;
     audio.preload = 'auto';
+    if (gen !== speechGen) { done(false); return; }
+    currentNeuralAudio = audio;
     audio.play().then(() => {}).catch(() => done(false));
     setTimeout(() => done(false), 30000); // safety
   });
 }
 
-async function speakNeural(text) {
+async function speakNeural(text, gen) {
   const accent = profile.voice?.neuralVoice || 'en';
   const chunks = chunkForSpeech(text, 180); // Google TTS limit ~200 chars
   let any = false;
   for (const chunk of chunks) {
+    if (gen !== speechGen) return; // interrupted
     const url = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q=' + encodeURIComponent(chunk) + '&tl=' + encodeURIComponent(accent);
-    const played = await playAudioUrl(url);
+    const played = await playAudioUrl(url, gen);
     if (played) any = true;
   }
   if (!any) throw new Error('neural TTS unavailable');
@@ -987,15 +1108,16 @@ function startAgentTown() {
 
   const waypoints = [...desks.map((d) => ({ x: d.x, y: d.y - 24 })), { x: whiteboard.x - 30, y: whiteboard.y + 60 }, { x: server.x + 40, y: server.y - 30 }, { x: coffee.x, y: coffee.y + 40 }];
 
-  // click -> assign task
+  // click -> assign task (routes to the agent's own brain)
   canvas.addEventListener('click', (e) => {
     const rect = canvas.getBoundingClientRect();
     const sx = W / rect.width, sy = H / rect.height;
     const mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy;
     for (const a of agents) {
       if (Math.hypot(mx - a.pos.x, my - a.pos.y) < 22) {
+        assignTask(a.name, 'Awaiting your task…');
         switchView('assistant');
-        $('#chatInput').value = `Ask ${a.name} to help me with: `;
+        $('#chatInput').value = `@${a.name} `;
         $('#chatInput').focus();
         addActivity(a.name, 'received a new task from you');
         return;

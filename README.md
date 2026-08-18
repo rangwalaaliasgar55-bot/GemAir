@@ -1,6 +1,8 @@
 # GemAI
 
-**A free, open-source, emotionally intelligent personal AI — far more than a JARVIS clone.** Turn your PC into a sci-fi command center that *understands how you feel*, helps with your **life, career, studies and wellbeing**, remembers you **forever**, and runs on **your own AI key**. No subscription, no $56 license, no cloud lock-in. **Yours. Forever.**
+**A free, open-source, emotionally intelligent personal AI — far more than a JARVIS clone.** Turn your PC into a sci-fi command center that *understands how you feel*, helps with your **life, career, studies and wellbeing**, remembers you **forever**, and runs on **your own AI key** — or entirely **free, with no key at all**. No subscription, no $56 license, no cloud lock-in. **Yours. Forever.**
+
+> 📖 Full walkthrough: **[GUIDE.md](GUIDE.md)** — architecture, every module, teaching GemAI, extending it, and the build/deploy guide.
 
 GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice assistant, a live system core, an agent town, a world monitor, **persistent long-term memory**, and **real tool-calling** (weather, web search, reminders, notes, volume, screenshots, system control) — all wrapped in a cinematic HUD you can re-skin in three themes.
 
@@ -20,7 +22,8 @@ GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice a
 | 🛠 **Tool-calling (45+ tools)** | The AI can *do* things, not just chat. **Web**: live weather, **real web search (no AI needed)**, fetch & read any webpage, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, **AI image generation**, open URLs. **Computer**: open any app, list/read/write/search files, clipboard, volume, screenshots, system control, email draft, WhatsApp, to-dos, file-organizing "missions", and (optional) shell commands with per-command confirmation. |
 | ⏰ **World clock** | Time in any city, 12-hour format, live UTC clock. |
 | 🎹 **Command palette** | `Ctrl/Cmd+K` to ask or navigate from anywhere; `Ctrl/Cmd+L` focuses chat; `Ctrl/Cmd+,` opens settings. |
-| 💛 **Emotional intelligence** | Detects your emotion in real time (joy, sadness, anxiety, anger, love…), adapts its tone and empathy to how you feel, and tracks your mood over time. |
+| 💛 **Emotional intelligence** | Detects **17 emotions** in real time, adapts tone + voice + empathy, and responds with structured compassion when you're low, guilty or anxious (crisis-aware, with real helplines). |
+| 🗣 **Multilingual** | Understands and replies in English, Hindi, Urdu (incl. Roman/Hinglish), Spanish and French. |
 | 🧭 **Life & Career Companion** | Helps with career decisions, study plans, relationships, health, finances, self-improvement and emotional support — like a friend, mentor and coach. |
 | 📊 **Mood tracking** | Visual mood graph, one-tap check-ins, affirmations and wellness tips (focus, stress, sleep, energy, motivation). |
 | 🎯 **Goals** | Persistent life/career/study/finance/health goals with categories and progress. |
@@ -28,7 +31,7 @@ GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice a
 | ⏰ **Reminders** | Persistent, with native OS notifications + spoken alerts when they fire. |
 | 📝 **Notes** | A persistent notebook — save, view, delete. |
 | 🖥 **System Core** | Live CPU / memory gauges, hostname, uptime, load average; **Memory / Notes / Reminders / Soul** tabs. |
-| ▦ **Agent Town** | A **living pixel-art office**: Alice, Bob, Carol and Dave wander between desks, the whiteboard, the server rack and the coffee machine, with status rings, thought bubbles, and a live activity feed. Click any agent to assign a task. |
+| ▦ **Agent Town** | A **living pixel-art office**: Alice, Bob, Carol and Dave wander between desks, the whiteboard, the server rack and the coffee machine. **Each agent has its own brain** (role + personality) — type `@Alice …` to route a task to them. |
 | 🛠 **Desktop automation ("missions")** | `organize_folder` (scan → classify → create folders → move), `find_duplicates`, `rename_files` by pattern, `archive_old_files` — multi-step workflows with a full **Mission Log** of every action (transparency). |
 | 🩺 **System guardian** | "What's slowing my PC down?" — live scan of CPU, RAM, and top processes, with one-line advice. |
 | 👁 **Screen awareness** | `see_screen` captures your screen so the AI is aware of what's on it. |

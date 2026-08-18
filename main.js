@@ -186,6 +186,88 @@ function moodHistoryForPrompt() {
   const trend = vals.length > 2 ? (vals[vals.length - 1] - vals[0]) : 0;
   return { avg, trend: trend > 0.15 ? 'improving' : trend < -0.15 ? 'declining' : 'stable', last: recent[recent.length - 1].emotion };
 }
+
+// ---------------------------------------------------------------------------
+// Language detection (Devanagari Hindi / Arabic Urdu / Hinglish / English)
+// ---------------------------------------------------------------------------
+function detectLanguage(text) {
+  const t = String(text || '');
+  const devanagari = (t.match(/[\u0900-\u097F]/g) || []).length;
+  const arabic = (t.match(/[\u0600-\u06FF\u0750-\u077F]/g) || []).length;
+  if (devanagari > arabic && devanagari > 2) return 'hi';
+  if (arabic > devanagari && arabic > 2) return 'ur';
+  // Hinglish / Roman-Urdu: common words in Latin script
+  const hinglish = /\b(kaise|kya|hai|hain|nahi|nahin|mujhe|tumhara|aap|mera|meri|accha|theek|shukriya|kyun|kab|kahan|bhai|yaar|zaroor|bilkul)\b/i.test(t);
+  if (hinglish) return 'hinglish';
+  return 'en';
+}
+
+// ---------------------------------------------------------------------------
+// Empathetic support engine — helps when the user feels low or has done
+// something they regret. Compassionate, validating, never judgmental.
+// ---------------------------------------------------------------------------
+const CRISIS_SIGNALS = /\b(suicid|kill myself|end my life|end it all|don'?t want to (live|be here|exist)|no reason to live|better off dead|hurt myself|self.?harm|cut myself|give up on life)\b/i;
+
+function supportGuidance(emotion, text, crisis) {
+  const e = emotion || 'neutral';
+  if (crisis) {
+    return {
+      tone: 'crisis',
+      guidance: "I'm really glad you told me. What you're feeling matters, and you deserve support — you are not alone in this.",
+      action: "Please reach out to someone who can be with you right now: a trusted friend or family member, or a crisis helpline. In India you can call iCall (9152987821) or Vandrevala Foundation (1860-266-2345 / 9999666555). Internationally, find support at findahelpline.com. If you're in immediate danger, please contact local emergency services. I'm here with you — but I'm not a substitute for a human or professional who can help in person."
+    };
+  }
+  const map = {
+    sadness: {
+      tone: 'gentle',
+      guidance: "I can hear how heavy this feels, and I'm really sorry you're going through it. It's completely okay to feel this way — you don't have to be strong all the time.",
+      action: "Would you like to just talk it through with me? Sometimes naming what's weighing on you makes it a little lighter. I'm here, and I'm listening without any judgment."
+    },
+    guilt: {
+      tone: 'forgiving',
+      guidance: "Thank you for being honest with me — that takes real courage. Everyone makes mistakes; a mistake is something you did, not who you are. The fact that you feel bad about it says something good about your character.",
+      action: "What matters now is what you do next. If it's possible and feels right, we can talk about making it right or apologizing — and then about forgiving yourself. Would you like to work through it together?"
+    },
+    embarrassment: {
+      tone: 'reassuring',
+      guidance: "That uncomfortable feeling will pass — I promise it feels much bigger to you than it does to anyone else. People are mostly focused on themselves, not judging you.",
+      action: "Let's not spiral on it. One deep breath — you're human, and this one moment doesn't define you."
+    },
+    anger: {
+      tone: 'calming',
+      guidance: "It's okay to be angry — it usually means something important to you was crossed. Let's not act on it while it's hot.",
+      action: "Want to tell me what happened? Getting it out often cools the fire enough to respond well instead of react."
+    },
+    anxiety: {
+      tone: 'grounding',
+      guidance: "That worried, overwhelmed feeling is awful, and I hear you. Most of what anxiety predicts never actually happens — but telling you to 'calm down' never helps.",
+      action: "Let's do one small thing together: name the single most concrete worry right now. Then we can figure out the smallest possible next step, together."
+    },
+    fear: {
+      tone: 'reassuring',
+      guidance: "Fear is your mind trying to protect you, and it's okay to feel it. You've faced hard things before and come through them.",
+      action: "Tell me what's scaring you — putting it into words shrinks it a little, and we can look at it together."
+    },
+    tired: {
+      tone: 'warm',
+      guidance: "You sound exhausted, and that's a completely valid signal, not a weakness. Rest is a requirement, not a reward.",
+      action: "Maybe the kindest thing right now is to step back, drink some water, and rest. You don't have to solve everything today."
+    },
+    hope: { tone: 'encouraging', guidance: "I love that hopeful energy — it's a great sign. Let's channel it.", action: "What's one concrete step you could take today toward the thing you're looking forward to?" },
+    joy: { tone: 'celebrating', guidance: "I'm genuinely happy for you — this is worth pausing to enjoy.", action: "Tell me more! What happened? Let's celebrate the win properly." },
+    gratitude: { tone: 'warm', guidance: "Noticing what's going well is a superpower. I'm glad you're feeling it.", action: "What are you grateful for right now?" },
+    love: { tone: 'warm', guidance: "That's a beautiful feeling — love makes everything more vivid.", action: "Tell me about it. Who or what are you feeling this toward?" }
+  };
+  return map[e] || { tone: 'warm', guidance: "I'm here with you, and I'm listening.", action: "Tell me what's on your mind — however big or small." };
+}
+
+function provideSupport(text) {
+  const emo = analyzeEmotion(text);
+  const crisis = CRISIS_SIGNALS.test(String(text || '').toLowerCase());
+  const g = supportGuidance(emo.emotion, text, crisis);
+  logAction('provide_support', `Emotional support (${crisis ? 'crisis' : emo.emotion})`);
+  return { ...g, emotion: emo.emotion, crisis };
+}
 function cpuUsage() {
   return new Promise((resolve) => {
     const start = os.cpus().map((c) => c.times);
@@ -305,7 +387,8 @@ const TOOLS = [
   { type: 'function', function: { name: 'list_skills', description: 'List the skills you have learned.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'add_instruction', description: 'Remember a standing instruction / rule / preference the user wants you to always follow.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
   { type: 'function', function: { name: 'list_instructions', description: 'List the user\'s standing instructions.', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'verify_claim', description: 'Fact-check a claim against real web sources and report whether it is true, false, or unverified, with sources.', parameters: { type: 'object', properties: { claim: { type: 'string' } }, required: ['claim'] } } }
+  { type: 'function', function: { name: 'verify_claim', description: 'Fact-check a claim against real web sources and report whether it is true, false, or unverified, with sources.', parameters: { type: 'object', properties: { claim: { type: 'string' } }, required: ['claim'] } } },
+  { type: 'function', function: { name: 'provide_support', description: 'Give compassionate, non-judgmental emotional support when the user is feeling low, guilty, anxious, angry or distressed.', parameters: { type: 'object', properties: { text: { type: 'string', description: "What the user said, to understand their emotional state" } }, required: ['text'] } } }
 ];
 
 function safeEval(expr) {
@@ -1065,6 +1148,8 @@ async function executeTool(name, args) {
         return { instructions: listInstructions() };
       case 'verify_claim':
         return await verifyClaim(args.claim);
+      case 'provide_support':
+        return provideSupport(args.text);
       case 'calculate':
         return { result: safeEval(args.expression) };
       case 'set_reminder': {
@@ -1465,6 +1550,33 @@ function startReminderScheduler() {
 }
 
 // ---------------------------------------------------------------------------
+// Multi-agent brains — each resident agent has its own role, personality and
+// memory (mirrors Stonic's "independent agent brains" / Hermes agent seats).
+// ---------------------------------------------------------------------------
+const AGENT_BRAINS = {
+  Alice: { role: 'Research & Writing', prompt: 'You are Alice, the research and writing specialist. You excel at finding information, summarizing sources, drafting documents and answering deep questions. You are precise, curious and thorough.' },
+  Bob: { role: 'System & Automation', prompt: 'You are Bob, the system and automation specialist. You monitor the PC, manage files, run scripts and automate workflows. You are methodical, reliable and safety-conscious.' },
+  Carol: { role: 'Creative & Design', prompt: 'You are Carol, the creative and design specialist. You brainstorm ideas, craft stories, refine writing and suggest designs. You are imaginative, warm and encouraging.' },
+  Dave: { role: 'Planning & Scheduling', prompt: 'You are Dave, the planning and scheduling specialist. You break goals into steps, build schedules, manage to-dos and reminders. You are organized, calm and practical.' }
+};
+
+function agentSystemPrompt(name) {
+  const b = AGENT_BRAINS[name] || AGENT_BRAINS.Alice;
+  const facts = factsForPrompt();
+  const instructions = (readMemory().instructions || []).slice(0, 40).map((i) => `- ${i.text}`).join('\n');
+  return {
+    role: 'system',
+    content:
+      `${b.prompt}\n` +
+      `You are ${name}, one of GemAI's resident agents, and your specialty is ${b.role}. ` +
+      `You work for the user (${(readProfile().name) || 'Commander'}). Be truthful — never fabricate; verify facts and cite sources. ` +
+      `LONG-TERM MEMORY:\n${facts || '(none)'}\n\n` +
+      (instructions ? `STANDING INSTRUCTIONS:\n${instructions}\n\n` : '') +
+      `Be helpful, concise and professional.`
+  };
+}
+
+// ---------------------------------------------------------------------------
 // IPC handlers
 // ---------------------------------------------------------------------------
 ipcMain.handle('system:info', () => getSystemInfo());
@@ -1488,6 +1600,15 @@ ipcMain.handle('ai:chatStream', async (e, reqId, config, messages) => {
 });
 ipcMain.handle('ai:offline', async (_e, text) => ({ ok: true, reply: await offlineBrain(text) }));
 ipcMain.handle('ai:summarize', async (_e, config, text) => ({ ok: true, summary: await summarizeTranscript(config, text) }));
+
+// Agent chat — uses the agent's own brain (role prompt) + the user's AI key
+ipcMain.handle('ai:agentChat', async (_e, agentName, config, messages) => {
+  try {
+    const sys = agentSystemPrompt(agentName);
+    const reply = await aiChat(config, [sys, ...messages]);
+    return { ok: true, reply };
+  } catch (err) { return { ok: false, error: err.message }; }
+});
 
 ipcMain.handle('memory:get', () => readMemory());
 ipcMain.handle('memory:append', (_e, role, content) => {
