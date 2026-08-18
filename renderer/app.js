@@ -166,7 +166,8 @@ async function webGet(path, params) {
 // Offline brain (browser/web mirror) — genuinely searches the web for free
 // ---------------------------------------------------------------------------
 async function offlineBrain(text) {
-  const q = (text || '').toLowerCase().trim();
+  // route on the typo-repaired text; keep `text` for anything echoed back
+  const q = normaliseInput(text);
   if (!q) return "I didn't catch that. Say it again?";
   const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 
@@ -609,6 +610,140 @@ function hideCaption(delay) {
   clearInterval(captionProgressTimer);
   clearTimeout(captionTimer);
   captionTimer = setTimeout(() => bar.classList.remove('show'), delay || 900);
+}
+
+// ---------------------------------------------------------------------------
+// Typo tolerance
+//
+// People type fast and misspell. The LLM path handles that on its own, but the
+// free offline brain routes on keywords, so "wats teh wether in mumbi" used to
+// match nothing. normaliseInput() repairs the text before intent matching. The
+// user's ORIGINAL wording is always what gets displayed and remembered — this
+// is only used for routing.
+// ---------------------------------------------------------------------------
+
+// Chat shorthand and the typos that are too irregular for edit distance.
+const TYPO_MAP = {
+  u: 'you', ur: 'your', urs: 'yours', r: 'are', y: 'why', k: 'ok', kk: 'ok',
+  plz: 'please', pls: 'please', pl: 'please', pleease: 'please', plese: 'please', thx: 'thanks', ty: 'thanks',
+  teh: 'the', hte: 'the', adn: 'and', nad: 'and', taht: 'that', thta: 'that',
+  wat: 'what', wht: 'what', whats: 'what is', wats: 'what is', wt: 'what',
+  hw: 'how', hwo: 'how', hou: 'how', wen: 'when', wher: 'where', whr: 'where',
+  y2: 'why', bcz: 'because', bcoz: 'because', coz: 'because', cuz: 'because',
+  wanna: 'want to', gonna: 'going to', gimme: 'give me', lemme: 'let me',
+  dont: "don't", cant: "can't", wont: "won't", im: "i'm", ive: "i've",
+  tmrw: 'tomorrow', tmr: 'tomorrow', tdy: 'today', yest: 'yesterday',
+  msg: 'message', msgs: 'messages', pic: 'picture', pics: 'pictures',
+  info: 'information', tell: 'tell', abt: 'about', bout: 'about',
+  wrk: 'work', wrking: 'working', srch: 'search', srchr: 'search',
+  temp: 'temperature', wthr: 'weather', calc: 'calculate', conv: 'convert'
+};
+
+// The words the offline router actually keys on. Edit distance is measured
+// against this list only, so ordinary English is left alone.
+const INTENT_VOCAB = [
+  'weather', 'temperature', 'forecast', 'rain', 'search', 'google', 'find',
+  'translate', 'translation', 'define', 'definition', 'meaning', 'dictionary',
+  'crypto', 'bitcoin', 'ethereum', 'price', 'currency', 'convert', 'exchange',
+  'news', 'headlines', 'remind', 'reminder', 'note', 'notes', 'goal', 'goals',
+  'todo', 'task', 'time', 'date', 'clock', 'calculate', 'calculator', 'math',
+  'open', 'launch', 'play', 'youtube', 'wikipedia', 'summarise', 'summarize',
+  'email', 'screenshot', 'volume', 'file', 'folder', 'download', 'settings',
+  'hello', 'thanks', 'music', 'song', 'help', 'breathe', 'mood', 'focus',
+  'report', 'memory', 'remember', 'forget', 'delete', 'update', 'story',
+  'joke', 'quote', 'affirmation', 'wellness', 'exercise', 'sleep', 'water'
+];
+const INTENT_SET = new Set(INTENT_VOCAB);
+
+// Ordinary English that happens to sit within edit distance of an intent word
+// ("today" is one edit from "todo"). These are never rewritten.
+const PROTECTED = new Set(`today tomorrow tonight yesterday morning evening night
+  week month year hour minute second daily weekly monthly
+  this that these those there their them then than they
+  what when where which while whose whom
+  about above after again against along among around
+  could would should might must shall will can may
+  other others another every each some many much more most
+  first last next previous final
+  thing think thought through though
+  right left front back down over under into onto from with without
+  good great small large long short high low best better worse
+  name work home life love need want know like make take come give
+  tell feel look show hear read write speak start stop
+  also just only even well very really quite still
+  people person friend family
+  not now new old own same still such sure than too use used
+  water sleep exercise money`.split(/\s+/).filter(Boolean));
+
+/**
+ * Damerau-Levenshtein distance, capped for speed.
+ * A true transposition needs the row from TWO steps back — with only one
+ * previous row, "tiem" -> "time" scores 2 instead of 1 and never matches.
+ */
+function editDistance(a, b, max) {
+  const al = a.length, bl = b.length;
+  if (Math.abs(al - bl) > max) return max + 1;
+  let prev2 = null;
+  let prev = new Array(bl + 1);
+  let cur = new Array(bl + 1);
+  for (let j = 0; j <= bl; j++) prev[j] = j;
+  for (let i = 1; i <= al; i++) {
+    cur[0] = i;
+    let best = cur[0];
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (prev2 && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        cur[j] = Math.min(cur[j], prev2[j - 2] + 1); // transposition
+      }
+      if (cur[j] < best) best = cur[j];
+    }
+    if (best > max) return max + 1;
+    prev2 = prev; prev = cur; cur = prev2 === cur ? new Array(bl + 1) : (prev2 && new Array(bl + 1));
+    if (!cur) cur = new Array(bl + 1);
+  }
+  return prev[bl];
+}
+
+/** Repair one token: shorthand map first, then nearest intent keyword. */
+function correctWord(word) {
+  const w = word.toLowerCase();
+  if (TYPO_MAP[w]) return TYPO_MAP[w];
+  if (w.length < 3 || INTENT_SET.has(w) || PROTECTED.has(w)) return w;
+  // collapse silly repetition: "pleeeease" -> "pleease" -> "please"
+  let squashed = w.replace(/(.)\1{2,}/g, '$1$1');
+  if (TYPO_MAP[squashed]) return TYPO_MAP[squashed];
+  if (INTENT_SET.has(squashed)) return squashed;
+  const single = squashed.replace(/(.)\1+/g, '$1');
+  if (TYPO_MAP[single]) return TYPO_MAP[single];
+  if (INTENT_SET.has(single)) return single;
+  const tolerance = squashed.length <= 4 ? 1 : squashed.length <= 7 ? 2 : 3;
+  let best = null, bestD = tolerance + 1;
+  for (const v of INTENT_VOCAB) {
+    if (Math.abs(v.length - squashed.length) > tolerance) continue;
+    const d = editDistance(squashed, v, tolerance);
+    if (d < bestD) { bestD = d; best = v; }
+  }
+  return bestD <= tolerance && best ? best : squashed;
+}
+
+/**
+ * Normalise free text for intent matching. Returns the repaired string;
+ * never mutates what the user sees.
+ */
+function normaliseInput(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[""'']/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map((tok) => {
+      const m = tok.match(/^([^\w]*)([\w']+)([^\w]*)$/);
+      if (!m) return tok;
+      return m[1] + correctWord(m[2]) + m[3];
+    })
+    .join(' ');
 }
 
 // ---------------------------------------------------------------------------
@@ -1088,6 +1223,7 @@ function buildSystemPrompt() {
       (goals ? `Their ACTIVE GOALS:\n${goals}\n\n` : '') +
       (skills ? `SKILLS YOU HAVE LEARNED (reuse when relevant):\n${skills}\n\n` : '') +
       (instructions ? `THE USER'S STANDING INSTRUCTIONS (always follow these):\n${instructions}\n\n` : '') +
+      `INPUT HANDLING: The user often types fast with misspellings, missing letters, no punctuation, or mixed Hindi/Urdu romanisation. Silently infer what they meant and answer that. Never correct their spelling, never comment on it, and never ask "did you mean" unless the intent is genuinely ambiguous between two real options.\n` +
       `ANSWER STYLE (follow strictly):\n` +
       `- Lead with the answer. No preamble, no "Great question", no restating what was asked.\n` +
       `- Default to 1-3 sentences. Expand only when the user asks for detail, or the task genuinely needs steps.\n` +

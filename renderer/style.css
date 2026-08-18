@@ -841,29 +841,6 @@ label select option { background: #0a0f1a; }
 }
 
 /* ============================================================
-   Brand — the GemAir logo lockup
-   ============================================================ */
-.boot-logo {
-  width: min(560px, 72vw); height: auto; display: block; margin: 0 auto 22px;
-  filter: drop-shadow(0 0 40px rgba(59,201,255,.35));
-  animation: boot-logo-in 1.5s cubic-bezier(.2,.8,.25,1) both;
-}
-@keyframes boot-logo-in {
-  0%   { opacity: 0; transform: scale(.94); filter: blur(12px) brightness(2); }
-  60%  { opacity: 1; filter: blur(1px) brightness(1.2); }
-  100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 40px rgba(59,201,255,.35)); }
-}
-.brand-mark {
-  width: 44px; height: 44px; object-fit: contain; border-radius: 10px;
-  filter: drop-shadow(0 0 12px var(--accent-glow));
-  animation: mark-pulse 4s ease-in-out infinite;
-}
-@keyframes mark-pulse {
-  0%,100% { filter: drop-shadow(0 0 10px var(--accent-glow)); }
-  50%     { filter: drop-shadow(0 0 22px var(--accent)); }
-}
-
-/* ============================================================
    Live subtitles — what Gem is saying, and what you said
    ============================================================ */
 .caption-bar {
