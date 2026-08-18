@@ -1,15 +1,31 @@
 name: Release
 
 # ---------------------------------------------------------------------------
-# INSTALL THIS FILE (one step, one time)
+# INSTALL THIS FILE (one time)
 #
+# The path matters. GitHub ONLY runs workflows at:
+#
+#     .github/workflows/release.yml       <-- repository ROOT
+#
+# NOT scripts/.github/workflows/release.yml — a nested copy is inert and will
+# never run.
+#
+# Easiest route, in the browser:
+#   1. GitHub -> Add file -> Create new file
+#   2. Type this EXACT filename, slashes included:
+#          .github/workflows/release.yml
+#      (typing the slashes creates the folders for you)
+#   3. Paste this whole file, then Commit.
+#
+# Or from a terminal:
 #   mkdir -p .github/workflows
 #   git mv scripts/release-workflow.yml .github/workflows/release.yml
 #   git commit -m "Add release workflow" && git push
 #
-# It ships here rather than in .github/workflows/ because the automation that
-# opened this PR is not granted GitHub's `workflows` permission and cannot
-# create workflow files. Moving it yourself takes a second and activates it.
+# It ships here rather than pre-installed because the automation that opened
+# this PR is not granted GitHub's `workflows` permission, so it is blocked from
+# creating workflow files at all (verified: both git push and the REST API
+# return 403).
 # ---------------------------------------------------------------------------
 
 # Builds signed-less desktop installers for Windows, macOS and Linux and
