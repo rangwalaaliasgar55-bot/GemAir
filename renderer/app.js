@@ -483,6 +483,70 @@ async function loadReleaseAssets() {
 }
 
 // ---------------------------------------------------------------------------
+// Failure isolation
+//
+// Hard-won rule: one broken init step must never be able to stop the rest of
+// the app from wiring up. Anything optional goes through safe()/safeAsync(),
+// which log loudly but always return control to the caller.
+// ---------------------------------------------------------------------------
+function safe(label, fn) {
+  try {
+    return fn();
+  } catch (e) {
+    console.error(`[GemAir] "${label}" failed:`, e);
+    reportInitFailure(label, e);
+    return undefined;
+  }
+}
+
+async function safeAsync(label, fn) {
+  try {
+    return await fn();
+  } catch (e) {
+    console.error(`[GemAir] "${label}" failed:`, e);
+    reportInitFailure(label, e);
+    return undefined;
+  }
+}
+
+const _initFailures = [];
+function reportInitFailure(label, err) {
+  _initFailures.push({ label, message: err && err.message });
+  // surface it once, quietly, instead of failing silently in the console
+  if (_initFailures.length === 1) {
+    setTimeout(() => {
+      try {
+        toast('DEGRADED', `${_initFailures.length} component(s) failed to start — the rest of GemAir still works.`, '⚠');
+      } catch (e) {}
+    }, 1200);
+  }
+}
+window.__gemairInitFailures = _initFailures;
+
+// Last-resort net: if anything at all throws during startup, make sure the
+// controls are still wired so the user is never left with a dead interface.
+window.addEventListener('error', (e) => {
+  console.error('[GemAir] uncaught:', e && e.error ? e.error : e && e.message);
+  ensureInteractive();
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[GemAir] unhandled rejection:', e && e.reason);
+  ensureInteractive();
+});
+
+let _eventsBound = false;
+function ensureInteractive() {
+  if (_eventsBound) return;
+  _eventsBound = true;
+  try {
+    bindEvents();
+    console.warn('[GemAir] recovered: events bound by the safety net.');
+  } catch (e) {
+    console.error('[GemAir] safety net could not bind events:', e);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // DOM helpers
 // ---------------------------------------------------------------------------
 const $ = (sel) => document.querySelector(sel);
@@ -596,9 +660,15 @@ function startBackground3D() {
   let w, h, dpr, mx = 0, my = 0;
   function resize() {
     dpr = window.devicePixelRatio || 1;
-    w = canvas.clientWidth = window.innerWidth;
-    h = canvas.clientHeight = window.innerHeight;
-    canvas.width = w * dpr; canvas.height = h * dpr;
+    // NB: clientWidth/clientHeight are READ-ONLY getters on Element. Assigning
+    // to them throws a TypeError under 'use strict', which used to kill boot()
+    // before bindEvents() ran — i.e. the whole UI became unclickable.
+    w = window.innerWidth;
+    h = window.innerHeight;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   resize();
@@ -2009,6 +2079,8 @@ function applyPreset(p) {
 // Events
 // ---------------------------------------------------------------------------
 function bindEvents() {
+  if (_eventsBound) return;
+  _eventsBound = true;
   $$('.nav-btn').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.view)));
   $$('.theme-btn').forEach((b) => b.addEventListener('click', () => { profile.theme = b.dataset.theme; applyTheme(profile.theme); persistProfile(); }));
 
@@ -2370,22 +2442,53 @@ async function boot() {
       const cfg = await fetch('/api/config').then((r) => r.json()).catch(() => null);
       if (cfg && cfg.supabase && window.webStore) {
         const ok = await window.webStore.initSupabase(cfg.supabase);
-        if (ok) toast('CLOUD', 'Supabase connected — your memory syncs across devices.', '🗄');
+        if (ok) {
+          toast('CLOUD', 'Supabase connected — your memory syncs across devices.', '🗄');
+        } else {
+          // Explain *why* rather than failing silently. Memory still works
+          // locally, so this is a downgrade, not an error.
+          const err = window.webStore.lastError || {};
+          if (err.code === 'ANON_DISABLED') {
+            toast('CLOUD OFF', 'Enable Authentication → Providers → Anonymous in Supabase to sync across devices. Memory is saved on this device meanwhile.', '🔒');
+          } else if (err.code && err.code !== 'NO_CONFIG') {
+            toast('CLOUD OFF', (err.message || 'Supabase unavailable') + ' Memory is saved on this device.', '🔒');
+          }
+          console.warn('[GemAir] cloud sync unavailable:', err.code, err.message);
+        }
       }
       window.__gemairAiConfigured = !!(cfg && cfg.aiConfigured);
     } catch (e) {}
   }
 
-  await loadProfile();
-  await loadMemory();
-  applyTheme(profile.theme || 'crimson');
-  startBackground3D();
-  startOrb(); startGlobe(); startCommandMap();
-  try { if (window.gemAvatar) window.gemAvatar.mount('#avatarCanvas'); } catch (e) {}
-  startAgentTown(); renderAllMemory(); animateCircuits();
-  bindEvents(); bindSoulSliders(); updateLinkMode();
-  updateMoodIndicator(currentEmotion);
-  setTimeout(() => startPanelTilt(), 300);
+  await safeAsync('loadProfile', loadProfile);
+  await safeAsync('loadMemory', loadMemory);
+
+  // ---------------------------------------------------------------------
+  // BARRIER: wire the UI *first*, and isolate every other init step.
+  //
+  // These three lines are what make the app usable. They used to run near the
+  // end of boot(), so a single throw in any decorative step above them (a
+  // canvas resize, a 3D scene, a renderer) left every button dead. Now the
+  // controls are live before anything that can fail, and each remaining step
+  // runs inside safe() so one failure can never cascade.
+  // ---------------------------------------------------------------------
+  safe('applyTheme', () => applyTheme(profile.theme || 'crimson'));
+  safe('bindEvents', bindEvents);
+  safe('bindSoulSliders', bindSoulSliders);
+  safe('updateLinkMode', updateLinkMode);
+
+  // Everything below is presentation. Any of it may fail without taking the
+  // interface down with it.
+  safe('background3D', startBackground3D);
+  safe('orb', startOrb);
+  safe('globe', startGlobe);
+  safe('commandMap', startCommandMap);
+  safe('avatar', () => { if (window.gemAvatar) window.gemAvatar.mount('#avatarCanvas'); });
+  safe('agentTown', startAgentTown);
+  safe('renderMemory', renderAllMemory);
+  safe('circuits', animateCircuits);
+  safe('moodIndicator', () => updateMoodIndicator(currentEmotion));
+  setTimeout(() => safe('panelTilt', startPanelTilt), 300);
 
   // restore recent conversation history from persistent memory
   const last = (memory.transcript || []).slice(-40);

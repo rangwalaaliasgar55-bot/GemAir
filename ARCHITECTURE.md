@@ -210,15 +210,42 @@ takes is visible and auditable.**
 
 ## 8. Failure policy
 
-Learned from a build where one bad line killed every button:
+Learned the hard way. `startBackground3D()` contained:
 
-1. **Never let init throw.** `boot()` wires listeners early; anything that can
-   fail (tray, Supabase, avatar, version lookup) is wrapped.
-2. **Degrade, don't disappear.** No key → offline brain. No network → local
-   memory. No tray → the window still closes normally.
-3. **Guard every optional integration.** `avatar()` and `avatarEmotion()` are
+```js
+w = canvas.clientWidth  = window.innerWidth;   // TypeError
+h = canvas.clientHeight = window.innerHeight;
+```
+
+`clientWidth` / `clientHeight` are **read-only getters** on `Element`. Under
+`'use strict'` assigning to them throws — so `resize()` threw, `boot()` threw,
+`bindEvents()` never ran, and **every button in the app was dead** while the
+interface looked perfectly fine.
+
+Three barriers now make that class of failure survivable:
+
+1. **Order.** `bindEvents()` runs *before* any decorative init. The controls
+   are live before anything that can fail.
+2. **Isolation.** Every remaining step goes through `safe()` / `safeAsync()`,
+   which log, record the failure in `window.__gemairInitFailures`, show one
+   "DEGRADED" toast, and return control. One broken component cannot cascade.
+3. **Safety net.** `window.onerror` and `onunhandledrejection` call
+   `ensureInteractive()`, which binds events if boot never got that far.
+   `bindEvents()` is idempotent, so this can never double-bind.
+
+And `npm run check` (`scripts/selfcheck.js`) fails the build on:
+assignment to any read-only DOM geometry property, duplicate element ids,
+`$('#id')` that resolves to null, dead `$$()` selectors, and — the important
+one — **it boots the app in a fake DOM whose geometry properties are
+getter-only, then asserts the key controls actually have listeners.**
+
+Further rules:
+4. **Degrade, don't disappear.** No key → offline brain. No network → local
+   memory. No tray → the window still closes normally. Anonymous sign-ins off
+   → memory stays local and Gem says so, rather than throwing.
+5. **Guard every optional integration.** `avatar()` and `avatarEmotion()` are
    no-ops if `avatar.js` failed to load.
-4. **Migrate, don't orphan.** The GemAI → GemAir rename copies old
+6. **Migrate, don't orphan.** The GemAI → GemAir rename copies old
    `localStorage` keys and old `userData` files forward on first run.
 
 ---

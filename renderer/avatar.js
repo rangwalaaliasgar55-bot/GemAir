@@ -170,8 +170,8 @@
 
   function buildHead() {
     const rings = [];
-    const LAT = 19;
-    const LON = 44;
+    const LAT = 26;
+    const LON = 52;
     for (let i = 0; i <= LAT; i++) {
       const y = 1 - (i / LAT) * 2;
       const ring = [];
@@ -401,6 +401,16 @@
       ctx.restore();
     }
 
+    /** Upper-lid crease — subtle, but eyes look flat without it. */
+    function drawLidCrease(sx, sy, colour) {
+      const pts = [];
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12;
+        pts.push(project(facePoint(sx + lerp(-0.15, 0.15, t), sy + 0.075 + Math.sin(t * Math.PI) * 0.022, 0.028)));
+      }
+      strokePath(pts, colour, 0.3, 1.1);
+    }
+
     function drawBrow(sx, sy, dir, colour) {
       const inner = S.browRaise * 0.05;
       const pts = [];
@@ -430,45 +440,161 @@
       }
       strokePath(bridge, colour, 0.5, 1.4);
 
-      // base / nostrils
+      // tip + base
       const base = [];
-      for (let i = 0; i <= 12; i++) {
-        const t = i / 12;
-        const x = lerp(-0.075, 0.075, t);
-        base.push(project(facePoint(x, -0.44 - Math.sin(t * Math.PI) * 0.025, 0.055)));
+      for (let i = 0; i <= 14; i++) {
+        const t = i / 14;
+        const x = lerp(-0.085, 0.085, t);
+        base.push(project(facePoint(x, -0.44 - Math.sin(t * Math.PI) * 0.03, 0.06)));
       }
       strokePath(base, colour, 0.55, 1.4);
+
+      // nostrils
+      for (const side of [-1, 1]) {
+        const n = [];
+        for (let i = 0; i <= 8; i++) {
+          const a = Math.PI * (0.15 + (i / 8) * 0.8);
+          n.push(project(facePoint(side * (0.052 + Math.cos(a) * 0.022), -0.435 + Math.sin(a) * 0.016, 0.052)));
+        }
+        strokePath(n, colour, 0.45, 1.1);
+      }
+
+      // philtrum — the groove from the nose to the upper lip
+      const ph = [];
+      for (let i = 0; i <= 6; i++) {
+        const t = i / 6;
+        ph.push(project(facePoint(-0.010, lerp(-0.47, -0.575, t), 0.03)));
+      }
+      strokePath(ph, colour, 0.22, 1);
     }
 
+    /**
+     * Lips, not a slot. Upper lip carries a cupid's bow; the lower lip is
+     * fuller and drops on a bow curve when the mouth opens.
+     */
     function drawMouth(colour, glow) {
       const open = S.mouth;
       const curve = S.smile * 0.05;
-      const halfW = lerp(0.135, 0.175, open * 0.6);
-      const top = [], bottom = [];
-      for (let i = 0; i <= 18; i++) {
-        const t = i / 18;
-        const px = lerp(-halfW, halfW, t);
-        const bow = Math.sin(t * Math.PI);
-        const yBase = -0.62 - curve * bow;
-        top.push(facePoint(px, yBase + 0.016 * bow + open * 0.014, 0.035));
-        bottom.push(facePoint(px, yBase - bow * open * 0.17 - 0.005, 0.035));
-      }
-      const topP = top.map(project), botP = bottom.map(project);
+      const halfW = lerp(0.135, 0.168, open * 0.5);
+      const yC = -0.62;
+      const N = 26;
 
-      if (open > 0.04) {
+      const upper = [], lower = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const px = lerp(-halfW, halfW, t);
+        const n = (t - 0.5) * 2;                        // -1 .. 1
+        const bow = Math.cos(n * Math.PI * 0.5);        // 1 centre, 0 corners
+        const cupid = Math.cos(n * Math.PI * 1.6) * 0.007 * (1 - Math.abs(n));
+        const mid = yC - curve * bow;
+        upper.push(facePoint(px, mid + 0.014 * bow + cupid + open * 0.012, 0.035));
+        lower.push(facePoint(px, mid - 0.018 * bow - open * 0.135 * bow, 0.035));
+      }
+      const up = upper.map(project), lo = lower.map(project);
+
+      // mouth cavity
+      if (open > 0.03) {
         ctx.beginPath();
-        topP.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-        for (let i = botP.length - 1; i >= 0; i--) ctx.lineTo(botP[i].x, botP[i].y);
+        up.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+        for (let i = lo.length - 1; i >= 0; i--) ctx.lineTo(lo[i].x, lo[i].y);
         ctx.closePath();
-        ctx.fillStyle = rgba(colour, 0.14 + 0.28 * open * glow);
+        ctx.fillStyle = rgba(colour, 0.10 + 0.30 * open * glow);
         ctx.fill();
       }
-      for (const line of [topP, botP]) {
+
+      // lip edges
+      for (const line of [up, lo]) {
         ctx.beginPath();
         line.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-        ctx.strokeStyle = rgba(colour, 0.88);
-        ctx.lineWidth = 1.9;
+        ctx.strokeStyle = rgba(colour, 0.85);
+        ctx.lineWidth = 1.8;
         ctx.stroke();
+      }
+
+      // the seam between the lips, and a soft shadow under the lower lip
+      const seam = [];
+      const shade = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const px = lerp(-halfW * 0.94, halfW * 0.94, t);
+        const n = (t - 0.5) * 2;
+        const bow = Math.cos(n * Math.PI * 0.5);
+        seam.push(project(facePoint(px, yC - curve * bow, 0.036)));
+        shade.push(project(facePoint(px * 0.9, yC - curve * bow - 0.05 - open * 0.14 * bow, 0.03)));
+      }
+      if (open < 0.35) strokePath(seam, colour, 0.5 * (1 - open / 0.35), 1.2);
+      strokePath(shade, colour, 0.18, 1);
+    }
+
+    /**
+     * A soft filled silhouette behind the wireframe. Without it the head is a
+     * see-through cage; with it, it reads as a solid person.
+     * Built from the extreme projected points of each contour ring, so it
+     * stays correct at any rotation.
+     */
+    function drawFaceVolume(colour) {
+      const left = [], right = [];
+      for (const ring of HEAD.rings) {
+        let lo = null, hi = null;
+        for (const p of ring.pts) {
+          const q = project(p);
+          if (!lo || q.x < lo.x) lo = q;
+          if (!hi || q.x > hi.x) hi = q;
+        }
+        if (lo && hi) { left.push(lo); right.push(hi); }
+      }
+      if (right.length < 2) return;
+      ctx.beginPath();
+      right.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      for (let i = left.length - 1; i >= 0; i--) ctx.lineTo(left[i].x, left[i].y);
+      ctx.closePath();
+      const g = ctx.createLinearGradient(0, cy - scale * 1.1, 0, cy + scale * 1.2);
+      g.addColorStop(0, rgba(colour, 0.15 * (0.5 + S.glow * 0.5)));
+      g.addColorStop(0.5, rgba(colour, 0.08 * (0.5 + S.glow * 0.5)));
+      g.addColorStop(1, rgba(colour, 0.02));
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+
+    /** Ears — small but they do a lot of work for "this is a person". */
+    function drawEars(colour) {
+      for (const side of [-1, 1]) {
+        const outer = [], inner = [];
+        for (let i = 0; i <= 14; i++) {
+          const t = i / 14;
+          const y = lerp(0.12, -0.32, t);
+          const wY = widthAt(y);
+          const bulge = Math.sin(t * Math.PI) * 0.055;
+          outer.push(project({ x: side * (wY + bulge), y: y * HEAD_H, z: -0.08 - Math.sin(t * Math.PI) * 0.12 }));
+          inner.push(project({ x: side * (wY + bulge * 0.35), y: y * HEAD_H, z: -0.05 - Math.sin(t * Math.PI) * 0.05 }));
+        }
+        strokePath(outer, colour, 0.5, 1.5);
+        strokePath(inner, colour, 0.28, 1.1);
+      }
+    }
+
+    /** Cheekbone + jaw contours — the lines a portrait artist would draw. */
+    function drawContours(colour) {
+      for (const side of [-1, 1]) {
+        // cheekbone sweeping from the outer eye corner toward the mouth
+        const cheek = [];
+        for (let i = 0; i <= 12; i++) {
+          const t = i / 12;
+          const x = side * lerp(0.36, 0.20, t);
+          const y = lerp(-0.06, -0.52, t);
+          cheek.push(project(facePoint(x, y, 0.012)));
+        }
+        strokePath(cheek, colour, 0.2, 1);
+
+        // jawline from below the ear to the chin
+        const jaw = [];
+        for (let i = 0; i <= 14; i++) {
+          const t = i / 14;
+          const y = lerp(-0.34, -0.94, t);
+          const wY = widthAt(y);
+          jaw.push(project({ x: side * wY * 0.96, y: y * HEAD_H, z: -0.02 + t * 0.18 }));
+        }
+        strokePath(jaw, colour, 0.3, 1.2);
       }
     }
 
@@ -631,6 +757,7 @@
 
       drawParticles(colour, time);
       drawHalo(colour, time);
+      drawFaceVolume(colour);
 
       const prevScale = scale;
       scale = prevScale * (1 + S.breath * 0.007);
@@ -642,16 +769,20 @@
         const ring = HEAD.rings[i];
         // emphasise the brow line and the jaw line
         const emphasis = (Math.abs(ring.y - 0.22) < 0.05 || Math.abs(ring.y + 0.55) < 0.05) ? 1.7 : 1;
-        strokePath(ring.pts.map(project), colour, 0.30 * emphasis * (0.5 + S.glow * 0.7), 1);
+        strokePath(ring.pts.map(project), colour, 0.15 * emphasis * (0.5 + S.glow * 0.7), 1);
       }
       for (const line of HEAD.meridians) {
-        strokePath(line.map(project), colour, 0.16 * (0.5 + S.glow * 0.7), 1);
+        strokePath(line.map(project), colour, 0.09 * (0.5 + S.glow * 0.7), 1);
       }
 
       // face
+      drawEars(colour);
+      drawContours(colour);
       const eyeY = 0.02;
       drawBrow(-0.10, eyeY + 0.145, -1, colour);
       drawBrow(0.10, eyeY + 0.145, 1, colour);
+      drawLidCrease(-0.235, eyeY, colour);
+      drawLidCrease(0.235, eyeY, colour);
       drawEye(-0.235, eyeY, S.eyeOpen, colour, S.glow);
       drawEye(0.235, eyeY, S.eyeOpen, colour, S.glow);
       drawNose(colour);
