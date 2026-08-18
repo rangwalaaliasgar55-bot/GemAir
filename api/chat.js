@@ -3,7 +3,17 @@
 // the browser. If no key is configured, returns ok:false so the client falls
 // back to the free offline brain (search / weather / tools all work without it).
 module.exports = async (req, res) => {
+  // CORS preflight (browsers send this before a JSON POST from another origin)
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    return res.status(204).end();
+  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+
+  // never let a CDN cache an AI reply
+  res.setHeader('Cache-Control', 'no-store');
 
   let body = {};
   try { body = req.body || {}; } catch {}

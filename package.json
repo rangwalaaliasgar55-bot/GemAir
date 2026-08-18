@@ -11,6 +11,7 @@
     "dev": "electron . --dev",
     "preview": "electron . --dev --no-sandbox",
     "web": "npx serve renderer -l 8080",
+    "serve": "node scripts/dev-server.js",
     "dev:web": "vercel dev",
     "build:web": "echo 'GemAI web = static renderer/ + serverless api/. Deploy with: vercel'",
     "dist": "electron-builder",
@@ -42,11 +43,17 @@
       "preload.js",
       "renderer/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "build/icon.png"
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build/icon.png"
     },
@@ -58,12 +65,18 @@
       "shortcutName": "GemAI"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.utilities",
       "icon": "build/icon.png"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Utility",
       "icon": "build/icon.png"
     }

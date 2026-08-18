@@ -45,9 +45,10 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // Minimize / close to tray instead of quitting
+  // Minimize / close to tray instead of quitting — but only when a tray icon
+  // actually exists, otherwise the window would hide with no way to get it back.
   mainWindow.on('close', (e) => {
-    if (!isQuitting) {
+    if (!isQuitting && tray) {
       e.preventDefault();
       mainWindow.hide();
       if (process.platform === 'darwin') app.dock.hide();
@@ -58,10 +59,17 @@ function createWindow() {
 }
 
 function createTray() {
-  let icon;
+  // nativeImage.createFromPath() does NOT throw on a missing file — it returns an
+  // empty image, and `new Tray(<empty image>)` then throws and aborts startup.
+  // So check emptiness explicitly and fall back to a generated 16x16 dot.
   const iconPath = path.join(__dirname, 'build', 'icon.png');
-  try { icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }); }
-  catch { icon = nativeImage.createEmpty(); }
+  let icon = nativeImage.createEmpty();
+  try {
+    const img = nativeImage.createFromPath(iconPath);
+    if (!img.isEmpty()) icon = img.resize({ width: 16, height: 16 });
+  } catch { /* fall through to the generated fallback below */ }
+  if (icon.isEmpty()) icon = fallbackTrayIcon();
+
   tray = new Tray(icon);
   tray.setToolTip('GemAI — your personal AI');
   const menu = Menu.buildFromTemplate([
@@ -74,9 +82,29 @@ function createTray() {
   tray.on('click', () => { mainWindow.show(); mainWindow.focus(); });
 }
 
+/** A 16x16 crimson dot, built in memory so the tray never depends on a file. */
+function fallbackTrayIcon() {
+  const size = 16;
+  const buf = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - 7.5, dy = y - 7.5;
+      const inside = dx * dx + dy * dy <= 49; // r = 7
+      const i = (y * size + x) * 4;
+      buf[i] = inside ? 229 : 0;       // R
+      buf[i + 1] = inside ? 57 : 0;    // G
+      buf[i + 2] = inside ? 53 : 0;    // B
+      buf[i + 3] = inside ? 255 : 0;   // A
+    }
+  }
+  return nativeImage.createFromBuffer(buf, { width: size, height: size });
+}
+
 app.whenReady().then(() => {
   createWindow();
-  createTray();
+  // A tray failure (missing icon, no system tray on some Linux desktops) must
+  // never take down the whole app — the window and reminders still work.
+  try { createTray(); } catch (e) { console.error('[tray] disabled:', e.message); }
   startReminderScheduler();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

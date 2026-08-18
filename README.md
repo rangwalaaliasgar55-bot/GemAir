@@ -163,11 +163,20 @@ vercel          # deploy; it auto-detects vercel.json (api/ functions + renderer
 | Idle behavior | Free project stays warm | Free tier **suspends when idle** (cold starts) |
 | Best for | Full backend-in-a-box for a personal AI | Raw serverless Postgres behind your own API |
 
-**Setup (5 min):**
+**Setup — the schema applies itself:**
 1. Create a project at [supabase.com](https://supabase.com).
-2. Run [`supabase/schema.sql`](supabase/schema.sql) in the SQL editor.
+2. Connect the repo: Supabase → **Integrations → GitHub** → pick this repo,
+   set **production branch** to `main`, turn **Deploy to production** on.
+   Everything in [`supabase/migrations/`](supabase/migrations) is then applied
+   automatically on every push to `main` — no copy-pasting SQL.
 3. Enable **Anonymous sign-ins** (Authentication → Providers → Anonymous).
-4. Paste `SUPABASE_URL` + `SUPABASE_ANON_KEY` into Vercel env (and/or `.env`).
+   This is an auth setting, not SQL, so it is the one switch you flip by hand.
+4. Connect Vercel: Supabase → **Integrations → Vercel** → *Add project connection*.
+   `SUPABASE_URL` + `SUPABASE_ANON_KEY` are injected into Vercel for you.
+
+> Prefer to do it manually? Run the contents of
+> [`supabase/migrations/`](supabase/migrations) in the SQL editor once.
+> The migration is idempotent, so re-running it is always safe.
 
 The app stores memory local-first (localStorage) and **mirrors** it to Supabase, so your
 memories, notes, goals and mood follow you across devices. No login screen — anonymous

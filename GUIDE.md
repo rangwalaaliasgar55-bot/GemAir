@@ -37,7 +37,7 @@ GemAI/
 │   ├── app.js               # UI logic, streaming, voice, emotion, 3D
 │   └── store.js             # browser memory (localStorage + optional Supabase)
 ├── api/                     # Vercel serverless functions (free web tools + chat proxy)
-├── supabase/schema.sql      # optional cloud memory (RLS + anonymous auth)
+├── supabase/migrations/     # cloud memory schema, auto-applied on merge to main
 └── build/icon.png
 ```
 
@@ -136,8 +136,10 @@ Optional env vars (`.env.example`): `GROQ_API_KEY`, `SUPABASE_URL`, `SUPABASE_AN
 Everything works **without** any of them — the offline brain + real web search + tools are free.
 
 ### Supabase (recommended DB over Neon)
-Run `supabase/schema.sql`, enable **Anonymous sign-ins**, add the two env vars.
-Memory then syncs across devices with per-user Row-Level Security.
+Connect the repo under Supabase → **Integrations → GitHub** (production branch
+`main`). Migrations in `supabase/migrations/` are applied automatically on merge.
+Then enable **Anonymous sign-ins** and add the two env vars.
+Memory syncs across devices with per-user Row-Level Security.
 
 ---
 
