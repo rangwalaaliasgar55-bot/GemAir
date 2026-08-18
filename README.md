@@ -52,6 +52,23 @@ Stonic clones forget you the moment they close. GemAI doesn't:
 
 Memory works even **offline** (simple heuristics) and becomes much smarter once you connect a key.
 
+### Truth & verified answers
+
+GemAI is built to **tell the truth, always**:
+
+- **Never fabricates** — the system prompt forbids making up facts, quotes, statistics or citations.
+- **Search-first** — for anything factual or current it calls `web_search` / `fetch_webpage` and **cites its sources inline**.
+- **`verify_claim` tool** — ask "is it true that…?" and it fact-checks against real sources and reports *supported / unverified / no evidence* with links.
+- **Says "I don't know"** — when it can't verify something, it tells you plainly instead of guessing.
+
+### Skills & instructions in memory
+
+Teach GemAI and it remembers forever:
+
+- **Skills** — "teach me to…" or add one in System Core → **Skills**. GemAI reuses them whenever relevant.
+- **Standing Rules** — System Core → **Rules**. Add "always be concise", "call me Boss", "reply in Hindi" — GemAI follows them in every conversation.
+- Both are injected into every prompt and stored in your never-lost memory (local JSON + optional Supabase).
+
 ### Emotional intelligence
 
 GemAI reads how you feel, not just what you say:
@@ -60,6 +77,31 @@ GemAI reads how you feel, not just what you say:
 - **Empathetic responses** — the AI's system prompt is informed by your current emotional state and recent mood trend, so it acknowledges your feelings first and adapts its tone and length.
 - **Mood history** — every meaningful exchange logs a mood point, charted on a live graph in the **Companion** panel, so you (and GemAI) can see how you've been trending.
 - **Check-ins** — one-tap mood buttons, daily affirmations, and practical wellness tips for focus, stress, sleep, energy, productivity and motivation.
+
+---
+
+## ✅ Feature coverage vs Stonic AI
+
+Stonic AI (the $56 JARVIS app) — everything it advertises, GemAI does **free & open-source**:
+
+| Stonic feature | GemAI |
+| --- | --- |
+| Voice assistant (speak naturally) | ✅ Neural female voice (EN/HI/UR/ES/FR) + STT |
+| System Core (memory / skills / soul / settings) | ✅ + **Skills** you teach it + **Standing Rules** it always follows |
+| Agent Town (pixel RPG, agents walk & work) | ✅ Animated pixel office, click-to-assign, live feed |
+| World Monitor (3D globe + 2D map + headlines) | ✅ All three |
+| Themes (Crimson / Emerald / Cyan) | ✅ Full re-skin |
+| Desktop automation (organize/duplicates/rename/archive) | ✅ Multi-step "missions" + **human-in-the-loop confirmation** |
+| Browser automation (open/search/navigate) | ✅ open_url, web_search, fetch_webpage, YouTube |
+| Screen awareness ("it sees") | ✅ `see_screen` captures your display |
+| System guardian ("what's slowing my PC") | ✅ `system_scan` + top-processes + advice |
+| WhatsApp messaging | ✅ `open_whatsapp` (wa.me) |
+| **Emotional voice intelligence** | ✅ Emotion detection + voice tone adapts + mood tracking |
+| Connect your own AI | ✅ Groq/OpenAI/OpenRouter/Ollama (or **free, no key**) |
+| Local-first privacy | ✅ All data stays on your machine |
+| Lifetime, no subscription | ✅ **$0 forever** |
+
+**Things GemAI has that Stonic doesn't:** persistent long-term memory that never forgets, emotional intelligence + mood graph, life/career coaching (goals, affirmations, wellness), real web search with **no AI required**, fact-checking (`verify_claim`), a command palette, wake word, tray icon, and a free Vercel web version with cloud sync.
 
 ---
 

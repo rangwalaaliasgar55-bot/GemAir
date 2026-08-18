@@ -107,7 +107,7 @@ function writeJSON(file, data) {
 const readProfile = () => readJSON(PROFILE_FILE, {});
 const writeProfile = (d) => writeJSON(PROFILE_FILE, d);
 
-const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], actionLog: [], summary: '' };
+const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 const readMemory = () => {
   const m = readJSON(MEMORY_FILE, EMPTY_MEMORY);
   // ensure shape
@@ -300,7 +300,12 @@ const TOOLS = [
   { type: 'function', function: { name: 'archive_old_files', description: 'Move files older than N days into an _archive folder.', parameters: { type: 'object', properties: { path: { type: 'string' }, days: { type: 'number' } }, required: ['days'] } } },
   { type: 'function', function: { name: 'system_scan', description: 'Scan the PC — what is using CPU/RAM, disk space, battery. "What is slowing my PC down?"', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'see_screen', description: 'Capture the current screen so the AI is aware of what is on it.', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'get_action_log', description: 'Get the recent log of actions the AI has performed (transparency).', parameters: { type: 'object', properties: {} } } }
+  { type: 'function', function: { name: 'get_action_log', description: 'Get the recent log of actions the AI has performed (transparency).', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'add_skill', description: 'Remember a reusable skill / ability the user has taught you (persistent).', parameters: { type: 'object', properties: { text: { type: 'string' }, name: { type: 'string' } }, required: ['text'] } } },
+  { type: 'function', function: { name: 'list_skills', description: 'List the skills you have learned.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'add_instruction', description: 'Remember a standing instruction / rule / preference the user wants you to always follow.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
+  { type: 'function', function: { name: 'list_instructions', description: 'List the user\'s standing instructions.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'verify_claim', description: 'Fact-check a claim against real web sources and report whether it is true, false, or unverified, with sources.', parameters: { type: 'object', properties: { claim: { type: 'string' } }, required: ['claim'] } } }
 ];
 
 function safeEval(expr) {
@@ -678,10 +683,23 @@ function categorizeFile(name) {
   return 'others';
 }
 
-function organizeFolder(dir) {
+// Human-in-the-loop confirmation for potentially destructive file operations
+async function confirmAction(title, detail) {
+  if (!mainWindow) return true;
+  const r = await dialog.showMessageBox(mainWindow, {
+    type: 'question', buttons: ['Proceed', 'Cancel'], defaultId: 0, cancelId: 1,
+    title, message: title, detail
+  });
+  return r.response === 0;
+}
+
+async function organizeFolder(dir) {
   const base = dir || path.join(os.homedir(), 'Downloads');
   try {
     const entries = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
+    if (!entries.length) return { ok: true, total: 0, categories: {}, base, note: 'Nothing to organize.' };
+    const ok = await confirmAction('Organize folder?', `GemAI will sort ${entries.length} files in:\n${base}\n\ninto subfolders by type (images, documents, videos, etc.). Files are moved, not deleted.`);
+    if (!ok) return { error: 'Cancelled by user.' };
     const moved = {}, total = entries.length;
     for (const e of entries) {
       const cat = categorizeFile(e.name);
@@ -724,11 +742,14 @@ function findDuplicates(dir) {
   } catch (e) { return { error: e.message }; }
 }
 
-function renameFiles(dir, pattern) {
+async function renameFiles(dir, pattern) {
   const base = dir || os.homedir();
   const pat = String(pattern || 'file').replace(/[^\w\- ]/g, '');
   try {
     const files = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
+    if (!files.length) return { ok: true, renamed: 0, pattern: pat };
+    const ok = await confirmAction('Rename files?', `GemAI will rename ${files.length} files in:\n${base}\nto "${pat}-001", "${pat}-002", … (extensions kept).`);
+    if (!ok) return { error: 'Cancelled by user.' };
     let n = 0;
     for (const e of files) {
       const ext = path.extname(e.name);
@@ -741,17 +762,19 @@ function renameFiles(dir, pattern) {
   } catch (e) { return { error: e.message }; }
 }
 
-function archiveOldFiles(dir, days) {
+async function archiveOldFiles(dir, days) {
   const base = dir || os.homedir();
   const cutoff = Date.now() - days * 86400000;
   try {
     const archive = path.join(base, '_archive');
+    const candidates = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile() && (() => { try { return fs.statSync(path.join(base, e.name)).mtimeMs < cutoff; } catch { return false; } })());
+    if (!candidates.length) return { ok: true, archived: 0, archive };
+    const ok = await confirmAction('Archive old files?', `GemAI will move ${candidates.length} files older than ${days} days from:\n${base}\ninto an "_archive" subfolder. Nothing is deleted.`);
+    if (!ok) return { error: 'Cancelled by user.' };
     if (!fs.existsSync(archive)) fs.mkdirSync(archive, { recursive: true });
     let n = 0;
-    const entries = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
-    for (const e of entries) {
-      const full = path.join(base, e.name);
-      try { if (fs.statSync(full).mtimeMs < cutoff) { fs.renameSync(full, path.join(archive, e.name)); n++; } } catch {}
+    for (const e of candidates) {
+      try { fs.renameSync(path.join(base, e.name), path.join(archive, e.name)); n++; } catch {}
     }
     logAction('archive_old_files', `Archived ${n} files older than ${days} days`);
     return { ok: true, archived: n, archive };
@@ -826,6 +849,52 @@ async function seeScreen() {
   fs.writeFileSync(file, source.thumbnail.toPNG());
   logAction('see_screen', `Captured screen to ${file}`);
   return { ok: true, file, note: 'Screen captured. If your AI model supports vision, it can analyze this image.' };
+}
+
+// ---- skills & instructions (persistent, user-taught) ----
+function addSkill(text, name) {
+  const m = readMemory();
+  m.skills.unshift({ id: uid(), name: name || '', text, created: Date.now() });
+  if (m.skills.length > 200) m.skills = m.skills.slice(0, 200);
+  writeMemory(m);
+  return { ok: true, skill: text };
+}
+function listSkills() { return (readMemory().skills || []).slice(0, 100); }
+function addInstruction(text) {
+  const m = readMemory();
+  m.instructions.unshift({ id: uid(), text, created: Date.now() });
+  if (m.instructions.length > 200) m.instructions = m.instructions.slice(0, 200);
+  writeMemory(m);
+  return { ok: true, instruction: text };
+}
+function listInstructions() { return (readMemory().instructions || []).slice(0, 100); }
+
+// ---- truth / verification: ground a claim in real sources ----
+async function verifyClaim(claim) {
+  const q = String(claim || '').trim();
+  if (!q) return { error: 'No claim to verify.' };
+  const s = await webSearch(q);
+  const supporting = [];
+  let answer = s.answer || '';
+  let source = s.source || null;
+  let url = s.url || null;
+  (s.results || []).slice(0, 4).forEach((r) => { if (r.title) supporting.push({ title: r.title, url: r.url }); });
+
+  // Heuristic verdict when we have an answer that is not an obvious miss
+  let verdict = 'unverified';
+  if (answer && answer.length > 20) verdict = 'supported';
+  if (!answer && supporting.length === 0) verdict = 'no_evidence';
+
+  logAction('verify_claim', `Verified: "${q.slice(0, 120)}" → ${verdict}`);
+  return {
+    claim: q,
+    verdict,            // supported | unverified | no_evidence
+    answer,             // what sources say (abridged)
+    source,
+    url,
+    supporting,
+    note: 'Verdict is based on DuckDuckGo/Wikipedia instant answers. For high-stakes facts, always check the linked sources directly.'
+  };
 }
 
 function parseWhen(text) {
@@ -986,6 +1055,16 @@ async function executeTool(name, args) {
         const m = readMemory();
         return { log: (m.actionLog || []).slice(0, 30) };
       }
+      case 'add_skill':
+        return addSkill(args.text, args.name);
+      case 'list_skills':
+        return { skills: listSkills() };
+      case 'add_instruction':
+        return addInstruction(args.text);
+      case 'list_instructions':
+        return { instructions: listInstructions() };
+      case 'verify_claim':
+        return await verifyClaim(args.claim);
       case 'calculate':
         return { result: safeEval(args.expression) };
       case 'set_reminder': {
@@ -1431,6 +1510,10 @@ ipcMain.handle('memory:addGoal', (_e, text, category) => addGoal(text, category)
 ipcMain.handle('memory:deleteGoal', (_e, id) => { const m = readMemory(); m.goals = m.goals.filter(g => g.id !== id); writeMemory(m); return true; });
 ipcMain.handle('memory:toggleGoal', (_e, id) => { const m = readMemory(); const g = m.goals.find(g => g.id === id); if (g) g.done = !g.done; writeMemory(m); return true; });
 ipcMain.handle('emotion:analyze', (_e, text) => analyzeEmotion(text));
+ipcMain.handle('memory:addSkill', (_e, text, name) => addSkill(text, name));
+ipcMain.handle('memory:deleteSkill', (_e, id) => { const m = readMemory(); m.skills = m.skills.filter(s => s.id !== id); writeMemory(m); return true; });
+ipcMain.handle('memory:addInstruction', (_e, text) => addInstruction(text));
+ipcMain.handle('memory:deleteInstruction', (_e, id) => { const m = readMemory(); m.instructions = m.instructions.filter(i => i.id !== id); writeMemory(m); return true; });
 
 ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
   const res = await dialog.showSaveDialog(mainWindow, {

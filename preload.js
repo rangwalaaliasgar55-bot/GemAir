@@ -43,6 +43,10 @@ contextBridge.exposeInMainWorld('gemai', {
   memoryDeleteGoal: (id) => ipcRenderer.invoke('memory:deleteGoal', id),
   memoryToggleGoal: (id) => ipcRenderer.invoke('memory:toggleGoal', id),
   analyzeEmotion: (text) => ipcRenderer.invoke('emotion:analyze', text),
+  memoryAddSkill: (text, name) => ipcRenderer.invoke('memory:addSkill', text, name),
+  memoryDeleteSkill: (id) => ipcRenderer.invoke('memory:deleteSkill', id),
+  memoryAddInstruction: (text) => ipcRenderer.invoke('memory:addInstruction', text),
+  memoryDeleteInstruction: (id) => ipcRenderer.invoke('memory:deleteInstruction', id),
 
   // files
   saveCode: (content, suggestedName) => ipcRenderer.invoke('file:saveCode', content, suggestedName),

@@ -80,6 +80,23 @@ create table if not exists action_log (
   ts bigint
 );
 
+-- ---- Skills the AI has learned ----
+create table if not exists skills (
+  id text primary key,
+  user_id uuid not null default auth.uid(),
+  name text,
+  text text,
+  created_at timestamptz default now()
+);
+
+-- ---- Standing instructions / rules ----
+create table if not exists instructions (
+  id text primary key,
+  user_id uuid not null default auth.uid(),
+  text text,
+  created_at timestamptz default now()
+);
+
 -- ---- Row-Level Security: each user can only touch their own rows ----
 alter table facts enable row level security;
 alter table notes enable row level security;
@@ -88,6 +105,8 @@ alter table todos enable row level security;
 alter table mood enable row level security;
 alter table goals enable row level security;
 alter table action_log enable row level security;
+alter table skills enable row level security;
+alter table instructions enable row level security;
 
 create policy "own facts" on facts for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own notes" on notes for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -96,6 +115,8 @@ create policy "own todos" on todos for all using (auth.uid() = user_id) with che
 create policy "own mood" on mood for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own goals" on goals for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own action_log" on action_log for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "own skills" on skills for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "own instructions" on instructions for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- Optional: full-text search on facts for the search_memory tool
 create index if not exists facts_text_idx on facts using gin (to_tsvector('simple', text));

@@ -9,7 +9,7 @@
   const LS_MEMORY = 'gemai:memory';
   const LS_PROFILE = 'gemai:profile';
 
-  const EMPTY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], actionLog: [], summary: '' };
+  const EMPTY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 
   function read(key, fb) {
     try { return JSON.parse(localStorage.getItem(key)) || fb; } catch { return fb; }
@@ -37,6 +37,8 @@
         await sb.from('mood').upsert(m.mood.map((x, i) => ({ id: x.id || ('mood-' + x.ts + '-' + i), emotion: x.emotion, valence: x.valence, note: x.note || '', ts: x.ts })), { onConflict: 'id' });
         await sb.from('goals').upsert(m.goals.map(g => ({ id: g.id, text: g.text, category: g.category || 'personal', done: g.done })), { onConflict: 'id' });
         await sb.from('action_log').upsert(m.actionLog.map(a => ({ id: a.id || uid(), action: a.action, detail: a.detail || '', ts: a.ts })), { onConflict: 'id' });
+        await sb.from('skills').upsert(m.skills.map(s => ({ id: s.id || uid(), name: s.name || '', text: s.text })), { onConflict: 'id' });
+        await sb.from('instructions').upsert(m.instructions.map(i => ({ id: i.id || uid(), text: i.text })), { onConflict: 'id' });
       } catch (e) { /* mirroring is best-effort */ }
     })();
   }
@@ -87,6 +89,10 @@
       if (m.actionLog.length > 200) m.actionLog = m.actionLog.slice(0, 200);
       setMemory(m); return true;
     },
+    async addSkill(text, name) { const m = getMemory(); m.skills.unshift({ id: uid(), name: name || '', text, created: Date.now() }); setMemory(m); return true; },
+    async deleteSkill(id) { const m = getMemory(); m.skills = m.skills.filter(s => s.id !== id); setMemory(m); return true; },
+    async addInstruction(text) { const m = getMemory(); m.instructions.unshift({ id: uid(), text, created: Date.now() }); setMemory(m); return true; },
+    async deleteInstruction(id) { const m = getMemory(); m.instructions = m.instructions.filter(i => i.id !== id); setMemory(m); return true; },
     async getProfile() { return read(LS_PROFILE, {}); },
     async setProfile(d) { write(LS_PROFILE, d); return true; },
 

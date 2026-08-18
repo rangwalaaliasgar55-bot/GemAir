@@ -20,6 +20,8 @@ const MOCK_MEMORY = {
   todos: [],
   mood: [],
   goals: [],
+  skills: [],
+  instructions: [],
   actionLog: [],
   summary: ''
 };
@@ -85,6 +87,10 @@ const api = {
   async memoryAddGoal(text, category) { if (window.gemai) return window.gemai.memoryAddGoal(text, category); if (window.webStore) await window.webStore.addGoal(text, category); },
   async memoryDeleteGoal(id) { if (window.gemai) return window.gemai.memoryDeleteGoal(id); if (window.webStore) await window.webStore.deleteGoal(id); },
   async memoryToggleGoal(id) { if (window.gemai) return window.gemai.memoryToggleGoal(id); if (window.webStore) await window.webStore.toggleGoal(id); },
+  async memoryAddSkill(text, name) { if (window.gemai) return window.gemai.memoryAddSkill(text, name); if (window.webStore) await window.webStore.addSkill(text, name); },
+  async memoryDeleteSkill(id) { if (window.gemai) return window.gemai.memoryDeleteSkill(id); if (window.webStore) await window.webStore.deleteSkill(id); },
+  async memoryAddInstruction(text) { if (window.gemai) return window.gemai.memoryAddInstruction(text); if (window.webStore) await window.webStore.addInstruction(text); },
+  async memoryDeleteInstruction(id) { if (window.gemai) return window.gemai.memoryDeleteInstruction(id); if (window.webStore) await window.webStore.deleteInstruction(id); },
   async analyzeEmotion(text) { return window.gemai ? window.gemai.analyzeEmotion(text) : analyzeEmotion(text); },
 
   async saveCode(content, name) {
@@ -155,6 +161,17 @@ async function offlineBrain(text) {
     const city = (m && m[1]) ? m[1].trim() : null;
     if (city) { const w = await webGet('weather', { city }); return w.error || `In ${w.city} it is ${w.temperature}°C with ${w.condition} (wind ${w.windspeed} km/h).`; }
     return 'Tell me a city — e.g. "weather in Mumbai".';
+  }
+
+  // ---- truth verification (free, no AI) ----
+  if (/is it true|verify|fact check|fact-check|is .* real|is .* legit|did .* really/.test(q)) {
+    const claim = q.replace(/^(is it true that|verify|fact check|fact-check)\s*/i, '').trim();
+    if (claim) {
+      const s = await webGet('search', { q: claim });
+      if (s.answer) return `Checking: "${claim}"\n\n${s.answer}\n\nSource: ${s.source || 'the web'}${s.url ? ' — ' + s.url : ''}\n(For high-stakes facts, open the source to confirm.)`;
+      if (s.results && s.results[0]) return `I couldn't find a direct confirmation for "${claim}", but here are relevant results:\n` + s.results.slice(0, 4).map((r, i) => `${i + 1}. ${r.title}${r.url ? ' — ' + r.url : ''}`).join('\n');
+      return `I searched but found no evidence to confirm or refute "${claim}".`;
+    }
   }
 
   // ---- real web search (free, no AI) ----
@@ -276,7 +293,7 @@ let profile = {
   voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' },
   memoryOn: true, allowShell: false, wakeWord: false
 };
-let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], actionLog: [], summary: '' };
+let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
 
 let listening = false, recognition = null, isRunning = false;
@@ -294,7 +311,11 @@ const NEURAL_VOICES = [
   { id: 'en', label: 'English (US) — smooth female' },
   { id: 'en-GB', label: 'English (UK) — smooth female' },
   { id: 'en-IN', label: 'English (India) — smooth female' },
-  { id: 'en-AU', label: 'English (Australia) — smooth female' }
+  { id: 'en-AU', label: 'English (Australia) — smooth female' },
+  { id: 'hi', label: 'Hindi — smooth female' },
+  { id: 'ur', label: 'Urdu — smooth female' },
+  { id: 'es', label: 'Spanish — smooth female' },
+  { id: 'fr', label: 'French — smooth female' }
 ];
 
 let speechQueue = Promise.resolve();
@@ -686,6 +707,8 @@ function buildSystemPrompt() {
   const mood = (memory.mood || []).slice(-14);
   const moodAvg = mood.length ? Math.round((mood.reduce((a, b) => a + (b.valence || 0), 0) / mood.length) * 100) : null;
   const goals = (memory.goals || []).filter((g) => !g.done).map((g) => `- [${g.category}] ${g.text}`).join('\n');
+  const skills = (memory.skills || []).slice(0, 40).map((s) => `- ${s.name ? s.name + ': ' : ''}${s.text}`).join('\n');
+  const instructions = (memory.instructions || []).slice(0, 40).map((i) => `- ${i.text}`).join('\n');
   return {
     role: 'system',
     content:
@@ -693,6 +716,10 @@ function buildSystemPrompt() {
       `You are the user's friend, mentor, life coach and career advisor — genuinely caring, perceptive and wise. ` +
       `The user's name is ${profile.name || 'Commander'}. ` +
       `Personality — warmth ${s.warmth ?? 60}/100, wit ${s.wit ?? 40}/100, brevity ${s.brevity ?? 70}/100. ` +
+      `TRUTH & ACCURACY (non-negotiable): Always be truthful. Never fabricate facts, citations, quotes, statistics or events. ` +
+      `For anything factual, current or uncertain, verify with web_search / verify_claim / fetch_webpage and CITE your sources inline. ` +
+      `If you do not know or cannot verify something, say so plainly rather than guessing. Distinguish clearly between verified facts, opinions and estimates. ` +
+      `When the user asks "is it true that…" or "verify…", call verify_claim and report the verdict + sources. ` +
       `EMOTIONAL INTELLIGENCE: The user's current emotional state is "${currentEmotion.emotion}" (valence ${currentEmotion.valence}, intensity ${currentEmotion.intensity || 0}). ` +
       (moodAvg != null ? `Their recent mood average is ${moodAvg}/100. ` : '') +
       `Always respond with empathy: acknowledge their feelings first when they're struggling, celebrate with them when they're doing well. If they're sad, anxious, angry or guilty, be gentle, validating and supportive — never dismissive or preachy. Adapt your tone and length to their state (more warmth and fewer words when intensity is high). ` +
@@ -701,6 +728,8 @@ function buildSystemPrompt() {
       `CAPABILITIES via tools: time/date, weather, web search, fetch pages, Wikipedia, YouTube, translate, dictionary, crypto, currency, image generation, open URLs/apps, math, reminders, notes, files, clipboard, volume, screenshots, system control, to-dos, mood, goals, affirmations, wellness. ` +
       `LONG-TERM MEMORY — facts you remember:\n${facts || '(none yet)'}\n\n` +
       (goals ? `Their ACTIVE GOALS:\n${goals}\n\n` : '') +
+      (skills ? `SKILLS YOU HAVE LEARNED (reuse when relevant):\n${skills}\n\n` : '') +
+      (instructions ? `THE USER'S STANDING INSTRUCTIONS (always follow these):\n${instructions}\n\n` : '') +
       `Use tools for real actions or live data. Be genuinely helpful, concise but human, and always kind.`
   };
 }
@@ -846,11 +875,24 @@ function speak(text) {
   }).catch(() => {});
 }
 
+// Adjust speaking style to the current emotion (emotional voice intelligence)
+function emotionVoiceMod() {
+  const e = currentEmotion && currentEmotion.emotion;
+  switch (e) {
+    case 'sadness': case 'tired': case 'guilt': return { rate: -0.08, pitch: -0.1 };
+    case 'excitement': case 'joy': case 'hope': return { rate: 0.06, pitch: 0.06 };
+    case 'anger': case 'fear': case 'anxiety': return { rate: 0.02, pitch: 0.0 };
+    case 'love': case 'gratitude': case 'relief': return { rate: -0.04, pitch: 0.02 };
+    default: return { rate: 0, pitch: 0 };
+  }
+}
+
 function speakSystem(text) {
   try {
+    const mod = emotionVoiceMod();
     const u = new SpeechSynthesisUtterance(text.slice(0, 600));
-    u.rate = Number(profile.voice?.rate ?? 1.0);
-    u.pitch = Number(profile.voice?.pitch ?? 1.1);
+    u.rate = Math.max(0.5, Math.min(1.5, Number(profile.voice?.rate ?? 1.0) + mod.rate));
+    u.pitch = Math.max(0.5, Math.min(2, Number(profile.voice?.pitch ?? 1.1) + mod.pitch));
     const voices = speechSynthesis.getVoices();
     const wanted = profile.voice?.name;
     if (wanted) {
@@ -907,7 +949,7 @@ function initRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return null;
   const r = new SR();
-  r.continuous = false; r.interimResults = false; r.lang = 'en-US';
+  r.continuous = false; r.interimResults = false; r.lang = profile.voice?.sttLang || 'en-US';
   r.onresult = (e) => { const t = e.results[0][0].transcript; $('#chatInput').value = t; sendMessage(t); };
   r.onend = () => { $('#micBtn').classList.remove('recording'); if (isRunning && listening) { try { r.start(); } catch (e) {} } };
   r.onerror = (e) => {
@@ -1237,7 +1279,35 @@ function renderReminders() {
     list.appendChild(div);
   });
 }
-function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); renderMissionLog(); }
+function renderSkills() {
+  const list = $('#skillsList');
+  if (!list) return;
+  const skills = (memory.skills || []).slice();
+  if (!skills.length) { list.innerHTML = '<div class="empty">No skills yet. Say "teach me to…" or add one below — GemAI will remember and reuse it.</div>'; return; }
+  list.innerHTML = '';
+  skills.forEach((s) => {
+    const div = document.createElement('div');
+    div.className = 'memory-item';
+    div.innerHTML = `<span class="tag">SKILL</span><span class="body">${escapeHtml(s.name ? s.name + ': ' + s.text : s.text)}</span><button class="del-btn" title="Forget">✕</button>`;
+    div.querySelector('.del-btn').addEventListener('click', async () => { await api.memoryDeleteSkill(s.id); await loadMemory(); renderSkills(); });
+    list.appendChild(div);
+  });
+}
+function renderInstructions() {
+  const list = $('#instructionsList');
+  if (!list) return;
+  const instr = (memory.instructions || []).slice();
+  if (!instr.length) { list.innerHTML = '<div class="empty">No standing instructions. Add a rule like "always be concise" or "call me Boss" — GemAI will follow it forever.</div>'; return; }
+  list.innerHTML = '';
+  instr.forEach((i) => {
+    const div = document.createElement('div');
+    div.className = 'memory-item';
+    div.innerHTML = `<span class="tag">RULE</span><span class="body">${escapeHtml(i.text)}</span><button class="del-btn" title="Delete">✕</button>`;
+    div.querySelector('.del-btn').addEventListener('click', async () => { await api.memoryDeleteInstruction(i.id); await loadMemory(); renderInstructions(); });
+    list.appendChild(div);
+  });
+}
+function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); renderSkills(); renderInstructions(); renderMissionLog(); }
 
 // ---------------------------------------------------------------------------
 // Companion: mood, goals, wellness
@@ -1478,6 +1548,7 @@ function openSettings() {
   $('#pitchVal').textContent = $('#setPitch').value;
   $('#setVoiceMode').value = profile.voice?.mode || 'neural';
   $('#setNeuralVoice').value = profile.voice?.neuralVoice || 'en';
+  $('#setSttLang').value = profile.voice?.sttLang || 'en-US';
   $('#setMemoryOn').checked = profile.memoryOn !== false;
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setWakeWord').checked = !!profile.wakeWord;
@@ -1560,6 +1631,26 @@ function bindEvents() {
 
   $('#clearTranscript').addEventListener('click', async () => { await api.memoryClearTranscript(); await loadMemory(); updateTranscriptCount(); addMessage('system-msg', 'Conversation history cleared (long-term memories kept).'); });
 
+  // skills + instructions
+  $('#skillAdd').addEventListener('click', async () => {
+    const text = $('#skillInput').value.trim();
+    if (!text) return;
+    await api.memoryAddSkill(text, $('#skillName').value.trim());
+    $('#skillInput').value = ''; $('#skillName').value = '';
+    await loadMemory(); renderSkills();
+    toast('SKILL', 'Skill remembered — I\u2019ll reuse it from now on.', '🧠');
+  });
+  $('#skillInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#skillAdd').click(); });
+  $('#instructionAdd').addEventListener('click', async () => {
+    const text = $('#instructionInput').value.trim();
+    if (!text) return;
+    await api.memoryAddInstruction(text);
+    $('#instructionInput').value = '';
+    await loadMemory(); renderInstructions();
+    toast('RULE', 'Standing instruction saved.', '📌');
+  });
+  $('#instructionInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#instructionAdd').click(); });
+
   // Companion: mood check-in
   $$('#moodBtns button').forEach((b) => b.addEventListener('click', async () => {
     const emo = analyzeEmotion(b.dataset.mood);
@@ -1606,6 +1697,7 @@ function bindEvents() {
     profile.voice.mode = $('#setVoiceMode').value;
     profile.voice.neuralVoice = $('#setNeuralVoice').value;
     profile.voice.name = $('#setVoice').value;
+    profile.voice.sttLang = $('#setSttLang').value;
     profile.memoryOn = $('#setMemoryOn').checked;
     profile.allowShell = $('#setAllowShell').checked;
     profile.wakeWord = $('#setWakeWord').checked;

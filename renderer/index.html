@@ -191,6 +191,8 @@
                 <button class="core-tab active" data-tab="memory">MEMORY</button>
                 <button class="core-tab" data-tab="notes">NOTES</button>
                 <button class="core-tab" data-tab="reminders">REMINDERS</button>
+                <button class="core-tab" data-tab="skills">SKILLS</button>
+                <button class="core-tab" data-tab="instructions">RULES</button>
                 <button class="core-tab" data-tab="soul">SOUL</button>
               </div>
 
@@ -225,6 +227,29 @@
                 </div>
                 <div class="memory-list" id="remindersList">
                   <div class="empty">No reminders yet.</div>
+                </div>
+              </div>
+
+              <div class="hud-panel core-pane" data-pane="skills">
+                <h3 class="panel-title">SKILLS <span class="dim">— THINGS IT HAS LEARNED</span></h3>
+                <div class="inline-add">
+                  <input type="text" id="skillName" placeholder="Skill name (optional)" />
+                  <input type="text" id="skillInput" placeholder="e.g. how to format my reports" />
+                  <button class="mini-btn" id="skillAdd">+</button>
+                </div>
+                <div class="memory-list" id="skillsList">
+                  <div class="empty">No skills yet. Teach GemAI something and it remembers forever.</div>
+                </div>
+              </div>
+
+              <div class="hud-panel core-pane" data-pane="instructions">
+                <h3 class="panel-title">STANDING RULES <span class="dim">— ALWAYS FOLLOWS</span></h3>
+                <div class="inline-add">
+                  <input type="text" id="instructionInput" placeholder='e.g. "always be concise" or "call me Boss"' />
+                  <button class="mini-btn" id="instructionAdd">+</button>
+                </div>
+                <div class="memory-list" id="instructionsList">
+                  <div class="empty">No rules yet. Add instructions and GemAI will follow them forever.</div>
                 </div>
               </div>
 
@@ -448,6 +473,17 @@
           </label>
           <label>System voice (when engine = System)
             <select id="setVoice"></select>
+          </label>
+          <label>Speech recognition language
+            <select id="setSttLang">
+              <option value="en-US">English (US)</option>
+              <option value="en-GB">English (UK)</option>
+              <option value="en-IN">English (India)</option>
+              <option value="hi-IN">Hindi</option>
+              <option value="ur-PK">Urdu</option>
+              <option value="es-ES">Spanish</option>
+              <option value="fr-FR">French</option>
+            </select>
           </label>
           <div class="soul-slider">
             <span>RATE</span><input type="range" id="setRate" min="0.6" max="1.4" step="0.05" value="1.0" /><b id="rateVal">1.0</b>
