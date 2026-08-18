@@ -16,8 +16,7 @@
   <!-- boot sequence -->
   <div class="boot-overlay" id="bootOverlay">
     <div class="boot-core">
-      <div class="boot-orb"><span></span></div>
-      <div class="boot-title">GEM<span>AIR</span></div>
+      <img class="boot-logo" src="assets/gemair-logo.png" alt="GemAir" />
       <div class="boot-line" id="bootLine">INITIALIZING CORE…</div>
       <div class="boot-bar"><i id="bootBar"></i></div>
     </div>
@@ -33,10 +32,10 @@
     <!-- ===================== TOP BAR ===================== -->
     <header class="topbar">
       <div class="brand">
-        <div class="brand-orb"><span></span></div>
+        <img class="brand-mark" src="assets/gemair-mark.png" alt="" aria-hidden="true" />
         <div class="brand-text">
           <h1>GEM<span class="dim">AIR</span></h1>
-          <p>MISSION CONTROL <span class="ver" id="verTag">v1.0.0</span></p>
+          <p>INTELLIGENCE · ASSISTANCE · EVERYWHERE <span class="ver" id="verTag">v1.0.0</span></p>
         </div>
       </div>
 
@@ -109,6 +108,10 @@
                   <span class="start-ring"></span>
                   <span class="start-label" id="startLabel">START AI</span>
                 </button>
+              </div>
+              <div class="caption-bar" id="captionBar" aria-live="polite">
+                <span class="caption-who" id="captionWho">GEM</span>
+                <p class="caption-text" id="captionText"></p>
               </div>
               <div class="orb-status" id="orbStatus">STANDBY</div>
             </div>

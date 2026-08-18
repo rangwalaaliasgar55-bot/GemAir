@@ -1,26 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
-    <radialGradient id="glow" cx="50%" cy="45%" r="60%">
-      <stop offset="0%" stop-color="#ff6b6b" stop-opacity=".95"/>
-      <stop offset="60%" stop-color="#ff3b3b" stop-opacity=".35"/>
-      <stop offset="100%" stop-color="#ff3b3b" stop-opacity="0"/>
+    <radialGradient id="g" cx="50%" cy="46%" r="58%">
+      <stop offset="0%" stop-color="#7fdcff" stop-opacity=".9"/>
+      <stop offset="70%" stop-color="#3bc9ff" stop-opacity=".25"/>
+      <stop offset="100%" stop-color="#3bc9ff" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#9ff0ff"/>
-      <stop offset="55%" stop-color="#ff5a5a"/>
-      <stop offset="100%" stop-color="#ff2d7a"/>
-    </linearGradient>
   </defs>
   <rect width="64" height="64" rx="14" fill="#04060c"/>
-  <circle cx="32" cy="30" r="24" fill="url(#glow)"/>
-  <!-- gem -->
-  <g fill="none" stroke="url(#edge)" stroke-width="1.7" stroke-linejoin="round">
-    <path d="M15 26 L32 12 L49 26 L32 51 Z"/>
-    <path d="M15 26 H49"/>
-    <path d="M23 26 L32 12 M41 26 L32 12"/>
-    <path d="M23 26 L32 51 M41 26 L32 51"/>
+  <circle cx="32" cy="31" r="23" fill="url(#g)"/>
+  <circle cx="32" cy="31" r="24" fill="none" stroke="#3bc9ff" stroke-width=".8" opacity=".5"/>
+  <g fill="none" stroke="#8fe6ff" stroke-width="1.7" stroke-linejoin="round">
+    <path d="M14 26 L32 13 L50 26 L32 50 Z"/>
+    <path d="M14 26 H50"/>
+    <path d="M22 26 L32 13 M42 26 L32 13"/>
+    <path d="M22 26 L32 50 M42 26 L32 50"/>
   </g>
-  <!-- air current -->
-  <path d="M8 38 C20 46 44 46 56 34" fill="none" stroke="#6fe6ff" stroke-width="2" stroke-linecap="round" opacity=".85"/>
-  <path d="M12 46 C24 52 42 51 52 43" fill="none" stroke="#6fe6ff" stroke-width="1.4" stroke-linecap="round" opacity=".5"/>
 </svg>

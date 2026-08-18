@@ -194,6 +194,30 @@
 
   const HEAD = buildHead();
 
+  /**
+   * A coarser quad mesh used for the shaded skin surface. Kept separate from
+   * the contour rings so the wireframe can stay fine while the fill stays
+   * cheap (about 500 quads a frame).
+   */
+  function buildSkin() {
+    const LAT_S = 26, LON_S = 38;
+    const grid = [];
+    for (let i = 0; i <= LAT_S; i++) {
+      const y = 1 - (i / LAT_S) * 2;
+      const row = [];
+      for (let j = 0; j <= LON_S; j++) row.push(surface(y, (j / LON_S) * TAU));
+      grid.push(row);
+    }
+    const quads = [];
+    for (let i = 0; i < LAT_S; i++) {
+      for (let j = 0; j < LON_S; j++) {
+        quads.push([grid[i][j], grid[i][j + 1], grid[i + 1][j + 1], grid[i + 1][j]]);
+      }
+    }
+    return quads;
+  }
+  const SKIN = buildSkin();
+
   /** Neck + shoulders, so Gem reads as a person rather than a floating head. */
   function buildTorso() {
     const lines = [];
@@ -271,11 +295,40 @@
       breath: 0,
       nextBlink: 1.6, blinkT: -1,
       nextSaccade: 2,
-      syllableT: 0, syllablePhase: 0
+      syllableT: 0, syllablePhase: 0,
+      // viseme drivers
+      mouthW: 1, mouthWTarget: 1,
+      mouthR: 0, mouthRTarget: 0,
+      viseme: 'MM'
     };
 
     let emotion = { emotion: 'neutral', valence: 0 };
     const pointer = { x: 0, y: 0 };
+
+    /**
+     * Visemes — the mouth shapes speech is actually made of. Cycling through
+     * these instead of just opening and closing the jaw is the difference
+     * between "talking" and "chewing".
+     *   w = horizontal stretch, h = vertical opening, r = lip rounding
+     */
+    const VISEMES = [
+      { k: 'AA', w: 1.06, h: 1.00, r: 0.00, p: 0.16 },  // father
+      { k: 'EH', w: 1.18, h: 0.55, r: 0.00, p: 0.14 },  // bed
+      { k: 'EE', w: 1.30, h: 0.30, r: 0.00, p: 0.13 },  // see
+      { k: 'IH', w: 1.10, h: 0.34, r: 0.00, p: 0.12 },  // sit
+      { k: 'OH', w: 0.76, h: 0.80, r: 0.75, p: 0.12 },  // go
+      { k: 'OO', w: 0.60, h: 0.44, r: 1.00, p: 0.09 },  // food
+      { k: 'L',  w: 1.06, h: 0.52, r: 0.00, p: 0.08 },  // let
+      { k: 'FV', w: 1.02, h: 0.16, r: 0.10, p: 0.08 },  // five
+      { k: 'MM', w: 0.96, h: 0.03, r: 0.20, p: 0.08 }   // closed consonant
+    ];
+    function pickViseme(prev) {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        let r = Math.random();
+        for (const v of VISEMES) { r -= v.p; if (r <= 0) { if (v.k !== prev) return v; break; } }
+      }
+      return VISEMES[0];
+    }
 
     const EXPRESSION = {
       joy:         { smile: 0.95, brow: 0.45, open: 1.02, tint: { r: 255, g: 210, b: 90 } },
@@ -301,16 +354,24 @@
     let scale = 100, cx = 0, cy = 0;
     const CAM = 6.0;
 
-    function project(p) {
+    /** Object space -> view space (rotation only). */
+    function rotate(p) {
       const cyr = Math.cos(S.rotY), syr = Math.sin(S.rotY);
-      let x = p.x * cyr + p.z * syr;
+      const x = p.x * cyr + p.z * syr;
       let z = -p.x * syr + p.z * cyr;
       const cxr = Math.cos(S.rotX), sxr = Math.sin(S.rotX);
       const y = p.y * cxr - z * sxr;
       z = p.y * sxr + z * cxr;
-      const f = CAM / (CAM - z);
-      return { x: cx + x * f * scale, y: cy - y * f * scale, z, f };
+      return { x, y, z };
     }
+
+    /** View space -> screen space (perspective divide). */
+    function toScreen(v) {
+      const f = CAM / (CAM - v.z);
+      return { x: cx + v.x * f * scale, y: cy - v.y * f * scale, z: v.z, f };
+    }
+
+    function project(p) { return toScreen(rotate(p)); }
 
     const depthAlpha = (z) => clamp(0.08 + (z + 1.0) / 2.0 * 0.92, 0.05, 1);
 
@@ -357,48 +418,90 @@
     }
 
     function drawEye(sx, sy, openness, colour, glow) {
-      const pts = eyeOutline(sx, sy, Math.max(openness, 0.04)).map(project);
+      const outline = eyeOutline(sx, sy, Math.max(openness, 0.04));
+      const pts = outline.map(project);
+      const trace = () => {
+        ctx.beginPath();
+        pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+        ctx.closePath();
+      };
+
+      // sclera — without an eye white the socket reads as a hole
+      if (openness > 0.06) {
+        trace();
+        ctx.fillStyle = `rgba(238,242,248,${0.82 * (0.55 + glow * 0.45)})`;
+        ctx.fill();
+      }
+
+      if (openness > 0.12) {
+        const gx = sx + S.gazeX * 0.035;
+        const gy = sy + S.gazeY * 0.02;
+        const c = project(facePoint(gx, gy, 0.05));
+        const r = 0.042 * scale * c.f;
+
+        ctx.save();
+        trace();
+        ctx.clip();
+
+        // shadow cast by the upper lid onto the eyeball
+        const lid = project(facePoint(sx, sy + 0.06, 0.03));
+        const sg = ctx.createLinearGradient(lid.x, lid.y - r, lid.x, lid.y + r * 1.6);
+        sg.addColorStop(0, 'rgba(20,26,40,0.45)');
+        sg.addColorStop(1, 'rgba(20,26,40,0)');
+        ctx.fillStyle = sg;
+        ctx.fill();
+
+        // iris
+        const ig = ctx.createRadialGradient(c.x, c.y, r * 0.2, c.x, c.y, r);
+        ig.addColorStop(0, rgba(mix(colour, { r: 255, g: 255, b: 255 }, 0.45), 0.95));
+        ig.addColorStop(0.65, rgba(colour, 0.95));
+        ig.addColorStop(1, rgba(mix(colour, { r: 0, g: 0, b: 0 }, 0.55), 0.95));
+        ctx.fillStyle = ig;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, r, 0, TAU);
+        ctx.fill();
+
+        // limbal ring — the dark edge that makes an iris look real
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(10,14,26,${0.55 * glow})`;
+        ctx.lineWidth = Math.max(1, r * 0.16);
+        ctx.arc(c.x, c.y, r, 0, TAU);
+        ctx.stroke();
+
+        // pupil, dilating slightly with energy
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(6,8,16,0.95)';
+        ctx.arc(c.x, c.y, r * (0.36 + 0.12 * S.glow), 0, TAU);
+        ctx.fill();
+
+        // catchlight
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(255,255,255,${0.9 * glow})`;
+        ctx.arc(c.x - r * 0.3, c.y - r * 0.32, r * 0.22, 0, TAU);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(255,255,255,${0.4 * glow})`;
+        ctx.arc(c.x + r * 0.26, c.y + r * 0.24, r * 0.1, 0, TAU);
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      // lash line — heavier on top, like real lashes
       ctx.beginPath();
-      pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-      ctx.closePath();
-      ctx.strokeStyle = rgba(colour, 0.85);
-      ctx.lineWidth = 1.5;
+      pts.slice(0, Math.ceil(pts.length / 2)).forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.strokeStyle = rgba(mix(colour, { r: 0, g: 0, b: 0 }, 0.35), 0.9);
+      ctx.lineWidth = 2.3;
+      ctx.lineCap = 'round';
       ctx.stroke();
+      ctx.lineCap = 'butt';
 
-      if (openness < 0.15) return;
-
-      // iris — follows the gaze, clipped to the eye opening
-      const gx = sx + S.gazeX * 0.035;
-      const gy = sy + S.gazeY * 0.02;
-      const c = project(facePoint(gx, gy, 0.05));
-      const r = 0.040 * scale * c.f;
-
-      ctx.save();
+      // lower lid, lighter
       ctx.beginPath();
-      pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-      ctx.closePath();
-      ctx.clip();
-
-      const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r * 2.6);
-      g.addColorStop(0, rgba(colour, 0.95 * glow));
-      g.addColorStop(0.4, rgba(colour, 0.45 * glow));
-      g.addColorStop(1, rgba(colour, 0));
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, r * 2.6, 0, TAU);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.strokeStyle = rgba(colour, 0.9);
+      pts.slice(Math.ceil(pts.length / 2)).forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.strokeStyle = rgba(colour, 0.5);
       ctx.lineWidth = 1.2;
-      ctx.arc(c.x, c.y, r, 0, TAU);
       ctx.stroke();
-
-      ctx.beginPath();
-      ctx.fillStyle = `rgba(255,255,255,${0.85 * glow})`;
-      ctx.arc(c.x - r * 0.25, c.y - r * 0.25, r * 0.34, 0, TAU);
-      ctx.fill();
-      ctx.restore();
     }
 
     /** Upper-lid crease — subtle, but eyes look flat without it. */
@@ -475,7 +578,7 @@
     function drawMouth(colour, glow) {
       const open = S.mouth;
       const curve = S.smile * 0.05;
-      const halfW = lerp(0.135, 0.168, open * 0.5);
+      const halfW = lerp(0.135, 0.168, open * 0.5) * S.mouthW * (1 - S.mouthR * 0.16);
       const yC = -0.62;
       const N = 26;
 
@@ -492,14 +595,62 @@
       }
       const up = upper.map(project), lo = lower.map(project);
 
-      // mouth cavity
+      // mouth cavity + teeth
       if (open > 0.03) {
+        ctx.save();
         ctx.beginPath();
         up.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
         for (let i = lo.length - 1; i >= 0; i--) ctx.lineTo(lo[i].x, lo[i].y);
         ctx.closePath();
-        ctx.fillStyle = rgba(colour, 0.10 + 0.30 * open * glow);
+        // dark cavity
+        ctx.fillStyle = `rgba(${Math.round(colour.r * 0.13)},${Math.round(colour.g * 0.10)},${Math.round(colour.b * 0.14)},${0.55 + 0.35 * open})`;
         ctx.fill();
+        ctx.clip();
+
+        // upper teeth — a bright band tucked under the top lip
+        if (open > 0.12) {
+          const teeth = [];
+          for (let i = 0; i <= N; i++) {
+            const t = i / N;
+            const px = lerp(-halfW * 0.92, halfW * 0.92, t);
+            const n2 = (t - 0.5) * 2;
+            const bow = Math.cos(n2 * Math.PI * 0.5);
+            teeth.push(facePoint(px, yC - curve * bow + 0.012 * bow, 0.036));
+          }
+          const tp = teeth.map(project);
+          const band = Math.min(0.055, 0.02 + open * 0.05) * scale;
+          ctx.beginPath();
+          tp.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+          for (let i = tp.length - 1; i >= 0; i--) ctx.lineTo(tp[i].x, tp[i].y + band);
+          ctx.closePath();
+          ctx.fillStyle = `rgba(252,250,248,${0.72 * glow})`;
+          ctx.fill();
+
+          // tooth separations
+          ctx.strokeStyle = 'rgba(120,130,150,0.35)';
+          ctx.lineWidth = 1;
+          for (let k = 1; k < 6; k++) {
+            const idx = Math.round((k / 6) * N);
+            const p = tp[idx];
+            if (!p) continue;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p.x, p.y + band);
+            ctx.stroke();
+          }
+
+          // lower teeth hint when wide open
+          if (open > 0.55) {
+            const lb = band * 0.55;
+            ctx.beginPath();
+            lo.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+            for (let i = lo.length - 1; i >= 0; i--) ctx.lineTo(lo[i].x, lo[i].y - lb);
+            ctx.closePath();
+            ctx.fillStyle = `rgba(240,238,236,${0.4 * glow})`;
+            ctx.fill();
+          }
+        }
+        ctx.restore();
       }
 
       // lip edges
@@ -526,34 +677,55 @@
       strokePath(shade, colour, 0.18, 1);
     }
 
+    // Key light sits up and to the viewer's left, like a portrait softbox.
+    const LIGHT = (() => {
+      const v = { x: -0.42, y: 0.5, z: 0.78 };
+      const m = Math.hypot(v.x, v.y, v.z);
+      return { x: v.x / m, y: v.y / m, z: v.z / m };
+    })();
+
     /**
-     * A soft filled silhouette behind the wireframe. Without it the head is a
-     * see-through cage; with it, it reads as a solid person.
-     * Built from the extreme projected points of each contour ring, so it
-     * stays correct at any rotation.
+     * Shaded skin. Each quad is rotated into view space, back-face culled,
+     * lit with a Lambert term plus a rim light, then painted back-to-front.
+     * This is what turns the wireframe cage into an actual face.
      */
-    function drawFaceVolume(colour) {
-      const left = [], right = [];
-      for (const ring of HEAD.rings) {
-        let lo = null, hi = null;
-        for (const p of ring.pts) {
-          const q = project(p);
-          if (!lo || q.x < lo.x) lo = q;
-          if (!hi || q.x > hi.x) hi = q;
-        }
-        if (lo && hi) { left.push(lo); right.push(hi); }
+    function drawSkin(colour) {
+      const base = mix(colour, { r: 252, g: 226, b: 214 }, 0.76); // warm skin tone
+      const rim = mix(colour, { r: 255, g: 255, b: 255 }, 0.25);
+      const drawList = [];
+
+      for (const quad of SKIN) {
+        const v = [rotate(quad[0]), rotate(quad[1]), rotate(quad[2]), rotate(quad[3])];
+        // face normal (wound so that it points at the camera when visible)
+        const ax = v[1].x - v[0].x, ay = v[1].y - v[0].y, az = v[1].z - v[0].z;
+        const bx = v[3].x - v[0].x, by = v[3].y - v[0].y, bz = v[3].z - v[0].z;
+        let nx = by * az - bz * ay;
+        let ny = bz * ax - bx * az;
+        let nz = bx * ay - by * ax;
+        const nl = Math.hypot(nx, ny, nz) || 1;
+        nx /= nl; ny /= nl; nz /= nl;
+        if (nz <= 0.02) continue;                       // back-facing
+
+        const lambert = Math.max(0, nx * LIGHT.x + ny * LIGHT.y + nz * LIGHT.z);
+        const fresnel = Math.pow(1 - nz, 2.6);          // glow at the edges
+        const depth = (v[0].z + v[1].z + v[2].z + v[3].z) / 4;
+        drawList.push({ v, lambert, fresnel, depth });
       }
-      if (right.length < 2) return;
-      ctx.beginPath();
-      right.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-      for (let i = left.length - 1; i >= 0; i--) ctx.lineTo(left[i].x, left[i].y);
-      ctx.closePath();
-      const g = ctx.createLinearGradient(0, cy - scale * 1.1, 0, cy + scale * 1.2);
-      g.addColorStop(0, rgba(colour, 0.15 * (0.5 + S.glow * 0.5)));
-      g.addColorStop(0.5, rgba(colour, 0.08 * (0.5 + S.glow * 0.5)));
-      g.addColorStop(1, rgba(colour, 0.02));
-      ctx.fillStyle = g;
-      ctx.fill();
+
+      drawList.sort((a, b) => a.depth - b.depth);       // painter's algorithm
+
+      for (const f of drawList) {
+        const p = f.v.map(toScreen);
+        const shade = 0.34 + 0.66 * Math.pow(f.lambert, 0.85);
+        const a = (0.55 + 0.33 * shade) * (0.6 + S.glow * 0.4);
+        const col = f.fresnel > 0.45 ? mix(base, rim, f.fresnel * 0.7) : base;
+        ctx.beginPath();
+        ctx.moveTo(p[0].x, p[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(p[i].x, p[i].y);
+        ctx.closePath();
+        ctx.fillStyle = `rgba(${Math.round(col.r * shade)},${Math.round(col.g * shade)},${Math.round(col.b * shade)},${a})`;
+        ctx.fill();
+      }
     }
 
     /** Ears — small but they do a lot of work for "this is a person". */
@@ -721,14 +893,24 @@
       if (S.speaking) {
         S.syllableT -= dt;
         if (S.syllableT <= 0) {
+          const v = pickViseme(S.viseme);
+          S.viseme = v.k;
+          S.mouthTarget = v.h;
+          S.mouthWTarget = v.w;
+          S.mouthRTarget = v.r;
           S.syllablePhase = 0;
-          S.syllableT = 0.11 + Math.random() * 0.13;
-          S.mouthTarget = 0.35 + Math.random() * 0.65;
+          S.syllableT = 0.10 + Math.random() * 0.12;
         }
         S.syllablePhase += dt;
-        S.mouth = approach(S.mouth, S.mouthTarget * Math.exp(-S.syllablePhase * 7), 22, dt);
+        // quick attack, slower decay — the shape of a spoken syllable
+        const env = Math.min(1, S.syllablePhase / 0.045) * Math.exp(-S.syllablePhase * 4.2);
+        S.mouth = approach(S.mouth, S.mouthTarget * env, 26, dt);
+        S.mouthW = approach(S.mouthW, S.mouthWTarget, 16, dt);
+        S.mouthR = approach(S.mouthR, S.mouthRTarget, 16, dt);
       } else {
         S.mouth = approach(S.mouth, S.listening ? 0.05 : 0.02, 8, dt);
+        S.mouthW = approach(S.mouthW, 1, 6, dt);
+        S.mouthR = approach(S.mouthR, 0, 6, dt);
       }
 
       S.glow = approach(S.glow, S.speaking ? 1 : S.thinking ? 0.8 : S.listening ? 0.7 : 0.42, 3, dt);
@@ -757,7 +939,7 @@
 
       drawParticles(colour, time);
       drawHalo(colour, time);
-      drawFaceVolume(colour);
+      drawSkin(colour);
 
       const prevScale = scale;
       scale = prevScale * (1 + S.breath * 0.007);
@@ -769,10 +951,10 @@
         const ring = HEAD.rings[i];
         // emphasise the brow line and the jaw line
         const emphasis = (Math.abs(ring.y - 0.22) < 0.05 || Math.abs(ring.y + 0.55) < 0.05) ? 1.7 : 1;
-        strokePath(ring.pts.map(project), colour, 0.15 * emphasis * (0.5 + S.glow * 0.7), 1);
+        strokePath(ring.pts.map(project), colour, 0.055 * emphasis * (0.5 + S.glow * 0.7), 1);
       }
       for (const line of HEAD.meridians) {
-        strokePath(line.map(project), colour, 0.09 * (0.5 + S.glow * 0.7), 1);
+        strokePath(line.map(project), colour, 0.035 * (0.5 + S.glow * 0.7), 1);
       }
 
       // face

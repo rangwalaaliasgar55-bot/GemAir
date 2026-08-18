@@ -385,6 +385,7 @@ function stopSpeaking() {
   try { speechSynthesis.cancel(); } catch (e) {}
   if (currentNeuralAudio) { try { currentNeuralAudio.pause(); currentNeuralAudio = null; } catch (e) {} }
   avatar({ speaking: false });
+  hideCaption(200);
 }
 
 // ---------------------------------------------------------------------------
@@ -544,6 +545,70 @@ function ensureInteractive() {
   } catch (e) {
     console.error('[GemAir] safety net could not bind events:', e);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Live subtitles
+//
+// Shows what Gem is saying under the avatar, with the already-spoken words
+// highlighted, plus what the user just said. Speech-synthesis boundary events
+// give us a real word cursor; neural TTS has no boundaries, so we fall back to
+// estimating from an average speaking rate.
+// ---------------------------------------------------------------------------
+let captionTimer = null;
+let captionFullText = '';
+let captionProgressTimer = null;
+
+function setCaption(who, text, opts) {
+  const bar = $('#captionBar'), whoEl = $('#captionWho'), textEl = $('#captionText');
+  if (!bar || !textEl) return;
+  clearTimeout(captionTimer);
+  clearInterval(captionProgressTimer);
+  captionFullText = String(text || '').trim();
+  if (!captionFullText) { bar.classList.remove('show'); return; }
+
+  bar.classList.toggle('user', who === 'user');
+  if (whoEl) whoEl.textContent = who === 'user' ? (profile.name || 'YOU').toUpperCase() : 'GEM';
+  textEl.innerHTML = `<span class="said"></span><span class="rest">${escapeHtml(captionFullText)}</span>`;
+  bar.classList.add('show');
+
+  if (opts && opts.autoHide) {
+    captionTimer = setTimeout(() => bar.classList.remove('show'), opts.autoHide);
+  }
+}
+
+/** Move the "already spoken" cursor to a character index. */
+function captionProgress(charIndex) {
+  const textEl = $('#captionText');
+  if (!textEl || !captionFullText) return;
+  const i = Math.max(0, Math.min(captionFullText.length, charIndex | 0));
+  const said = captionFullText.slice(0, i);
+  const rest = captionFullText.slice(i);
+  textEl.innerHTML = `<span class="said">${escapeHtml(said)}</span>${rest ? escapeHtml(rest) : ''}` +
+    (rest ? '<span class="cursor"></span>' : '');
+}
+
+/** No boundary events (neural TTS) — sweep at an average speaking rate. */
+function captionAutoAdvance(text) {
+  clearInterval(captionProgressTimer);
+  const chars = text.length;
+  const cps = 14.5;                          // ~870 characters per minute
+  const step = 60;
+  let elapsed = 0;
+  captionProgressTimer = setInterval(() => {
+    elapsed += step;
+    const i = Math.round((elapsed / 1000) * cps);
+    captionProgress(i);
+    if (i >= chars) clearInterval(captionProgressTimer);
+  }, step);
+}
+
+function hideCaption(delay) {
+  const bar = $('#captionBar');
+  if (!bar) return;
+  clearInterval(captionProgressTimer);
+  clearTimeout(captionTimer);
+  captionTimer = setTimeout(() => bar.classList.remove('show'), delay || 900);
 }
 
 // ---------------------------------------------------------------------------
@@ -1023,6 +1088,19 @@ function buildSystemPrompt() {
       (goals ? `Their ACTIVE GOALS:\n${goals}\n\n` : '') +
       (skills ? `SKILLS YOU HAVE LEARNED (reuse when relevant):\n${skills}\n\n` : '') +
       (instructions ? `THE USER'S STANDING INSTRUCTIONS (always follow these):\n${instructions}\n\n` : '') +
+      `ANSWER STYLE (follow strictly):\n` +
+      `- Lead with the answer. No preamble, no "Great question", no restating what was asked.\n` +
+      `- Default to 1-3 sentences. Expand only when the user asks for detail, or the task genuinely needs steps.\n` +
+      `- Use a short bulleted list for 3+ parallel items; never bullet a single idea.\n` +
+      `- Cut filler: "I think", "it seems", "as an AI", "let me help you with that", closing offers of further help.\n` +
+      `- One follow-up question at most, and only when you genuinely cannot proceed without it.\n` +
+      `- Spoken replies are read aloud, so prefer plain sentences over markdown scaffolding.\n` +
+      `VERIFICATION CONTRACT:\n` +
+      `- Anything factual, current, numeric, or about a real person/product MUST come from a tool call this turn.\n` +
+      `- Cite inline as [source](url) immediately after the claim it supports.\n` +
+      `- If a search returns nothing usable, say "I could not verify that" — never fill the gap from memory.\n` +
+      `- Separate what you verified from what you are inferring, in plain words.\n` +
+      `- If the user's premise is wrong, correct it first, briefly.\n` +
       `Use tools for real actions or live data. Be genuinely helpful, concise but human, and always kind.`
   };
 }
@@ -1080,6 +1158,7 @@ async function sendMessage(text) {
   if (!text) return;
   addMessage('user', text);
   $('#chatInput').value = '';
+  setCaption('user', text, { autoHide: 3200 });
   avatar({ thinking: true }); // Gem visibly starts reasoning
   try {
     return await handleMessage(text);
@@ -1264,6 +1343,8 @@ function speak(text) {
   const mode = profile.voice?.mode || 'neural';
   document.body.classList.add('rgb-speaking'); // RGB while AI speaks
   avatar({ speaking: true });                  // Gem's mouth starts moving
+  setCaption('gem', clean);                    // live subtitle
+  if (mode === 'neural') captionAutoAdvance(clean);
   speechQueue = speechQueue.then(async () => {
     if (gen !== speechGen) return; // superseded
     if (mode === 'neural') {
@@ -1274,6 +1355,8 @@ function speak(text) {
     if (gen === speechGen) {
       document.body.classList.remove('rgb-speaking');
       avatar({ speaking: false });
+      captionProgress(captionFullText.length);
+      hideCaption(1400);
     }
   });
 }
@@ -1319,7 +1402,10 @@ function speakSystem(text) {
     }
     // Drive the avatar's mouth from the real speech timeline: every word
     // boundary re-triggers a syllable so the lip-sync tracks the audio.
-    u.onboundary = () => { try { window.gemAvatar && window.gemAvatar.syllable(); } catch (e) {} };
+    u.onboundary = (ev) => {
+      try { window.gemAvatar && window.gemAvatar.syllable(); } catch (e) {}
+      if (ev && typeof ev.charIndex === 'number') captionProgress(ev.charIndex + (ev.charLength || 0));
+    };
     u.onstart = () => avatar({ speaking: true });
     u.onend = () => avatar({ speaking: false });
     speechSynthesis.speak(u);
@@ -2472,7 +2558,7 @@ async function boot() {
   // controls are live before anything that can fail, and each remaining step
   // runs inside safe() so one failure can never cascade.
   // ---------------------------------------------------------------------
-  safe('applyTheme', () => applyTheme(profile.theme || 'crimson'));
+  safe('applyTheme', () => applyTheme(profile.theme || 'cyan'));
   safe('bindEvents', bindEvents);
   safe('bindSoulSliders', bindSoulSliders);
   safe('updateLinkMode', updateLinkMode);

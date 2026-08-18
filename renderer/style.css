@@ -839,3 +839,62 @@ label select option { background: #0a0f1a; }
   background: rgba(0,0,0,.5); border: 1px solid var(--panel-border);
   font-family: var(--font-mono); font-size: 11.5px; line-height: 1.7; color: var(--text-dim);
 }
+
+/* ============================================================
+   Brand — the GemAir logo lockup
+   ============================================================ */
+.boot-logo {
+  width: min(560px, 72vw); height: auto; display: block; margin: 0 auto 22px;
+  filter: drop-shadow(0 0 40px rgba(59,201,255,.35));
+  animation: boot-logo-in 1.5s cubic-bezier(.2,.8,.25,1) both;
+}
+@keyframes boot-logo-in {
+  0%   { opacity: 0; transform: scale(.94); filter: blur(12px) brightness(2); }
+  60%  { opacity: 1; filter: blur(1px) brightness(1.2); }
+  100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 40px rgba(59,201,255,.35)); }
+}
+.brand-mark {
+  width: 44px; height: 44px; object-fit: contain; border-radius: 10px;
+  filter: drop-shadow(0 0 12px var(--accent-glow));
+  animation: mark-pulse 4s ease-in-out infinite;
+}
+@keyframes mark-pulse {
+  0%,100% { filter: drop-shadow(0 0 10px var(--accent-glow)); }
+  50%     { filter: drop-shadow(0 0 22px var(--accent)); }
+}
+
+/* ============================================================
+   Live subtitles — what Gem is saying, and what you said
+   ============================================================ */
+.caption-bar {
+  position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%) translateY(8px);
+  z-index: 4; width: min(88%, 520px);
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 15px; border-radius: 12px;
+  background: linear-gradient(180deg, rgba(4,8,16,.82), rgba(4,8,16,.68));
+  border: 1px solid var(--panel-border);
+  backdrop-filter: blur(10px);
+  opacity: 0; pointer-events: none;
+  transition: opacity .28s ease, transform .28s cubic-bezier(.2,.8,.25,1);
+}
+.caption-bar.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.caption-bar.user { border-color: rgba(255,255,255,.14); }
+.caption-bar.user .caption-who { color: var(--text-dim); border-color: rgba(255,255,255,.16); }
+
+.caption-who {
+  flex: 0 0 auto; margin-top: 1px;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 2px;
+  padding: 3px 7px; border-radius: 6px;
+  color: var(--accent); border: 1px solid var(--accent-soft);
+}
+.caption-text {
+  margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--text-dim);
+  max-height: 4.7em; overflow: hidden;
+}
+.caption-text .said { color: #fff; }
+.caption-text .cursor {
+  display: inline-block; width: 7px; height: 2px; margin-left: 2px;
+  background: var(--accent); vertical-align: baseline;
+  animation: cap-blink 1s steps(2) infinite;
+}
+@keyframes cap-blink { 0%,100% { opacity: 1; } 50% { opacity: .2; } }
