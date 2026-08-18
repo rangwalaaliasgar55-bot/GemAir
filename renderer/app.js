@@ -16,7 +16,9 @@ const MOCK_MEMORY = {
   ],
   transcript: [],
   notes: [{ id: 'n1', text: 'Welcome to GemAI — your persistent notebook.' }],
-  reminders: []
+  reminders: [],
+  todos: [],
+  summary: ''
 };
 
 const api = {
@@ -31,7 +33,7 @@ const api = {
       memPercent: Math.round((used / total) * 100), uptime: 3600 * 14, loadavg: [0.8, 1.1, 1.3]
     };
   },
-  async getProfile() { return window.gemai ? window.gemai.getProfile() : { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en' }, memoryOn: true, allowShell: false }; },
+  async getProfile() { return window.gemai ? window.gemai.getProfile() : { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en' }, memoryOn: true, allowShell: false, wakeWord: false }; },
   async setProfile(d) { if (window.gemai) return window.gemai.setProfile(d); },
 
   async aiChat(config, messages) {
@@ -39,23 +41,30 @@ const api = {
     await sleep(700);
     return { ok: true, reply: offlineBrain(messages[messages.length - 1].content) };
   },
+  async aiChatStream(config, messages, onDelta) {
+    if (window.gemai) return window.gemai.aiChatStream(config, messages, onDelta);
+    const text = offlineBrain(messages[messages.length - 1].content);
+    for (const ch of text) { onDelta(ch); await sleep(18); }
+    return { ok: true, reply: text };
+  },
+  async aiSummarize(config, text) { return window.gemai ? window.gemai.aiSummarize(config, text) : { ok: true, summary: null }; },
   async aiOffline(text) {
     if (window.gemai) return window.gemai.aiOffline(text);
     return { ok: true, reply: offlineBrain(text) };
   },
 
   // memory
-  async memoryGet() { return window.gemai ? window.gemai.memoryGet() : JSON.parse(JSON.stringify(MOCK_MEMORY)); },
-  async memoryAppend(role, content) { if (window.gemai) window.gemai.memoryAppend(role, content); },
-  async memoryClearTranscript() { if (window.gemai) window.gemai.memoryClearTranscript(); },
-  async memoryAddFact(fact) { if (window.gemai) window.gemai.memoryAddFact(fact); },
-  async memoryDeleteFact(id) { if (window.gemai) window.gemai.memoryDeleteFact(id); },
-  async memoryAddNote(text) { if (window.gemai) window.gemai.memoryAddNote(text); },
-  async memoryDeleteNote(id) { if (window.gemai) window.gemai.memoryDeleteNote(id); },
-  async memoryAddReminder(text, at) { if (window.gemai) window.gemai.memoryAddReminder(text, at); },
-  async memoryDeleteReminder(id) { if (window.gemai) window.gemai.memoryDeleteReminder(id); },
-  async memoryMarkReminder(id, done) { if (window.gemai) window.gemai.memoryMarkReminder(id, done); },
-  async memoryExtract(config, u, a) { return window.gemai ? window.gemai.memoryExtract(config, u, a) : 0; },
+  async memoryGet() { if (window.gemai) return window.gemai.memoryGet(); return JSON.parse(JSON.stringify(MOCK_MEMORY)); },
+  async memoryAppend(role, content) { if (window.gemai) return window.gemai.memoryAppend(role, content); MOCK_MEMORY.transcript.push({ role, content, ts: Date.now() }); },
+  async memoryClearTranscript() { if (window.gemai) return window.gemai.memoryClearTranscript(); MOCK_MEMORY.transcript = []; },
+  async memoryAddFact(fact) { if (window.gemai) return window.gemai.memoryAddFact(fact); const t = typeof fact === 'string' ? fact : fact.text; if (!MOCK_MEMORY.facts.some(f => f.text === t)) MOCK_MEMORY.facts.push({ id: 'm' + Date.now(), text: t, category: fact.category || 'fact', importance: 1 }); },
+  async memoryDeleteFact(id) { if (window.gemai) return window.gemai.memoryDeleteFact(id); MOCK_MEMORY.facts = MOCK_MEMORY.facts.filter(f => f.id !== id); },
+  async memoryAddNote(text) { if (window.gemai) return window.gemai.memoryAddNote(text); MOCK_MEMORY.notes.unshift({ id: 'n' + Date.now(), text }); },
+  async memoryDeleteNote(id) { if (window.gemai) return window.gemai.memoryDeleteNote(id); MOCK_MEMORY.notes = MOCK_MEMORY.notes.filter(n => n.id !== id); },
+  async memoryAddReminder(text, at) { if (window.gemai) return window.gemai.memoryAddReminder(text, at); MOCK_MEMORY.reminders.push({ id: 'r' + Date.now(), text, at, done: false, notified: false }); },
+  async memoryDeleteReminder(id) { if (window.gemai) return window.gemai.memoryDeleteReminder(id); MOCK_MEMORY.reminders = MOCK_MEMORY.reminders.filter(r => r.id !== id); },
+  async memoryMarkReminder(id, done) { if (window.gemai) return window.gemai.memoryMarkReminder(id, done); const r = MOCK_MEMORY.reminders.find(r => r.id === id); if (r) r.done = !!done; },
+  async memoryExtract(config, u, a) { if (window.gemai) return window.gemai.memoryExtract(config, u, a); const facts = localExtract(u); let n = 0; for (const f of facts) { if (!MOCK_MEMORY.facts.some(x => x.text === f.text)) { MOCK_MEMORY.facts.push({ id: 'm' + Date.now(), text: f.text, category: f.category, importance: 1 }); n++; } } return n; },
 
   async saveCode(content, name) {
     if (window.gemai) return window.gemai.saveCode(content, name);
@@ -93,9 +102,9 @@ let profile = {
   name: 'Commander', theme: 'crimson',
   ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' },
   voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' },
-  memoryOn: true, allowShell: false
+  memoryOn: true, allowShell: false, wakeWord: false
 };
-let memory = { facts: [], transcript: [], notes: [], reminders: [] };
+let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], summary: '' };
 
 let listening = false, recognition = null, isRunning = false;
 const chatHistory = []; // working context window
@@ -137,9 +146,9 @@ function applyTheme(t) {
 // ---------------------------------------------------------------------------
 setInterval(() => {
   const now = new Date();
-  $('#liveClock').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  $('#liveClock').textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
   $('#liveDate').textContent = now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
-  const utc = $('#utcTime'); if (utc) utc.textContent = now.toISOString().slice(11, 19);
+  const utc = $('#utcTime'); if (utc) utc.textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'UTC' });
 }, 1000);
 
 // ---------------------------------------------------------------------------
@@ -283,12 +292,17 @@ function addMessage(role, text, opts = {}) {
   const log = $('#chatLog');
   const div = document.createElement('div');
   div.className = 'msg ' + role;
-  if (role === 'ai' || role === 'user') {
-    const label = document.createElement('div');
-    label.className = 'label';
-    label.textContent = role === 'ai' ? 'GEMAI' : (profile.name || 'YOU').toUpperCase();
-    div.appendChild(label);
-  }
+  const head = document.createElement('div');
+  head.className = 'msg-head';
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = role === 'ai' ? '◈ GEMAI' : (profile.name || 'YOU').toUpperCase();
+  head.appendChild(label);
+  const ts = document.createElement('span');
+  ts.className = 'msg-time';
+  ts.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+  head.appendChild(ts);
+  div.appendChild(head);
   const p = document.createElement('p');
   if (opts.typing) p.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
   else if (opts.html) p.innerHTML = opts.html;
@@ -297,6 +311,20 @@ function addMessage(role, text, opts = {}) {
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
   return div;
+}
+
+// Render an inline image when the reply is/contains an image URL
+function renderImageIfAny(p, text) {
+  const urlMatch = String(text).match(/(https?:\/\/[^\s"'<>]+\.(?:png|jpe?g|webp|gif)(?:\?[^\s"'<>]*)?)/i);
+  if (!urlMatch) return false;
+  const wrap = document.createElement('div');
+  wrap.className = 'chat-image';
+  const img = document.createElement('img');
+  img.src = urlMatch[1];
+  img.onerror = () => wrap.remove();
+  wrap.appendChild(img);
+  p.appendChild(wrap);
+  return true;
 }
 
 // Lightweight markdown: code fences + inline code
@@ -441,42 +469,77 @@ async function sendMessage(text) {
 
   let reply;
   if (useAI) {
-    // Use the user's key ONLY — no silent fallback.
+    // Use the user's key ONLY — no silent fallback. Stream tokens live.
     chatHistory.push({ role: 'user', content: text });
     const sys = buildSystemPrompt();
-    const res = await api.aiChat(cfg, [sys, ...chatHistory.slice(-16)]);
+    const replyEl = typing.querySelector('p');
+    typewriterToken++;
+    let acc = '';
+    let streamed = false;
+    const res = await api.aiChatStream(cfg, [sys, ...chatHistory.slice(-16)], (delta) => {
+      if (!streamed) { replyEl.innerHTML = ''; streamed = true; }
+      acc += delta;
+      replyEl.textContent = acc;
+      $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
+    });
     if (res.ok) {
-      reply = res.reply;
+      reply = res.reply || acc;
+      if (!streamed) { renderReply(replyEl, reply); } // fallback render
       chatHistory.push({ role: 'assistant', content: reply });
       if (profile.memoryOn) {
         api.memoryExtract(cfg, text, reply).then(async (n) => {
-          if (n > 0) { await loadMemory(); renderAllMemory(); animateCircuits(); addMessage('system-msg', `🧠 +${n} new memories stored.`); }
+          if (n > 0) { await loadMemory(); renderAllMemory(); animateCircuits(); toast('MEMORY', `+${n} new memories stored`, '🧠'); }
         });
       }
     } else {
       reply = '⚠ ' + humanError(res.error) + '\n\n(Using your configured AI only — fix the key in Settings → AI Brain.)';
+      renderReply(replyEl, reply);
     }
   } else {
     const res = await api.aiOffline(text);
     reply = res.reply;
+    const replyEl = typing.querySelector('p');
+    typewriterToken++;
+    await renderReply(replyEl, reply);
     if (profile.memoryOn) {
       const facts = localExtract(text);
       if (facts.length) { for (const f of facts) await api.memoryAddFact(f); await loadMemory(); renderAllMemory(); animateCircuits(); }
     }
   }
 
-  // persist transcript + render reply (human-like typing)
-  const replyEl = typing.querySelector('p');
-  typewriterToken++; // cancel any prior typewriter
-  await renderReply(replyEl, reply);
+  // image rendering if the reply contains an image URL
+  renderImageIfAny(typing.querySelector('p'), reply);
   $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
+
   await api.memoryAppend('user', text);
   await api.memoryAppend('assistant', reply);
   await loadMemory();
   updateTranscriptCount();
   animateCircuits();
 
+  maybeConsolidateMemory();
+
   speak(reply);
+}
+
+// Periodically summarize older transcript into durable long-term memory
+let lastConsolidation = 0;
+async function maybeConsolidateMemory() {
+  const cfg = profile.ai || {};
+  if (!cfg.apiKey || !cfg.baseURL) return;
+  if (Date.now() - lastConsolidation < 10 * 60 * 1000) return; // at most every 10 min
+  if ((memory.transcript || []).length < 160) return;
+  lastConsolidation = Date.now();
+  const older = memory.transcript.slice(0, -60).map((m) => (m.role === 'user' ? 'User: ' : 'GemAI: ') + m.content).join('\n');
+  const res = await api.aiSummarize(cfg, older);
+  if (res.ok && res.summary) {
+    await api.memoryAddFact({ text: res.summary, category: 'summary' });
+    await api.memoryClearTranscript();
+    for (const m of memory.transcript.slice(-60)) await api.memoryAppend(m.role, m.content);
+    await loadMemory();
+    renderAllMemory();
+    toast('MEMORY', 'Older conversation consolidated into long-term memory.', '🧠');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -709,6 +772,7 @@ function openSettings() {
   $('#setNeuralVoice').value = profile.voice?.neuralVoice || 'en';
   $('#setMemoryOn').checked = profile.memoryOn !== false;
   $('#setAllowShell').checked = !!profile.allowShell;
+  $('#setWakeWord').checked = !!profile.wakeWord;
   populateVoices(); populateNeuralVoices(); updateAiHint();
   $('#settingsModal').classList.add('open');
 }
@@ -804,10 +868,12 @@ function bindEvents() {
     profile.voice.name = $('#setVoice').value;
     profile.memoryOn = $('#setMemoryOn').checked;
     profile.allowShell = $('#setAllowShell').checked;
+    profile.wakeWord = $('#setWakeWord').checked;
     persistProfile().then(() => { updateLinkMode(); closeSettings(); });
+    configureWakeWord(profile.wakeWord);
   });
   $('#resetBtn').addEventListener('click', async () => {
-    profile = { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' }, memoryOn: true, allowShell: false };
+    profile = { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' }, memoryOn: true, allowShell: false, wakeWord: false };
     await persistProfile(); applyTheme('crimson'); updateLinkMode(); openSettings();
   });
   $$('.preset').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
@@ -820,6 +886,36 @@ function bindEvents() {
     $('#chatInput').value = b.dataset.cmd;
     $('#chatInput').focus();
   }));
+
+  // test AI connection
+  $('#testConn').addEventListener('click', async () => {
+    const resEl = $('#testResult');
+    resEl.className = 'test-result'; resEl.textContent = 'Testing…';
+    const cfg = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
+    try {
+      const res = await api.aiChat(cfg, [{ role: 'user', content: 'Reply with exactly: OK' }]);
+      if (res.ok) { resEl.textContent = '✓ Connected'; resEl.classList.add('ok'); }
+      else { resEl.textContent = '✗ ' + humanError(res.error); resEl.classList.add('bad'); }
+    } catch (e) { resEl.textContent = '✗ ' + e.message; resEl.classList.add('bad'); }
+  });
+
+  // command palette
+  const palette = $('#palette'), pInput = $('#paletteInput');
+  function openPalette() { palette.classList.add('open'); setTimeout(() => pInput.focus(), 30); }
+  function closePalette() { palette.classList.remove('open'); pInput.value = ''; }
+  $$('.accent-link[data-pal]').forEach((l) => l.addEventListener('click', () => { switchView(l.dataset.pal); closePalette(); }));
+  pInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { const v = pInput.value.trim(); closePalette(); if (v) { switchView('assistant'); sendMessage(v); } }
+    if (e.key === 'Escape') closePalette();
+  });
+
+  // keyboard shortcuts
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') { $('#chatInput').focus(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === ',') { openSettings(); }
+    else if (e.key === 'Escape') { closeSettings(); closePalette(); }
+  });
 
   // voice preview + sliders
   $('#previewVoice').addEventListener('click', () => {
@@ -847,16 +943,8 @@ function bindEvents() {
 
   // start AI loop
   $('#startBtn').addEventListener('click', () => {
-    isRunning = !isRunning;
-    $('#startBtn').classList.toggle('running', isRunning);
-    $('#startLabel').textContent = isRunning ? 'AI ONLINE' : 'START AI';
-    $('#orbStatus').textContent = isRunning ? 'LISTENING · SPEAK NOW' : 'STANDBY';
-    $('#orbStatus').classList.toggle('active', isRunning);
-    if (isRunning) {
-      if (recognition) { try { recognition.start(); $('#micBtn').classList.add('recording'); } catch (e) {} }
-      addMessage('system-msg', 'AI online. Speak naturally — I\u2019m listening.');
-      speak('Systems online. How can I help?');
-    } else stopListening();
+    if (isRunning) { isRunning = false; $('#startBtn').classList.remove('running'); $('#startLabel').textContent = 'START AI'; $('#orbStatus').textContent = 'STANDBY'; $('#orbStatus').classList.remove('active'); stopListening(); }
+    else { startAiLoop(); addMessage('system-msg', 'AI online. Speak naturally — I\u2019m listening.'); speak('Systems online. How can I help?'); }
   });
 
   $('#micBtn').addEventListener('click', () => {
@@ -866,13 +954,58 @@ function bindEvents() {
   });
 
   $('#refreshNews').addEventListener('click', refreshHeadlines);
-  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSettings(); });
 
   // reminders from main process
   api.onReminder((r) => {
     addMessage('system-msg', `⏰ REMINDER: ${r.text}`);
     speak('Reminder: ' + r.text);
   });
+
+  // tray "start listening"
+  api.onWakeToggle((on) => { if (on) startAiLoop(); });
+
+  configureWakeWord(profile.wakeWord);
+}
+
+// Start the assistant loop (used by START button + wake word)
+function startAiLoop() {
+  isRunning = true;
+  $('#startBtn').classList.add('running');
+  $('#startLabel').textContent = 'AI ONLINE';
+  $('#orbStatus').textContent = 'LISTENING · SPEAK NOW';
+  $('#orbStatus').classList.add('active');
+  if (recognition) { try { recognition.start(); $('#micBtn').classList.add('recording'); } catch (e) {} }
+}
+
+// Continuous wake-word listening ("Hey GemAI")
+let wakeRecognition = null;
+function configureWakeWord(enabled) {
+  if (!enabled) {
+    if (wakeRecognition) { try { wakeRecognition.stop(); } catch (e) {} }
+    wakeRecognition = null;
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  if (!wakeRecognition) {
+    const r = new SR();
+    r.continuous = true; r.interimResults = true; r.lang = 'en-US';
+    r.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = (e.results[i][0].transcript || '').toLowerCase();
+        if (/hey gemai|hey gem|a gemai|hi gemai/.test(t)) {
+          addMessage('system-msg', 'Wake word detected — going online.');
+          startAiLoop();
+          speak('Yes? I am listening.');
+        }
+      }
+    };
+    r.onerror = () => { /* silently restart handled by onend */ };
+    r.onend = () => { if (profile.wakeWord && wakeRecognition) { try { r.start(); } catch (e) {} } };
+    wakeRecognition = r;
+  }
+  try { wakeRecognition.start(); } catch (e) {}
+  addMessage('system-msg', 'Wake word armed — say "Hey GemAI" anytime.');
 }
 
 function stopListening() {
@@ -923,6 +1056,8 @@ async function boot() {
   recognition = initRecognition();
   if (speechSynthesis) speechSynthesis.onvoiceschanged = populateVoices;
   try { $('#verTag').textContent = 'v' + (await api.version()); } catch (e) {}
+
+  if (profile.wakeWord) configureWakeWord(true);
 
   // speak the greeting
   if (!last.length) setTimeout(() => speak(greeting), 800);

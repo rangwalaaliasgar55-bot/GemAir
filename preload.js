@@ -7,6 +7,20 @@ contextBridge.exposeInMainWorld('gemai', {
   getProfile: () => ipcRenderer.invoke('profile:get'),
   setProfile: (data) => ipcRenderer.invoke('profile:set', data),
   aiChat: (config, messages) => ipcRenderer.invoke('ai:chat', config, messages),
+  aiChatStream: (config, messages, onDelta) => {
+    const reqId = 'r' + Math.random().toString(36).slice(2);
+    return new Promise((resolve, reject) => {
+      const onChunk = (_e, data) => { if (data.reqId === reqId) onDelta(data.delta); };
+      const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply }); } };
+      const onErr = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: false, error: data.error }); } };
+      const cleanup = () => { ipcRenderer.removeListener('ai:chunk', onChunk); ipcRenderer.removeListener('ai:streamEnd', onEnd); ipcRenderer.removeListener('ai:streamError', onErr); };
+      ipcRenderer.on('ai:chunk', onChunk);
+      ipcRenderer.on('ai:streamEnd', onEnd);
+      ipcRenderer.on('ai:streamError', onErr);
+      ipcRenderer.invoke('ai:chatStream', reqId, config, messages).catch((e) => { cleanup(); reject(e); });
+    });
+  },
+  aiSummarize: (config, text) => ipcRenderer.invoke('ai:summarize', config, text),
   aiOffline: (text) => ipcRenderer.invoke('ai:offline', text),
   getHeadlines: (limit) => ipcRenderer.invoke('news:get', limit),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
@@ -29,5 +43,6 @@ contextBridge.exposeInMainWorld('gemai', {
   saveCode: (content, suggestedName) => ipcRenderer.invoke('file:saveCode', content, suggestedName),
 
   // events (main -> renderer)
-  onReminder: (cb) => ipcRenderer.on('reminder:due', (_e, reminder) => cb(reminder))
+  onReminder: (cb) => ipcRenderer.on('reminder:due', (_e, reminder) => cb(reminder)),
+  onWakeToggle: (cb) => ipcRenderer.on('wake:toggle', (_e, on) => cb(on))
 });

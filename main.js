@@ -4,7 +4,7 @@
 // real tool-calling (weather, web search, reminders, notes, volume, system
 // control, screenshots), and it runs on YOUR AI key (Groq / OpenAI / any
 // OpenAI-compatible endpoint) — or fully offline with the built-in brain.
-const { app, BrowserWindow, ipcMain, shell, dialog, Notification, desktopCapturer, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Notification, desktopCapturer, clipboard, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -16,6 +16,8 @@ const PROFILE_FILE = path.join(userDataDir, 'gemai-profile.json');
 const MEMORY_FILE = path.join(userDataDir, 'gemai-memory.json');
 
 let mainWindow = null;
+let tray = null;
+let isQuitting = false;
 
 // ---------------------------------------------------------------------------
 // Window
@@ -43,16 +45,46 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // Minimize / close to tray instead of quitting
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+      if (process.platform === 'darwin') app.dock.hide();
+    }
+  });
+
   mainWindow.on('closed', () => { mainWindow = null; });
+}
+
+function createTray() {
+  let icon;
+  const iconPath = path.join(__dirname, 'build', 'icon.png');
+  try { icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }); }
+  catch { icon = nativeImage.createEmpty(); }
+  tray = new Tray(icon);
+  tray.setToolTip('GemAI — your personal AI');
+  const menu = Menu.buildFromTemplate([
+    { label: 'Open GemAI', click: () => { mainWindow.show(); mainWindow.focus(); if (process.platform === 'darwin') app.dock.show(); } },
+    { label: 'Start listening', click: () => mainWindow.webContents.send('wake:toggle', true) },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { isQuitting = true; app.quit(); } }
+  ]);
+  tray.setContextMenu(menu);
+  tray.on('click', () => { mainWindow.show(); mainWindow.focus(); });
 }
 
 app.whenReady().then(() => {
   createWindow();
+  createTray();
   startReminderScheduler();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    else mainWindow.show();
   });
 });
+
+app.on('before-quit', () => { isQuitting = true; });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -75,7 +107,7 @@ function writeJSON(file, data) {
 const readProfile = () => readJSON(PROFILE_FILE, {});
 const writeProfile = (d) => writeJSON(PROFILE_FILE, d);
 
-const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [] };
+const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], summary: '' };
 const readMemory = () => {
   const m = readJSON(MEMORY_FILE, EMPTY_MEMORY);
   // ensure shape
@@ -177,7 +209,19 @@ const TOOLS = [
   { type: 'function', function: { name: 'search_files', description: 'Search the computer for files by name.', parameters: { type: 'object', properties: { query: { type: 'string' }, path: { type: 'string' } }, required: ['query'] } } },
   { type: 'function', function: { name: 'get_clipboard', description: 'Read the current clipboard text.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'set_clipboard', description: 'Write text to the clipboard.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
-  { type: 'function', function: { name: 'run_command', description: 'Run a shell command on the computer (requires permission in Settings).', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } }
+  { type: 'function', function: { name: 'run_command', description: 'Run a shell command on the computer (requires permission in Settings).', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },
+  { type: 'function', function: { name: 'get_world_time', description: 'Get the current time in another city/country.', parameters: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] } } },
+  { type: 'function', function: { name: 'translate', description: 'Translate text between languages (e.g. "hello" from en to hi).', parameters: { type: 'object', properties: { text: { type: 'string' }, to: { type: 'string', description: 'Target language code, e.g. hi, es, fr, en' }, from: { type: 'string', description: 'Source language code (optional, auto-detect)' } }, required: ['text', 'to'] } } },
+  { type: 'function', function: { name: 'get_crypto_price', description: 'Get the current price of a cryptocurrency in USD/INR.', parameters: { type: 'object', properties: { coin: { type: 'string', description: 'e.g. bitcoin, ethereum, solana' } }, required: ['coin'] } } },
+  { type: 'function', function: { name: 'define_word', description: 'Get the dictionary definition of an English word.', parameters: { type: 'object', properties: { word: { type: 'string' } }, required: ['word'] } } },
+  { type: 'function', function: { name: 'generate_image', description: 'Generate an AI image from a text prompt (free). Returns an image URL to display.', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } } },
+  { type: 'function', function: { name: 'convert_currency', description: 'Convert an amount between currencies (e.g. 100 USD to INR).', parameters: { type: 'object', properties: { amount: { type: 'number' }, from: { type: 'string' }, to: { type: 'string' } }, required: ['amount', 'from', 'to'] } } },
+  { type: 'function', function: { name: 'send_email', description: 'Open a pre-filled email draft in the user\'s mail app.', parameters: { type: 'object', properties: { to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } }, required: ['to'] } } },
+  { type: 'function', function: { name: 'open_whatsapp', description: 'Open a WhatsApp chat with a phone number and pre-filled message.', parameters: { type: 'object', properties: { phone: { type: 'string', description: 'Phone number with country code, digits only' }, text: { type: 'string' } }, required: ['phone'] } } },
+  { type: 'function', function: { name: 'search_memory', description: 'Search the user\'s long-term memory for facts matching a query.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+  { type: 'function', function: { name: 'list_todos', description: 'List the user\'s to-do items.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'add_todo', description: 'Add a to-do item.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
+  { type: 'function', function: { name: 'complete_todo', description: 'Mark a to-do item as done by its text.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } }
 ];
 
 function safeEval(expr) {
@@ -343,6 +387,113 @@ function runCommand(command) {
   });
 }
 
+const CITY_TZ = {
+  london: 'Europe/London', newyork: 'America/New_York', nyc: 'America/New_York', losangeles: 'America/Los_Angeles',
+  sanfrancisco: 'America/Los_Angeles', chicago: 'America/Chicago', toronto: 'America/Toronto', tokyo: 'Asia/Tokyo',
+  sydney: 'Australia/Sydney', paris: 'Europe/Paris', berlin: 'Europe/Berlin', dubai: 'Asia/Dubai',
+  singapore: 'Asia/Singapore', mumbai: 'Asia/Kolkata', delhi: 'Asia/Kolkata', karachi: 'Asia/Karachi',
+  lahoren: 'Asia/Karachi', dhaka: 'Asia/Dhaka', beijing: 'Asia/Shanghai', shanghai: 'Asia/Shanghai',
+  moscow: 'Europe/Moscow', istanbul: 'Europe/Istanbul', cairo: 'Africa/Cairo', lagos: 'Africa/Lagos'
+};
+
+function getWorldTime(city) {
+  const q = String(city || '').toLowerCase().trim().replace(/[^a-z]/g, '');
+  let tz = CITY_TZ[q];
+  if (!tz) {
+    for (const k of Object.keys(CITY_TZ)) if (k.startsWith(q) || q.startsWith(k)) { tz = CITY_TZ[k]; break; }
+  }
+  if (!tz) return { error: 'Unknown city. Try: London, New York, Tokyo, Dubai, Mumbai, Karachi, Sydney…' };
+  try {
+    const s = new Date().toLocaleString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true });
+    return { city, time: s, timezone: tz };
+  } catch { return { error: 'Could not determine time for ' + city }; }
+}
+
+async function translateText(text, to, from) {
+  const pair = (from ? from + '|' : '') + to;
+  const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + encodeURIComponent(pair);
+  const d = await fetch(url).then((r) => r.json());
+  if (d.responseStatus === 200 && d.responseData && d.responseData.translatedText) {
+    return { translation: d.responseData.translatedText, to, from: from || 'auto' };
+  }
+  return { error: 'Translation failed.' };
+}
+
+async function getCryptoPrice(coin) {
+  const id = String(coin || '').toLowerCase().trim();
+  const d = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd,inr`).then((r) => r.json());
+  if (!d[id]) return { error: 'Coin not found: ' + coin };
+  return { coin: id, usd: d[id].usd, inr: d[id].inr };
+}
+
+async function defineWord(word) {
+  const w = String(word || '').trim();
+  const d = await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(w)).then((r) => r.json());
+  if (!Array.isArray(d) || !d[0]) return { error: 'No definition found for "' + w + '".' };
+  const m = d[0].meanings && d[0].meanings[0];
+  const def = m && m.definitions && m.definitions[0];
+  return {
+    word: d[0].word,
+    phonetic: d[0].phonetic || '',
+    partOfSpeech: m ? m.partOfSpeech : '',
+    definition: def ? def.definition : '',
+    example: def && def.example ? def.example : ''
+  };
+}
+
+function generateImage(prompt) {
+  const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(String(prompt || '').trim()) + '?width=768&height=768&nologo=true';
+  return { imageUrl: url, prompt: String(prompt).trim() };
+}
+
+async function convertCurrency(amount, from, to) {
+  const f = String(from).toUpperCase(), t = String(to).toUpperCase();
+  const d = await fetch(`https://api.frankfurter.app/latest?from=${f}&to=${t}`).then((r) => r.json());
+  if (!d.rates || d.rates[t] === undefined) return { error: 'Currency conversion failed (unsupported currency?).' };
+  return { amount, from: f, to: t, result: Math.round(amount * d.rates[t] * 100) / 100, rate: d.rates[t] };
+}
+
+function sendEmail(to, subject, body) {
+  const url = 'mailto:' + encodeURIComponent(to) + '?subject=' + encodeURIComponent(subject || '') + '&body=' + encodeURIComponent(body || '');
+  shell.openExternal(url);
+  return { ok: true, to };
+}
+
+function openWhatsApp(phone, text) {
+  const p = String(phone || '').replace(/[^\d]/g, '');
+  const url = 'https://wa.me/' + p + (text ? '?text=' + encodeURIComponent(text) : '');
+  shell.openExternal(url);
+  return { ok: true, phone: p };
+}
+
+function searchMemory(query) {
+  const m = readMemory();
+  const q = String(query || '').toLowerCase();
+  const scored = m.facts.map((f) => {
+    const t = f.text.toLowerCase();
+    let score = 0;
+    const words = q.split(/\s+/);
+    for (const w of words) if (w && t.includes(w)) score += 1;
+    score += (f.importance || 0) * 0.1;
+    return { f, score };
+  }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
+  return scored.length ? { matches: scored.map((x) => x.f.text) } : { matches: [], note: 'No matching memories.' };
+}
+
+function listTodos() {
+  const m = readMemory();
+  return m.todos.map((t, i) => ({ index: i, text: t.text, done: !!t.done }));
+}
+function addTodo(text) { const m = readMemory(); m.todos.unshift({ text, done: false, created: Date.now() }); writeMemory(m); return { ok: true }; }
+function completeTodo(text) {
+  const m = readMemory();
+  const q = String(text).toLowerCase();
+  const t = m.todos.find((x) => x.text.toLowerCase().includes(q) || q.includes(x.text.toLowerCase()));
+  if (t) t.done = true;
+  writeMemory(m);
+  return t ? { ok: true, todo: t.text } : { error: 'Todo not found: ' + text };
+}
+
 function parseWhen(text) {
   const t = String(text || '').trim();
   const rel = t.match(/in\s+(\d+)\s*(second|sec|s|minute|min|m|hour|hr|h|day|d)/i);
@@ -407,7 +558,7 @@ async function executeTool(name, args) {
   try {
     switch (name) {
       case 'get_current_time':
-        return { time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
+        return { time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) };
       case 'get_current_date':
         return { date: new Date().toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) };
       case 'get_weather':
@@ -447,6 +598,30 @@ async function executeTool(name, args) {
         return { ok: true };
       case 'run_command':
         return await runCommand(args.command);
+      case 'get_world_time':
+        return getWorldTime(args.city);
+      case 'translate':
+        return await translateText(args.text, args.to, args.from);
+      case 'get_crypto_price':
+        return await getCryptoPrice(args.coin);
+      case 'define_word':
+        return await defineWord(args.word);
+      case 'generate_image':
+        return generateImage(args.prompt);
+      case 'convert_currency':
+        return await convertCurrency(args.amount, args.from, args.to);
+      case 'send_email':
+        return sendEmail(args.to, args.subject, args.body);
+      case 'open_whatsapp':
+        return openWhatsApp(args.phone, args.text);
+      case 'search_memory':
+        return searchMemory(args.query);
+      case 'list_todos':
+        return listTodos();
+      case 'add_todo':
+        return addTodo(args.text);
+      case 'complete_todo':
+        return completeTodo(args.text);
       case 'calculate':
         return { result: safeEval(args.expression) };
       case 'set_reminder': {
@@ -512,7 +687,13 @@ function upsertFact(fact) {
 
 function factsForPrompt() {
   const m = readMemory();
-  return m.facts.slice(0, 80).map(f => `- ${f.text}`).join('\n');
+  const now = Date.now();
+  const scored = m.facts.map((f) => {
+    const age = now - (f.updated || f.created || now);
+    const recency = 1 / (1 + age / (7 * 86400000)); // fade over a week
+    return { f, score: (f.importance || 1) * 0.7 + recency * 3 };
+  }).sort((a, b) => b.score - a.score).slice(0, 80);
+  return scored.map((x) => `- ${x.f.text}`).join('\n');
 }
 
 // Extract durable facts from a conversation turn using the user's own model.
@@ -580,13 +761,119 @@ async function aiChat(config, messages) {
 }
 
 // ---------------------------------------------------------------------------
+// Streaming chat (Groq / OpenAI-compatible). Streams deltas for a live JARVIS feel.
+// ---------------------------------------------------------------------------
+async function streamRequest(base, key, model, messages, onDelta) {
+  const url = base + (base.endsWith('/chat/completions') ? '' : '/chat/completions');
+  const headers = { 'Content-Type': 'application/json' };
+  if (key) headers['Authorization'] = 'Bearer ' + key;
+  const body = { model, messages, temperature: 0.6, max_tokens: 1200, stream: true, tools: TOOLS, tool_choice: 'auto' };
+
+  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error('HTTP_' + res.status + (text ? ' ' + text.slice(0, 200) : ''));
+  }
+
+  let content = '';
+  const toolCalls = []; // [{id, name, args}]
+  const toolArgs = {};  // index -> accumulated args string
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith('data:')) continue;
+      const payload = t.slice(5).trim();
+      if (payload === '[DONE]') continue;
+      let json;
+      try { json = JSON.parse(payload); } catch { continue; }
+      const delta = json.choices && json.choices[0] && json.choices[0].delta;
+      if (!delta) continue;
+      if (delta.content) { content += delta.content; onDelta(delta.content); }
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index != null ? tc.index : 0;
+          if (!toolCalls[idx]) toolCalls[idx] = { id: tc.id || ('call_' + idx), name: '', args: '' };
+          if (tc.id) toolCalls[idx].id = tc.id;
+          if (tc.function && tc.function.name) toolCalls[idx].name += tc.function.name;
+          if (tc.function && tc.function.arguments) toolCalls[idx].args += tc.function.arguments;
+        }
+      }
+    }
+  }
+  return { content, toolCalls: toolCalls.filter(Boolean) };
+}
+
+async function aiChatStream(config, messages, onDelta) {
+  const base = normalizeBaseURL(config.baseURL);
+  const key = (config.apiKey || '').trim();
+  const model = (config.model || 'llama-3.3-70b-versatile').trim();
+  const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
+  if (!base) throw new Error('NO_ENDPOINT');
+  if (!key && !isLocal) throw new Error('NO_KEY');
+
+  let msgs = [...messages];
+  let final = '';
+
+  for (let i = 0; i < 6; i++) {
+    const { content, toolCalls } = await streamRequest(base, key, model, msgs, onDelta);
+    if (toolCalls.length) {
+      // A tool call was requested mid-stream; execute and continue.
+      const assistantMsg = { role: 'assistant', content: content || null, tool_calls: toolCalls.map((tc) => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.args || '{}' } })) };
+      msgs.push(assistantMsg);
+      for (const tc of toolCalls) {
+        let args = {};
+        try { args = JSON.parse(tc.args || '{}'); } catch {}
+        const result = await executeTool(tc.name, args);
+        msgs.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
+      }
+      final = ''; // the real answer comes after tools
+      continue;
+    }
+    final = content;
+    if (final && final.trim()) break;
+  }
+  if (!final || !final.trim()) throw new Error('EMPTY_REPLY');
+  return final.trim();
+}
+
+// ---------------------------------------------------------------------------
+// Memory summarization (auto-consolidate old transcript)
+// ---------------------------------------------------------------------------
+async function summarizeTranscript(config, text) {
+  try {
+    const base = normalizeBaseURL(config.baseURL);
+    if (!base) return null;
+    const key = (config.apiKey || '').trim();
+    const isLocal = /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
+    if (!key && !isLocal) return null;
+    const model = (config.model || 'llama-3.3-70b-versatile').trim();
+    const msgs = [
+      { role: 'system', content: 'Summarize this conversation into 2-4 concise bullet points of durable facts about the user (preferences, projects, goals, context). Keep under 150 words. Plain text, no preamble.' },
+      { role: 'user', content: text.slice(0, 6000) }
+    ];
+    const msg = await callChat(base, key, model, msgs, null);
+    return (msg.content || '').trim();
+  } catch { return null; }
+}
+
+// ---------------------------------------------------------------------------
 // Offline brain (used ONLY when no key is configured)
 // ---------------------------------------------------------------------------
 async function offlineBrain(text) {
   const q = (text || '').toLowerCase().trim();
   if (!q) return "I didn't catch that. Say it again?";
 
-  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 
   if (/^(hi|hello|hey|salam|yo|good (morning|evening|afternoon))\b/.test(q) && q.length < 14)
     return 'Hello. GemAI online. All systems standing by. (I am running on the built-in offline brain — add a free Groq key in Settings for full intelligence.)';
@@ -710,7 +997,19 @@ ipcMain.handle('ai:chat', async (_e, config, messages) => {
   try { return { ok: true, reply: await aiChat(config, messages) }; }
   catch (err) { return { ok: false, error: err.message }; }
 });
+ipcMain.handle('ai:chatStream', async (e, reqId, config, messages) => {
+  const wc = e.sender;
+  try {
+    const reply = await aiChatStream(config, messages, (delta) => wc.send('ai:chunk', { reqId, delta }));
+    wc.send('ai:streamEnd', { reqId, reply });
+    return { ok: true, reqId, reply };
+  } catch (err) {
+    wc.send('ai:streamError', { reqId, error: err.message });
+    return { ok: false, reqId, error: err.message };
+  }
+});
 ipcMain.handle('ai:offline', async (_e, text) => ({ ok: true, reply: await offlineBrain(text) }));
+ipcMain.handle('ai:summarize', async (_e, config, text) => ({ ok: true, summary: await summarizeTranscript(config, text) }));
 
 ipcMain.handle('memory:get', () => readMemory());
 ipcMain.handle('memory:append', (_e, role, content) => {

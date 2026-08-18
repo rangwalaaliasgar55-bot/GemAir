@@ -317,6 +317,7 @@
             <button class="preset" data-preset="offline">Offline brain</button>
           </div>
           <div class="hint" id="aiStatusHint">No key set — running on the built-in offline brain.</div>
+          <button class="test-btn" id="testConn" type="button">🔌 TEST CONNECTION</button> <span class="test-result" id="testResult"></span>
           <label style="margin-top:12px" class="check-label">
             <input type="checkbox" id="setMemoryOn" checked /> Auto memory — remember facts about me across sessions (long-term memory)
           </label>
@@ -324,6 +325,9 @@
 
         <fieldset>
           <legend>VOICE <span class="dim">— natural female voice</span></legend>
+          <label class="check-label" style="margin-bottom:12px">
+            <input type="checkbox" id="setWakeWord" /> Wake word — always listen for "Hey GemAI" (starts the assistant when spoken)
+          </label>
           <label>Voice engine
             <select id="setVoiceMode">
               <option value="neural">Neural (smooth female — free, needs internet)</option>
@@ -357,6 +361,14 @@
         <button class="ghost-btn" id="resetBtn">Reset to defaults</button>
         <button class="primary-btn" id="saveBtn">SAVE &amp; APPLY</button>
       </div>
+    </div>
+  </div>
+
+  <!-- command palette -->
+  <div class="palette-backdrop" id="palette">
+    <div class="palette">
+      <input type="text" id="paletteInput" placeholder="Type a command or question…" autocomplete="off" />
+      <div class="palette-hint">⏎ ask AI · esc close · quick: <span class="accent-link" data-pal="system">system</span> · <span class="accent-link" data-pal="memory">memory</span> · <span class="accent-link" data-pal="world">world</span> · <span class="accent-link" data-pal="town">town</span> · <span class="accent-link" data-pal="settings">settings</span></div>
     </div>
   </div>
 
