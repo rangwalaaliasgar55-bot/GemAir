@@ -52,6 +52,12 @@ contextBridge.exposeInMainWorld('gemai', {
   // files
   saveCode: (content, suggestedName) => ipcRenderer.invoke('file:saveCode', content, suggestedName),
 
+  // report & backup
+  generateReport: () => ipcRenderer.invoke('report:generate'),
+  needsCheckIn: () => ipcRenderer.invoke('report:needsCheckIn'),
+  exportMemory: () => ipcRenderer.invoke('memory:export'),
+  importMemory: (data) => ipcRenderer.invoke('memory:import', data),
+
   // events (main -> renderer)
   onReminder: (cb) => ipcRenderer.on('reminder:due', (_e, reminder) => cb(reminder)),
   onWakeToggle: (cb) => ipcRenderer.on('wake:toggle', (_e, on) => cb(on))

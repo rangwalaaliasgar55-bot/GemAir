@@ -102,6 +102,19 @@
             </div>
 
             <div class="assistant-side">
+              <div class="hud-panel briefing">
+                <div class="briefing-top">
+                  <span class="briefing-greet" id="briefingGreet">—</span>
+                  <span class="briefing-date" id="briefingDate"></span>
+                </div>
+                <div class="briefing-row">
+                  <span class="briefing-chip" id="briefWeather" title="Weather">🌤 Loading…</span>
+                  <span class="briefing-chip" id="briefGoal" title="Top goal">🎯 —</span>
+                  <button class="briefing-chip as-btn" id="breatheBtn" title="Guided breathing">🌬 Breathe</button>
+                </div>
+                <div class="briefing-quote" id="briefQuote">“…”</div>
+              </div>
+
               <div class="hud-panel circuits">
                 <h3 class="panel-title">CORE CIRCUITS</h3>
                 <div class="circuit-row">
@@ -331,6 +344,17 @@
                 <button class="tip-chip" data-area="motivation">🔥 Motivation</button>
               </div>
               <div class="tip-box" id="tipBox">Tap a category for a practical tip, or just ask me in chat.</div>
+              <div class="wellness-actions">
+                <button class="refresh-btn" id="focusBtn" style="flex:1">🍅 FOCUS TIMER</button>
+                <button class="refresh-btn" id="weeklyReportBtn" style="flex:1">📊 WEEKLY REPORT</button>
+              </div>
+              <div class="focus-timer" id="focusTimer" hidden>
+                <div class="focus-time" id="focusTime">25:00</div>
+                <div class="focus-controls">
+                  <button class="mini-btn" id="focusToggle">▶</button>
+                  <button class="ghost-btn" id="focusReset">RESET</button>
+                </div>
+              </div>
             </div>
 
             <div class="hud-panel career-panel">
@@ -502,8 +526,44 @@
         </fieldset>
       </div>
       <div class="modal-foot">
+        <button class="ghost-btn" id="exportBtn">⬇ EXPORT MEMORY</button>
         <button class="ghost-btn" id="resetBtn">Reset to defaults</button>
         <button class="primary-btn" id="saveBtn">SAVE &amp; APPLY</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- guided breathing modal -->
+  <div class="modal-backdrop" id="breatheModal">
+    <div class="modal breathe-modal">
+      <div class="modal-head">
+        <h2>GUIDED BREATHING</h2>
+        <button class="icon-btn" id="breatheClose">✕</button>
+      </div>
+      <div class="modal-body breathe-body">
+        <div class="breathe-circle" id="breatheCircle"><span id="breatheLabel">READY</span><b id="breatheCount"></b></div>
+        <p class="breathe-hint dim" id="breatheHint">Follow the circle: it grows as you inhale and shrinks as you exhale. 4-7-8 calming breath.</p>
+        <div class="breathe-controls">
+          <button class="primary-btn" id="breatheStart">START</button>
+          <button class="ghost-btn" id="breatheStop">STOP</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- weekly report modal -->
+  <div class="modal-backdrop" id="reportModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>WEEKLY REPORT</h2>
+        <button class="icon-btn" id="reportClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="report-content" id="reportContent">Generating…</div>
+        <div class="modal-foot" style="padding:0;margin-top:14px;border:none">
+          <button class="ghost-btn" id="reportCopy">COPY</button>
+          <button class="primary-btn" id="reportClose2">CLOSE</button>
+        </div>
       </div>
     </div>
   </div>

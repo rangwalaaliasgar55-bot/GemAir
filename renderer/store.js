@@ -95,6 +95,7 @@
     async deleteInstruction(id) { const m = getMemory(); m.instructions = m.instructions.filter(i => i.id !== id); setMemory(m); return true; },
     async getProfile() { return read(LS_PROFILE, {}); },
     async setProfile(d) { write(LS_PROFILE, d); return true; },
+    setMemoryLocal(m) { setMemory(m); return true; },
 
     // optional Supabase: cloud mirror for cross-device persistence
     async initSupabase(config) {

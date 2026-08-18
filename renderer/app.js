@@ -105,7 +105,31 @@ const api = {
   openExternal(url) { if (window.gemai) window.gemai.openExternal(url); else window.open(url, '_blank'); },
   async version() { return window.gemai ? window.gemai.version() : '1.0.0'; },
   onReminder(cb) { if (window.gemai) window.gemai.onReminder(cb); },
-  onWakeToggle(cb) { if (window.gemai) window.gemai.onWakeToggle(cb); }
+  onWakeToggle(cb) { if (window.gemai) window.gemai.onWakeToggle(cb); },
+
+  // report & backup
+  async generateReport() {
+    if (window.gemai) return window.gemai.generateReport();
+    return buildReportOffline();
+  },
+  async needsCheckIn() {
+    if (window.gemai) return window.gemai.needsCheckIn();
+    const mood = (memory.mood || []).slice(-7);
+    if (mood.length < 3) return false;
+    const vals = mood.map((x) => x.valence || 0);
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    return avg < 0.2 && vals[vals.length - 1] < 0;
+  },
+  async exportMemory() {
+    if (window.gemai) return window.gemai.exportMemory();
+    return { memory, profile };
+  },
+  async importMemory(data) {
+    if (window.gemai) return window.gemai.importMemory(data);
+    if (data && data.memory) { memory = { ...memory, ...data.memory }; if (window.webStore) await window.webStore.setMemoryLocal(data.memory); }
+    if (data && data.profile) { profile = { ...profile, ...data.profile }; await persistProfile(); }
+    return { ok: true };
+  }
 };
 
 // trigger a browser download (web-mode "save to file")
@@ -1429,7 +1453,56 @@ function renderInstructions() {
     list.appendChild(div);
   });
 }
-function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); renderSkills(); renderInstructions(); renderMissionLog(); }
+function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); renderSkills(); renderInstructions(); renderMissionLog(); renderBriefing(); }
+
+// ---------------------------------------------------------------------------
+// Daily briefing
+// ---------------------------------------------------------------------------
+const QUOTES_OFFLINE = [
+  'The best way to predict the future is to invent it. — Alan Kay',
+  "It always seems impossible until it's done. — Nelson Mandela",
+  'The secret of getting ahead is getting started. — Mark Twain',
+  "Believe you can and you're halfway there. — Theodore Roosevelt",
+  'Do what you can, with what you have, where you are. — Theodore Roosevelt'
+];
+const BRIEFING_GREET = { morning: 'Good morning', afternoon: 'Good afternoon', evening: 'Good evening' };
+function renderBriefing() {
+  const greetEl = $('#briefingGreet');
+  if (!greetEl) return;
+  const h = new Date().getHours();
+  const period = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+  greetEl.textContent = `${BRIEFING_GREET[period]}, ${profile.name || 'Commander'}.`;
+  $('#briefingDate').textContent = new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  $('#briefQuote').textContent = '“' + QUOTES_OFFLINE[Math.floor(Math.random() * QUOTES_OFFLINE.length)] + '”';
+  const topGoal = (memory.goals || []).find((g) => !g.done);
+  $('#briefGoal').textContent = topGoal ? '🎯 ' + topGoal.text.slice(0, 40) : '🎯 No active goal — add one!';
+  // weather (free)
+  webGet('weather', { city: profile.city || 'Mumbai' }).then((w) => {
+    const el = $('#briefWeather');
+    if (w && w.temperature != null) el.textContent = `🌤 ${w.city.split(',')[0]}: ${w.temperature}°C ${w.condition}`;
+  }).catch(() => {});
+}
+
+function buildReportOffline() {
+  const now = new Date();
+  const weekAgo = now.getTime() - 7 * 86400000;
+  const mood = (memory.mood || []).filter((x) => (x.ts || 0) >= weekAgo);
+  const moodAvg = mood.length ? Math.round((mood.reduce((a, b) => a + (b.valence || 0), 0) / mood.length) * 100) : null;
+  const moodTrend = mood.length >= 2 ? (mood[mood.length - 1].valence - mood[0].valence) : 0;
+  const activeGoals = (memory.goals || []).filter((g) => !g.done);
+  const doneGoals = (memory.goals || []).filter((g) => g.done);
+  const lines = [];
+  lines.push(`### Weekly Report — ${now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}`);
+  lines.push('');
+  if (moodAvg != null) lines.push(`Mood: averaging ${moodAvg}/100 this week (${moodTrend > 0.15 ? 'trending up' : moodTrend < -0.15 ? 'trending down' : 'stable'}).`);
+  else lines.push('Mood: no check-ins yet this week.');
+  lines.push(`Goals: ${activeGoals.length} active, ${doneGoals.length} achieved.`);
+  lines.push(`Tasks: ${(memory.todos || []).filter((t) => t.done).length} done, ${(memory.todos || []).filter((t) => !t.done).length} open.`);
+  lines.push(`Knowledge: ${(memory.facts || []).length} memories, ${(memory.notes || []).length} notes.`);
+  if (activeGoals.length) { lines.push(''); lines.push('Focus for next week:'); activeGoals.slice(0, 3).forEach((g) => lines.push('• ' + g.text)); }
+  if (moodAvg != null && moodAvg < 40) { lines.push(''); lines.push('Gentle note: your mood has been lower this week. Be kind to yourself.'); }
+  return { report: lines.join('\n'), moodAvg, moodTrend };
+}
 
 // ---------------------------------------------------------------------------
 // Companion: mood, goals, wellness
@@ -1798,6 +1871,49 @@ function bindEvents() {
   $('#newAffirmation').addEventListener('click', showAffirmation);
   $$('.tip-chip').forEach((c) => c.addEventListener('click', () => showWellnessTip(c.dataset.area)));
 
+  // Guided breathing
+  $('#breatheBtn').addEventListener('click', () => $('#breatheModal').classList.add('open'));
+  $('#breatheClose').addEventListener('click', () => { stopBreathing(); $('#breatheModal').classList.remove('open'); });
+  $('#breatheStart').addEventListener('click', startBreathing);
+  $('#breatheStop').addEventListener('click', stopBreathing);
+
+  // Focus timer
+  let focusInterval = null, focusRemaining = 25 * 60, focusRunning = false;
+  $('#focusBtn').addEventListener('click', () => { $('#focusTimer').hidden = false; });
+  $('#focusToggle').addEventListener('click', () => {
+    focusRunning = !focusRunning;
+    $('#focusToggle').textContent = focusRunning ? '⏸' : '▶';
+    if (focusRunning) {
+      focusInterval = setInterval(() => {
+        focusRemaining--;
+        if (focusRemaining <= 0) { focusRemaining = 0; clearInterval(focusInterval); focusRunning = false; $('#focusToggle').textContent = '▶'; toast('FOCUS', 'Session complete — take a 5-minute break!', '🍅'); speak('Great work. Time for a short break.'); }
+        const m = Math.floor(focusRemaining / 60), s = focusRemaining % 60;
+        $('#focusTime').textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+      }, 1000);
+    } else clearInterval(focusInterval);
+  });
+  $('#focusReset').addEventListener('click', () => { clearInterval(focusInterval); focusRemaining = 25 * 60; focusRunning = false; $('#focusToggle').textContent = '▶'; $('#focusTime').textContent = '25:00'; });
+
+  // Weekly report
+  $('#weeklyReportBtn').addEventListener('click', async () => {
+    $('#reportModal').classList.add('open');
+    $('#reportContent').textContent = 'Generating…';
+    const res = await api.generateReport();
+    $('#reportContent').textContent = res.report;
+  });
+  $('#reportClose').addEventListener('click', () => $('#reportModal').classList.remove('open'));
+  $('#reportClose2').addEventListener('click', () => $('#reportModal').classList.remove('open'));
+  $('#reportCopy').addEventListener('click', () => {
+    try { navigator.clipboard.writeText($('#reportContent').textContent); toast('REPORT', 'Copied to clipboard.', '📋'); } catch (e) {}
+  });
+
+  // Export memory
+  $('#exportBtn').addEventListener('click', async () => {
+    const data = await api.exportMemory();
+    downloadText(JSON.stringify(data, null, 2), 'gemai-backup-' + Date.now() + '.json');
+    toast('BACKUP', 'Memory exported as JSON.', '⬇');
+  });
+
   // Companion: career prompts
   $$('.prompt-chip').forEach((c) => c.addEventListener('click', () => {
     switchView('assistant');
@@ -1968,6 +2084,42 @@ function stopListening() {
   if (recognition) { try { recognition.stop(); } catch (e) {} }
 }
 
+// ---------------------------------------------------------------------------
+// Guided breathing (4-7-8)
+// ---------------------------------------------------------------------------
+let breatheTimer = null;
+const BREATHE_PHASES = [
+  { label: 'INHALE', seconds: 4, cls: 'inhale' },
+  { label: 'HOLD', seconds: 7, cls: 'hold' },
+  { label: 'EXHALE', seconds: 8, cls: 'exhale' }
+];
+function startBreathing() {
+  const circle = $('#breatheCircle'), label = $('#breatheLabel'), count = $('#breatheCount');
+  let phase = 0, remaining = BREATHE_PHASES[0].seconds, cycles = 0;
+  stopBreathing();
+  function tick() {
+    count.textContent = remaining;
+    if (remaining <= 0) {
+      phase = (phase + 1) % 3;
+      if (phase === 0) { cycles++; if (cycles >= 4) { stopBreathing(); toast('BREATHING', 'Great job. Notice how much calmer you feel.', '🌬'); return; } }
+      remaining = BREATHE_PHASES[phase].seconds;
+    }
+    const p = BREATHE_PHASES[phase];
+    label.textContent = p.label;
+    circle.className = 'breathe-circle ' + p.cls;
+    remaining--;
+    breatheTimer = setTimeout(tick, 1000);
+  }
+  tick();
+}
+function stopBreathing() {
+  if (breatheTimer) { clearTimeout(breatheTimer); breatheTimer = null; }
+  const circle = $('#breatheCircle'), label = $('#breatheLabel'), count = $('#breatheCount');
+  if (circle) circle.className = 'breathe-circle';
+  if (label) label.textContent = 'READY';
+  if (count) count.textContent = '';
+}
+
 function parseLocalWhen(text) {
   const rel = text.match(/in\s+(\d+)\s*(second|sec|s|minute|min|m|hour|hr|h|day|d)/i);
   if (rel) {
@@ -2027,6 +2179,16 @@ async function boot() {
   try { $('#verTag').textContent = 'v' + (await api.version()); } catch (e) {}
 
   if (profile.wakeWord) configureWakeWord(true);
+
+  // Proactive check-in: if mood has been low & declining, reach out gently
+  try {
+    if (await api.needsCheckIn()) {
+      setTimeout(() => {
+        addMessage('system-msg', '💙 I noticed things have felt heavy lately. I\u2019m here — no pressure, but I\u2019m listening if you want to talk.');
+        toast('CHECK-IN', 'Been a rough few days? I\u2019m here for you.', '💙');
+      }, 2500);
+    }
+  } catch (e) {}
 
   // speak the greeting
   if (!last.length) setTimeout(() => speak(greeting), 800);

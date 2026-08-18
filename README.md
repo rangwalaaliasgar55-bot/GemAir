@@ -19,11 +19,17 @@ GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice a
 | 👋 **Personalized** | Greets you by name and time of day (12-hour clock), and remembers who you are forever. |
 | 🧠 **AI Brain (your key only)** | Paste a **free Groq key** (or OpenAI / OpenRouter / local Ollama). GemAI uses **that key and nothing else** — no silent fallback, no other provider. |
 | 🧠 **Long-Term Memory (never lost)** | Automatically extracts durable facts about you (name, preferences, projects, goals) using your own model, stores them **on disk forever**, and injects them into every conversation. Full chat history is also persisted and restored on every launch. |
-| 🛠 **Tool-calling (45+ tools)** | The AI can *do* things, not just chat. **Web**: live weather, **real web search (no AI needed)**, fetch & read any webpage, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, **AI image generation**, open URLs. **Computer**: open any app, list/read/write/search files, clipboard, volume, screenshots, system control, email draft, WhatsApp, to-dos, file-organizing "missions", and (optional) shell commands with per-command confirmation. |
+| 🛠 **Tool-calling (50+ tools)** | The AI can *do* things, not just chat. **Web**: live weather, **real web search (no AI needed)**, fetch & read any webpage, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, **AI image generation**, open URLs. **Computer**: open any app, list/read/write/search files, clipboard, volume, screenshots, system control, email draft, WhatsApp, to-dos, file-organizing "missions", and (optional) shell commands with per-command confirmation. **Mind & life**: quotes, breathing exercises, weekly reports, emotional support. |
 | ⏰ **World clock** | Time in any city, 12-hour format, live UTC clock. |
 | 🎹 **Command palette** | `Ctrl/Cmd+K` to ask or navigate from anywhere; `Ctrl/Cmd+L` focuses chat; `Ctrl/Cmd+,` opens settings. |
 | 💛 **Emotional intelligence** | Detects **17 emotions** in real time, adapts tone + voice + empathy, and responds with structured compassion when you're low, guilty or anxious (crisis-aware, with real helplines). |
 | 🗣 **Multilingual** | Understands and replies in English, Hindi, Urdu (incl. Roman/Hinglish), Spanish and French. |
+| 🌅 **Daily Briefing** | Greets you by name & time of day, shows live weather, your top goal, and a rotating quote. |
+| 🌬 **Guided breathing** | A 4-7-8 calming-breathing exercise with an animated circle — tap "Breathe" when anxious. |
+| 📊 **Weekly report** | One-tap life report built from your mood, goals, tasks and memory (works offline, no key). |
+| 🍅 **Focus timer** | A Pomodoro timer in Life Companion. |
+| 💙 **Proactive check-in** | If your mood has been low for a few days, GemAI gently reaches out on launch. |
+| ⬇ **Backup & restore** | Export your whole memory (memories, notes, goals, mood) as JSON and import it back. |
 | 🧭 **Life & Career Companion** | Helps with career decisions, study plans, relationships, health, finances, self-improvement and emotional support — like a friend, mentor and coach. |
 | 📊 **Mood tracking** | Visual mood graph, one-tap check-ins, affirmations and wellness tips (focus, stress, sleep, energy, motivation). |
 | 🎯 **Goals** | Persistent life/career/study/finance/health goals with categories and progress. |

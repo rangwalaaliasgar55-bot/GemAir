@@ -388,7 +388,10 @@ const TOOLS = [
   { type: 'function', function: { name: 'add_instruction', description: 'Remember a standing instruction / rule / preference the user wants you to always follow.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
   { type: 'function', function: { name: 'list_instructions', description: 'List the user\'s standing instructions.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'verify_claim', description: 'Fact-check a claim against real web sources and report whether it is true, false, or unverified, with sources.', parameters: { type: 'object', properties: { claim: { type: 'string' } }, required: ['claim'] } } },
-  { type: 'function', function: { name: 'provide_support', description: 'Give compassionate, non-judgmental emotional support when the user is feeling low, guilty, anxious, angry or distressed.', parameters: { type: 'object', properties: { text: { type: 'string', description: "What the user said, to understand their emotional state" } }, required: ['text'] } } }
+  { type: 'function', function: { name: 'provide_support', description: 'Give compassionate, non-judgmental emotional support when the user is feeling low, guilty, anxious, angry or distressed.', parameters: { type: 'object', properties: { text: { type: 'string', description: "What the user said, to understand their emotional state" } }, required: ['text'] } } },
+  { type: 'function', function: { name: 'get_quote', description: 'Get an inspiring quote.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'breathing_exercise', description: 'Give a guided calming breathing exercise (great for anxiety or stress).', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'generate_report', description: 'Generate the user\'s weekly life report from their mood, goals, tasks and memory.', parameters: { type: 'object', properties: {} } } }
 ];
 
 function safeEval(expr) {
@@ -734,6 +737,91 @@ const WELLNESS_TIPS = {
 function getWellnessTip(area) {
   const list = WELLNESS_TIPS[area] || WELLNESS_TIPS.motivation;
   return { area: area || 'motivation', tip: list[Math.floor(Math.random() * list.length)] };
+}
+
+const QUOTES = [
+  { text: 'The best way to predict the future is to invent it.', author: 'Alan Kay' },
+  { text: "It always seems impossible until it's done.", author: 'Nelson Mandela' },
+  { text: 'The only way to do great work is to love what you do.', author: 'Steve Jobs' },
+  { text: 'Success is not final, failure is not fatal: it is the courage to continue that counts.', author: 'Winston Churchill' },
+  { text: "Believe you can and you're halfway there.", author: 'Theodore Roosevelt' },
+  { text: 'You are never too old to set another goal or to dream a new dream.', author: 'C.S. Lewis' },
+  { text: 'Do what you can, with what you have, where you are.', author: 'Theodore Roosevelt' },
+  { text: "Everything you've ever wanted is on the other side of fear.", author: 'George Addair' },
+  { text: 'The secret of getting ahead is getting started.', author: 'Mark Twain' },
+  { text: "You miss 100% of the shots you don't take.", author: 'Wayne Gretzky' }
+];
+
+function getQuote() {
+  return QUOTES[Math.floor(Math.random() * QUOTES.length)];
+}
+
+// Guided breathing — a concrete anxiety-support tool (offline, no key)
+function breathingExercise() {
+  return {
+    technique: '4-7-8 calming breath',
+    steps: [
+      { label: 'Inhale', seconds: 4, detail: 'Breathe in slowly and deeply through your nose.' },
+      { label: 'Hold', seconds: 7, detail: 'Gently hold the breath.' },
+      { label: 'Exhale', seconds: 8, detail: 'Breathe out slowly through your mouth, letting your shoulders drop.' }
+    ],
+    cycles: 4,
+    note: 'Repeat 4 times. This activates your parasympathetic nervous system and lowers your heart rate within a minute or two.'
+  };
+}
+
+// Weekly life report — built offline from memory (no AI key needed)
+function generateReport() {
+  const m = readMemory();
+  const now = new Date();
+  const weekAgo = now.getTime() - 7 * 86400000;
+
+  const mood = (m.mood || []).filter((x) => (x.ts || 0) >= weekAgo);
+  const moodAvg = mood.length ? Math.round((mood.reduce((a, b) => a + (b.valence || 0), 0) / mood.length) * 100) : null;
+  const moodTrend = mood.length >= 2 ? (mood[mood.length - 1].valence - mood[0].valence) : 0;
+
+  const activeGoals = (m.goals || []).filter((g) => !g.done);
+  const doneGoals = (m.goals || []).filter((g) => g.done);
+  const todosOpen = (m.todos || []).filter((t) => !t.done).length;
+  const todosDone = (m.todos || []).filter((t) => t.done).length;
+  const notesCount = (m.notes || []).length;
+  const factsCount = (m.facts || []).length;
+  const actions = (m.actionLog || []).filter((a) => (a.ts || 0) >= weekAgo).length;
+
+  const lines = [];
+  lines.push(`### Weekly Report — ${now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}`);
+  lines.push('');
+  if (moodAvg != null) {
+    const tone = moodAvg > 60 ? 'positive' : moodAvg > 20 ? 'mixed' : 'challenging';
+    lines.push(`**Mood:** averaging ${moodAvg}/100 this week (${tone}${moodTrend > 0.15 ? ', trending up' : moodTrend < -0.15 ? ', trending down' : ', stable'}).`);
+  } else {
+    lines.push('**Mood:** no check-ins this week yet — try the one-tap mood buttons in Life Companion.');
+  }
+  lines.push(`**Goals:** ${activeGoals.length} active, ${doneGoals.length} achieved this period.`);
+  lines.push(`**Tasks:** ${todosDone} completed, ${todosOpen} still open.`);
+  lines.push(`**Knowledge:** ${factsCount} memories retained, ${notesCount} notes saved.`);
+  lines.push(`**Activity:** ${actions} actions performed this week.`);
+  if (activeGoals.length) {
+    lines.push('');
+    lines.push('**Focus for next week:**');
+    activeGoals.slice(0, 3).forEach((g) => lines.push(`• ${g.text}`));
+  }
+  if (moodAvg != null && moodAvg < 40) {
+    lines.push('');
+    lines.push('**Gentle note:** your mood has been lower this week. Be kind to yourself — rest counts as progress too.');
+  }
+  return { report: lines.join('\n'), moodAvg, moodTrend };
+}
+
+// Proactive check-in detection: has the user's mood been low & declining?
+function moodNeedsCheckIn() {
+  const m = readMemory();
+  const mood = (m.mood || []).slice(-7);
+  if (mood.length < 3) return false;
+  const vals = mood.map((x) => x.valence || 0);
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const last = vals[vals.length - 1];
+  return avg < 0.2 && last < 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1150,6 +1238,12 @@ async function executeTool(name, args) {
         return await verifyClaim(args.claim);
       case 'provide_support':
         return provideSupport(args.text);
+      case 'get_quote':
+        return getQuote();
+      case 'breathing_exercise':
+        return breathingExercise();
+      case 'generate_report':
+        return generateReport();
       case 'calculate':
         return { result: safeEval(args.expression) };
       case 'set_reminder': {
@@ -1648,5 +1742,15 @@ ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
 
 ipcMain.handle('news:get', (_e, limit) => getHeadlines(limit || 12));
 ipcMain.handle('app:openExternal', (_e, url) => { if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url); });
+ipcMain.handle('report:generate', () => generateReport());
+ipcMain.handle('report:needsCheckIn', () => moodNeedsCheckIn());
+ipcMain.handle('memory:export', () => ({ memory: readMemory(), profile: readProfile() }));
+ipcMain.handle('memory:import', (_e, data) => {
+  try {
+    if (data && data.memory) writeMemory(data.memory);
+    if (data && data.profile) writeProfile(data.profile);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:platform', () => process.platform);
