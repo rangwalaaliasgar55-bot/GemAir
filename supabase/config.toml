@@ -1,8 +1,8 @@
-# Supabase CLI / GitHub-integration config for GemAI.
+# Supabase CLI / GitHub-integration config for GemAir.
 # The GitHub integration reads supabase/migrations/*.sql and applies any
 # migration that has not run yet whenever the production branch updates.
 
-project_id = "gemai"
+project_id = "gemair"
 
 [db]
 # Must match the Postgres major version of your Supabase project
@@ -10,6 +10,6 @@ project_id = "gemai"
 major_version = 15
 
 [auth]
-# GemAI signs users in silently so there is no login screen; Row-Level
+# GemAir signs users in silently so there is no login screen; Row-Level
 # Security still isolates every user's rows from everyone else's.
 enable_anonymous_sign_ins = true

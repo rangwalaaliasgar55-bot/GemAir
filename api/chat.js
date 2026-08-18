@@ -1,4 +1,4 @@
-// GemAI serverless — AI chat proxy.
+// GemAir serverless — AI chat proxy.
 // Uses a server-side GROQ_API_KEY (or OPENAI_API_KEY) so the key never touches
 // the browser. If no key is configured, returns ok:false so the client falls
 // back to the free offline brain (search / weather / tools all work without it).

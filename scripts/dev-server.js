@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* ============================================================
-   GemAI — zero-dependency local dev server.
+   GemAir — zero-dependency local dev server.
 
    Serves the static renderer/ at "/" and runs every api/*.js
    serverless handler at "/api/<name>", mimicking Vercel's Node
@@ -129,7 +129,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`\n  GemAI dev server running`);
+  console.log(`\n  GemAir dev server running`);
   console.log(`  → http://localhost:${PORT}`);
   console.log(`  → static: renderer/   api: api/*.js\n`);
 });

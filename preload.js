@@ -1,7 +1,7 @@
-// GemAI — preload (contextBridge)
+// GemAir — preload (contextBridge)
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('gemai', {
+contextBridge.exposeInMainWorld('gemair', {
   platform: process.platform,
   getSystemInfo: () => ipcRenderer.invoke('system:info'),
   getProfile: () => ipcRenderer.invoke('profile:get'),

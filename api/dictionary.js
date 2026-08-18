@@ -1,4 +1,4 @@
-// GemAI serverless — free dictionary (dictionaryapi.dev, no key)
+// GemAir serverless — free dictionary (dictionaryapi.dev, no key)
 module.exports = async (req, res) => {
   const word = (req.query.word || '').trim();
   if (!word) return res.status(400).json({ error: 'word is required' });

@@ -1,11 +1,11 @@
 {
-  "name": "gemai",
+  "name": "gemair",
   "version": "1.0.0",
-  "description": "GemAI — a free, open-source JARVIS-style desktop assistant. A sci-fi command center for your PC: voice assistant, system core, agent town and world monitor.",
+  "description": "GemAir — a free, open-source JARVIS-style desktop assistant. A sci-fi command center for your PC: voice assistant, system core, agent town and world monitor.",
   "main": "main.js",
-  "author": "GemAI",
+  "author": "GemAir",
   "license": "MIT",
-  "homepage": "https://github.com/rangwalaaliasgar55-bot/GemAI",
+  "homepage": "https://github.com/rangwalaaliasgar55-bot/GemAir",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
@@ -13,7 +13,7 @@
     "web": "npx serve renderer -l 8080",
     "serve": "node scripts/dev-server.js",
     "dev:web": "vercel dev",
-    "build:web": "echo 'GemAI web = static renderer/ + serverless api/. Deploy with: vercel'",
+    "build:web": "echo 'GemAir web = static renderer/ + serverless api/. Deploy with: vercel'",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
@@ -31,8 +31,8 @@
     "@vercel/node": "^3.2.0"
   },
   "build": {
-    "appId": "io.gemai.desktop",
-    "productName": "GemAI",
+    "appId": "io.gemair.desktop",
+    "productName": "GemAir",
     "asar": true,
     "directories": {
       "output": "release",
@@ -62,7 +62,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "GemAI"
+      "shortcutName": "GemAir"
     },
     "mac": {
       "target": [

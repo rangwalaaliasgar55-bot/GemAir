@@ -1,5 +1,5 @@
 -- ============================================================
--- GemAI — initial schema (auto-applied by the Supabase GitHub integration)
+-- GemAir — initial schema (auto-applied by the Supabase GitHub integration)
 --
 -- Files in supabase/migrations/ with a timestamped name are applied
 -- automatically when this branch merges into the production branch.

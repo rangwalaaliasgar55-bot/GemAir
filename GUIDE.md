@@ -1,13 +1,13 @@
-# GemAI — The Complete Guide
+# GemAir — The Complete Guide
 
-Everything you need to understand, use, and extend GemAI — your free, emotionally
+Everything you need to understand, use, and extend GemAir — your free, emotionally
 intelligent personal AI.
 
 ---
 
-## 🧭 What GemAI is
+## 🧭 What GemAir is
 
-GemAI is a **JARVIS-style personal AI** for your computer (and the web). It's a
+GemAir is a **JARVIS-style personal AI** for your computer (and the web). It's a
 companion, not just a tool:
 
 - It **understands how you feel** (emotion engine) and responds with empathy.
@@ -21,7 +21,7 @@ companion, not just a tool:
 ## 🏗 Architecture
 
 ```
-GemAI/
+GemAir/
 ├── main.js                  # Electron main process — the "brain & hands"
 │   ├── AI chat + streaming  #   OpenAI-compatible (Groq/OpenAI/Ollama) + tool-calling
 │   ├── TOOLS registry       #   MCP-style: 45+ typed functions (the "tool layer")
@@ -43,7 +43,7 @@ GemAI/
 
 ### The three layers (mirrors Stonic's design)
 
-| Layer | Stonic | GemAI |
+| Layer | Stonic | GemAir |
 | --- | --- | --- |
 | **Shell** | Electron (Windows app) | Electron (Win/macOS/Linux) |
 | **Agent Town** | Phaser 3 pixel RPG | Hand-built canvas pixel office (no deps) |
@@ -88,7 +88,7 @@ Dave = planning) injected as its own system prompt.
 | **Mood** | every meaningful message | The AI sees how you've been trending |
 | **Goals / Notes / Todos / Reminders** | explicit | Life & career management |
 
-### Teaching GemAI
+### Teaching GemAir
 ```
 teach me to always start reports with a one-line summary
 remember that I prefer Python over JavaScript
@@ -110,7 +110,7 @@ reply in Hindi
 
 ## 💛 Emotional intelligence & support
 
-GemAI detects **17 emotions** (joy, excitement, love, gratitude, confidence, hope,
+GemAir detects **17 emotions** (joy, excitement, love, gratitude, confidence, hope,
 relief, curiosity, boredom, tiredness, anxiety, sadness, fear, anger, guilt,
 embarrassment, neutral) with valence, arousal and intensity.
 
@@ -121,7 +121,7 @@ embarrassment, neutral) with valence, arousal and intensity.
 - **Crisis-aware**: if you mention self-harm, it responds gently and points to
   real helplines (iCall, Vandrevala, findahelpline.com), while staying with you.
 
-> GemAI is a companion, **not a substitute for professional help** in a crisis.
+> GemAir is a companion, **not a substitute for professional help** in a crisis.
 
 ---
 
@@ -143,7 +143,7 @@ Memory syncs across devices with per-user Row-Level Security.
 
 ---
 
-## 🛠 Extending GemAI (adding a tool)
+## 🛠 Extending GemAir (adding a tool)
 
 Tools live in one registry — `TOOLS` in `main.js` (and the matching `executeTool` case):
 

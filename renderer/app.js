@@ -1,12 +1,12 @@
 /* ============================================================
-   GemAI — renderer application logic
+   GemAir — renderer application logic
    ============================================================ */
 'use strict';
 
 // ---------------------------------------------------------------------------
 // Bridge: Electron IPC (or a mock when opened in a plain browser preview)
 // ---------------------------------------------------------------------------
-const isElectron = !!(window.gemai);
+const isElectron = !!(window.gemair);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const MOCK_MEMORY = {
@@ -15,7 +15,7 @@ const MOCK_MEMORY = {
     { id: 'm2', text: 'User prefers concise answers', category: 'preference', importance: 1 }
   ],
   transcript: [],
-  notes: [{ id: 'n1', text: 'Welcome to GemAI — your persistent notebook.' }],
+  notes: [{ id: 'n1', text: 'Welcome to GemAir — your persistent notebook.' }],
   reminders: [],
   todos: [],
   mood: [],
@@ -27,19 +27,19 @@ const MOCK_MEMORY = {
 };
 
 const api = {
-  platform: window.gemai ? window.gemai.platform : 'browser',
+  platform: window.gemair ? window.gemair.platform : 'browser',
   async getSystemInfo() {
-    if (window.gemai) return window.gemai.getSystemInfo();
+    if (window.gemair) return window.gemair.getSystemInfo();
     const total = 16 * 1024 * 1024 * 1024;
     const used = total * (0.4 + 0.25 * Math.random());
     return {
-      platform: 'browser-preview', release: 'n/a', hostname: 'gemai.local', arch: 'x64', cpus: 8,
+      platform: 'browser-preview', release: 'n/a', hostname: 'gemair.local', arch: 'x64', cpus: 8,
       cpuLoad: Math.round(10 + Math.random() * 40), memTotal: total, memFree: total - used, memUsed: used,
       memPercent: Math.round((used / total) * 100), uptime: 3600 * 14, loadavg: [0.8, 1.1, 1.3]
     };
   },
-  async getProfile() { if (window.gemai) return window.gemai.getProfile(); return window.webStore ? window.webStore.getProfile() : {}; },
-  async setProfile(d) { if (window.gemai) return window.gemai.setProfile(d); if (window.webStore) await window.webStore.setProfile(d); },
+  async getProfile() { if (window.gemair) return window.gemair.getProfile(); return window.webStore ? window.webStore.getProfile() : {}; },
+  async setProfile(d) { if (window.gemair) return window.gemair.setProfile(d); if (window.webStore) await window.webStore.setProfile(d); },
 
   async _webChat(messages) {
     try {
@@ -48,72 +48,72 @@ const api = {
     } catch (e) { return { ok: false, error: e.message }; }
   },
   async aiChat(config, messages) {
-    if (window.gemai) return window.gemai.aiChat(config, messages);
+    if (window.gemair) return window.gemair.aiChat(config, messages);
     return await this._webChat(messages);
   },
   async aiChatStream(config, messages, onDelta) {
-    if (window.gemai) return window.gemai.aiChatStream(config, messages, onDelta);
+    if (window.gemair) return window.gemair.aiChatStream(config, messages, onDelta);
     const res = await this._webChat(messages);
     if (!res.ok) return res;
     const text = res.reply;
     for (const ch of text) { onDelta(ch); await sleep(12); } // simulate streaming locally
     return { ok: true, reply: text };
   },
-  async aiSummarize(config, text) { if (window.gemai) return window.gemai.aiSummarize(config, text); return { ok: true, summary: null }; },
+  async aiSummarize(config, text) { if (window.gemair) return window.gemair.aiSummarize(config, text); return { ok: true, summary: null }; },
   async aiOffline(text) {
-    if (window.gemai) return window.gemai.aiOffline(text);
+    if (window.gemair) return window.gemair.aiOffline(text);
     return { ok: true, reply: await offlineBrain(text) };
   },
 
   // memory (Electron IPC | browser localStorage + optional Supabase)
-  async memoryGet() { if (window.gemai) return window.gemai.memoryGet(); return window.webStore ? window.webStore.get() : JSON.parse(JSON.stringify(MOCK_MEMORY)); },
-  async memoryAppend(role, content) { if (window.gemai) return window.gemai.memoryAppend(role, content); if (window.webStore) await window.webStore.append(role, content); },
-  async memoryClearTranscript() { if (window.gemai) return window.gemai.memoryClearTranscript(); if (window.webStore) await window.webStore.clearTranscript(); },
-  async memoryAddFact(fact) { if (window.gemai) return window.gemai.memoryAddFact(fact); if (window.webStore) await window.webStore.addFact(fact); },
-  async memoryDeleteFact(id) { if (window.gemai) return window.gemai.memoryDeleteFact(id); if (window.webStore) await window.webStore.deleteFact(id); },
-  async memoryAddNote(text) { if (window.gemai) return window.gemai.memoryAddNote(text); if (window.webStore) await window.webStore.addNote(text); },
-  async memoryDeleteNote(id) { if (window.gemai) return window.gemai.memoryDeleteNote(id); if (window.webStore) await window.webStore.deleteNote(id); },
-  async memoryAddReminder(text, at) { if (window.gemai) return window.gemai.memoryAddReminder(text, at); if (window.webStore) await window.webStore.addReminder(text, at); },
-  async memoryDeleteReminder(id) { if (window.gemai) return window.gemai.memoryDeleteReminder(id); if (window.webStore) await window.webStore.deleteReminder(id); },
-  async memoryMarkReminder(id, done) { if (window.gemai) return window.gemai.memoryMarkReminder(id, done); if (window.webStore) await window.webStore.markReminder(id, done); },
+  async memoryGet() { if (window.gemair) return window.gemair.memoryGet(); return window.webStore ? window.webStore.get() : JSON.parse(JSON.stringify(MOCK_MEMORY)); },
+  async memoryAppend(role, content) { if (window.gemair) return window.gemair.memoryAppend(role, content); if (window.webStore) await window.webStore.append(role, content); },
+  async memoryClearTranscript() { if (window.gemair) return window.gemair.memoryClearTranscript(); if (window.webStore) await window.webStore.clearTranscript(); },
+  async memoryAddFact(fact) { if (window.gemair) return window.gemair.memoryAddFact(fact); if (window.webStore) await window.webStore.addFact(fact); },
+  async memoryDeleteFact(id) { if (window.gemair) return window.gemair.memoryDeleteFact(id); if (window.webStore) await window.webStore.deleteFact(id); },
+  async memoryAddNote(text) { if (window.gemair) return window.gemair.memoryAddNote(text); if (window.webStore) await window.webStore.addNote(text); },
+  async memoryDeleteNote(id) { if (window.gemair) return window.gemair.memoryDeleteNote(id); if (window.webStore) await window.webStore.deleteNote(id); },
+  async memoryAddReminder(text, at) { if (window.gemair) return window.gemair.memoryAddReminder(text, at); if (window.webStore) await window.webStore.addReminder(text, at); },
+  async memoryDeleteReminder(id) { if (window.gemair) return window.gemair.memoryDeleteReminder(id); if (window.webStore) await window.webStore.deleteReminder(id); },
+  async memoryMarkReminder(id, done) { if (window.gemair) return window.gemair.memoryMarkReminder(id, done); if (window.webStore) await window.webStore.markReminder(id, done); },
   async memoryExtract(config, u, a) {
-    if (window.gemai) return window.gemai.memoryExtract(config, u, a);
+    if (window.gemair) return window.gemair.memoryExtract(config, u, a);
     const facts = localExtract(u); let n = 0;
     const mem = window.webStore ? await window.webStore.get() : MOCK_MEMORY;
     for (const f of facts) { if (!mem.facts.some(x => x.text === f.text)) { await this.memoryAddFact(f); n++; } }
     return n;
   },
-  async memoryAddMood(emotion, note) { if (window.gemai) return window.gemai.memoryAddMood(emotion, note); if (window.webStore) await window.webStore.addMood(emotion, note); },
-  async memoryAddGoal(text, category) { if (window.gemai) return window.gemai.memoryAddGoal(text, category); if (window.webStore) await window.webStore.addGoal(text, category); },
-  async memoryDeleteGoal(id) { if (window.gemai) return window.gemai.memoryDeleteGoal(id); if (window.webStore) await window.webStore.deleteGoal(id); },
-  async memoryToggleGoal(id) { if (window.gemai) return window.gemai.memoryToggleGoal(id); if (window.webStore) await window.webStore.toggleGoal(id); },
-  async memoryAddSkill(text, name) { if (window.gemai) return window.gemai.memoryAddSkill(text, name); if (window.webStore) await window.webStore.addSkill(text, name); },
-  async memoryDeleteSkill(id) { if (window.gemai) return window.gemai.memoryDeleteSkill(id); if (window.webStore) await window.webStore.deleteSkill(id); },
-  async memoryAddInstruction(text) { if (window.gemai) return window.gemai.memoryAddInstruction(text); if (window.webStore) await window.webStore.addInstruction(text); },
-  async memoryDeleteInstruction(id) { if (window.gemai) return window.gemai.memoryDeleteInstruction(id); if (window.webStore) await window.webStore.deleteInstruction(id); },
-  async analyzeEmotion(text) { return window.gemai ? window.gemai.analyzeEmotion(text) : analyzeEmotion(text); },
+  async memoryAddMood(emotion, note) { if (window.gemair) return window.gemair.memoryAddMood(emotion, note); if (window.webStore) await window.webStore.addMood(emotion, note); },
+  async memoryAddGoal(text, category) { if (window.gemair) return window.gemair.memoryAddGoal(text, category); if (window.webStore) await window.webStore.addGoal(text, category); },
+  async memoryDeleteGoal(id) { if (window.gemair) return window.gemair.memoryDeleteGoal(id); if (window.webStore) await window.webStore.deleteGoal(id); },
+  async memoryToggleGoal(id) { if (window.gemair) return window.gemair.memoryToggleGoal(id); if (window.webStore) await window.webStore.toggleGoal(id); },
+  async memoryAddSkill(text, name) { if (window.gemair) return window.gemair.memoryAddSkill(text, name); if (window.webStore) await window.webStore.addSkill(text, name); },
+  async memoryDeleteSkill(id) { if (window.gemair) return window.gemair.memoryDeleteSkill(id); if (window.webStore) await window.webStore.deleteSkill(id); },
+  async memoryAddInstruction(text) { if (window.gemair) return window.gemair.memoryAddInstruction(text); if (window.webStore) await window.webStore.addInstruction(text); },
+  async memoryDeleteInstruction(id) { if (window.gemair) return window.gemair.memoryDeleteInstruction(id); if (window.webStore) await window.webStore.deleteInstruction(id); },
+  async analyzeEmotion(text) { return window.gemair ? window.gemair.analyzeEmotion(text) : analyzeEmotion(text); },
 
   async saveCode(content, name) {
-    if (window.gemai) return window.gemai.saveCode(content, name);
-    downloadText(content, name || 'gemai-output.txt');
-    return { ok: true, path: name || 'gemai-output.txt' };
+    if (window.gemair) return window.gemair.saveCode(content, name);
+    downloadText(content, name || 'gemair-output.txt');
+    return { ok: true, path: name || 'gemair-output.txt' };
   },
   async getHeadlines(limit) {
-    if (window.gemai) return window.gemai.getHeadlines(limit);
+    if (window.gemair) return window.gemair.getHeadlines(limit);
     try { const r = await fetch('/api/headlines?limit=' + (limit || 14)); return await r.json(); } catch { return []; }
   },
-  openExternal(url) { if (window.gemai) window.gemai.openExternal(url); else window.open(url, '_blank'); },
-  async version() { return window.gemai ? window.gemai.version() : '1.0.0'; },
-  onReminder(cb) { if (window.gemai) window.gemai.onReminder(cb); },
-  onWakeToggle(cb) { if (window.gemai) window.gemai.onWakeToggle(cb); },
+  openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
+  async version() { return window.gemair ? window.gemair.version() : '1.0.0'; },
+  onReminder(cb) { if (window.gemair) window.gemair.onReminder(cb); },
+  onWakeToggle(cb) { if (window.gemair) window.gemair.onWakeToggle(cb); },
 
   // report & backup
   async generateReport() {
-    if (window.gemai) return window.gemai.generateReport();
+    if (window.gemair) return window.gemair.generateReport();
     return buildReportOffline();
   },
   async needsCheckIn() {
-    if (window.gemai) return window.gemai.needsCheckIn();
+    if (window.gemair) return window.gemair.needsCheckIn();
     const mood = (memory.mood || []).slice(-7);
     if (mood.length < 3) return false;
     const vals = mood.map((x) => x.valence || 0);
@@ -121,11 +121,11 @@ const api = {
     return avg < 0.2 && vals[vals.length - 1] < 0;
   },
   async exportMemory() {
-    if (window.gemai) return window.gemai.exportMemory();
+    if (window.gemair) return window.gemair.exportMemory();
     return { memory, profile };
   },
   async importMemory(data) {
-    if (window.gemai) return window.gemai.importMemory(data);
+    if (window.gemair) return window.gemair.importMemory(data);
     if (data && data.memory) { memory = { ...memory, ...data.memory }; if (window.webStore) await window.webStore.setMemoryLocal(data.memory); }
     if (data && data.profile) { profile = { ...profile, ...data.profile }; await persistProfile(); }
     return { ok: true };
@@ -146,7 +146,7 @@ function downloadText(content, name) {
 }
 
 const mockHeadlines = [
-  { title: 'Open-source JARVIS-style assistants are on the rise', score: 421, by: 'gemai', url: '#' },
+  { title: 'Open-source JARVIS-style assistants are on the rise', score: 421, by: 'gemair', url: '#' },
   { title: 'Local-first AI: why running models on your own machine matters', score: 388, by: 'dev', url: '#' },
   { title: 'Voice interfaces are quietly taking over the desktop', score: 312, by: 'ui', url: '#' }
 ];
@@ -171,8 +171,8 @@ async function offlineBrain(text) {
   const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 
   if (/^(hi|hello|hey|salam|yo|good (morning|evening|afternoon))\b/.test(q) && q.length < 14)
-    return 'Hello. GemAI online. I can search the web, check weather, prices, translate and more — all free, no API key needed.';
-  if (/your name|who are you/.test(q)) return "I'm GemAI — your personal AI. I understand how you feel and I search the real web for free (no API key required).";
+    return 'Hello. GemAir online. I can search the web, check weather, prices, translate and more — all free, no API key needed.';
+  if (/your name|who are you/.test(q)) return "I'm GemAir — your personal AI. I understand how you feel and I search the real web for free (no API key required).";
   if (/how are you/.test(q)) return 'All circuits nominal — and glad you asked. How are you doing?';
   if (/time|clock/.test(q)) return `The current time is ${time}.`;
   if (/\bdate\b|what day/.test(q)) return `Today is ${new Date().toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`;
@@ -352,6 +352,7 @@ let profile = {
 let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
 let currentLang = 'en';
+let awaitingName = false;   // first-run: Gem is waiting to be told the user's name
 
 let listening = false, recognition = null, isRunning = false;
 const chatHistory = []; // working context window
@@ -383,6 +384,102 @@ function stopSpeaking() {
   speechGen++;
   try { speechSynthesis.cancel(); } catch (e) {}
   if (currentNeuralAudio) { try { currentNeuralAudio.pause(); currentNeuralAudio = null; } catch (e) {} }
+  avatar({ speaking: false });
+}
+
+// ---------------------------------------------------------------------------
+// Download — desktop installers
+//
+// Assets are published by .github/workflows/release.yml to GitHub Releases.
+// We query the GitHub API for the newest release and match each platform to a
+// real asset, so the buttons always point at the current version. If the API
+// is unreachable (offline, rate-limited, no release yet) we fall back to the
+// /releases/latest page, which always resolves.
+// ---------------------------------------------------------------------------
+const GH_REPO = 'rangwalaaliasgar55-bot/GemAir';
+const GH_RELEASES = `https://github.com/${GH_REPO}/releases`;
+
+/** Which installer belongs to which platform. */
+const OS_MATCHERS = {
+  win: (n) => /\.exe$/i.test(n),
+  mac: (n) => /\.dmg$/i.test(n) || /mac.*\.zip$/i.test(n),
+  linux: (n) => /\.appimage$/i.test(n) || /\.deb$/i.test(n)
+};
+
+function detectOS() {
+  const p = (api.platform || '').toLowerCase();
+  if (p === 'win32') return 'win';
+  if (p === 'darwin') return 'mac';
+  if (p === 'linux') return 'linux';
+  const ua = (navigator.userAgent || '') + ' ' + (navigator.platform || '');
+  if (/win/i.test(ua)) return 'win';
+  if (/mac|iphone|ipad/i.test(ua)) return 'mac';
+  if (/linux|android|x11/i.test(ua)) return 'linux';
+  return null;
+}
+
+function openDownload() {
+  const modal = $('#downloadModal');
+  if (!modal) return;
+  modal.classList.add('open');
+  highlightOS();
+  loadReleaseAssets();
+}
+function closeDownload() { const m = $('#downloadModal'); if (m) m.classList.remove('open'); }
+
+function highlightOS() {
+  const os = detectOS();
+  $$('#dlGrid .dl-card').forEach((c) => c.classList.toggle('recommended', c.dataset.os === os));
+}
+
+let releaseLoaded = false;
+async function loadReleaseAssets() {
+  const status = $('#dlStatus');
+  const relLink = $('#dlReleases');
+  if (relLink) relLink.href = GH_RELEASES;
+
+  // sensible fallback before/if the API call fails
+  $$('#dlGrid .dl-card').forEach((c) => { if (!c.href || c.href.endsWith('#')) c.href = GH_RELEASES + '/latest'; });
+  if (releaseLoaded) return;
+
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GH_REPO}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const rel = await r.json();
+    const assets = Array.isArray(rel.assets) ? rel.assets : [];
+
+    let matched = 0;
+    $$('#dlGrid .dl-card').forEach((card) => {
+      const match = OS_MATCHERS[card.dataset.os];
+      const asset = match && assets.find((a) => match(a.name || ''));
+      if (asset) {
+        card.href = asset.browser_download_url;
+        matched++;
+        const mb = asset.size ? ` · ${(asset.size / 1048576).toFixed(0)} MB` : '';
+        const meta = card.querySelector('.dl-meta');
+        if (meta) meta.textContent = meta.textContent.split(' · ')[0] + mb;
+      } else {
+        card.classList.add('unavailable');
+        const cta = card.querySelector('.dl-cta');
+        if (cta) cta.textContent = 'Build from source';
+      }
+    });
+
+    if (status) {
+      status.textContent = matched
+        ? `Latest release ${rel.tag_name || ''} — published ${new Date(rel.published_at).toLocaleDateString()}.`
+        : `Release ${rel.tag_name || ''} has no prebuilt installers yet — clone and run from source below.`;
+    }
+    releaseLoaded = true;
+  } catch (e) {
+    if (status) {
+      status.innerHTML = 'Could not reach the GitHub API. ' +
+        `<a class="accent-link" href="${GH_RELEASES}" target="_blank" rel="noopener">Open the releases page</a> ` +
+        'or build from source below.';
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -688,7 +785,7 @@ function addMessage(role, text, opts = {}) {
   head.className = 'msg-head';
   const label = document.createElement('span');
   label.className = 'label';
-  label.textContent = role === 'ai' ? '◈ GEMAI' : (profile.name || 'YOU').toUpperCase();
+  label.textContent = role === 'ai' ? '◈ GEM' : (profile.name || 'YOU').toUpperCase();
   head.appendChild(label);
   const ts = document.createElement('span');
   ts.className = 'msg-time';
@@ -756,7 +853,7 @@ function renderRich(p, text) {
     btn.addEventListener('click', async () => {
       const codeEl = document.getElementById(btn.dataset.code);
       if (!codeEl) return;
-      const res = await api.saveCode(codeEl.textContent, 'gemai-output.txt');
+      const res = await api.saveCode(codeEl.textContent, 'gemair-output.txt');
       addMessage('system-msg', res.ok ? `Saved to ${res.path}` : `Save failed: ${res.error || 'cancelled'}`);
     });
   });
@@ -836,9 +933,10 @@ function buildSystemPrompt() {
   return {
     role: 'system',
     content:
-      `You are GemAI — a warm, emotionally intelligent personal AI companion (a free, open-source JARVIS). ` +
+      `Your name is Gem. You are the intelligence inside GemAir — a warm, emotionally intelligent personal AI companion (a free, open-source JARVIS). ` +
+      `Always refer to yourself as Gem, never as GemAir (GemAir is the app you live in). ` +
       `You are the user's friend, mentor, life coach and career advisor — genuinely caring, perceptive and wise. ` +
-      `The user's name is ${profile.name || 'Commander'}. ` +
+      `The user's name is ${profile.name || 'Commander'}. Address them by their name naturally — at the start of a greeting, when reassuring them, or when something matters. Do not repeat it in every sentence; roughly once per reply at most. ` +
       `Personality — warmth ${s.warmth ?? 60}/100, wit ${s.wit ?? 40}/100, brevity ${s.brevity ?? 70}/100. ` +
       `LANGUAGE: Respond in the user's language. They are currently writing in ${currentLang === 'hi' ? 'Hindi' : currentLang === 'ur' ? 'Urdu' : currentLang === 'hinglish' ? 'Hinglish (Roman Hindi/Urdu)' : 'English'} — mirror it, including for Hindi/Urdu speakers. ` +
       `TRUTH & ACCURACY (non-negotiable): Always be truthful. Never fabricate facts, citations, quotes, statistics or events. ` +
@@ -887,11 +985,56 @@ function localExtract(text) {
   return facts;
 }
 
+/**
+ * Pull a usable name out of a free-form reply: "I'm Ali", "call me Ali",
+ * "my name is Ali", or just "Ali". Falls back to Commander.
+ */
+function extractName(text) {
+  let t = String(text || '').trim();
+  const m = t.match(/(?:my name is|i am|i'm|im|call me|this is|it's|its)\s+([^.,!?\n]+)/i);
+  if (m) t = m[1];
+  t = t.replace(/[.,!?"']/g, ' ')
+       .replace(/\b(please|thanks|thank you|sir|maam|ma'am)\b/gi, ' ')
+       .replace(/\s+/g, ' ')
+       .trim();
+  const words = t.split(' ').filter(Boolean).slice(0, 3);
+  if (!words.length) return 'Commander';
+  const name = words
+    .map((wd) => wd.charAt(0).toUpperCase() + wd.slice(1).toLowerCase())
+    .join(' ');
+  return name.length > 40 ? name.slice(0, 40) : name;
+}
+
 async function sendMessage(text) {
   text = (text || '').trim();
   if (!text) return;
   addMessage('user', text);
   $('#chatInput').value = '';
+  avatar({ thinking: true }); // Gem visibly starts reasoning
+  try {
+    return await handleMessage(text);
+  } finally {
+    avatar({ thinking: false });
+  }
+}
+
+async function handleMessage(text) {
+  // First run: Gem asked for a name, so this reply IS the name.
+  if (awaitingName) {
+    awaitingName = false;
+    const name = extractName(text);
+    profile.name = name;
+    await persistProfile();
+    await api.memoryAddFact({ text: `The user's name is ${name}`, category: 'identity' });
+    await loadMemory();
+    renderAllMemory();
+    renderBriefing();
+    const welcome = `Lovely to meet you, ${name}. I'm Gem. I'll remember that — along with anything else you tell me. What would you like to do first?`;
+    addMessage('ai', welcome);
+    await api.memoryAppend('assistant', welcome);
+    speak(welcome);
+    return;
+  }
 
   // Understand the user's emotion — always, automatically
   const emo = await api.analyzeEmotion(text);
@@ -946,15 +1089,15 @@ async function sendMessage(text) {
     chatHistory.push({ role: 'user', content: text });
     const replyEl = typing.querySelector('p');
     typewriterToken++;
-    if (useAI && window.gemai) {
+    if (useAI && window.gemair) {
       const sys = buildSystemPrompt();
-      const res = await window.gemai.aiAgentChat(agentName, cfg, chatHistory.slice(-16));
+      const res = await window.gemair.aiAgentChat(agentName, cfg, chatHistory.slice(-16));
       if (res.ok) { reply = res.reply; chatHistory.push({ role: 'assistant', content: reply }); }
       else { reply = '⚠ ' + humanError(res.error); }
     } else if (useAI) {
       // web mode: no per-agent backend — use main brain but tag the agent role
       reply = await (async () => {
-        const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a resident agent of GemAI. Help with: ${task}. Be truthful and concise.` }, ...chatHistory.slice(-14)]);
+        const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a resident agent of GemAir. Help with: ${task}. Be truthful and concise.` }, ...chatHistory.slice(-14)]);
         return res.ok ? res.reply : '⚠ ' + humanError(res.error);
       })();
       chatHistory.push({ role: 'assistant', content: reply });
@@ -1026,7 +1169,7 @@ async function maybeConsolidateMemory() {
   if (Date.now() - lastConsolidation < 10 * 60 * 1000) return; // at most every 10 min
   if ((memory.transcript || []).length < 160) return;
   lastConsolidation = Date.now();
-  const older = memory.transcript.slice(0, -60).map((m) => (m.role === 'user' ? 'User: ' : 'GemAI: ') + m.content).join('\n');
+  const older = memory.transcript.slice(0, -60).map((m) => (m.role === 'user' ? 'User: ' : 'GemAir: ') + m.content).join('\n');
   const res = await api.aiSummarize(cfg, older);
   if (res.ok && res.summary) {
     await api.memoryAddFact({ text: res.summary, category: 'summary' });
@@ -1050,6 +1193,7 @@ function speak(text) {
   const gen = ++speechGen;
   const mode = profile.voice?.mode || 'neural';
   document.body.classList.add('rgb-speaking'); // RGB while AI speaks
+  avatar({ speaking: true });                  // Gem's mouth starts moving
   speechQueue = speechQueue.then(async () => {
     if (gen !== speechGen) return; // superseded
     if (mode === 'neural') {
@@ -1057,8 +1201,22 @@ function speak(text) {
     }
     if (gen === speechGen) speakSystem(clean);
   }).catch(() => {}).finally(() => {
-    if (gen === speechGen) document.body.classList.remove('rgb-speaking');
+    if (gen === speechGen) {
+      document.body.classList.remove('rgb-speaking');
+      avatar({ speaking: false });
+    }
   });
+}
+
+/**
+ * Push state to Gem's avatar. Every call is optional and guarded, so the app
+ * keeps working if avatar.js fails to load.
+ */
+function avatar(state) {
+  try { if (window.gemAvatar) window.gemAvatar.setState(state); } catch (e) {}
+}
+function avatarEmotion(e) {
+  try { if (window.gemAvatar) window.gemAvatar.setEmotion(e); } catch (err) {}
 }
 
 // Adjust speaking style to the current emotion (emotional voice intelligence)
@@ -1089,6 +1247,11 @@ function speakSystem(text) {
       const female = voices.find((v) => v.lang && /^en/i.test(v.lang) && VOICE_SENTINELS.some((s) => v.name.toLowerCase().includes(s)));
       if (female) u.voice = female;
     }
+    // Drive the avatar's mouth from the real speech timeline: every word
+    // boundary re-triggers a syllable so the lip-sync tracks the audio.
+    u.onboundary = () => { try { window.gemAvatar && window.gemAvatar.syllable(); } catch (e) {} };
+    u.onstart = () => avatar({ speaking: true });
+    u.onend = () => avatar({ speaking: false });
     speechSynthesis.speak(u);
   } catch (e) {}
 }
@@ -1413,7 +1576,7 @@ function renderMissionLog() {
   const log = $('#missionLog');
   if (!log) return;
   const actions = (memory.actionLog || []).slice(0, 40);
-  if (!actions.length) { log.innerHTML = '<div class="empty">No actions performed yet. Every action GemAI takes will be logged here.</div>'; return; }
+  if (!actions.length) { log.innerHTML = '<div class="empty">No actions performed yet. Every action GemAir takes will be logged here.</div>'; return; }
   log.innerHTML = '';
   actions.forEach((a) => {
     const div = document.createElement('div');
@@ -1474,7 +1637,7 @@ function renderSkills() {
   const list = $('#skillsList');
   if (!list) return;
   const skills = (memory.skills || []).slice();
-  if (!skills.length) { list.innerHTML = '<div class="empty">No skills yet. Say "teach me to…" or add one below — GemAI will remember and reuse it.</div>'; return; }
+  if (!skills.length) { list.innerHTML = '<div class="empty">No skills yet. Say "teach me to…" or add one below — GemAir will remember and reuse it.</div>'; return; }
   list.innerHTML = '';
   skills.forEach((s) => {
     const div = document.createElement('div');
@@ -1488,7 +1651,7 @@ function renderInstructions() {
   const list = $('#instructionsList');
   if (!list) return;
   const instr = (memory.instructions || []).slice();
-  if (!instr.length) { list.innerHTML = '<div class="empty">No standing instructions. Add a rule like "always be concise" or "call me Boss" — GemAI will follow it forever.</div>'; return; }
+  if (!instr.length) { list.innerHTML = '<div class="empty">No standing instructions. Add a rule like "always be concise" or "call me Boss" — GemAir will follow it forever.</div>'; return; }
   list.innerHTML = '';
   instr.forEach((i) => {
     const div = document.createElement('div');
@@ -1553,6 +1716,7 @@ function buildReportOffline() {
 // Companion: mood, goals, wellness
 // ---------------------------------------------------------------------------
 function updateMoodIndicator(emo) {
+  avatarEmotion(emo);
   const e = emo || currentEmotion;
   const emojiEl = $('#moodEmoji'), labelEl = $('#moodLabel'), subEl = $('#moodSub');
   if (!emojiEl) return;
@@ -1822,7 +1986,7 @@ function populateNeuralVoices() {
 function updateAiHint() {
   const base = $('#setBaseURL').value.trim(), key = $('#setApiKey').value.trim();
   const el = $('#aiStatusHint');
-  if (key && base) el.textContent = '✓ AI brain locked to your endpoint — GemAI will use THIS key only.';
+  if (key && base) el.textContent = '✓ AI brain locked to your endpoint — GemAir will use THIS key only.';
   else if (base && /localhost|127\.0\.0\.1/.test(base)) el.textContent = '✓ Local model detected (no key needed).';
   else el.textContent = 'No key set — running on the built-in offline brain.';
 }
@@ -1956,7 +2120,7 @@ function bindEvents() {
   // Export memory
   $('#exportBtn').addEventListener('click', async () => {
     const data = await api.exportMemory();
-    downloadText(JSON.stringify(data, null, 2), 'gemai-backup-' + Date.now() + '.json');
+    downloadText(JSON.stringify(data, null, 2), 'gemair-backup-' + Date.now() + '.json');
     toast('BACKUP', 'Memory exported as JSON.', '⬇');
   });
 
@@ -1968,6 +2132,21 @@ function bindEvents() {
   }));
 
   // settings
+  // download
+  const dlBtn = $('#downloadBtn');
+  if (dlBtn) {
+    // inside the packaged desktop app there is nothing to download
+    if (window.gemair) dlBtn.hidden = true;
+    else dlBtn.addEventListener('click', openDownload);
+  }
+  $('#downloadClose').addEventListener('click', closeDownload);
+  $('#downloadClose2').addEventListener('click', closeDownload);
+  $('#downloadModal').addEventListener('click', (e) => { if (e.target === $('#downloadModal')) closeDownload(); });
+  // let the OS links open in the user's real browser when running in Electron
+  $$('#dlGrid .dl-card').forEach((c) => c.addEventListener('click', (e) => {
+    if (window.gemair) { e.preventDefault(); api.openExternal(c.href); }
+  }));
+
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#settingsClose').addEventListener('click', closeSettings);
   $('#settingsModal').addEventListener('click', (e) => { if (e.target === $('#settingsModal')) closeSettings(); });
@@ -2030,7 +2209,7 @@ function bindEvents() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') { $('#chatInput').focus(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === ',') { openSettings(); }
-    else if (e.key === 'Escape') { closeSettings(); closePalette(); }
+    else if (e.key === 'Escape') { closeSettings(); closePalette(); closeDownload(); }
   });
 
   // voice preview + sliders
@@ -2042,7 +2221,7 @@ function bindEvents() {
     profile.voice.name = $('#setVoice').value;
     profile.voice.rate = Number($('#setRate').value);
     profile.voice.pitch = Number($('#setPitch').value);
-    speak('Hello, I am GemAI, your personal assistant. How can I help you today?');
+    speak('Hello, I am GemAir, your personal assistant. How can I help you today?');
     profile.voice.mode = prevMode; profile.voice.neuralVoice = prevNeural;
   });
   $('#setRate').addEventListener('input', () => { $('#rateVal').textContent = $('#setRate').value; });
@@ -2066,7 +2245,7 @@ function bindEvents() {
   $('#micBtn').addEventListener('click', () => {
     if (!recognition) { addMessage('system-msg', 'Speech recognition unavailable here — type a command instead.'); return; }
     if (listening) stopListening();
-    else { listening = true; $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); try { recognition.start(); } catch (e) {} }
+    else { listening = true; avatar({ listening: true }); $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); try { recognition.start(); } catch (e) {} }
   });
 
   $('#refreshNews').addEventListener('click', refreshHeadlines);
@@ -2093,7 +2272,7 @@ function startAiLoop() {
   if (recognition) { try { recognition.start(); $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); } catch (e) {} }
 }
 
-// Continuous wake-word listening ("Hey GemAI")
+// Continuous wake-word listening ("Hey GemAir")
 let wakeRecognition = null;
 function configureWakeWord(enabled) {
   if (!enabled) {
@@ -2109,7 +2288,7 @@ function configureWakeWord(enabled) {
     r.onresult = (e) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = (e.results[i][0].transcript || '').toLowerCase();
-        if (/hey gemai|hey gem|a gemai|hi gemai/.test(t)) {
+        if (/hey gemair|hey gem|a gemair|hi gemair/.test(t)) {
           addMessage('system-msg', 'Wake word detected — going online.');
           startAiLoop();
           speak('Yes? I am listening.');
@@ -2121,10 +2300,11 @@ function configureWakeWord(enabled) {
     wakeRecognition = r;
   }
   try { wakeRecognition.start(); } catch (e) {}
-  addMessage('system-msg', 'Wake word armed — say "Hey GemAI" anytime.');
+  addMessage('system-msg', 'Wake word armed — say "Hey GemAir" anytime.');
 }
 
 function stopListening() {
+  avatar({ listening: false });
   listening = false;
   $('#micBtn').classList.remove('recording');
   document.body.classList.remove('rgb-recording');
@@ -2185,14 +2365,14 @@ async function boot() {
   await runBootSequence();
 
   // web mode: load public config (Supabase / AI) from the Vercel API
-  if (!window.gemai) {
+  if (!window.gemair) {
     try {
       const cfg = await fetch('/api/config').then((r) => r.json()).catch(() => null);
       if (cfg && cfg.supabase && window.webStore) {
         const ok = await window.webStore.initSupabase(cfg.supabase);
         if (ok) toast('CLOUD', 'Supabase connected — your memory syncs across devices.', '🗄');
       }
-      window.__gemaiAiConfigured = !!(cfg && cfg.aiConfigured);
+      window.__gemairAiConfigured = !!(cfg && cfg.aiConfigured);
     } catch (e) {}
   }
 
@@ -2201,6 +2381,7 @@ async function boot() {
   applyTheme(profile.theme || 'crimson');
   startBackground3D();
   startOrb(); startGlobe(); startCommandMap();
+  try { if (window.gemAvatar) window.gemAvatar.mount('#avatarCanvas'); } catch (e) {}
   startAgentTown(); renderAllMemory(); animateCircuits();
   bindEvents(); bindSoulSliders(); updateLinkMode();
   updateMoodIndicator(currentEmotion);
@@ -2208,14 +2389,26 @@ async function boot() {
 
   // restore recent conversation history from persistent memory
   const last = (memory.transcript || []).slice(-40);
-  const greeting = `${greetByTime()}, ${profile.name || 'Commander'}. All systems online and I remember everything about you.`;
-  if (last.length) {
+  const knowsUser = !!(profile.name && profile.name !== 'Commander');
+  const greeting = knowsUser
+    ? `${greetByTime()}, ${profile.name}. Gem here — all systems online, and I remember everything about you.`
+    : `${greetByTime()}. I'm Gem, the intelligence inside GemAir.`;
+
+  // First run: introduce Gem, then ask what to call the user. The next thing
+  // they type is captured as their name (see handleMessage).
+  if (!knowsUser && !last.length) {
+    addMessage('ai', greeting);
+    const ask = 'Before we begin — what should I call you?';
+    addMessage('ai', ask);
+    awaitingName = true;
+    setTimeout(() => speak(greeting + ' ' + ask), 700);
+  } else if (last.length) {
     addMessage('system-msg', `↻ Restored ${last.length} past messages from persistent memory.`);
     last.forEach((m) => { if (m.role === 'user') addMessage('user', m.content); else if (m.role === 'assistant') addMessage('ai', m.content); });
     last.forEach((m) => { if (m.role === 'user' || m.role === 'assistant') chatHistory.push({ role: m.role, content: m.content }); });
-  } else {
+  } else if (!awaitingName) {
     addMessage('ai', greeting);
-    addMessage('system-msg', 'GemAI online. Paste a free Groq key in Settings for a full LLM brain — or just start talking, the offline brain already handles the web, weather, apps and files.');
+    addMessage('system-msg', 'Gem is online. Paste a free Groq key in Settings for a full LLM brain — or just start talking, the offline brain already handles the web, weather, apps and files.');
   }
 
   if (!profile.ai?.apiKey) toast('TIP', 'Add a free Groq key in Settings → AI Brain for a full brain.', '⚡');
@@ -2238,7 +2431,7 @@ async function boot() {
   } catch (e) {}
 
   // speak the greeting
-  if (!last.length) setTimeout(() => speak(greeting), 800);
+  if (!last.length && !awaitingName) setTimeout(() => speak(greeting), 800);
 }
 
 function runBootSequence() {

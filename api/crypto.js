@@ -1,4 +1,4 @@
-// GemAI serverless — free crypto prices (CoinGecko, no key)
+// GemAir serverless — free crypto prices (CoinGecko, no key)
 module.exports = async (req, res) => {
   const coin = (req.query.coin || 'bitcoin').toLowerCase().trim();
   try {

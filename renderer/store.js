@@ -1,13 +1,28 @@
 /* ============================================================
-   GemAI — browser memory store.
+   GemAir — browser memory store.
    Local-first (localStorage, works free & offline) with an OPTIONAL
    Supabase mirror for cross-device persistence on the Vercel deploy.
    ============================================================ */
 (function () {
   'use strict';
 
-  const LS_MEMORY = 'gemai:memory';
-  const LS_PROFILE = 'gemai:profile';
+  const LS_MEMORY = 'gemair:memory';
+  const LS_PROFILE = 'gemair:profile';
+
+  // v1 rename (GemAI -> GemAir): carry existing data over to the new keys once,
+  // so nobody loses their memory when they load the rebranded build.
+  (function migrateLegacyKeys() {
+    try {
+      for (const [oldKey, newKey] of [['gemai:memory', LS_MEMORY], ['gemai:profile', LS_PROFILE]]) {
+        const legacy = localStorage.getItem(oldKey);
+        if (legacy !== null && localStorage.getItem(newKey) === null) {
+          localStorage.setItem(newKey, legacy);
+          localStorage.removeItem(oldKey);
+        }
+      }
+    } catch { /* private mode / storage disabled — nothing to migrate */ }
+  })();
+
 
   const EMPTY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 

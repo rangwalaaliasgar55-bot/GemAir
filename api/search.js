@@ -1,4 +1,4 @@
-// GemAI serverless — REAL free web search (no key, no AI required)
+// GemAir serverless — REAL free web search (no key, no AI required)
 // Aggregates DuckDuckGo Instant Answers + Wikipedia for genuinely useful results.
 module.exports = async (req, res) => {
   const q = (req.query.q || '').trim();

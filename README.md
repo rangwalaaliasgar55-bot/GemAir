@@ -1,12 +1,50 @@
-# GemAI
+# GemAir
+
+### Meet **Gem** — the intelligence inside GemAir.
 
 **A free, open-source, emotionally intelligent personal AI — far more than a JARVIS clone.** Turn your PC into a sci-fi command center that *understands how you feel*, helps with your **life, career, studies and wellbeing**, remembers you **forever**, and runs on **your own AI key** — or entirely **free, with no key at all**. No subscription, no $56 license, no cloud lock-in. **Yours. Forever.**
 
-> 📖 Full walkthrough: **[GUIDE.md](GUIDE.md)** — architecture, every module, teaching GemAI, extending it, and the build/deploy guide.
+> 📖 Full walkthrough: **[GUIDE.md](GUIDE.md)** — architecture, every module, teaching GemAir, extending it, and the build/deploy guide.
 
-GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice assistant, a live system core, an agent town, a world monitor, **persistent long-term memory**, and **real tool-calling** (weather, web search, reminders, notes, volume, screenshots, system control) — all wrapped in a cinematic HUD you can re-skin in three themes.
+GemAir is a fully working desktop app (Windows · macOS · Linux) with: a voice assistant, a live system core, an agent town, a world monitor, **persistent long-term memory**, and **real tool-calling** (weather, web search, reminders, notes, volume, screenshots, system control) — all wrapped in a cinematic HUD you can re-skin in three themes.
 
 > Built with **Electron** — runs entirely on your machine. Your data never leaves your PC (the only exception: the AI endpoint you choose to connect).
+
+---
+
+## ⬇️ Download
+
+| Platform | Installer |
+| --- | --- |
+| **Windows** 10 / 11 | [`GemAir-Setup.exe`](../../releases/latest) |
+| **macOS** (Apple Silicon & Intel) | [`GemAir.dmg`](../../releases/latest) |
+| **Linux** | [`GemAir.AppImage`](../../releases/latest) / `.deb` |
+
+Or press **“Get the app”** in the top bar of the web version — it detects your
+OS and links straight to the matching installer from the newest release.
+
+Prefer source?
+
+```bash
+git clone https://github.com/rangwalaaliasgar55-bot/GemAir.git
+cd GemAir
+npm install
+npm start
+```
+
+> **Maintainers — activate automated builds (one time):**
+> ```bash
+> mkdir -p .github/workflows
+> git mv scripts/release-workflow.yml .github/workflows/release.yml
+> git commit -m "Add release workflow" && git push
+> ```
+> After that, pushing a `v*` tag builds all three installers and publishes them
+> to a GitHub Release automatically — and the in-app **Get the app** dialog
+> picks them up with no further changes.
+
+> 🏗 **How it all works:** [ARCHITECTURE.md](ARCHITECTURE.md) — the message
+> pipeline, the tool-calling loop, the memory model, and how Gem's 3D avatar
+> is rendered.
 
 ---
 
@@ -14,10 +52,10 @@ GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice a
 
 | Module | What it does |
 | --- | --- |
-| 🎙 **Voice Assistant** | Speak naturally or type. **Live streaming** replies (instant, JARVIS-fast), animated particle orb, START AI loop, **wake word ("Hey GemAI")**, speech recognition + spoken replies in a **smooth natural female voice** (neural, free — or your OS's voice, offline). |
+| 🎙 **Voice Assistant** | Speak naturally or type. **Live streaming** replies (instant, JARVIS-fast), animated particle orb, START AI loop, **wake word ("Hey GemAir")**, speech recognition + spoken replies in a **smooth natural female voice** (neural, free — or your OS's voice, offline). |
 | ⌨️ **Human-like typing** | Replies stream/type out in real time, with code blocks and a 💾 save-to-file action. |
 | 👋 **Personalized** | Greets you by name and time of day (12-hour clock), and remembers who you are forever. |
-| 🧠 **AI Brain (your key only)** | Paste a **free Groq key** (or OpenAI / OpenRouter / local Ollama). GemAI uses **that key and nothing else** — no silent fallback, no other provider. |
+| 🧠 **AI Brain (your key only)** | Paste a **free Groq key** (or OpenAI / OpenRouter / local Ollama). GemAir uses **that key and nothing else** — no silent fallback, no other provider. |
 | 🧠 **Long-Term Memory (never lost)** | Automatically extracts durable facts about you (name, preferences, projects, goals) using your own model, stores them **on disk forever**, and injects them into every conversation. Full chat history is also persisted and restored on every launch. |
 | 🛠 **Tool-calling (50+ tools)** | The AI can *do* things, not just chat. **Web**: live weather, **real web search (no AI needed)**, fetch & read any webpage, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, **AI image generation**, open URLs. **Computer**: open any app, list/read/write/search files, clipboard, volume, screenshots, system control, email draft, WhatsApp, to-dos, file-organizing "missions", and (optional) shell commands with per-command confirmation. **Mind & life**: quotes, breathing exercises, weekly reports, emotional support. |
 | ⏰ **World clock** | Time in any city, 12-hour format, live UTC clock. |
@@ -28,7 +66,7 @@ GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice a
 | 🌬 **Guided breathing** | A 4-7-8 calming-breathing exercise with an animated circle — tap "Breathe" when anxious. |
 | 📊 **Weekly report** | One-tap life report built from your mood, goals, tasks and memory (works offline, no key). |
 | 🍅 **Focus timer** | A Pomodoro timer in Life Companion. |
-| 💙 **Proactive check-in** | If your mood has been low for a few days, GemAI gently reaches out on launch. |
+| 💙 **Proactive check-in** | If your mood has been low for a few days, GemAir gently reaches out on launch. |
 | ⬇ **Backup & restore** | Export your whole memory (memories, notes, goals, mood) as JSON and import it back. |
 | 🧭 **Life & Career Companion** | Helps with career decisions, study plans, relationships, health, finances, self-improvement and emotional support — like a friend, mentor and coach. |
 | 📊 **Mood tracking** | Visual mood graph, one-tap check-ins, affirmations and wellness tips (focus, stress, sleep, energy, motivation). |
@@ -50,21 +88,21 @@ GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice a
 
 ## 🧠 The memory that doesn't go away
 
-Stonic clones forget you the moment they close. GemAI doesn't:
+Stonic clones forget you the moment they close. GemAir doesn't:
 
-- **Automatic memory extraction** — after each exchange, GemAI asks your AI to list durable facts worth keeping ("user is a developer", "user prefers Python", "user's name is X") and saves them permanently.
+- **Automatic memory extraction** — after each exchange, GemAir asks your AI to list durable facts worth keeping ("user is a developer", "user prefers Python", "user's name is X") and saves them permanently.
 - **Recency-weighted recall** — recent and important memories rank higher in every prompt.
 - **Auto-consolidation** — when the conversation grows long, older messages are summarized into durable long-term memory automatically (so context never overflows).
 - **Memory search** — the AI can query its own memory on demand via a `search_memory` tool.
 - **Persistent transcript** — every message is written to disk and restored on launch, so you pick up exactly where you left off.
-- **Injected context** — your memories are fed into every prompt, so GemAI always knows you.
-- **Your data, your disk** — everything is a local JSON file (`gemai-memory.json` in the app's data folder). Delete it any time, or manage memories from the UI.
+- **Injected context** — your memories are fed into every prompt, so GemAir always knows you.
+- **Your data, your disk** — everything is a local JSON file (`gemair-memory.json` in the app's data folder). Delete it any time, or manage memories from the UI.
 
 Memory works even **offline** (simple heuristics) and becomes much smarter once you connect a key.
 
 ### Truth & verified answers
 
-GemAI is built to **tell the truth, always**:
+GemAir is built to **tell the truth, always**:
 
 - **Never fabricates** — the system prompt forbids making up facts, quotes, statistics or citations.
 - **Search-first** — for anything factual or current it calls `web_search` / `fetch_webpage` and **cites its sources inline**.
@@ -73,28 +111,28 @@ GemAI is built to **tell the truth, always**:
 
 ### Skills & instructions in memory
 
-Teach GemAI and it remembers forever:
+Teach GemAir and it remembers forever:
 
-- **Skills** — "teach me to…" or add one in System Core → **Skills**. GemAI reuses them whenever relevant.
-- **Standing Rules** — System Core → **Rules**. Add "always be concise", "call me Boss", "reply in Hindi" — GemAI follows them in every conversation.
+- **Skills** — "teach me to…" or add one in System Core → **Skills**. GemAir reuses them whenever relevant.
+- **Standing Rules** — System Core → **Rules**. Add "always be concise", "call me Boss", "reply in Hindi" — GemAir follows them in every conversation.
 - Both are injected into every prompt and stored in your never-lost memory (local JSON + optional Supabase).
 
 ### Emotional intelligence
 
-GemAI reads how you feel, not just what you say:
+GemAir reads how you feel, not just what you say:
 
 - **Real-time emotion detection** — a built-in emotion engine classifies every message into joy, excitement, sadness, anxiety, anger, fear, love, gratitude, confidence, tiredness, boredom or curiosity (works offline, no key).
 - **Empathetic responses** — the AI's system prompt is informed by your current emotional state and recent mood trend, so it acknowledges your feelings first and adapts its tone and length.
-- **Mood history** — every meaningful exchange logs a mood point, charted on a live graph in the **Companion** panel, so you (and GemAI) can see how you've been trending.
+- **Mood history** — every meaningful exchange logs a mood point, charted on a live graph in the **Companion** panel, so you (and GemAir) can see how you've been trending.
 - **Check-ins** — one-tap mood buttons, daily affirmations, and practical wellness tips for focus, stress, sleep, energy, productivity and motivation.
 
 ---
 
 ## ✅ Feature coverage vs Stonic AI
 
-Stonic AI (the $56 JARVIS app) — everything it advertises, GemAI does **free & open-source**:
+Stonic AI (the $56 JARVIS app) — everything it advertises, GemAir does **free & open-source**:
 
-| Stonic feature | GemAI |
+| Stonic feature | GemAir |
 | --- | --- |
 | Voice assistant (speak naturally) | ✅ Neural female voice (EN/HI/UR/ES/FR) + STT |
 | System Core (memory / skills / soul / settings) | ✅ + **Skills** you teach it + **Standing Rules** it always follows |
@@ -111,7 +149,7 @@ Stonic AI (the $56 JARVIS app) — everything it advertises, GemAI does **free &
 | Local-first privacy | ✅ All data stays on your machine |
 | Lifetime, no subscription | ✅ **$0 forever** |
 
-**Things GemAI has that Stonic doesn't:** persistent long-term memory that never forgets, emotional intelligence + mood graph, life/career coaching (goals, affirmations, wellness), real web search with **no AI required**, fact-checking (`verify_claim`), a command palette, wake word, tray icon, and a free Vercel web version with cloud sync.
+**Things GemAir has that Stonic doesn't:** persistent long-term memory that never forgets, emotional intelligence + mood graph, life/career coaching (goals, affirmations, wellness), real web search with **no AI required**, fact-checking (`verify_claim`), a command palette, wake word, tray icon, and a free Vercel web version with cloud sync.
 
 ---
 
@@ -120,8 +158,8 @@ Stonic AI (the $56 JARVIS app) — everything it advertises, GemAI does **free &
 Requirements: **Node.js 18+**.
 
 ```bash
-git clone https://github.com/rangwalaaliasgar55-bot/GemAI.git
-cd GemAI
+git clone https://github.com/rangwalaaliasgar55-bot/GemAir.git
+cd GemAir
 npm install
 npm start
 ```
@@ -130,7 +168,7 @@ npm start
 
 ## 🌐 Deploy to Vercel (free web version)
 
-GemAI is **Vercel-ready**: the same UI runs as a static site, and all the free tools
+GemAir is **Vercel-ready**: the same UI runs as a static site, and all the free tools
 (weather, web search, crypto, currency, translate, dictionary, headlines) are
 serverless functions in `/api` — **no Groq key required**.
 
@@ -186,7 +224,7 @@ sign-ins keep it frictionless while Row-Level Security keeps each user's data pr
 
 ## 📦 Build a downloadable installer for your OS
 
-GemAI ships with `electron-builder` pre-configured. Build an installer for your current OS:
+GemAir ships with `electron-builder` pre-configured. Build an installer for your current OS:
 
 ```bash
 npm run dist          # builds for your current OS
@@ -208,7 +246,7 @@ Your installers land in the **`release/`** folder — share them, put them on a 
 
 ## 🔌 Connecting your AI (Groq recommended — free & fast)
 
-GemAI works out of the box with the **offline brain** (time, date, weather, web search, math, reminders, notes, app/system control — no key needed).
+GemAir works out of the box with the **offline brain** (time, date, weather, web search, math, reminders, notes, app/system control — no key needed).
 
 To unlock a full LLM brain, open **Settings → AI Brain**:
 
@@ -222,14 +260,14 @@ To unlock a full LLM brain, open **Settings → AI Brain**:
 | OpenRouter | `https://openrouter.ai/api/v1` | ✅ your key (many free models) |
 | **Ollama (local)** | `http://localhost:11434/v1` | ❌ free & private |
 
-Any **OpenAI-compatible** endpoint works — and GemAI will use **only the endpoint you configure**. Your key is stored only on your own machine.
+Any **OpenAI-compatible** endpoint works — and GemAir will use **only the endpoint you configure**. Your key is stored only on your own machine.
 
 ---
 
 ## 📁 Project structure
 
 ```
-GemAI/
+GemAir/
 ├── main.js            # Electron main process (AI + tool-calling, memory store,
 │                      #   weather/web search, reminders scheduler, system control, IPC)
 ├── preload.js         # Secure context-bridge API
@@ -256,7 +294,7 @@ GemAI/
 Everything else is fully local.
 
 ### Full computer access (opt-in)
-By default GemAI can open apps, manage files, control volume, take screenshots and control the system. To let it run **arbitrary shell commands**, enable *Advanced → Allow shell commands* in Settings — every command is shown to you for confirmation first, and a few obviously dangerous patterns are blocked.
+By default GemAir can open apps, manage files, control volume, take screenshots and control the system. To let it run **arbitrary shell commands**, enable *Advanced → Allow shell commands* in Settings — every command is shown to you for confirmation first, and a few obviously dangerous patterns are blocked.
 
 ---
 
@@ -266,4 +304,4 @@ By default GemAI can open apps, manage files, control volume, take screenshots a
 
 ---
 
-*GemAI is an independent, free/open-source project. It is not affiliated with Stonic AI or any other product.*
+*GemAir is an independent, free/open-source project. It is not affiliated with Stonic AI or any other product.*

@@ -1,4 +1,4 @@
-// GemAI serverless — free currency conversion (Frankfurter, no key)
+// GemAir serverless — free currency conversion (Frankfurter, no key)
 module.exports = async (req, res) => {
   const amount = parseFloat(req.query.amount);
   const from = (req.query.from || 'USD').toUpperCase();

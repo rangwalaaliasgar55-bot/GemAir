@@ -1,4 +1,4 @@
-// GemAI — main process
+// GemAir — main process
 // A free, open-source JARVIS-style desktop assistant.
 // More advanced than the typical Stonic clone: persistent long-term memory,
 // real tool-calling (weather, web search, reminders, notes, volume, system
@@ -12,8 +12,27 @@ const { exec } = require('child_process');
 
 const isDev = process.argv.includes('--dev');
 const userDataDir = app.getPath('userData');
-const PROFILE_FILE = path.join(userDataDir, 'gemai-profile.json');
-const MEMORY_FILE = path.join(userDataDir, 'gemai-memory.json');
+const PROFILE_FILE = path.join(userDataDir, 'gemair-profile.json');
+const MEMORY_FILE = path.join(userDataDir, 'gemair-memory.json');
+
+// v1 rename (GemAI -> GemAir): Electron derives userData from productName, so
+// the rebrand moves the whole folder (…/GemAI -> …/GemAir). Adopt the old files
+// once, so upgrading users keep every fact, note, goal and mood entry they had.
+(function migrateLegacyFiles() {
+  try {
+    const legacyDir = path.join(app.getPath('appData'), 'GemAI');
+    if (!fs.existsSync(legacyDir)) return;
+    fs.mkdirSync(userDataDir, { recursive: true });
+    for (const [oldName, newPath] of [
+      ['gemai-profile.json', PROFILE_FILE],
+      ['gemai-memory.json', MEMORY_FILE]
+    ]) {
+      const oldPath = path.join(legacyDir, oldName);
+      if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) fs.copyFileSync(oldPath, newPath);
+    }
+  } catch (e) { console.error('[migrate]', e.message); }
+})();
+
 
 let mainWindow = null;
 let tray = null;
@@ -71,9 +90,9 @@ function createTray() {
   if (icon.isEmpty()) icon = fallbackTrayIcon();
 
   tray = new Tray(icon);
-  tray.setToolTip('GemAI — your personal AI');
+  tray.setToolTip('GemAir — your personal AI');
   const menu = Menu.buildFromTemplate([
-    { label: 'Open GemAI', click: () => { mainWindow.show(); mainWindow.focus(); if (process.platform === 'darwin') app.dock.show(); } },
+    { label: 'Open GemAir', click: () => { mainWindow.show(); mainWindow.focus(); if (process.platform === 'darwin') app.dock.show(); } },
     { label: 'Start listening', click: () => mainWindow.webContents.send('wake:toggle', true) },
     { type: 'separator' },
     { label: 'Quit', click: () => { isQuitting = true; app.quit(); } }
@@ -515,7 +534,7 @@ function stripHtml(html) {
 async function fetchWebpage(url) {
   let u = String(url).trim();
   if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-  const res = await fetch(u, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GemAI/1.0)' } });
+  const res = await fetch(u, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GemAir/1.0)' } });
   if (!res.ok) return { error: 'HTTP ' + res.status };
   const html = await res.text();
   const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
@@ -586,7 +605,7 @@ function runCommand(command) {
   if (/rm\s+(-rf|fr)\s*\//.test(cmd) || /format\s+[a-z]:/i.test(cmd) || />\s*\/dev\//.test(cmd)) return { error: 'Command blocked for safety.' };
   return dialog.showMessageBox(mainWindow, {
     type: 'warning', buttons: ['Run', 'Cancel'], defaultId: 1, cancelId: 1,
-    title: 'GemAI shell command', message: 'Run this command?', detail: cmd
+    title: 'GemAir shell command', message: 'Run this command?', detail: cmd
   }).then((r) => {
     if (r.response !== 0) return { error: 'Cancelled by user.' };
     return new Promise((resolve) => {
@@ -897,7 +916,7 @@ async function organizeFolder(dir) {
   try {
     const entries = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
     if (!entries.length) return { ok: true, total: 0, categories: {}, base, note: 'Nothing to organize.' };
-    const ok = await confirmAction('Organize folder?', `GemAI will sort ${entries.length} files in:\n${base}\n\ninto subfolders by type (images, documents, videos, etc.). Files are moved, not deleted.`);
+    const ok = await confirmAction('Organize folder?', `GemAir will sort ${entries.length} files in:\n${base}\n\ninto subfolders by type (images, documents, videos, etc.). Files are moved, not deleted.`);
     if (!ok) return { error: 'Cancelled by user.' };
     const moved = {}, total = entries.length;
     for (const e of entries) {
@@ -947,7 +966,7 @@ async function renameFiles(dir, pattern) {
   try {
     const files = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
     if (!files.length) return { ok: true, renamed: 0, pattern: pat };
-    const ok = await confirmAction('Rename files?', `GemAI will rename ${files.length} files in:\n${base}\nto "${pat}-001", "${pat}-002", … (extensions kept).`);
+    const ok = await confirmAction('Rename files?', `GemAir will rename ${files.length} files in:\n${base}\nto "${pat}-001", "${pat}-002", … (extensions kept).`);
     if (!ok) return { error: 'Cancelled by user.' };
     let n = 0;
     for (const e of files) {
@@ -968,7 +987,7 @@ async function archiveOldFiles(dir, days) {
     const archive = path.join(base, '_archive');
     const candidates = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile() && (() => { try { return fs.statSync(path.join(base, e.name)).mtimeMs < cutoff; } catch { return false; } })());
     if (!candidates.length) return { ok: true, archived: 0, archive };
-    const ok = await confirmAction('Archive old files?', `GemAI will move ${candidates.length} files older than ${days} days from:\n${base}\ninto an "_archive" subfolder. Nothing is deleted.`);
+    const ok = await confirmAction('Archive old files?', `GemAir will move ${candidates.length} files older than ${days} days from:\n${base}\ninto an "_archive" subfolder. Nothing is deleted.`);
     if (!ok) return { error: 'Cancelled by user.' };
     if (!fs.existsSync(archive)) fs.mkdirSync(archive, { recursive: true });
     let n = 0;
@@ -1044,7 +1063,7 @@ async function seeScreen() {
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1280, height: 720 } });
   const source = sources[0];
   if (!source || !source.thumbnail) return { error: 'No screen available' };
-  const file = path.join(app.getPath('pictures'), `gemai-screen-${Date.now()}.png`);
+  const file = path.join(app.getPath('pictures'), `gemair-screen-${Date.now()}.png`);
   fs.writeFileSync(file, source.thumbnail.toPNG());
   logAction('see_screen', `Captured screen to ${file}`);
   return { ok: true, file, note: 'Screen captured. If your AI model supports vision, it can analyze this image.' };
@@ -1151,7 +1170,7 @@ async function takeScreenshot() {
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
   const source = sources[0];
   if (!source || !source.thumbnail) return { error: 'No screen available' };
-  const file = path.join(app.getPath('pictures'), `gemai-screenshot-${Date.now()}.png`);
+  const file = path.join(app.getPath('pictures'), `gemair-screenshot-${Date.now()}.png`);
   fs.writeFileSync(file, source.thumbnail.toPNG());
   return { ok: true, file };
 }
@@ -1526,9 +1545,9 @@ async function offlineBrain(text) {
   const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 
   if (/^(hi|hello|hey|salam|yo|good (morning|evening|afternoon))\b/.test(q) && q.length < 14)
-    return 'Hello. GemAI online. All systems standing by. (I am running on the built-in offline brain — add a free Groq key in Settings for full intelligence.)';
+    return 'Hello. GemAir online. All systems standing by. (I am running on the built-in offline brain — add a free Groq key in Settings for full intelligence.)';
 
-  if (/your name|who are you/.test(q)) return "I'm GemAI — your personal AI, like your own JARVIS. I can talk to any AI model you connect, and I remember everything we discuss.";
+  if (/your name|who are you/.test(q)) return "I'm GemAir — your personal AI, like your own JARVIS. I can talk to any AI model you connect, and I remember everything we discuss.";
 
   if (/how are you/.test(q)) return 'All circuits nominal. How can I assist?';
   if (/time|clock/.test(q)) return `The current time is ${time}.`;
@@ -1664,7 +1683,7 @@ function startReminderScheduler() {
       if (!r.done && !r.notified && r.at <= Date.now()) {
         r.notified = true; changed = true;
         if (mainWindow) mainWindow.webContents.send('reminder:due', r);
-        if (Notification.isSupported()) new Notification({ title: 'GemAI Reminder', body: r.text }).show();
+        if (Notification.isSupported()) new Notification({ title: 'GemAir Reminder', body: r.text }).show();
       }
     }
     if (changed) writeMemory(m);
@@ -1690,7 +1709,7 @@ function agentSystemPrompt(name) {
     role: 'system',
     content:
       `${b.prompt}\n` +
-      `You are ${name}, one of GemAI's resident agents, and your specialty is ${b.role}. ` +
+      `You are ${name}, one of GemAir's resident agents, and your specialty is ${b.role}. ` +
       `You work for the user (${(readProfile().name) || 'Commander'}). Be truthful — never fabricate; verify facts and cite sources. ` +
       `LONG-TERM MEMORY:\n${facts || '(none)'}\n\n` +
       (instructions ? `STANDING INSTRUCTIONS:\n${instructions}\n\n` : '') +
@@ -1760,7 +1779,7 @@ ipcMain.handle('memory:deleteInstruction', (_e, id) => { const m = readMemory();
 
 ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
   const res = await dialog.showSaveDialog(mainWindow, {
-    title: 'Save output', defaultPath: suggestedName || 'gemai-output.txt',
+    title: 'Save output', defaultPath: suggestedName || 'gemair-output.txt',
     filters: [{ name: 'All files', extensions: ['*'] }]
   });
   if (res.canceled || !res.filePath) return { ok: false };
