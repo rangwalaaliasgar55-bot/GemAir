@@ -127,24 +127,29 @@ const EMOTION_LEXICON = {
   love: ['love', 'adore', 'care about', 'miss you', 'my love', 'romantic', 'crush'],
   gratitude: ['grateful', 'thankful', 'thanks', 'appreciate', 'blessed', 'shukriya'],
   confident: ['confident', 'proud', 'achieved', 'accomplished', 'succeeded', 'success', 'nailed it'],
+  hope: ['hopeful', 'hope', 'optimistic', 'looking forward', 'excited for', 'believe in'],
+  relief: ['relieved', 'relief', 'phew', 'glad it', 'what a relief', 'finally'],
   curiosity: ['curious', 'wondering', 'how does', 'what is', 'why', 'tell me about', 'explain', 'question', 'learn'],
   boredom: ['bored', 'boring', 'nothing to do', 'uninterested', 'monotonous'],
   tired: ['tired', 'exhausted', 'sleepy', 'fatigued', 'drained', 'burnout', 'burned out', 'no energy', 'so sleepy'],
   anxiety: ['anxious', 'anxiety', 'nervous', 'overwhelmed', 'stressed', 'stress', 'worry', 'worried', 'pressure', 'restless', 'panic', 'overthinking'],
   sadness: ['sad', 'down', 'depressed', 'unhappy', 'miserable', 'crying', 'cry', 'grief', 'lonely', 'heartbroken', 'upset', 'blue', 'hopeless', 'empty'],
   fear: ['scared', 'afraid', 'fear', 'terrified', 'frightened', 'dread', 'petrified'],
-  anger: ['angry', 'mad', 'furious', 'annoyed', 'irritated', 'hate', 'rage', 'frustrated', 'frustrating', 'pissed', 'fed up']
+  anger: ['angry', 'mad', 'furious', 'annoyed', 'irritated', 'hate', 'rage', 'frustrated', 'frustrating', 'pissed', 'fed up'],
+  guilt: ['guilty', 'regret', 'remorse', 'sorry i', 'should have', 'ashamed of'],
+  embarrassment: ['embarrassed', 'embarrassing', 'ashamed', 'humiliated', 'cringe', 'so awkward']
 };
 
 const EMOTION_VALENCE = {
-  joy: 1, excitement: 1, love: 0.9, gratitude: 0.9, confident: 0.8, curiosity: 0.25,
-  boredom: -0.3, tired: -0.4, anxiety: -0.6, sadness: -0.7, fear: -0.7, anger: -0.8
+  joy: 1, excitement: 1, love: 0.9, gratitude: 0.9, confident: 0.8, hope: 0.7, relief: 0.8, curiosity: 0.25,
+  boredom: -0.3, tired: -0.4, anxiety: -0.6, sadness: -0.7, fear: -0.7, anger: -0.8, guilt: -0.5, embarrassment: -0.4
 };
 
 function analyzeEmotion(text) {
   const q = String(text || '').toLowerCase();
   const negated = /\b(not|no|never|don't|dont|cant|can't|isn't|isnt|wasn't)\b/;
   const scores = {};
+  let totalHits = 0;
   for (const [emotion, words] of Object.entries(EMOTION_LEXICON)) {
     let score = 0;
     for (const w of words) {
@@ -152,18 +157,24 @@ function analyzeEmotion(text) {
         // check for negation in a small window
         const idx = q.indexOf(w);
         const window = q.slice(Math.max(0, idx - 24), idx);
-        score += negated.test(window) ? -1 : 1;
+        const v = negated.test(window) ? -1 : 1;
+        score += v; if (v > 0) totalHits++;
       }
     }
     scores[emotion] = score;
   }
   const entries = Object.entries(scores).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
-  if (!entries.length) return { emotion: 'neutral', valence: 0, arousal: 0.3, confidence: 0.4 };
-  const [top] = entries;
-  const emotion = top[0];
+  if (!entries.length) return { emotion: 'neutral', valence: 0, arousal: 0.3, intensity: 0, confidence: 0.4 };
+  const emotion = entries[0][0];
   const valence = EMOTION_VALENCE[emotion] ?? 0;
   const arousal = ['excitement', 'anger', 'fear', 'joy'].includes(emotion) ? 0.85 : ['sadness', 'tired', 'boredom'].includes(emotion) ? 0.25 : 0.5;
-  return { emotion, valence, arousal, confidence: Math.min(0.95, 0.4 + top[1] * 0.15) };
+  return {
+    emotion,
+    valence,
+    arousal,
+    intensity: Math.min(1, entries[0][1] / 3),
+    confidence: Math.min(0.95, 0.4 + entries[0][1] * 0.15 + Math.min(0.15, totalHits * 0.02))
+  };
 }
 
 function moodHistoryForPrompt() {
@@ -352,10 +363,22 @@ async function webSearch(query) {
     }
   };
   flatten(d.RelatedTopics);
+  let answer = d.AbstractText || d.Answer || null;
+  let source = d.AbstractSource || null;
+  let answerUrl = d.AbstractURL || null;
+
+  // Wikipedia fallback when DDG has no abstract (free, no key)
+  if (!answer) {
+    try {
+      const w = await fetch('https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=1&search=' + encodeURIComponent(query)).then(r => r.json());
+      if (Array.isArray(w) && w[2] && w[2][0]) { answer = w[2][0]; source = 'Wikipedia'; answerUrl = w[3][0]; }
+    } catch {}
+  }
+
   return {
-    answer: d.AbstractText || d.Answer || null,
-    source: d.AbstractSource || null,
-    url: d.AbstractURL || null,
+    answer,
+    source,
+    url: answerUrl,
     results: results.slice(0, 5)
   };
 }
@@ -1232,9 +1255,44 @@ async function offlineBrain(text) {
     return 'Tell me a city — e.g. "weather in Mumbai".';
   }
 
-  if (/search|google|look up|find|who is|what is/.test(q)) {
-    const query = q.replace(/^(search|google|look up|find) (for )?/i, '').trim();
-    if (query) { const s = await webSearch(query); return s.answer || (s.results[0] ? `Top result: ${s.results[0].title}` : `No results found for "${query}".`); }
+  if (/search|google|look up|find|who is|what is|tell me about|news about|current|latest/.test(q)) {
+    const query = q.replace(/^(search|google|look up|find) (for )?/i, '').replace(/^(tell me about|what is|who is|news about)\s+/i, '').trim();
+    if (query) {
+      const s = await webSearch(query);
+      if (s.answer) return s.answer + (s.source ? `\n\nSource: ${s.source}` : '');
+      if (s.results[0]) return `Top results for "${query}":\n` + s.results.slice(0, 4).map((r, i) => `${i + 1}. ${r.title}${r.url ? ' — ' + r.url : ''}`).join('\n');
+      return `I searched but couldn't find a clear answer for "${query}".`;
+    }
+  }
+
+  if (/bitcoin|ethereum|solana|dogecoin|crypto|btc|eth|price of/.test(q)) {
+    const coins = ['bitcoin', 'ethereum', 'solana', 'dogecoin', 'ripple', 'cardano'];
+    const coin = coins.find((c) => q.includes(c)) || 'bitcoin';
+    const c = await getCryptoPrice(coin);
+    return c.error || `${coin} is $${c.usd} (₹${c.inr}).`;
+  }
+
+  if (/convert|currency|exchange rate|usd|inr|dollar|rupee/.test(q)) {
+    const m = q.match(/([\d.]+)\s*([a-z]{3})\s*(?:to|in|into|->)?\s*([a-z]{3})/i);
+    if (m) { const c = await convertCurrency(parseFloat(m[1]), m[2], m[3]); return c.error || `${c.amount} ${c.from} = ${c.result} ${c.to} (rate ${c.rate}).`; }
+    return 'Tell me an amount, e.g. "convert 100 usd to inr".';
+  }
+
+  if (/translate/.test(q)) {
+    const m = q.match(/translate\s+["']?(.+?)["']?\s+(?:to|into)\s+([a-z]+)/i);
+    if (m) { const t = await translateText(m[1], m[2]); return t.error || `Translation: ${t.translation}`; }
+    return 'Say e.g. "translate hello to hindi".';
+  }
+
+  if (/define|meaning of|dictionary|what does .* mean/.test(q)) {
+    const m = q.match(/(?:define|meaning of)\s+([a-z]+)/i) || q.match(/what does\s+([a-z]+)\s+mean/i);
+    if (m) { const d = await defineWord(m[1]); return d.error || `${d.word} (${d.phonetic}) — ${d.partOfSpeech}: ${d.definition}${d.example ? '\nExample: ' + d.example : ''}`; }
+    return 'Say e.g. "define serendipity".';
+  }
+
+  if (/time in|time now in/.test(q)) {
+    const m = q.match(/time (?:in|now in) ([a-z ]+)/i);
+    if (m) { const t = getWorldTime(m[1].trim()); return t.error || `In ${t.city} it is ${t.time}.`; }
   }
 
   if (/remind|reminder/.test(q)) {

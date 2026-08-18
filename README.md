@@ -17,7 +17,7 @@ GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice a
 | 👋 **Personalized** | Greets you by name and time of day (12-hour clock), and remembers who you are forever. |
 | 🧠 **AI Brain (your key only)** | Paste a **free Groq key** (or OpenAI / OpenRouter / local Ollama). GemAI uses **that key and nothing else** — no silent fallback, no other provider. |
 | 🧠 **Long-Term Memory (never lost)** | Automatically extracts durable facts about you (name, preferences, projects, goals) using your own model, stores them **on disk forever**, and injects them into every conversation. Full chat history is also persisted and restored on every launch. |
-| 🛠 **Tool-calling (30+ tools)** | The AI can *do* things, not just chat. **Web**: live weather, web search, fetch & read any webpage, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, **AI image generation**, open URLs. **Computer**: open any app, list/read/write/search files, clipboard, volume, screenshots, system control, email draft, WhatsApp, to-dos, and (optional) shell commands with per-command confirmation. |
+| 🛠 **Tool-calling (45+ tools)** | The AI can *do* things, not just chat. **Web**: live weather, **real web search (no AI needed)**, fetch & read any webpage, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, **AI image generation**, open URLs. **Computer**: open any app, list/read/write/search files, clipboard, volume, screenshots, system control, email draft, WhatsApp, to-dos, file-organizing "missions", and (optional) shell commands with per-command confirmation. |
 | ⏰ **World clock** | Time in any city, 12-hour format, live UTC clock. |
 | 🎹 **Command palette** | `Ctrl/Cmd+K` to ask or navigate from anywhere; `Ctrl/Cmd+L` focuses chat; `Ctrl/Cmd+,` opens settings. |
 | 💛 **Emotional intelligence** | Detects your emotion in real time (joy, sadness, anxiety, anger, love…), adapts its tone and empathy to how you feel, and tracks your mood over time. |
@@ -73,6 +73,53 @@ cd GemAI
 npm install
 npm start
 ```
+
+---
+
+## 🌐 Deploy to Vercel (free web version)
+
+GemAI is **Vercel-ready**: the same UI runs as a static site, and all the free tools
+(weather, web search, crypto, currency, translate, dictionary, headlines) are
+serverless functions in `/api` — **no Groq key required**.
+
+```bash
+npm i -g vercel
+vercel          # deploy; it auto-detects vercel.json (api/ functions + renderer/ static)
+```
+
+**Environment variables (all optional)** — see `.env.example`:
+
+| Variable | Purpose |
+| --- | --- |
+| `GROQ_API_KEY` | Optional — unlocks full AI chat (free key at console.groq.com/keys). Without it, the free offline brain + real web search still work. |
+| `AI_BASE_URL` / `AI_MODEL` | Point at any OpenAI-compatible provider. |
+| `SUPABASE_URL` / `SUPABASE_ANON_KEY` | Optional — cloud memory sync (see below). |
+
+> 🔎 **Free web search, no AI:** queries like *"search latest AI news"*, *"weather in Mumbai"*, *"bitcoin price"*, *"convert 100 usd to inr"* hit the real DuckDuckGo/Wikipedia/Open-Meteo/CoinGecko APIs directly through `/api/*` — genuine results, zero cost, no key.
+
+---
+
+## 🗄 Database: Supabase vs Neon
+
+**Use Supabase.** Here's why for this project:
+
+| | Supabase ✅ | Neon |
+| --- | --- | --- |
+| Auth | Built-in (Anonymous sign-ins → per-user Row-Level Security) | None — you wire it yourself |
+| Auto REST API | Instant PostgREST + JS client | Just a Postgres URL (need an API layer) |
+| Realtime / storage | Included | Not included |
+| Idle behavior | Free project stays warm | Free tier **suspends when idle** (cold starts) |
+| Best for | Full backend-in-a-box for a personal AI | Raw serverless Postgres behind your own API |
+
+**Setup (5 min):**
+1. Create a project at [supabase.com](https://supabase.com).
+2. Run [`supabase/schema.sql`](supabase/schema.sql) in the SQL editor.
+3. Enable **Anonymous sign-ins** (Authentication → Providers → Anonymous).
+4. Paste `SUPABASE_URL` + `SUPABASE_ANON_KEY` into Vercel env (and/or `.env`).
+
+The app stores memory local-first (localStorage) and **mirrors** it to Supabase, so your
+memories, notes, goals and mood follow you across devices. No login screen — anonymous
+sign-ins keep it frictionless while Row-Level Security keeps each user's data private.
 
 ---
 

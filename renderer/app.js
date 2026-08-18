@@ -36,53 +36,84 @@ const api = {
       memPercent: Math.round((used / total) * 100), uptime: 3600 * 14, loadavg: [0.8, 1.1, 1.3]
     };
   },
-  async getProfile() { return window.gemai ? window.gemai.getProfile() : { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en' }, memoryOn: true, allowShell: false, wakeWord: false }; },
-  async setProfile(d) { if (window.gemai) return window.gemai.setProfile(d); },
+  async getProfile() { if (window.gemai) return window.gemai.getProfile(); return window.webStore ? window.webStore.getProfile() : {}; },
+  async setProfile(d) { if (window.gemai) return window.gemai.setProfile(d); if (window.webStore) await window.webStore.setProfile(d); },
 
+  async _webChat(messages) {
+    try {
+      const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages }) });
+      return await r.json();
+    } catch (e) { return { ok: false, error: e.message }; }
+  },
   async aiChat(config, messages) {
     if (window.gemai) return window.gemai.aiChat(config, messages);
-    await sleep(700);
-    return { ok: true, reply: offlineBrain(messages[messages.length - 1].content) };
+    return await this._webChat(messages);
   },
   async aiChatStream(config, messages, onDelta) {
     if (window.gemai) return window.gemai.aiChatStream(config, messages, onDelta);
-    const text = offlineBrain(messages[messages.length - 1].content);
-    for (const ch of text) { onDelta(ch); await sleep(18); }
+    const res = await this._webChat(messages);
+    if (!res.ok) return res;
+    const text = res.reply;
+    for (const ch of text) { onDelta(ch); await sleep(12); } // simulate streaming locally
     return { ok: true, reply: text };
   },
-  async aiSummarize(config, text) { return window.gemai ? window.gemai.aiSummarize(config, text) : { ok: true, summary: null }; },
+  async aiSummarize(config, text) { if (window.gemai) return window.gemai.aiSummarize(config, text); return { ok: true, summary: null }; },
   async aiOffline(text) {
     if (window.gemai) return window.gemai.aiOffline(text);
-    return { ok: true, reply: offlineBrain(text) };
+    return { ok: true, reply: await offlineBrain(text) };
   },
 
-  // memory
-  async memoryGet() { if (window.gemai) return window.gemai.memoryGet(); return JSON.parse(JSON.stringify(MOCK_MEMORY)); },
-  async memoryAppend(role, content) { if (window.gemai) return window.gemai.memoryAppend(role, content); MOCK_MEMORY.transcript.push({ role, content, ts: Date.now() }); },
-  async memoryClearTranscript() { if (window.gemai) return window.gemai.memoryClearTranscript(); MOCK_MEMORY.transcript = []; },
-  async memoryAddFact(fact) { if (window.gemai) return window.gemai.memoryAddFact(fact); const t = typeof fact === 'string' ? fact : fact.text; if (!MOCK_MEMORY.facts.some(f => f.text === t)) MOCK_MEMORY.facts.push({ id: 'm' + Date.now(), text: t, category: fact.category || 'fact', importance: 1 }); },
-  async memoryDeleteFact(id) { if (window.gemai) return window.gemai.memoryDeleteFact(id); MOCK_MEMORY.facts = MOCK_MEMORY.facts.filter(f => f.id !== id); },
-  async memoryAddNote(text) { if (window.gemai) return window.gemai.memoryAddNote(text); MOCK_MEMORY.notes.unshift({ id: 'n' + Date.now(), text }); },
-  async memoryDeleteNote(id) { if (window.gemai) return window.gemai.memoryDeleteNote(id); MOCK_MEMORY.notes = MOCK_MEMORY.notes.filter(n => n.id !== id); },
-  async memoryAddReminder(text, at) { if (window.gemai) return window.gemai.memoryAddReminder(text, at); MOCK_MEMORY.reminders.push({ id: 'r' + Date.now(), text, at, done: false, notified: false }); },
-  async memoryDeleteReminder(id) { if (window.gemai) return window.gemai.memoryDeleteReminder(id); MOCK_MEMORY.reminders = MOCK_MEMORY.reminders.filter(r => r.id !== id); },
-  async memoryMarkReminder(id, done) { if (window.gemai) return window.gemai.memoryMarkReminder(id, done); const r = MOCK_MEMORY.reminders.find(r => r.id === id); if (r) r.done = !!done; },
-  async memoryExtract(config, u, a) { if (window.gemai) return window.gemai.memoryExtract(config, u, a); const facts = localExtract(u); let n = 0; for (const f of facts) { if (!MOCK_MEMORY.facts.some(x => x.text === f.text)) { MOCK_MEMORY.facts.push({ id: 'm' + Date.now(), text: f.text, category: f.category, importance: 1 }); n++; } } return n; },
+  // memory (Electron IPC | browser localStorage + optional Supabase)
+  async memoryGet() { if (window.gemai) return window.gemai.memoryGet(); return window.webStore ? window.webStore.get() : JSON.parse(JSON.stringify(MOCK_MEMORY)); },
+  async memoryAppend(role, content) { if (window.gemai) return window.gemai.memoryAppend(role, content); if (window.webStore) await window.webStore.append(role, content); },
+  async memoryClearTranscript() { if (window.gemai) return window.gemai.memoryClearTranscript(); if (window.webStore) await window.webStore.clearTranscript(); },
+  async memoryAddFact(fact) { if (window.gemai) return window.gemai.memoryAddFact(fact); if (window.webStore) await window.webStore.addFact(fact); },
+  async memoryDeleteFact(id) { if (window.gemai) return window.gemai.memoryDeleteFact(id); if (window.webStore) await window.webStore.deleteFact(id); },
+  async memoryAddNote(text) { if (window.gemai) return window.gemai.memoryAddNote(text); if (window.webStore) await window.webStore.addNote(text); },
+  async memoryDeleteNote(id) { if (window.gemai) return window.gemai.memoryDeleteNote(id); if (window.webStore) await window.webStore.deleteNote(id); },
+  async memoryAddReminder(text, at) { if (window.gemai) return window.gemai.memoryAddReminder(text, at); if (window.webStore) await window.webStore.addReminder(text, at); },
+  async memoryDeleteReminder(id) { if (window.gemai) return window.gemai.memoryDeleteReminder(id); if (window.webStore) await window.webStore.deleteReminder(id); },
+  async memoryMarkReminder(id, done) { if (window.gemai) return window.gemai.memoryMarkReminder(id, done); if (window.webStore) await window.webStore.markReminder(id, done); },
+  async memoryExtract(config, u, a) {
+    if (window.gemai) return window.gemai.memoryExtract(config, u, a);
+    const facts = localExtract(u); let n = 0;
+    const mem = window.webStore ? await window.webStore.get() : MOCK_MEMORY;
+    for (const f of facts) { if (!mem.facts.some(x => x.text === f.text)) { await this.memoryAddFact(f); n++; } }
+    return n;
+  },
+  async memoryAddMood(emotion, note) { if (window.gemai) return window.gemai.memoryAddMood(emotion, note); if (window.webStore) await window.webStore.addMood(emotion, note); },
+  async memoryAddGoal(text, category) { if (window.gemai) return window.gemai.memoryAddGoal(text, category); if (window.webStore) await window.webStore.addGoal(text, category); },
+  async memoryDeleteGoal(id) { if (window.gemai) return window.gemai.memoryDeleteGoal(id); if (window.webStore) await window.webStore.deleteGoal(id); },
+  async memoryToggleGoal(id) { if (window.gemai) return window.gemai.memoryToggleGoal(id); if (window.webStore) await window.webStore.toggleGoal(id); },
+  async analyzeEmotion(text) { return window.gemai ? window.gemai.analyzeEmotion(text) : analyzeEmotion(text); },
 
   async saveCode(content, name) {
     if (window.gemai) return window.gemai.saveCode(content, name);
-    return { ok: false, error: 'File saving is available in the desktop app.' };
+    downloadText(content, name || 'gemai-output.txt');
+    return { ok: true, path: name || 'gemai-output.txt' };
   },
-  async memoryAddMood(emotion, note) { if (window.gemai) return window.gemai.memoryAddMood(emotion, note); MOCK_MEMORY.mood = MOCK_MEMORY.mood || []; MOCK_MEMORY.mood.push({ emotion, valence: (EMOTION_VALENCE[emotion] ?? 0), note, ts: Date.now() }); },
-  async memoryAddGoal(text, category) { if (window.gemai) return window.gemai.memoryAddGoal(text, category); MOCK_MEMORY.goals = MOCK_MEMORY.goals || []; MOCK_MEMORY.goals.unshift({ id: 'g' + Date.now(), text, category, done: false }); },
-  async memoryDeleteGoal(id) { if (window.gemai) return window.gemai.memoryDeleteGoal(id); MOCK_MEMORY.goals = (MOCK_MEMORY.goals || []).filter(g => g.id !== id); },
-  async memoryToggleGoal(id) { if (window.gemai) return window.gemai.memoryToggleGoal(id); const g = (MOCK_MEMORY.goals || []).find(g => g.id === id); if (g) g.done = !g.done; },
-  async analyzeEmotion(text) { return window.gemai ? window.gemai.analyzeEmotion(text) : analyzeEmotion(text); },
-  async getHeadlines(limit) { return window.gemai ? window.gemai.getHeadlines(limit) : mockHeadlines; },
+  async getHeadlines(limit) {
+    if (window.gemai) return window.gemai.getHeadlines(limit);
+    try { const r = await fetch('/api/headlines?limit=' + (limit || 14)); return await r.json(); } catch { return []; }
+  },
   openExternal(url) { if (window.gemai) window.gemai.openExternal(url); else window.open(url, '_blank'); },
   async version() { return window.gemai ? window.gemai.version() : '1.0.0'; },
-  onReminder(cb) { if (window.gemai) window.gemai.onReminder(cb); }
+  onReminder(cb) { if (window.gemai) window.gemai.onReminder(cb); },
+  onWakeToggle(cb) { if (window.gemai) window.gemai.onWakeToggle(cb); }
 };
+
+// trigger a browser download (web-mode "save to file")
+function downloadText(content, name) {
+  try {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  } catch (e) {}
+}
 
 const mockHeadlines = [
   { title: 'Open-source JARVIS-style assistants are on the rise', score: 421, by: 'gemai', url: '#' },
@@ -91,16 +122,93 @@ const mockHeadlines = [
 ];
 
 // ---------------------------------------------------------------------------
-// Offline brain (browser-preview mirror)
+// Free web tools (Vercel API — no key, no AI needed)
 // ---------------------------------------------------------------------------
-function offlineBrain(text) {
+async function webGet(path, params) {
+  try {
+    const qs = new URLSearchParams(params || {}).toString();
+    const r = await fetch('/api/' + path + (qs ? '?' + qs : ''));
+    return await r.json();
+  } catch (e) { return { error: e.message }; }
+}
+
+// ---------------------------------------------------------------------------
+// Offline brain (browser/web mirror) — genuinely searches the web for free
+// ---------------------------------------------------------------------------
+async function offlineBrain(text) {
   const q = (text || '').toLowerCase().trim();
-  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (!q) return "I didn't catch that. Say it again?";
+  const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+
+  if (/^(hi|hello|hey|salam|yo|good (morning|evening|afternoon))\b/.test(q) && q.length < 14)
+    return 'Hello. GemAI online. I can search the web, check weather, prices, translate and more — all free, no API key needed.';
+  if (/your name|who are you/.test(q)) return "I'm GemAI — your personal AI. I understand how you feel and I search the real web for free (no API key required).";
+  if (/how are you/.test(q)) return 'All circuits nominal — and glad you asked. How are you doing?';
   if (/time|clock/.test(q)) return `The current time is ${time}.`;
   if (/\bdate\b|what day/.test(q)) return `Today is ${new Date().toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`;
-  if (/your name|who are you/.test(q)) return "I'm GemAI — your personal AI, like your own JARVIS. I remember everything we discuss, permanently.";
   if (/joke/.test(q)) return "There are only 10 kinds of people: those who understand binary and those who don't.";
-  return 'I am running in offline mode. Open Settings → AI Brain and paste a free Groq key for full intelligence (weather, web search, reminders, and a real LLM brain).';
+  if (/thank|thanks|shukriya/.test(q)) return 'You are most welcome.';
+
+  // ---- free weather (no key) ----
+  if (/weather|temperature|forecast|how hot|how cold/.test(q)) {
+    const m = q.match(/weather (?:in|for|at)? ?([a-z ]+)/) || q.match(/(?:in|for|at) ([a-z ]+)/);
+    const city = (m && m[1]) ? m[1].trim() : null;
+    if (city) { const w = await webGet('weather', { city }); return w.error || `In ${w.city} it is ${w.temperature}°C with ${w.condition} (wind ${w.windspeed} km/h).`; }
+    return 'Tell me a city — e.g. "weather in Mumbai".';
+  }
+
+  // ---- real web search (free, no AI) ----
+  if (/search|google|look up|find|who is|what is|tell me about|news about|current|latest/.test(q)) {
+    const query = q.replace(/^(search|google|look up|find) (for )?/i, '').replace(/^(tell me about|what is|who is|news about)\s+/i, '').trim();
+    if (query) {
+      const s = await webGet('search', { q: query });
+      if (s.answer) return `${s.answer}\n\nSource: ${s.source || 'the web'}${s.url ? ' (' + s.url + ')' : ''}`;
+      if (s.results && s.results[0]) return `Top results for "${query}":\n` + s.results.slice(0, 4).map((r, i) => `${i + 1}. ${r.title}${r.url ? ' — ' + r.url : ''}`).join('\n');
+      return `I searched but couldn't find a clear answer for "${query}".`;
+    }
+  }
+
+  // ---- crypto (free) ----
+  if (/bitcoin|ethereum|solana|dogecoin|crypto|btc|eth|price of/.test(q)) {
+    const coins = ['bitcoin', 'ethereum', 'solana', 'dogecoin', 'ripple', 'cardano'];
+    const coin = coins.find((c) => q.includes(c)) || 'bitcoin';
+    const c = await webGet('crypto', { coin });
+    return c.error || `${coin} is $${c.usd} (₹${c.inr}).`;
+  }
+
+  // ---- currency (free) ----
+  if (/convert|currency|exchange rate|usd|inr|dollar|rupee/.test(q)) {
+    const m = q.match(/([\d.]+)\s*([a-z]{3})\s*(?:to|in|into|->)?\s*([a-z]{3})/i);
+    if (m) { const c = await webGet('currency', { amount: m[1], from: m[2], to: m[3] }); return c.error || `${c.amount} ${c.from} = ${c.result} ${c.to} (rate ${c.rate}).`; }
+    return 'Tell me an amount, e.g. "convert 100 usd to inr".';
+  }
+
+  // ---- translate (free) ----
+  if (/translate/.test(q)) {
+    const m = q.match(/translate\s+["']?(.+?)["']?\s+(?:to|into)\s+([a-z]+)/i);
+    if (m) { const t = await webGet('translate', { text: m[1], to: m[2] }); return t.error || `Translation: ${t.translation}`; }
+    return 'Say e.g. "translate hello to hindi".';
+  }
+
+  // ---- dictionary (free) ----
+  if (/define|meaning of|dictionary|what does .* mean/.test(q)) {
+    const m = q.match(/(?:define|meaning of)\s+([a-z]+)/i) || q.match(/what does\s+([a-z]+)\s+mean/i);
+    if (m) { const d = await webGet('dictionary', { word: m[1] }); return d.error || `${d.word} (${d.phonetic}) — ${d.partOfSpeech}: ${d.definition}${d.example ? '\nExample: ' + d.example : ''}`; }
+    return 'Say e.g. "define serendipity".';
+  }
+
+  // ---- world time (free, client-side) ----
+  if (/time in|time now in/.test(q)) {
+    const m = q.match(/time (?:in|now in) ([a-z ]+)/i);
+    if (m) {
+      const city = m[1].trim();
+      const tz = { london: 'Europe/London', 'new york': 'America/New_York', tokyo: 'Asia/Tokyo', sydney: 'Australia/Sydney', dubai: 'Asia/Dubai', mumbai: 'Asia/Kolkata', delhi: 'Asia/Kolkata', karachi: 'Asia/Karachi', paris: 'Europe/Paris', berlin: 'Europe/Berlin', singapore: 'Asia/Singapore' }[city];
+      if (tz) return `In ${city} it is ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz })}.`;
+    }
+  }
+
+  return `I can help for free, no API key needed — try: "weather in Mumbai", "search latest AI news", "bitcoin price", "convert 100 usd to inr", "translate hello to hindi", "define serendipity", or just talk to me. ` +
+    `To unlock a full conversational AI brain, set a Groq key (Settings → AI Brain).`;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,44 +220,52 @@ const EMOTION_LEXICON = {
   love: ['love', 'adore', 'care about', 'miss you', 'my love', 'romantic', 'crush'],
   gratitude: ['grateful', 'thankful', 'thanks', 'appreciate', 'blessed', 'shukriya'],
   confident: ['confident', 'proud', 'achieved', 'accomplished', 'succeeded', 'success', 'nailed it'],
+  hope: ['hopeful', 'hope', 'optimistic', 'looking forward', 'excited for', 'believe in'],
+  relief: ['relieved', 'relief', 'phew', 'glad it', 'what a relief', 'finally'],
   curiosity: ['curious', 'wondering', 'how does', 'what is', 'why', 'tell me about', 'explain', 'question', 'learn'],
   boredom: ['bored', 'boring', 'nothing to do', 'uninterested', 'monotonous'],
   tired: ['tired', 'exhausted', 'sleepy', 'fatigued', 'drained', 'burnout', 'burned out', 'no energy', 'so sleepy'],
   anxiety: ['anxious', 'anxiety', 'nervous', 'overwhelmed', 'stressed', 'stress', 'worry', 'worried', 'pressure', 'restless', 'panic', 'overthinking'],
   sadness: ['sad', 'down', 'depressed', 'unhappy', 'miserable', 'crying', 'cry', 'grief', 'lonely', 'heartbroken', 'upset', 'blue', 'hopeless', 'empty'],
   fear: ['scared', 'afraid', 'fear', 'terrified', 'frightened', 'dread', 'petrified'],
-  anger: ['angry', 'mad', 'furious', 'annoyed', 'irritated', 'hate', 'rage', 'frustrated', 'frustrating', 'pissed', 'fed up']
+  anger: ['angry', 'mad', 'furious', 'annoyed', 'irritated', 'hate', 'rage', 'frustrated', 'frustrating', 'pissed', 'fed up'],
+  guilt: ['guilty', 'regret', 'remorse', 'sorry i', 'should have', 'ashamed of'],
+  embarrassment: ['embarrassed', 'embarrassing', 'ashamed', 'humiliated', 'cringe', 'so awkward']
 };
 const EMOTION_VALENCE = {
-  joy: 1, excitement: 1, love: 0.9, gratitude: 0.9, confident: 0.8, curiosity: 0.25,
-  boredom: -0.3, tired: -0.4, anxiety: -0.6, sadness: -0.7, fear: -0.7, anger: -0.8
+  joy: 1, excitement: 1, love: 0.9, gratitude: 0.9, confident: 0.8, hope: 0.7, relief: 0.8, curiosity: 0.25,
+  boredom: -0.3, tired: -0.4, anxiety: -0.6, sadness: -0.7, fear: -0.7, anger: -0.8, guilt: -0.5, embarrassment: -0.4
 };
 function analyzeEmotion(text) {
   const q = String(text || '').toLowerCase();
   const negated = /\b(not|no|never|don't|dont|cant|can't|isn't|isnt|wasn't)\b/;
   const scores = {};
+  let totalHits = 0;
   for (const [emotion, words] of Object.entries(EMOTION_LEXICON)) {
     let score = 0;
     for (const w of words) {
       if (q.includes(w)) {
         const idx = q.indexOf(w);
         const window = q.slice(Math.max(0, idx - 24), idx);
-        score += negated.test(window) ? -1 : 1;
+        const v = negated.test(window) ? -1 : 1;
+        score += v; if (v > 0) totalHits++;
       }
     }
     scores[emotion] = score;
   }
   const entries = Object.entries(scores).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
-  if (!entries.length) return { emotion: 'neutral', valence: 0, arousal: 0.3, confidence: 0.4 };
+  if (!entries.length) return { emotion: 'neutral', valence: 0, arousal: 0.3, intensity: 0, confidence: 0.4 };
   const emotion = entries[0][0];
+  const intensity = Math.min(1, entries[0][1] / 3);
   return {
     emotion,
     valence: EMOTION_VALENCE[emotion] ?? 0,
     arousal: ['excitement', 'anger', 'fear', 'joy'].includes(emotion) ? 0.85 : ['sadness', 'tired', 'boredom'].includes(emotion) ? 0.25 : 0.5,
-    confidence: Math.min(0.95, 0.4 + entries[0][1] * 0.15)
+    intensity,
+    confidence: Math.min(0.95, 0.4 + entries[0][1] * 0.15 + Math.min(0.15, totalHits * 0.02))
   };
 }
-const MOOD_EMOJI = { joy: '😄', excitement: '🤩', love: '🥰', gratitude: '🙏', confident: '😎', curiosity: '🤔', neutral: '😊', boredom: '😑', tired: '😴', anxiety: '😰', sadness: '😔', fear: '😨', anger: '😠' };
+const MOOD_EMOJI = { joy: '😄', excitement: '🤩', love: '🥰', gratitude: '🙏', confident: '😎', hope: '🌟', relief: '😮‍💨', curiosity: '🤔', neutral: '😊', boredom: '😑', tired: '😴', anxiety: '😰', sadness: '😔', fear: '😨', anger: '😠', guilt: '😞', embarrassment: '😳' };
 
 // ---------------------------------------------------------------------------
 // State
@@ -577,9 +693,10 @@ function buildSystemPrompt() {
       `You are the user's friend, mentor, life coach and career advisor — genuinely caring, perceptive and wise. ` +
       `The user's name is ${profile.name || 'Commander'}. ` +
       `Personality — warmth ${s.warmth ?? 60}/100, wit ${s.wit ?? 40}/100, brevity ${s.brevity ?? 70}/100. ` +
-      `EMOTIONAL INTELLIGENCE: The user's current emotional state is "${currentEmotion.emotion}" (valence ${currentEmotion.valence}). ` +
+      `EMOTIONAL INTELLIGENCE: The user's current emotional state is "${currentEmotion.emotion}" (valence ${currentEmotion.valence}, intensity ${currentEmotion.intensity || 0}). ` +
       (moodAvg != null ? `Their recent mood average is ${moodAvg}/100. ` : '') +
-      `Always respond with empathy: acknowledge their feelings first when they're struggling, celebrate with them when they're doing well. If they're sad, anxious or angry, be gentle, validating and supportive — never dismissive or preachy. Adapt your tone and length to their state. ` +
+      `Always respond with empathy: acknowledge their feelings first when they're struggling, celebrate with them when they're doing well. If they're sad, anxious, angry or guilty, be gentle, validating and supportive — never dismissive or preachy. Adapt your tone and length to their state (more warmth and fewer words when intensity is high). ` +
+      `SEARCH-FIRST: For anything factual, current, or time-sensitive (news, prices, weather, people, "who is", "what is", "latest"), you MUST call web_search / fetch_webpage to get real, up-to-date answers rather than relying on memory. The user wants genuine results, not guesses. ` +
       `LIFE & CAREER: You help with everything — career decisions, study plans, relationships, health, finances, self-improvement and emotional support. Offer thoughtful, practical, encouraging guidance. When appropriate, help them set goals (add_goal), log their mood (log_mood), or offer an affirmation (get_affirmation) or wellness tip (get_wellness_tip). ` +
       `CAPABILITIES via tools: time/date, weather, web search, fetch pages, Wikipedia, YouTube, translate, dictionary, crypto, currency, image generation, open URLs/apps, math, reminders, notes, files, clipboard, volume, screenshots, system control, to-dos, mood, goals, affirmations, wellness. ` +
       `LONG-TERM MEMORY — facts you remember:\n${facts || '(none yet)'}\n\n` +
@@ -1130,7 +1247,7 @@ function updateMoodIndicator(emo) {
   const emojiEl = $('#moodEmoji'), labelEl = $('#moodLabel'), subEl = $('#moodSub');
   if (!emojiEl) return;
   emojiEl.textContent = MOOD_EMOJI[e.emotion] || '😊';
-  const names = { joy: 'Joyful', excitement: 'Excited', love: 'Loving', gratitude: 'Grateful', confident: 'Confident', curiosity: 'Curious', neutral: 'Neutral', boredom: 'Bored', tired: 'Tired', anxiety: 'Anxious', sadness: 'Down', fear: 'Afraid', anger: 'Frustrated' };
+  const names = { joy: 'Joyful', excitement: 'Excited', love: 'Loving', gratitude: 'Grateful', confident: 'Confident', hope: 'Hopeful', relief: 'Relieved', curiosity: 'Curious', neutral: 'Neutral', boredom: 'Bored', tired: 'Tired', anxiety: 'Anxious', sadness: 'Down', fear: 'Afraid', anger: 'Frustrated', guilt: 'Regretful', embarrassment: 'Embarrassed' };
   labelEl.textContent = names[e.emotion] || 'Neutral';
   subEl.textContent = e.confidence > 0.5 ? 'I can feel it — tell me more.' : 'Your current emotional state';
 }
@@ -1653,6 +1770,18 @@ function parseLocalWhen(text) {
 async function boot() {
   // animated boot sequence
   await runBootSequence();
+
+  // web mode: load public config (Supabase / AI) from the Vercel API
+  if (!window.gemai) {
+    try {
+      const cfg = await fetch('/api/config').then((r) => r.json()).catch(() => null);
+      if (cfg && cfg.supabase && window.webStore) {
+        const ok = await window.webStore.initSupabase(cfg.supabase);
+        if (ok) toast('CLOUD', 'Supabase connected — your memory syncs across devices.', '🗄');
+      }
+      window.__gemaiAiConfigured = !!(cfg && cfg.aiConfigured);
+    } catch (e) {}
+  }
 
   await loadProfile();
   await loadMemory();
