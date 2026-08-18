@@ -27,6 +27,81 @@ body[data-theme='emerald'] {
 body[data-theme='cyan'] {
   --accent: #3bc9ff; --accent-soft: rgba(59,201,255,.55); --accent-glow: rgba(59,201,255,.32); --accent-dim: rgba(59,201,255,.14);
 }
+body[data-theme='rgb'] {
+  --accent: #ff3bff; --accent-soft: rgba(255,59,255,.55); --accent-glow: rgba(255,59,255,.32); --accent-dim: rgba(255,59,255,.14);
+}
+
+/* RGB / rainbow animation keyframes */
+@keyframes rgbHue {
+  0% { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+@keyframes rgbGradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes rgbBorder {
+  0% { border-color: #ff0040; box-shadow: 0 0 18px rgba(255,0,64,.5); }
+  16% { border-color: #ff8c00; box-shadow: 0 0 18px rgba(255,140,0,.5); }
+  33% { border-color: #ffe600; box-shadow: 0 0 18px rgba(255,230,0,.5); }
+  50% { border-color: #2bff88; box-shadow: 0 0 18px rgba(43,255,136,.5); }
+  66% { border-color: #00cfff; box-shadow: 0 0 18px rgba(0,207,255,.5); }
+  83% { border-color: #7a4dff; box-shadow: 0 0 18px rgba(122,77,255,.5); }
+  100% { border-color: #ff0040; box-shadow: 0 0 18px rgba(255,0,64,.5); }
+}
+
+/* RGB while speaking/recording — mic button */
+.mic-btn.recording {
+  background: conic-gradient(from 0deg, #ff0040, #ff8c00, #ffe600, #2bff88, #00cfff, #7a4dff, #ff00d4, #ff0040);
+  background-size: 300% 300%;
+  animation: rgbGradient 1.6s linear infinite;
+  color: #000; border-color: transparent; box-shadow: 0 0 24px rgba(255,120,255,.6);
+}
+
+/* RGB while AI speaking — orb center + start button */
+body.rgb-speaking .start-btn {
+  background: conic-gradient(from 0deg, rgba(255,0,64,.55), rgba(255,140,0,.55), rgba(255,230,0,.55), rgba(43,255,136,.55), rgba(0,207,255,.55), rgba(122,77,255,.55), rgba(255,0,212,.55), rgba(255,0,64,.55));
+  background-size: 300% 300%;
+  animation: rgbGradient 2.5s linear infinite;
+}
+body.rgb-speaking .orb-status {
+  color: #fff;
+  border-color: transparent;
+  animation: rgbBorder 2.5s linear infinite;
+}
+body.rgb-recording .orb-panel {
+  animation: rgbBorder 1.6s linear infinite;
+}
+body.rgb-recording .mic-btn {
+  animation: rgbBorder 1.6s linear infinite;
+}
+
+/* RGB chat messages */
+body[data-theme='rgb'] .msg.user {
+  border: 1px solid transparent;
+  background-image: linear-gradient(rgba(12,18,32,0.85), rgba(12,18,32,0.85)), conic-gradient(from 0deg, #ff0040, #ff8c00, #ffe600, #2bff88, #00cfff, #7a4dff, #ff00d4, #ff0040);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  background-size: 100% 100%, 300% 300%;
+  animation: rgbGradient 3s linear infinite;
+}
+body[data-theme='rgb'] .msg.ai {
+  border: 1px solid transparent;
+  background-image: linear-gradient(rgba(20,28,46,0.85), rgba(20,28,46,0.85)), conic-gradient(from 0deg, #ff0040, #ff8c00, #ffe600, #2bff88, #00cfff, #7a4dff, #ff00d4, #ff0040);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  background-size: 100% 100%, 300% 300%;
+  animation: rgbGradient 3s linear infinite;
+}
+
+/* RGB on other accents when rainbow theme is active */
+body[data-theme='rgb'] .nav-btn.active { animation: rgbBorder 4s linear infinite; }
+body[data-theme='rgb'] .primary-btn { background: conic-gradient(from 0deg, #ff0040, #ff8c00, #ffe600, #2bff88, #00cfff, #7a4dff, #ff00d4, #ff0040); background-size: 300% 300%; animation: rgbGradient 3s linear infinite; color: #04060c; }
+body[data-theme='rgb'] .brand-orb { animation: rgbBorder 4s linear infinite; }
+body[data-theme='rgb'] .topbar::after { background: linear-gradient(90deg, transparent, #ff0040, #ff8c00, #ffe600, #2bff88, #00cfff, #7a4dff, #ff00d4, transparent); background-size: 300% 100%; }
+body[data-theme='rgb'] .typing-caret { background: linear-gradient(#ff0040,#00cfff); }
+body[data-theme='rgb'] .typing i { background: #ff3bff; }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -117,6 +192,7 @@ body {
 .theme-btn[data-theme='crimson'] i { background: #ff3b3b; }
 .theme-btn[data-theme='emerald'] i { background: #35ffb0; }
 .theme-btn[data-theme='cyan'] i { background: #3bc9ff; }
+.theme-btn.rgb i { background: conic-gradient(from 0deg, #ff0040, #ff8c00, #ffe600, #2bff88, #00cfff, #7a4dff, #ff00d4, #ff0040); animation: spin 4s linear infinite; }
 .theme-btn i { display: block; width: 100%; height: 100%; border-radius: 50%; }
 
 .icon-btn {

@@ -393,11 +393,49 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---------------------------------------------------------------------------
-// Theme
+// Theme (with RGB / rainbow mode)
 // ---------------------------------------------------------------------------
+const THEME_ACCENTS = { crimson: 0, emerald: 152, cyan: 198, rgb: 300 };
+let currentAccent = '#ff3b3b';
+let rgbTimer = null;
+let rgbHue = 300;
+
+function getAccent() { return currentAccent; }
+
+function setAccentFromHue(hue) {
+  const h = ((hue % 360) + 360) % 360;
+  const accent = `hsl(${h}, 92%, 60%)`;
+  const soft = `hsla(${h}, 92%, 60%, 0.55)`;
+  const glow = `hsla(${h}, 92%, 60%, 0.35)`;
+  const dim = `hsla(${h}, 92%, 60%, 0.14)`;
+  currentAccent = accent;
+  const root = document.body.style;
+  root.setProperty('--accent', accent);
+  root.setProperty('--accent-soft', soft);
+  root.setProperty('--accent-glow', glow);
+  root.setProperty('--accent-dim', dim);
+}
+
+function stopRgb() {
+  if (rgbTimer) { clearInterval(rgbTimer); rgbTimer = null; }
+}
+
+function startRgb() {
+  stopRgb();
+  rgbTimer = setInterval(() => {
+    rgbHue = (rgbHue + 2) % 360;
+    setAccentFromHue(rgbHue);
+  }, 40);
+}
+
 function applyTheme(t) {
   document.body.dataset.theme = t;
   $$('.theme-btn').forEach((b) => b.classList.toggle('active', b.dataset.theme === t));
+  if (t === 'rgb') { startRgb(); }
+  else {
+    stopRgb();
+    setAccentFromHue(THEME_ACCENTS[t] || 0);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -457,7 +495,7 @@ function startBackground3D() {
   const canvas = $('#bgCanvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#ff3b3b';
+  let accent = getAccent();
   let w, h, dpr, mx = 0, my = 0;
   function resize() {
     dpr = window.devicePixelRatio || 1;
@@ -499,6 +537,7 @@ function startBackground3D() {
   }
 
   function draw(t) {
+    accent = getAccent();
     ctx.clearRect(0, 0, w, h);
     // parallax stars
     for (const s of stars) {
@@ -548,7 +587,7 @@ function startPanelTilt() {
 function startOrb() {
   const canvas = $('#orbCanvas'); if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#ff3b3b';
+  let accent = getAccent();
   let w, h, dpr;
   function resize() {
     dpr = window.devicePixelRatio || 1;
@@ -560,6 +599,7 @@ function startOrb() {
   const parts = [];
   for (let i = 0; i < 110; i++) parts.push({ ang: Math.random() * Math.PI * 2, rad: Math.random(), spd: 0.002 + Math.random() * 0.006, size: 1 + Math.random() * 2.2, phase: Math.random() * Math.PI * 2 });
   function draw(t) {
+    accent = getAccent();
     ctx.clearRect(0, 0, w, h);
     const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.42;
     ctx.strokeStyle = accent;
@@ -585,7 +625,7 @@ function startOrb() {
 function startGlobe() {
   const canvas = $('#globeCanvas'); if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#ff3b3b';
+  let accent = getAccent();
   let w, h, dpr;
   function resize() {
     dpr = window.devicePixelRatio || 1;
@@ -606,6 +646,7 @@ function startGlobe() {
     return { x: R * Math.cos(φ) * Math.sin(λ), y: -R * Math.sin(φ), z: R * Math.cos(φ) * Math.cos(λ) };
   }
   function draw(t) {
+    accent = getAccent();
     ctx.clearRect(0, 0, w, h);
     const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.36, rot = t * 0.012;
     ctx.strokeStyle = accent; ctx.lineWidth = 0.8;
@@ -1008,13 +1049,16 @@ function speak(text) {
   stopSpeaking(); // interrupt prior speech so new replies cut in cleanly
   const gen = ++speechGen;
   const mode = profile.voice?.mode || 'neural';
+  document.body.classList.add('rgb-speaking'); // RGB while AI speaks
   speechQueue = speechQueue.then(async () => {
     if (gen !== speechGen) return; // superseded
     if (mode === 'neural') {
       try { await speakNeural(clean, gen); return; } catch (e) { /* fall back to system voice */ }
     }
     if (gen === speechGen) speakSystem(clean);
-  }).catch(() => {});
+  }).catch(() => {}).finally(() => {
+    if (gen === speechGen) document.body.classList.remove('rgb-speaking');
+  });
 }
 
 // Adjust speaking style to the current emotion (emotional voice intelligence)
@@ -1096,9 +1140,10 @@ function initRecognition() {
   const r = new SR();
   r.continuous = false; r.interimResults = false; r.lang = profile.voice?.sttLang || 'en-US';
   r.onresult = (e) => { const t = e.results[0][0].transcript; $('#chatInput').value = t; sendMessage(t); };
-  r.onend = () => { $('#micBtn').classList.remove('recording'); if (isRunning && listening) { try { r.start(); } catch (e) {} } };
+  r.onend = () => { $('#micBtn').classList.remove('recording'); document.body.classList.remove('rgb-recording'); if (isRunning && listening) { try { r.start(); } catch (e) {} } };
   r.onerror = (e) => {
     $('#micBtn').classList.remove('recording');
+    document.body.classList.remove('rgb-recording');
     if (e.error === 'not-allowed') addMessage('system-msg', 'Microphone denied. Enable mic permission, or type your command.');
     if (isRunning && listening && e.error !== 'not-allowed') { try { r.start(); } catch (e2) {} }
   };
@@ -1113,7 +1158,7 @@ function startAgentTown() {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
-  const accent = () => getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#ff3b3b';
+  const accent = () => getAccent();
 
   // office furniture layout
   const desks = [
@@ -1524,7 +1569,7 @@ function renderMood() {
   const w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
   const mood = (memory.mood || []).slice(-30);
-  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#ff3b3b';
+  const accent = getAccent();
 
   if (!mood.length) {
     ctx.fillStyle = '#71809c'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
@@ -1647,7 +1692,7 @@ function startCommandMap() {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
-  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#ff3b3b';
+  let accent = getAccent();
 
   // stylized continents (rough blobs) + city markers
   const cities = [
@@ -1665,6 +1710,7 @@ function startCommandMap() {
   const proj = (lat, lon) => ({ x: (lon + 180) / 360 * W, y: (90 - lat) / 180 * H });
 
   function draw(t) {
+    accent = getAccent();
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#070b14';
     ctx.fillRect(0, 0, W, H);
@@ -2020,7 +2066,7 @@ function bindEvents() {
   $('#micBtn').addEventListener('click', () => {
     if (!recognition) { addMessage('system-msg', 'Speech recognition unavailable here — type a command instead.'); return; }
     if (listening) stopListening();
-    else { listening = true; $('#micBtn').classList.add('recording'); try { recognition.start(); } catch (e) {} }
+    else { listening = true; $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); try { recognition.start(); } catch (e) {} }
   });
 
   $('#refreshNews').addEventListener('click', refreshHeadlines);
@@ -2044,7 +2090,7 @@ function startAiLoop() {
   $('#startLabel').textContent = 'AI ONLINE';
   $('#orbStatus').textContent = 'LISTENING · SPEAK NOW';
   $('#orbStatus').classList.add('active');
-  if (recognition) { try { recognition.start(); $('#micBtn').classList.add('recording'); } catch (e) {} }
+  if (recognition) { try { recognition.start(); $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); } catch (e) {} }
 }
 
 // Continuous wake-word listening ("Hey GemAI")
@@ -2081,6 +2127,7 @@ function configureWakeWord(enabled) {
 function stopListening() {
   listening = false;
   $('#micBtn').classList.remove('recording');
+  document.body.classList.remove('rgb-recording');
   if (recognition) { try { recognition.stop(); } catch (e) {} }
 }
 

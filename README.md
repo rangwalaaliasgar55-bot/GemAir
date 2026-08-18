@@ -34,6 +34,7 @@ GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice a
 | 📊 **Mood tracking** | Visual mood graph, one-tap check-ins, affirmations and wellness tips (focus, stress, sleep, energy, motivation). |
 | 🎯 **Goals** | Persistent life/career/study/finance/health goals with categories and progress. |
 | 🌌 **3D dashboard** | Live 3D starfield + rotating wireframe polyhedron, parallax background, 3D-tilting panels, particle orb, boot sequence and animated HUD. |
+| 🌈 **RGB effects** | **RGB while you speak** (mic button + orb glow rainbow when recording), **RGB while the AI speaks** (animated orb), **RGB chat messages**, and a full **Rainbow theme** that cycles every accent color live. |
 | ⏰ **Reminders** | Persistent, with native OS notifications + spoken alerts when they fire. |
 | 📝 **Notes** | A persistent notebook — save, view, delete. |
 | 🖥 **System Core** | Live CPU / memory gauges, hostname, uptime, load average; **Memory / Notes / Reminders / Soul** tabs. |
@@ -42,7 +43,7 @@ GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice a
 | 🩺 **System guardian** | "What's slowing my PC down?" — live scan of CPU, RAM, and top processes, with one-line advice. |
 | 👁 **Screen awareness** | `see_screen` captures your screen so the AI is aware of what's on it. |
 | ◍ **World Monitor** | A living 3D globe with pulsing hotspots, a **2D command map**, live UTC clock, and a streaming headlines feed (free). |
-| 🎨 **Themes** | Crimson, Emerald, and Cyan — re-skins the entire command center. |
+| 🎨 **Themes** | Crimson, Emerald, Cyan, and **RGB Rainbow** — the accent cycles through the full spectrum across the whole HUD. |
 | 🔒 **Local-first** | Profile, memories, notes, reminders and settings live on your disk. No telemetry. |
 
 ---
