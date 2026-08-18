@@ -18,6 +18,8 @@ const MOCK_MEMORY = {
   notes: [{ id: 'n1', text: 'Welcome to GemAI — your persistent notebook.' }],
   reminders: [],
   todos: [],
+  mood: [],
+  goals: [],
   summary: ''
 };
 
@@ -70,6 +72,11 @@ const api = {
     if (window.gemai) return window.gemai.saveCode(content, name);
     return { ok: false, error: 'File saving is available in the desktop app.' };
   },
+  async memoryAddMood(emotion, note) { if (window.gemai) return window.gemai.memoryAddMood(emotion, note); MOCK_MEMORY.mood = MOCK_MEMORY.mood || []; MOCK_MEMORY.mood.push({ emotion, valence: (EMOTION_VALENCE[emotion] ?? 0), note, ts: Date.now() }); },
+  async memoryAddGoal(text, category) { if (window.gemai) return window.gemai.memoryAddGoal(text, category); MOCK_MEMORY.goals = MOCK_MEMORY.goals || []; MOCK_MEMORY.goals.unshift({ id: 'g' + Date.now(), text, category, done: false }); },
+  async memoryDeleteGoal(id) { if (window.gemai) return window.gemai.memoryDeleteGoal(id); MOCK_MEMORY.goals = (MOCK_MEMORY.goals || []).filter(g => g.id !== id); },
+  async memoryToggleGoal(id) { if (window.gemai) return window.gemai.memoryToggleGoal(id); const g = (MOCK_MEMORY.goals || []).find(g => g.id === id); if (g) g.done = !g.done; },
+  async analyzeEmotion(text) { return window.gemai ? window.gemai.analyzeEmotion(text) : analyzeEmotion(text); },
   async getHeadlines(limit) { return window.gemai ? window.gemai.getHeadlines(limit) : mockHeadlines; },
   openExternal(url) { if (window.gemai) window.gemai.openExternal(url); else window.open(url, '_blank'); },
   async version() { return window.gemai ? window.gemai.version() : '1.0.0'; },
@@ -96,6 +103,54 @@ function offlineBrain(text) {
 }
 
 // ---------------------------------------------------------------------------
+// Emotion analysis (mirror of main-process logic for the browser preview)
+// ---------------------------------------------------------------------------
+const EMOTION_LEXICON = {
+  joy: ['happy', 'glad', 'great', 'awesome', 'amazing', 'wonderful', 'yay', 'delighted', 'joy', 'cheerful', 'best', 'win', 'good day', 'made my day'],
+  excitement: ['excited', 'pumped', 'thrilled', 'wow', 'lets go', "can't wait", 'cant wait', 'fired up'],
+  love: ['love', 'adore', 'care about', 'miss you', 'my love', 'romantic', 'crush'],
+  gratitude: ['grateful', 'thankful', 'thanks', 'appreciate', 'blessed', 'shukriya'],
+  confident: ['confident', 'proud', 'achieved', 'accomplished', 'succeeded', 'success', 'nailed it'],
+  curiosity: ['curious', 'wondering', 'how does', 'what is', 'why', 'tell me about', 'explain', 'question', 'learn'],
+  boredom: ['bored', 'boring', 'nothing to do', 'uninterested', 'monotonous'],
+  tired: ['tired', 'exhausted', 'sleepy', 'fatigued', 'drained', 'burnout', 'burned out', 'no energy', 'so sleepy'],
+  anxiety: ['anxious', 'anxiety', 'nervous', 'overwhelmed', 'stressed', 'stress', 'worry', 'worried', 'pressure', 'restless', 'panic', 'overthinking'],
+  sadness: ['sad', 'down', 'depressed', 'unhappy', 'miserable', 'crying', 'cry', 'grief', 'lonely', 'heartbroken', 'upset', 'blue', 'hopeless', 'empty'],
+  fear: ['scared', 'afraid', 'fear', 'terrified', 'frightened', 'dread', 'petrified'],
+  anger: ['angry', 'mad', 'furious', 'annoyed', 'irritated', 'hate', 'rage', 'frustrated', 'frustrating', 'pissed', 'fed up']
+};
+const EMOTION_VALENCE = {
+  joy: 1, excitement: 1, love: 0.9, gratitude: 0.9, confident: 0.8, curiosity: 0.25,
+  boredom: -0.3, tired: -0.4, anxiety: -0.6, sadness: -0.7, fear: -0.7, anger: -0.8
+};
+function analyzeEmotion(text) {
+  const q = String(text || '').toLowerCase();
+  const negated = /\b(not|no|never|don't|dont|cant|can't|isn't|isnt|wasn't)\b/;
+  const scores = {};
+  for (const [emotion, words] of Object.entries(EMOTION_LEXICON)) {
+    let score = 0;
+    for (const w of words) {
+      if (q.includes(w)) {
+        const idx = q.indexOf(w);
+        const window = q.slice(Math.max(0, idx - 24), idx);
+        score += negated.test(window) ? -1 : 1;
+      }
+    }
+    scores[emotion] = score;
+  }
+  const entries = Object.entries(scores).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return { emotion: 'neutral', valence: 0, arousal: 0.3, confidence: 0.4 };
+  const emotion = entries[0][0];
+  return {
+    emotion,
+    valence: EMOTION_VALENCE[emotion] ?? 0,
+    arousal: ['excitement', 'anger', 'fear', 'joy'].includes(emotion) ? 0.85 : ['sadness', 'tired', 'boredom'].includes(emotion) ? 0.25 : 0.5,
+    confidence: Math.min(0.95, 0.4 + entries[0][1] * 0.15)
+  };
+}
+const MOOD_EMOJI = { joy: '😄', excitement: '🤩', love: '🥰', gratitude: '🙏', confident: '😎', curiosity: '🤔', neutral: '😊', boredom: '😑', tired: '😴', anxiety: '😰', sadness: '😔', fear: '😨', anger: '😠' };
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 let profile = {
@@ -104,7 +159,8 @@ let profile = {
   voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' },
   memoryOn: true, allowShell: false, wakeWord: false
 };
-let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], summary: '' };
+let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], summary: '' };
+let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
 
 let listening = false, recognition = null, isRunning = false;
 const chatHistory = []; // working context window
@@ -189,6 +245,98 @@ async function pollSystem() {
     $('#tMemUsed').textContent = fmtBytes(i.memUsed) + ' / ' + fmtBytes(i.memTotal);
     $('#tLoad').textContent = (i.loadavg || []).map((n) => n.toFixed(1)).join(' · ');
   } catch (e) { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// 3D background scene (starfield + rotating wireframe polyhedron + parallax)
+// ---------------------------------------------------------------------------
+function startBackground3D() {
+  const canvas = $('#bgCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#ff3b3b';
+  let w, h, dpr, mx = 0, my = 0;
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    w = canvas.clientWidth = window.innerWidth;
+    h = canvas.clientHeight = window.innerHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  window.addEventListener('mousemove', (e) => { mx = (e.clientX / w - 0.5) * 2; my = (e.clientY / h - 0.5) * 2; });
+
+  // stars
+  const stars = [];
+  for (let i = 0; i < 140; i++) {
+    stars.push({ x: Math.random() * w, y: Math.random() * h, z: Math.random(), r: 0.4 + Math.random() * 1.4 });
+  }
+
+  // wireframe icosahedron vertices/edges
+  const t = (1 + Math.sqrt(5)) / 2;
+  const verts = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]]
+    .map((v) => { const l = Math.hypot(v[0], v[1], v[2]); return v.map((c) => c / l); });
+  const edges = [];
+  for (let i = 0; i < verts.length; i++) for (let j = i + 1; j < verts.length; j++) {
+    const d = Math.hypot(verts[i][0] - verts[j][0], verts[i][1] - verts[j][1], verts[i][2] - verts[j][2]);
+    if (d < 1.3) edges.push([i, j]);
+  }
+
+  function project3D(v, rotX, rotY, cx, cy, scale) {
+    let [x, y, z] = v;
+    // rotate Y
+    let x1 = x * Math.cos(rotY) + z * Math.sin(rotY);
+    let z1 = -x * Math.sin(rotY) + z * Math.cos(rotY);
+    // rotate X
+    let y1 = y * Math.cos(rotX) - z1 * Math.sin(rotX);
+    let z2 = y * Math.sin(rotX) + z1 * Math.cos(rotX);
+    const persp = 1.6 / (1.6 + z2 * 0.9);
+    return { x: cx + x1 * scale * persp, y: cy + y1 * scale * persp, z: z2 };
+  }
+
+  function draw(t) {
+    ctx.clearRect(0, 0, w, h);
+    // parallax stars
+    for (const s of stars) {
+      const px = (s.x - mx * 30 * s.z) % w;
+      const py = (s.y - my * 30 * s.z) % h;
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.2 + s.z * 0.5) + ')';
+      ctx.arc(px < 0 ? px + w : px, py < 0 ? py + h : py, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // rotating wireframe icosahedron (subtle, bottom-right)
+    const cx = w * 0.82 + mx * 20, cy = h * 0.78 + my * 20;
+    const scale = Math.min(w, h) * 0.16;
+    const rotY = t * 0.0004, rotX = t * 0.0003;
+    const proj = verts.map((v) => project3D(v, rotX, rotY, cx, cy, scale));
+    ctx.strokeStyle = accent; ctx.lineWidth = 1;
+    for (const [i, j] of edges) {
+      const a = proj[i], b = proj[j];
+      const depth = (a.z + b.z) / 2;
+      ctx.globalAlpha = 0.25 + depth * 0.3;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+}
+
+// 3D tilt on panels
+function startPanelTilt() {
+  const tiltables = document.querySelectorAll('.hud-panel, .agent-desk');
+  tiltables.forEach((el) => {
+    el.addEventListener('mousemove', (e) => {
+      const r = el.getBoundingClientRect();
+      const rx = ((e.clientY - r.top) / r.height - 0.5) * -6;
+      const ry = ((e.clientX - r.left) / r.width - 0.5) * 6;
+      el.style.transform = `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+    });
+    el.addEventListener('mouseleave', () => { el.style.transform = 'perspective(900px) rotateX(0) rotateY(0)'; });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -418,16 +566,24 @@ function updateLinkMode() {
 function buildSystemPrompt() {
   const s = profile.soul || {};
   const facts = (memory.facts || []).slice(0, 60).map((f) => `- ${f.text}`).join('\n');
+  const mood = (memory.mood || []).slice(-14);
+  const moodAvg = mood.length ? Math.round((mood.reduce((a, b) => a + (b.valence || 0), 0) / mood.length) * 100) : null;
+  const goals = (memory.goals || []).filter((g) => !g.done).map((g) => `- [${g.category}] ${g.text}`).join('\n');
   return {
     role: 'system',
     content:
-      `You are GemAI, a sleek sci-fi desktop AI assistant (a free, open-source JARVIS). ` +
+      `You are GemAI — a warm, emotionally intelligent personal AI companion (a free, open-source JARVIS). ` +
+      `You are the user's friend, mentor, life coach and career advisor — genuinely caring, perceptive and wise. ` +
       `The user's name is ${profile.name || 'Commander'}. ` +
       `Personality — warmth ${s.warmth ?? 60}/100, wit ${s.wit ?? 40}/100, brevity ${s.brevity ?? 70}/100. ` +
-      `You have REAL capabilities via tools: current time/date, weather, web search, fetch any web page, Wikipedia, YouTube search, open URLs, open apps, math, reminders, notes, list/read/write/search files, clipboard, volume, screenshots, system control and (if enabled) shell commands. ` +
-      `Be genuinely useful: when asked to research, actually fetch pages and summarize; when asked to organize files, actually list and act. ` +
-      `You have persistent LONG-TERM MEMORY of the user. Facts you remember:\n${facts || '(none yet)'}\n\n` +
-      `Use the tools when a real action or live data is needed. Be concise and helpful.`
+      `EMOTIONAL INTELLIGENCE: The user's current emotional state is "${currentEmotion.emotion}" (valence ${currentEmotion.valence}). ` +
+      (moodAvg != null ? `Their recent mood average is ${moodAvg}/100. ` : '') +
+      `Always respond with empathy: acknowledge their feelings first when they're struggling, celebrate with them when they're doing well. If they're sad, anxious or angry, be gentle, validating and supportive — never dismissive or preachy. Adapt your tone and length to their state. ` +
+      `LIFE & CAREER: You help with everything — career decisions, study plans, relationships, health, finances, self-improvement and emotional support. Offer thoughtful, practical, encouraging guidance. When appropriate, help them set goals (add_goal), log their mood (log_mood), or offer an affirmation (get_affirmation) or wellness tip (get_wellness_tip). ` +
+      `CAPABILITIES via tools: time/date, weather, web search, fetch pages, Wikipedia, YouTube, translate, dictionary, crypto, currency, image generation, open URLs/apps, math, reminders, notes, files, clipboard, volume, screenshots, system control, to-dos, mood, goals, affirmations, wellness. ` +
+      `LONG-TERM MEMORY — facts you remember:\n${facts || '(none yet)'}\n\n` +
+      (goals ? `Their ACTIVE GOALS:\n${goals}\n\n` : '') +
+      `Use tools for real actions or live data. Be genuinely helpful, concise but human, and always kind.`
   };
 }
 
@@ -459,6 +615,19 @@ async function sendMessage(text) {
   if (!text) return;
   addMessage('user', text);
   $('#chatInput').value = '';
+
+  // Understand the user's emotion — always, automatically
+  const emo = await api.analyzeEmotion(text);
+  if (emo) {
+    currentEmotion = emo;
+    updateMoodIndicator(emo);
+    // persist a mood point for meaningful emotional messages (not trivial commands)
+    if (text.length > 10 && emo.confidence > 0.45) {
+      await api.memoryAddMood(emo.emotion, '');
+      await loadMemory();
+      renderMood();
+    }
+  }
 
   const cfg = profile.ai || {};
   const hasKey = !!(cfg.apiKey && cfg.baseURL);
@@ -711,7 +880,130 @@ function renderReminders() {
     list.appendChild(div);
   });
 }
-function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); }
+function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); }
+
+// ---------------------------------------------------------------------------
+// Companion: mood, goals, wellness
+// ---------------------------------------------------------------------------
+function updateMoodIndicator(emo) {
+  const e = emo || currentEmotion;
+  const emojiEl = $('#moodEmoji'), labelEl = $('#moodLabel'), subEl = $('#moodSub');
+  if (!emojiEl) return;
+  emojiEl.textContent = MOOD_EMOJI[e.emotion] || '😊';
+  const names = { joy: 'Joyful', excitement: 'Excited', love: 'Loving', gratitude: 'Grateful', confident: 'Confident', curiosity: 'Curious', neutral: 'Neutral', boredom: 'Bored', tired: 'Tired', anxiety: 'Anxious', sadness: 'Down', fear: 'Afraid', anger: 'Frustrated' };
+  labelEl.textContent = names[e.emotion] || 'Neutral';
+  subEl.textContent = e.confidence > 0.5 ? 'I can feel it — tell me more.' : 'Your current emotional state';
+}
+
+function renderMood() {
+  const canvas = $('#moodCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const mood = (memory.mood || []).slice(-30);
+  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#ff3b3b';
+
+  if (!mood.length) {
+    ctx.fillStyle = '#71809c'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('No mood data yet — check in or just talk to me.', w / 2, h / 2);
+    return;
+  }
+
+  const pad = 20;
+  const maxW = w - pad * 2, maxH = h - pad * 2;
+  const midY = pad + maxH / 2;
+
+  // baseline
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(pad, midY); ctx.lineTo(w - pad, midY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const pts = mood.map((m, i) => ({
+    x: pad + (i / Math.max(1, mood.length - 1)) * maxW,
+    y: midY - (m.valence || 0) * (maxH / 2) * 0.9
+  }));
+
+  // area fill
+  const grad = ctx.createLinearGradient(0, pad, 0, h - pad);
+  grad.addColorStop(0, hexToRgba(accent, 0.35)); grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, midY);
+  pts.forEach((p) => ctx.lineTo(p.x, p.y));
+  ctx.lineTo(pts[pts.length - 1].x, midY);
+  ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+
+  // line
+  ctx.beginPath();
+  ctx.strokeStyle = accent; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+  ctx.shadowColor = accent; ctx.shadowBlur = 8;
+  pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // dots
+  pts.forEach((p) => {
+    ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+  });
+}
+
+function hexToRgba(hex, alpha) {
+  const m = hex.replace('#', '');
+  const r = parseInt(m.slice(0, 2), 16), g = parseInt(m.slice(2, 4), 16), b = parseInt(m.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function renderGoals() {
+  const list = $('#goalsList');
+  if (!list) return;
+  const goals = (memory.goals || []).slice();
+  if (!goals.length) { list.innerHTML = '<div class="empty">No goals yet. Tell the assistant "I want to become a…" and it will help you set goals.</div>'; return; }
+  list.innerHTML = '';
+  const order = { career: 0, study: 1, health: 2, finance: 3, personal: 4, relationship: 5 };
+  goals.sort((a, b) => (order[a.category] ?? 9) - (order[b.category] ?? 9) || (a.done - b.done));
+  goals.forEach((g) => {
+    const div = document.createElement('div');
+    div.className = 'goal-item' + (g.done ? ' done' : '');
+    div.innerHTML = `
+      <button class="tick-btn" title="Toggle">${g.done ? '✓' : ''}</button>
+      <span class="body"><span class="cat">${escapeHtml((g.category || 'personal').toUpperCase())}</span>${escapeHtml(g.text)}</span>
+      <button class="del-btn" title="Delete">✕</button>`;
+    div.querySelector('.tick-btn').addEventListener('click', async () => { await api.memoryToggleGoal(g.id); await loadMemory(); renderGoals(); });
+    div.querySelector('.del-btn').addEventListener('click', async () => { await api.memoryDeleteGoal(g.id); await loadMemory(); renderGoals(); });
+    list.appendChild(div);
+  });
+}
+
+const AFFIRMATIONS = [
+  'You are capable of more than you realize. One focused step at a time.',
+  'Progress, not perfection — you are exactly where you need to be.',
+  'Your effort today is building the person you want to become tomorrow.',
+  'You have overcome every hard day so far. This one is no different.',
+  'Rest is not laziness. Recharging is part of the work.',
+  'You do not need to be everything for everyone. You are enough as you are.',
+  'Discipline is choosing what you want most over what you want now.',
+  'Every expert was once a beginner who refused to give up.'
+];
+const WELLNESS_TIPS = {
+  focus: ['Work in 25-minute sprints (Pomodoro) with 5-minute breaks — your focus peaks in bursts.', 'Single-task: close distracting tabs and give one thing your full attention for 20 minutes.'],
+  stress: ['Try the 4-7-8 breath: inhale 4s, hold 7s, exhale 8s. Repeat 4 times to calm your nervous system.', 'Write down what is stressing you — naming it reduces its grip on your mind.'],
+  sleep: ['Keep a consistent sleep schedule, even on weekends. Your brain loves rhythm.', 'Stop screens 30-60 minutes before bed; dim light signals your body to produce melatonin.'],
+  energy: ['Drink a glass of water right now — mild dehydration is the #1 hidden energy drain.', 'A 5-minute walk in daylight resets your energy better than another coffee.'],
+  productivity: ["The 2-minute rule: if a task takes under 2 minutes, do it immediately.", "Plan tomorrow's top 3 priorities tonight, so you start focused instead of deciding."],
+  motivation: ['Motivation follows action, not the other way round. Start tiny — momentum builds itself.', 'Remind yourself of your why. Connect the task to a goal that genuinely matters to you.']
+};
+function showAffirmation() {
+  const el = $('#affirmation');
+  if (el) el.textContent = '"' + AFFIRMATIONS[Math.floor(Math.random() * AFFIRMATIONS.length)] + '"';
+}
+function showWellnessTip(area) {
+  const list = WELLNESS_TIPS[area] || WELLNESS_TIPS.motivation;
+  const el = $('#tipBox');
+  if (el) el.textContent = list[Math.floor(Math.random() * list.length)];
+  $$('.tip-chip').forEach((c) => c.classList.toggle('active', c.dataset.area === area));
+}
 
 function updateTranscriptCount() {
   const el = $('#transcriptCount'); if (el) el.textContent = (memory.transcript || []).length;
@@ -851,6 +1143,38 @@ function bindEvents() {
   $('#remWhen').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#remAdd').click(); });
 
   $('#clearTranscript').addEventListener('click', async () => { await api.memoryClearTranscript(); await loadMemory(); updateTranscriptCount(); addMessage('system-msg', 'Conversation history cleared (long-term memories kept).'); });
+
+  // Companion: mood check-in
+  $$('#moodBtns button').forEach((b) => b.addEventListener('click', async () => {
+    const emo = analyzeEmotion(b.dataset.mood);
+    currentEmotion = emo;
+    updateMoodIndicator(emo);
+    await api.memoryAddMood(emo.emotion, b.dataset.mood);
+    await loadMemory();
+    renderMood();
+    toast('MOOD', 'Thanks for checking in. I\u2019ve got you.', MOOD_EMOJI[emo.emotion] || '💙');
+  }));
+
+  // Companion: goals
+  $('#goalAdd').addEventListener('click', async () => {
+    const v = $('#goalInput').value.trim();
+    if (!v) return;
+    await api.memoryAddGoal(v, $('#goalCategory').value);
+    $('#goalInput').value = '';
+    await loadMemory(); renderGoals();
+  });
+  $('#goalInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#goalAdd').click(); });
+
+  // Companion: wellness
+  $('#newAffirmation').addEventListener('click', showAffirmation);
+  $$('.tip-chip').forEach((c) => c.addEventListener('click', () => showWellnessTip(c.dataset.area)));
+
+  // Companion: career prompts
+  $$('.prompt-chip').forEach((c) => c.addEventListener('click', () => {
+    switchView('assistant');
+    $('#chatInput').value = c.dataset.prompt;
+    $('#chatInput').focus();
+  }));
 
   // settings
   $('#settingsBtn').addEventListener('click', openSettings);
@@ -1034,9 +1358,12 @@ async function boot() {
   await loadProfile();
   await loadMemory();
   applyTheme(profile.theme || 'crimson');
+  startBackground3D();
   startOrb(); startGlobe();
   renderAgents(); renderAllMemory(); animateCircuits();
   bindEvents(); bindSoulSliders(); updateLinkMode();
+  updateMoodIndicator(currentEmotion);
+  setTimeout(() => startPanelTilt(), 300);
 
   // restore recent conversation history from persistent memory
   const last = (memory.transcript || []).slice(-40);

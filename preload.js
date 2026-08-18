@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('gemai', {
   memoryDeleteReminder: (id) => ipcRenderer.invoke('memory:deleteReminder', id),
   memoryMarkReminder: (id, done) => ipcRenderer.invoke('memory:markReminder', id, done),
   memoryExtract: (config, userText, assistantText) => ipcRenderer.invoke('memory:extract', config, userText, assistantText),
+  memoryAddMood: (emotion, note) => ipcRenderer.invoke('memory:addMood', emotion, note),
+  memoryAddGoal: (text, category) => ipcRenderer.invoke('memory:addGoal', text, category),
+  memoryDeleteGoal: (id) => ipcRenderer.invoke('memory:deleteGoal', id),
+  memoryToggleGoal: (id) => ipcRenderer.invoke('memory:toggleGoal', id),
+  analyzeEmotion: (text) => ipcRenderer.invoke('emotion:analyze', text),
 
   // files
   saveCode: (content, suggestedName) => ipcRenderer.invoke('file:saveCode', content, suggestedName),

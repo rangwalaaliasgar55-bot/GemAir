@@ -107,7 +107,7 @@ function writeJSON(file, data) {
 const readProfile = () => readJSON(PROFILE_FILE, {});
 const writeProfile = (d) => writeJSON(PROFILE_FILE, d);
 
-const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], summary: '' };
+const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], summary: '' };
 const readMemory = () => {
   const m = readJSON(MEMORY_FILE, EMPTY_MEMORY);
   // ensure shape
@@ -119,8 +119,62 @@ const writeMemory = (m) => writeJSON(MEMORY_FILE, m);
 function uid() { return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
 
 // ---------------------------------------------------------------------------
-// System info
+// Emotion intelligence — understand how the user feels
 // ---------------------------------------------------------------------------
+const EMOTION_LEXICON = {
+  joy: ['happy', 'glad', 'great', 'awesome', 'amazing', 'wonderful', 'yay', 'delighted', 'joy', 'cheerful', 'best', 'win', 'good day', 'made my day'],
+  excitement: ['excited', 'pumped', 'thrilled', 'wow', 'lets go', "can't wait", 'cant wait', 'fired up'],
+  love: ['love', 'adore', 'care about', 'miss you', 'my love', 'romantic', 'crush'],
+  gratitude: ['grateful', 'thankful', 'thanks', 'appreciate', 'blessed', 'shukriya'],
+  confident: ['confident', 'proud', 'achieved', 'accomplished', 'succeeded', 'success', 'nailed it'],
+  curiosity: ['curious', 'wondering', 'how does', 'what is', 'why', 'tell me about', 'explain', 'question', 'learn'],
+  boredom: ['bored', 'boring', 'nothing to do', 'uninterested', 'monotonous'],
+  tired: ['tired', 'exhausted', 'sleepy', 'fatigued', 'drained', 'burnout', 'burned out', 'no energy', 'so sleepy'],
+  anxiety: ['anxious', 'anxiety', 'nervous', 'overwhelmed', 'stressed', 'stress', 'worry', 'worried', 'pressure', 'restless', 'panic', 'overthinking'],
+  sadness: ['sad', 'down', 'depressed', 'unhappy', 'miserable', 'crying', 'cry', 'grief', 'lonely', 'heartbroken', 'upset', 'blue', 'hopeless', 'empty'],
+  fear: ['scared', 'afraid', 'fear', 'terrified', 'frightened', 'dread', 'petrified'],
+  anger: ['angry', 'mad', 'furious', 'annoyed', 'irritated', 'hate', 'rage', 'frustrated', 'frustrating', 'pissed', 'fed up']
+};
+
+const EMOTION_VALENCE = {
+  joy: 1, excitement: 1, love: 0.9, gratitude: 0.9, confident: 0.8, curiosity: 0.25,
+  boredom: -0.3, tired: -0.4, anxiety: -0.6, sadness: -0.7, fear: -0.7, anger: -0.8
+};
+
+function analyzeEmotion(text) {
+  const q = String(text || '').toLowerCase();
+  const negated = /\b(not|no|never|don't|dont|cant|can't|isn't|isnt|wasn't)\b/;
+  const scores = {};
+  for (const [emotion, words] of Object.entries(EMOTION_LEXICON)) {
+    let score = 0;
+    for (const w of words) {
+      if (q.includes(w)) {
+        // check for negation in a small window
+        const idx = q.indexOf(w);
+        const window = q.slice(Math.max(0, idx - 24), idx);
+        score += negated.test(window) ? -1 : 1;
+      }
+    }
+    scores[emotion] = score;
+  }
+  const entries = Object.entries(scores).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return { emotion: 'neutral', valence: 0, arousal: 0.3, confidence: 0.4 };
+  const [top] = entries;
+  const emotion = top[0];
+  const valence = EMOTION_VALENCE[emotion] ?? 0;
+  const arousal = ['excitement', 'anger', 'fear', 'joy'].includes(emotion) ? 0.85 : ['sadness', 'tired', 'boredom'].includes(emotion) ? 0.25 : 0.5;
+  return { emotion, valence, arousal, confidence: Math.min(0.95, 0.4 + top[1] * 0.15) };
+}
+
+function moodHistoryForPrompt() {
+  const m = readMemory();
+  const recent = (m.mood || []).slice(-14);
+  if (!recent.length) return null;
+  const vals = recent.map((x) => x.valence);
+  const avg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100);
+  const trend = vals.length > 2 ? (vals[vals.length - 1] - vals[0]) : 0;
+  return { avg, trend: trend > 0.15 ? 'improving' : trend < -0.15 ? 'declining' : 'stable', last: recent[recent.length - 1].emotion };
+}
 function cpuUsage() {
   return new Promise((resolve) => {
     const start = os.cpus().map((c) => c.times);
@@ -221,7 +275,14 @@ const TOOLS = [
   { type: 'function', function: { name: 'search_memory', description: 'Search the user\'s long-term memory for facts matching a query.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
   { type: 'function', function: { name: 'list_todos', description: 'List the user\'s to-do items.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'add_todo', description: 'Add a to-do item.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
-  { type: 'function', function: { name: 'complete_todo', description: 'Mark a to-do item as done by its text.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } }
+  { type: 'function', function: { name: 'complete_todo', description: 'Mark a to-do item as done by its text.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
+  { type: 'function', function: { name: 'log_mood', description: 'Record the user\'s current emotional state / mood.', parameters: { type: 'object', properties: { emotion: { type: 'string' }, note: { type: 'string' } }, required: ['emotion'] } } },
+  { type: 'function', function: { name: 'get_mood_history', description: 'Get the user\'s recent mood history.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'add_goal', description: 'Add a life/career/study goal for the user.', parameters: { type: 'object', properties: { text: { type: 'string' }, category: { type: 'string', enum: ['career', 'study', 'health', 'finance', 'personal', 'relationship'] } }, required: ['text'] } } },
+  { type: 'function', function: { name: 'list_goals', description: 'List the user\'s goals.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'complete_goal', description: 'Mark a goal as achieved by its text.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
+  { type: 'function', function: { name: 'get_affirmation', description: 'Give the user an uplifting affirmation.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'get_wellness_tip', description: 'Give a practical wellness / self-care tip.', parameters: { type: 'object', properties: { area: { type: 'string', enum: ['focus', 'stress', 'sleep', 'energy', 'productivity', 'motivation'] } } } } }
 ];
 
 function safeEval(expr) {
@@ -494,6 +555,69 @@ function completeTodo(text) {
   return t ? { ok: true, todo: t.text } : { error: 'Todo not found: ' + text };
 }
 
+function logMood(emotion, note) {
+  const m = readMemory();
+  const e = analyzeEmotion(emotion);
+  const entry = { emotion: e.emotion, valence: e.valence, note: note || '', ts: Date.now() };
+  m.mood.push(entry);
+  if (m.mood.length > 500) m.mood = m.mood.slice(-500);
+  writeMemory(m);
+  return { ok: true, entry };
+}
+
+function getMoodHistory() {
+  const m = readMemory();
+  return (m.mood || []).slice(-30).map((x) => ({ emotion: x.emotion, valence: x.valence, note: x.note, ts: x.ts }));
+}
+
+function addGoal(text, category) {
+  const m = readMemory();
+  m.goals.unshift({ id: uid(), text, category: category || 'personal', done: false, created: Date.now() });
+  writeMemory(m);
+  return { ok: true };
+}
+function listGoals() {
+  const m = readMemory();
+  return (m.goals || []).map((g) => ({ id: g.id, text: g.text, category: g.category, done: !!g.done }));
+}
+function completeGoal(text) {
+  const m = readMemory();
+  const q = String(text).toLowerCase();
+  const g = m.goals.find((x) => x.text.toLowerCase().includes(q) || q.includes(x.text.toLowerCase()));
+  if (g) g.done = true;
+  writeMemory(m);
+  return g ? { ok: true, goal: g.text } : { error: 'Goal not found: ' + text };
+}
+
+const AFFIRMATIONS = [
+  'You are capable of more than you realize. One focused step at a time.',
+  'Progress, not perfection — you are exactly where you need to be.',
+  'Your effort today is building the person you want to become tomorrow.',
+  'You have overcome every hard day so far. This one is no different.',
+  'Rest is not laziness. Recharging is part of the work.',
+  'You do not need to be everything for everyone. You are enough as you are.',
+  'Discipline is choosing what you want most over what you want now.',
+  'Every expert was once a beginner who refused to give up.'
+];
+
+function getAffirmation() {
+  return { affirmation: AFFIRMATIONS[Math.floor(Math.random() * AFFIRMATIONS.length)] };
+}
+
+const WELLNESS_TIPS = {
+  focus: ['Work in 25-minute sprints (Pomodoro) with 5-minute breaks — your focus peaks in bursts.', 'Single-task: close distracting tabs and give one thing your full attention for 20 minutes.'],
+  stress: ['Try the 4-7-8 breath: inhale 4s, hold 7s, exhale 8s. Repeat 4 times to calm your nervous system.', 'Write down what is stressing you — naming it reduces its grip on your mind.'],
+  sleep: ['Keep a consistent sleep schedule, even on weekends. Your brain loves rhythm.', 'Stop screens 30-60 minutes before bed; dim light signals your body to produce melatonin.'],
+  energy: ['Drink a glass of water right now — mild dehydration is the #1 hidden energy drain.', 'A 5-minute walk in daylight resets your energy better than another coffee.'],
+  productivity: ['The 2-minute rule: if a task takes under 2 minutes, do it immediately.', 'Plan tomorrow\'s top 3 priorities tonight, so you start focused instead of deciding.'],
+  motivation: ['Motivation follows action, not the other way round. Start tiny — momentum builds itself.', 'Remind yourself of your why. Connect the task to a goal that genuinely matters to you.']
+};
+
+function getWellnessTip(area) {
+  const list = WELLNESS_TIPS[area] || WELLNESS_TIPS.motivation;
+  return { area: area || 'motivation', tip: list[Math.floor(Math.random() * list.length)] };
+}
+
 function parseWhen(text) {
   const t = String(text || '').trim();
   const rel = t.match(/in\s+(\d+)\s*(second|sec|s|minute|min|m|hour|hr|h|day|d)/i);
@@ -622,6 +746,20 @@ async function executeTool(name, args) {
         return addTodo(args.text);
       case 'complete_todo':
         return completeTodo(args.text);
+      case 'log_mood':
+        return logMood(args.emotion, args.note);
+      case 'get_mood_history':
+        return { history: getMoodHistory() };
+      case 'add_goal':
+        return addGoal(args.text, args.category);
+      case 'list_goals':
+        return { goals: listGoals() };
+      case 'complete_goal':
+        return completeGoal(args.text);
+      case 'get_affirmation':
+        return getAffirmation();
+      case 'get_wellness_tip':
+        return getWellnessTip(args.area);
       case 'calculate':
         return { result: safeEval(args.expression) };
       case 'set_reminder': {
@@ -1027,6 +1165,11 @@ ipcMain.handle('memory:addReminder', (_e, text, at) => { const m = readMemory();
 ipcMain.handle('memory:deleteReminder', (_e, id) => { const m = readMemory(); m.reminders = m.reminders.filter(r => r.id !== id); writeMemory(m); return true; });
 ipcMain.handle('memory:markReminder', (_e, id, done) => { const m = readMemory(); const r = m.reminders.find(r => r.id === id); if (r) { r.done = !!done; r.notified = false; } writeMemory(m); return true; });
 ipcMain.handle('memory:extract', (_e, config, userText, assistantText) => extractFacts(config, userText, assistantText));
+ipcMain.handle('memory:addMood', (_e, emotion, note) => logMood(emotion, note));
+ipcMain.handle('memory:addGoal', (_e, text, category) => addGoal(text, category));
+ipcMain.handle('memory:deleteGoal', (_e, id) => { const m = readMemory(); m.goals = m.goals.filter(g => g.id !== id); writeMemory(m); return true; });
+ipcMain.handle('memory:toggleGoal', (_e, id) => { const m = readMemory(); const g = m.goals.find(g => g.id === id); if (g) g.done = !g.done; writeMemory(m); return true; });
+ipcMain.handle('emotion:analyze', (_e, text) => analyzeEmotion(text));
 
 ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
   const res = await dialog.showSaveDialog(mainWindow, {

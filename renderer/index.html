@@ -21,6 +21,9 @@
     </div>
   </div>
 
+  <!-- 3D background scene -->
+  <canvas id="bgCanvas" aria-hidden="true"></canvas>
+
   <!-- toast container -->
   <div class="toasts" id="toasts"></div>
 
@@ -67,6 +70,10 @@
         <button class="nav-btn" data-view="core">
           <span class="nav-ico">⬢</span>
           <span class="nav-label">System Core</span>
+        </button>
+        <button class="nav-btn" data-view="companion">
+          <span class="nav-ico">♥</span>
+          <span class="nav-label">Companion</span>
         </button>
         <button class="nav-btn" data-view="town">
           <span class="nav-ico">▦</span>
@@ -236,6 +243,85 @@
                   Conversations saved: <b id="transcriptCount">0</b> messages
                   <button class="link-btn" id="clearTranscript">clear history</button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ COMPANION (life · career · wellness) ============ -->
+        <section class="view" id="view-companion">
+          <div class="companion-grid">
+            <div class="hud-panel mood-panel">
+              <h3 class="panel-title">MOOD <span class="dim">— HOW YOU'VE BEEN FEELING</span></h3>
+              <div class="mood-current" id="moodCurrent">
+                <span class="mood-emoji" id="moodEmoji">😊</span>
+                <div>
+                  <div class="mood-label" id="moodLabel">Neutral</div>
+                  <div class="mood-sub" id="moodSub">Your emotional baseline</div>
+                </div>
+              </div>
+              <canvas id="moodCanvas" width="520" height="140"></canvas>
+              <div class="mood-checkin">
+                <span class="dim" style="font-size:11px;letter-spacing:2px">QUICK CHECK-IN</span>
+                <div class="mood-btns" id="moodBtns">
+                  <button data-mood="great 😄">😄</button>
+                  <button data-mood="good 🙂">🙂</button>
+                  <button data-mood="okay 😐">😐</button>
+                  <button data-mood="down 😔">😔</button>
+                  <button data-mood="stressed 😰">😰</button>
+                  <button data-mood="angry 😠">😠</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="hud-panel goals-panel">
+              <h3 class="panel-title">GOALS <span class="dim">— LIFE · CAREER · STUDY</span></h3>
+              <div class="inline-add">
+                <input type="text" id="goalInput" placeholder="Add a goal…" />
+                <select id="goalCategory" class="goal-cat">
+                  <option value="career">Career</option>
+                  <option value="study">Study</option>
+                  <option value="health">Health</option>
+                  <option value="finance">Finance</option>
+                  <option value="personal">Personal</option>
+                  <option value="relationship">Relationship</option>
+                </select>
+                <button class="mini-btn" id="goalAdd">+</button>
+              </div>
+              <div class="goals-list" id="goalsList">
+                <div class="empty">No goals yet. Tell the assistant "I want to become a…" and it will help you set goals.</div>
+              </div>
+            </div>
+
+            <div class="hud-panel wellness-panel">
+              <h3 class="panel-title">WELLNESS <span class="dim">— SELF-CARE, ON TAP</span></h3>
+              <div class="affirmation" id="affirmation">"You are capable of more than you realize."</div>
+              <button class="refresh-btn" id="newAffirmation">⟳ NEW AFFIRMATION</button>
+              <div class="wellness-tips" id="wellnessTips">
+                <button class="tip-chip" data-area="focus">🎯 Focus</button>
+                <button class="tip-chip" data-area="stress">🌊 Stress</button>
+                <button class="tip-chip" data-area="sleep">😴 Sleep</button>
+                <button class="tip-chip" data-area="energy">⚡ Energy</button>
+                <button class="tip-chip" data-area="productivity">✅ Productivity</button>
+                <button class="tip-chip" data-area="motivation">🔥 Motivation</button>
+              </div>
+              <div class="tip-box" id="tipBox">Tap a category for a practical tip, or just ask me in chat.</div>
+            </div>
+
+            <div class="hud-panel career-panel">
+              <h3 class="panel-title">LIFE &amp; CAREER <span class="dim">— YOUR COMPASS</span></h3>
+              <p class="career-intro dim">
+                I'm not just a tool — I'm here for the big stuff: career moves, tough decisions,
+                studies, relationships, and your wellbeing. Talk to me like a friend. I'll remember,
+                adapt to how you feel, and help you think clearly.
+              </p>
+              <div class="career-prompts">
+                <button class="prompt-chip" data-prompt="I'm feeling stuck in my career. Help me figure out my next step.">🧭 Career direction</button>
+                <button class="prompt-chip" data-prompt="Help me make a study plan for the next 30 days.">📚 Study plan</button>
+                <button class="prompt-chip" data-prompt="I'm stressed about a big decision. Help me think it through.">🤔 Big decision</button>
+                <button class="prompt-chip" data-prompt="How can I build better daily habits?">🌱 Daily habits</button>
+                <button class="prompt-chip" data-prompt="Help me prepare for a job interview.">💼 Interview prep</button>
+                <button class="prompt-chip" data-prompt="I've been feeling low lately. Talk to me.">💙 Just talk</button>
               </div>
             </div>
           </div>

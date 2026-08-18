@@ -1,6 +1,6 @@
 # GemAI
 
-**A free, open-source JARVIS-style desktop assistant — more advanced than the typical Stonic clone.** Turn your PC into a sci-fi command center — it talks, it moves, it remembers you **forever**, and it runs on **your own AI key**. No subscription, no $56 license, no cloud lock-in. **Yours. Forever.**
+**A free, open-source, emotionally intelligent personal AI — far more than a JARVIS clone.** Turn your PC into a sci-fi command center that *understands how you feel*, helps with your **life, career, studies and wellbeing**, remembers you **forever**, and runs on **your own AI key**. No subscription, no $56 license, no cloud lock-in. **Yours. Forever.**
 
 GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice assistant, a live system core, an agent town, a world monitor, **persistent long-term memory**, and **real tool-calling** (weather, web search, reminders, notes, volume, screenshots, system control) — all wrapped in a cinematic HUD you can re-skin in three themes.
 
@@ -20,6 +20,11 @@ GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice a
 | 🛠 **Tool-calling (30+ tools)** | The AI can *do* things, not just chat. **Web**: live weather, web search, fetch & read any webpage, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, **AI image generation**, open URLs. **Computer**: open any app, list/read/write/search files, clipboard, volume, screenshots, system control, email draft, WhatsApp, to-dos, and (optional) shell commands with per-command confirmation. |
 | ⏰ **World clock** | Time in any city, 12-hour format, live UTC clock. |
 | 🎹 **Command palette** | `Ctrl/Cmd+K` to ask or navigate from anywhere; `Ctrl/Cmd+L` focuses chat; `Ctrl/Cmd+,` opens settings. |
+| 💛 **Emotional intelligence** | Detects your emotion in real time (joy, sadness, anxiety, anger, love…), adapts its tone and empathy to how you feel, and tracks your mood over time. |
+| 🧭 **Life & Career Companion** | Helps with career decisions, study plans, relationships, health, finances, self-improvement and emotional support — like a friend, mentor and coach. |
+| 📊 **Mood tracking** | Visual mood graph, one-tap check-ins, affirmations and wellness tips (focus, stress, sleep, energy, motivation). |
+| 🎯 **Goals** | Persistent life/career/study/finance/health goals with categories and progress. |
+| 🌌 **3D dashboard** | Live 3D starfield + rotating wireframe polyhedron, parallax background, 3D-tilting panels, particle orb, boot sequence and animated HUD. |
 | ⏰ **Reminders** | Persistent, with native OS notifications + spoken alerts when they fire. |
 | 📝 **Notes** | A persistent notebook — save, view, delete. |
 | 🖥 **System Core** | Live CPU / memory gauges, hostname, uptime, load average; **Memory / Notes / Reminders / Soul** tabs. |
@@ -43,6 +48,15 @@ Stonic clones forget you the moment they close. GemAI doesn't:
 - **Your data, your disk** — everything is a local JSON file (`gemai-memory.json` in the app's data folder). Delete it any time, or manage memories from the UI.
 
 Memory works even **offline** (simple heuristics) and becomes much smarter once you connect a key.
+
+### Emotional intelligence
+
+GemAI reads how you feel, not just what you say:
+
+- **Real-time emotion detection** — a built-in emotion engine classifies every message into joy, excitement, sadness, anxiety, anger, fear, love, gratitude, confidence, tiredness, boredom or curiosity (works offline, no key).
+- **Empathetic responses** — the AI's system prompt is informed by your current emotional state and recent mood trend, so it acknowledges your feelings first and adapts its tone and length.
+- **Mood history** — every meaningful exchange logs a mood point, charted on a live graph in the **Companion** panel, so you (and GemAI) can see how you've been trending.
+- **Check-ins** — one-tap mood buttons, daily affirmations, and practical wellness tips for focus, stress, sleep, energy, productivity and motivation.
 
 ---
 
