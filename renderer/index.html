@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; media-src 'self' blob: data: https:" />
-  <title>GemAI — Command Center</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://vercel.live https://*.vercel.live; style-src 'self' 'unsafe-inline' https://vercel.live; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' blob: data: https:; frame-src 'self' https://vercel.live; worker-src 'self' blob:" />
+  <title>GemAir — Command Center</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="apple-touch-icon" href="favicon.svg" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -15,7 +17,7 @@
   <div class="boot-overlay" id="bootOverlay">
     <div class="boot-core">
       <div class="boot-orb"><span></span></div>
-      <div class="boot-title">GEM<span>AI</span></div>
+      <div class="boot-title">GEM<span>AIR</span></div>
       <div class="boot-line" id="bootLine">INITIALIZING CORE…</div>
       <div class="boot-bar"><i id="bootBar"></i></div>
     </div>
@@ -33,7 +35,7 @@
       <div class="brand">
         <div class="brand-orb"><span></span></div>
         <div class="brand-text">
-          <h1>GEM<span class="dim">AI</span></h1>
+          <h1>GEM<span class="dim">AIR</span></h1>
           <p>MISSION CONTROL <span class="ver" id="verTag">v1.0.0</span></p>
         </div>
       </div>
@@ -54,6 +56,10 @@
           <button class="theme-btn" data-theme="cyan" title="Cyan theme"><i></i></button>
           <button class="theme-btn rgb" data-theme="rgb" title="Rainbow RGB theme"><i></i></button>
         </div>
+        <button class="download-btn" id="downloadBtn" title="Download the desktop app">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 3v11m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+          <span>Get the app</span>
+        </button>
         <button class="icon-btn" id="settingsBtn" title="Settings">
           <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.03 1.56V21a2 2 0 11-4 0v-.09A1.7 1.7 0 008.98 19.4a1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.56-1.03H3a2 2 0 110-4h.09A1.7 1.7 0 004.6 8.98a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001.03-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.03 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9a1.7 1.7 0 001.56 1.03H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.56 1.03z"/></svg>
         </button>
@@ -93,14 +99,24 @@
           <div class="assistant-grid">
             <div class="orb-panel hud-panel">
               <canvas id="orbCanvas" width="560" height="560"></canvas>
+              <canvas id="avatarCanvas" width="560" height="560" aria-hidden="true"></canvas>
+              <div class="gem-nameplate">
+                <span class="gem-name">GEM</span>
+                <span class="gem-role" id="gemRole">personal intelligence</span>
+              </div>
               <div class="orb-center">
                 <button class="start-btn" id="startBtn">
                   <span class="start-ring"></span>
                   <span class="start-label" id="startLabel">START AI</span>
                 </button>
               </div>
+              <div class="caption-bar" id="captionBar" aria-live="polite">
+                <span class="caption-who" id="captionWho">GEM</span>
+                <p class="caption-text" id="captionText"></p>
+              </div>
               <div class="orb-status" id="orbStatus">STANDBY</div>
             </div>
+
 
             <div class="assistant-side">
               <div class="hud-panel briefing">
@@ -139,7 +155,7 @@
                 <h3 class="panel-title">LINK <span class="dim" id="linkMode">— OFFLINE</span></h3>
                 <div class="chat-log" id="chatLog">
                   <div class="msg system-msg">
-                    <p>GemAI online. Systems standing by.</p>
+                    <p>GemAir online. Systems standing by.</p>
                     <p class="sub">Speak naturally, or type below. Say "open calculator", "what time is it", or connect an AI key for full intelligence.</p>
                   </div>
                 </div>
@@ -252,7 +268,7 @@
                   <button class="mini-btn" id="skillAdd">+</button>
                 </div>
                 <div class="memory-list" id="skillsList">
-                  <div class="empty">No skills yet. Teach GemAI something and it remembers forever.</div>
+                  <div class="empty">No skills yet. Teach GemAir something and it remembers forever.</div>
                 </div>
               </div>
 
@@ -263,7 +279,7 @@
                   <button class="mini-btn" id="instructionAdd">+</button>
                 </div>
                 <div class="memory-list" id="instructionsList">
-                  <div class="empty">No rules yet. Add instructions and GemAI will follow them forever.</div>
+                  <div class="empty">No rules yet. Add instructions and GemAir will follow them forever.</div>
                 </div>
               </div>
 
@@ -398,7 +414,7 @@
               <div class="hud-panel mission-panel">
                 <h3 class="panel-title">MISSION LOG <span class="dim">— FULL TRANSPARENCY</span></h3>
                 <div class="mission-log" id="missionLog">
-                  <div class="empty">No actions performed yet. Every action GemAI takes will be logged here.</div>
+                  <div class="empty">No actions performed yet. Every action GemAir takes will be logged here.</div>
                 </div>
               </div>
             </div>
@@ -432,12 +448,64 @@
 
     <!-- ===================== FOOTER ===================== -->
     <footer class="footer">
-      <span id="footerLeft">GEMAI · FREE &amp; OPEN-SOURCE · RUNS LOCALLY</span>
+      <span id="footerLeft">GEMAIR · FREE &amp; OPEN-SOURCE · RUNS LOCALLY</span>
       <span id="footerRight">ALL SYSTEMS NOMINAL</span>
     </footer>
   </div>
 
   <!-- ===================== SETTINGS MODAL ===================== -->
+  <!-- ===================== DOWNLOAD ===================== -->
+  <div class="modal-backdrop" id="downloadModal">
+    <div class="modal download-modal">
+      <div class="modal-head">
+        <h2>GET GEMAIR</h2>
+        <button class="icon-btn" id="downloadClose" title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="dl-lede">
+          Install GemAir on your desktop and Gem gains hands — real control over your
+          files, apps and system, plus offline memory and a tray-resident wake word.
+          Free and open source, no licence key.
+        </p>
+
+        <div class="dl-grid" id="dlGrid">
+          <a class="dl-card" data-os="win" href="#" target="_blank" rel="noopener">
+            <span class="dl-ico">⊞</span>
+            <span class="dl-os">Windows</span>
+            <span class="dl-meta">10 / 11 · 64-bit installer</span>
+            <span class="dl-cta">Download .exe</span>
+          </a>
+          <a class="dl-card" data-os="mac" href="#" target="_blank" rel="noopener">
+            <span class="dl-ico">⌘</span>
+            <span class="dl-os">macOS</span>
+            <span class="dl-meta">Apple Silicon &amp; Intel</span>
+            <span class="dl-cta">Download .dmg</span>
+          </a>
+          <a class="dl-card" data-os="linux" href="#" target="_blank" rel="noopener">
+            <span class="dl-ico">🐧</span>
+            <span class="dl-os">Linux</span>
+            <span class="dl-meta">AppImage &amp; .deb</span>
+            <span class="dl-cta">Download AppImage</span>
+          </a>
+        </div>
+
+        <div class="dl-status" id="dlStatus">Checking for the latest release…</div>
+
+        <details class="dl-details">
+          <summary>Or run it from source</summary>
+<pre class="dl-code">git clone https://github.com/rangwalaaliasgar55-bot/GemAir.git
+cd GemAir
+npm install
+npm start</pre>
+        </details>
+      </div>
+      <div class="modal-foot">
+        <a class="btn ghost" id="dlReleases" href="#" target="_blank" rel="noopener">All releases</a>
+        <button class="btn" id="downloadClose2">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="settingsModal">
     <div class="modal">
       <div class="modal-head">
@@ -455,7 +523,7 @@
         <fieldset>
           <legend>AI BRAIN <span class="dim">— paste your key, it uses THIS only</span></legend>
           <div class="groq-callout">
-            ⚡ <b>Recommended:</b> get a free Groq key at <span class="accent-link" id="groqLink">console.groq.com</span> (very fast, free tier). Paste it below — GemAI will use it (and nothing else) for everything.
+            ⚡ <b>Recommended:</b> get a free Groq key at <span class="accent-link" id="groqLink">console.groq.com</span> (very fast, free tier). Paste it below — GemAir will use it (and nothing else) for everything.
           </div>
           <label>API key
             <input type="password" id="setApiKey" placeholder="gsk_…" />
@@ -484,7 +552,7 @@
         <fieldset>
           <legend>VOICE <span class="dim">— natural female voice</span></legend>
           <label class="check-label" style="margin-bottom:12px">
-            <input type="checkbox" id="setWakeWord" /> Wake word — always listen for "Hey GemAI" (starts the assistant when spoken)
+            <input type="checkbox" id="setWakeWord" /> Wake word — always listen for "Hey GemAir" (starts the assistant when spoken)
           </label>
           <label>Voice engine
             <select id="setVoiceMode">
@@ -521,9 +589,9 @@
         <fieldset>
           <legend>ADVANCED <span class="dim">— full computer access</span></legend>
           <label class="check-label">
-            <input type="checkbox" id="setAllowShell" /> Allow shell commands (GemAI can run terminal commands after confirming each one)
+            <input type="checkbox" id="setAllowShell" /> Allow shell commands (GemAir can run terminal commands after confirming each one)
           </label>
-          <div class="hint">Enables the run-command tool so GemAI can operate your whole computer. Every command is confirmed first and a few dangerous patterns are blocked.</div>
+          <div class="hint">Enables the run-command tool so GemAir can operate your whole computer. Every command is confirmed first and a few dangerous patterns are blocked.</div>
         </fieldset>
       </div>
       <div class="modal-foot">
@@ -579,6 +647,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="store.js"></script>
+  <script src="avatar.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

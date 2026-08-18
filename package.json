@@ -1,18 +1,20 @@
 {
-  "name": "gemai",
+  "name": "gemair",
   "version": "1.0.0",
-  "description": "GemAI — a free, open-source JARVIS-style desktop assistant. A sci-fi command center for your PC: voice assistant, system core, agent town and world monitor.",
+  "description": "GemAir — a free, open-source JARVIS-style desktop assistant. A sci-fi command center for your PC: voice assistant, system core, agent town and world monitor.",
   "main": "main.js",
-  "author": "GemAI",
+  "author": "GemAir",
   "license": "MIT",
-  "homepage": "https://github.com/rangwalaaliasgar55-bot/GemAI",
+  "homepage": "https://github.com/rangwalaaliasgar55-bot/GemAir",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
     "preview": "electron . --dev --no-sandbox",
     "web": "npx serve renderer -l 8080",
+    "serve": "node scripts/dev-server.js",
+    "check": "node scripts/selfcheck.js",
     "dev:web": "vercel dev",
-    "build:web": "echo 'GemAI web = static renderer/ + serverless api/. Deploy with: vercel'",
+    "build:web": "echo 'GemAir web = static renderer/ + serverless api/. Deploy with: vercel'",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
@@ -30,8 +32,8 @@
     "@vercel/node": "^3.2.0"
   },
   "build": {
-    "appId": "io.gemai.desktop",
-    "productName": "GemAI",
+    "appId": "io.gemair.desktop",
+    "productName": "GemAir",
     "asar": true,
     "directories": {
       "output": "release",
@@ -42,11 +44,17 @@
       "preload.js",
       "renderer/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "build/icon.png"
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build/icon.png"
     },
@@ -55,15 +63,21 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "GemAI"
+      "shortcutName": "GemAir"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.utilities",
       "icon": "build/icon.png"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Utility",
       "icon": "build/icon.png"
     }

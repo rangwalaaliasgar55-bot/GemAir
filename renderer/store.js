@@ -1,13 +1,28 @@
 /* ============================================================
-   GemAI — browser memory store.
+   GemAir — browser memory store.
    Local-first (localStorage, works free & offline) with an OPTIONAL
    Supabase mirror for cross-device persistence on the Vercel deploy.
    ============================================================ */
 (function () {
   'use strict';
 
-  const LS_MEMORY = 'gemai:memory';
-  const LS_PROFILE = 'gemai:profile';
+  const LS_MEMORY = 'gemair:memory';
+  const LS_PROFILE = 'gemair:profile';
+
+  // v1 rename (GemAI -> GemAir): carry existing data over to the new keys once,
+  // so nobody loses their memory when they load the rebranded build.
+  (function migrateLegacyKeys() {
+    try {
+      for (const [oldKey, newKey] of [['gemai:memory', LS_MEMORY], ['gemai:profile', LS_PROFILE]]) {
+        const legacy = localStorage.getItem(oldKey);
+        if (legacy !== null && localStorage.getItem(newKey) === null) {
+          localStorage.setItem(newKey, legacy);
+          localStorage.removeItem(oldKey);
+        }
+      }
+    } catch { /* private mode / storage disabled — nothing to migrate */ }
+  })();
+
 
   const EMPTY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 
@@ -99,12 +114,28 @@
 
     // optional Supabase: cloud mirror for cross-device persistence
     async initSupabase(config) {
-      if (!config || !config.url || !config.anonKey) return false;
+      store.lastError = null;
+      if (!config || !config.url || !config.anonKey) {
+        store.lastError = { code: 'NO_CONFIG', message: 'SUPABASE_URL / SUPABASE_ANON_KEY are not set.' };
+        return false;
+      }
       try {
-        if (!window.supabase || !window.supabase.createClient) return false;
+        if (!window.supabase || !window.supabase.createClient) {
+          store.lastError = { code: 'NO_SDK', message: 'The Supabase JS SDK did not load (offline, or blocked by CSP).' };
+          return false;
+        }
         sb = window.supabase.createClient(config.url, config.anonKey, { auth: { persistSession: true, autoRefreshToken: true } });
         const { error } = await sb.auth.signInAnonymously();
-        if (error) { sb = null; return false; }
+        if (error) {
+          sb = null;
+          // 422 from /auth/v1/signup means anonymous sign-ins are switched off.
+          // That is a dashboard toggle, not a bug in this code, so say so.
+          const anonOff = error.status === 422 || /anonymous/i.test(error.message || '');
+          store.lastError = anonOff
+            ? { code: 'ANON_DISABLED', message: 'Anonymous sign-ins are disabled for this Supabase project. Enable them under Authentication → Providers → Anonymous.' }
+            : { code: 'AUTH_FAILED', message: error.message || 'Supabase sign-in failed.' };
+          return false;
+        }
         // seed local from cloud on first load (best-effort)
         const m = getMemory();
         try {
@@ -129,7 +160,11 @@
           }
         } catch (e) {}
         return true;
-      } catch { sb = null; return false; }
+      } catch (e) {
+        sb = null;
+        store.lastError = { code: 'EXCEPTION', message: e && e.message };
+        return false;
+      }
     }
   };
 

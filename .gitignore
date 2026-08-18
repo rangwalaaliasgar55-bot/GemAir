@@ -4,3 +4,11 @@ dist/
 out/
 *.log
 .DS_Store
+
+# local env & tooling
+.env
+.env.local
+.vercel
+
+# scratch / debug output (not part of the app)
+.debug/

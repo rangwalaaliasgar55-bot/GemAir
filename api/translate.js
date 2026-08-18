@@ -1,4 +1,4 @@
-// GemAI serverless — free translation (MyMemory, no key)
+// GemAir serverless — free translation (MyMemory, no key)
 module.exports = async (req, res) => {
   const text = (req.query.text || '').trim();
   const to = (req.query.to || 'en').trim();

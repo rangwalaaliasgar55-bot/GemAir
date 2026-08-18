@@ -1,5 +1,5 @@
 /* ============================================================
-   GemAI — sci-fi command center stylesheet
+   GemAir — sci-fi command center stylesheet
    ============================================================ */
 
 :root {
@@ -266,9 +266,39 @@ body {
 
 .orb-panel { display: grid; place-items: center; position: relative; overflow: hidden; min-height: 420px; }
 #orbCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.orb-center { position: relative; z-index: 2; }
+
+/* ---- Gem's avatar: the holographic presence, layered over the orb ---- */
+#avatarCanvas {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  z-index: 1; pointer-events: none;
+  animation: gem-materialise 1.5s cubic-bezier(.2,.8,.25,1) both;
+}
+@keyframes gem-materialise {
+  0%   { opacity: 0; filter: blur(14px) brightness(2.4); transform: scale(1.1); }
+  55%  { opacity: 1; filter: blur(2px) brightness(1.3); }
+  100% { opacity: 1; filter: none; transform: scale(1); }
+}
+/* the figure lifts subtly while Gem talks */
+body.rgb-speaking #avatarCanvas { animation: gem-materialise 1.5s cubic-bezier(.2,.8,.25,1) both, gem-float 3.2s ease-in-out infinite; }
+@keyframes gem-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+
+.gem-nameplate {
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 3; text-align: center; pointer-events: none;
+}
+.gem-name {
+  display: block; font-family: var(--font-mono); font-size: 20px; font-weight: 700;
+  letter-spacing: 10px; text-indent: 10px; color: var(--accent);
+  text-shadow: 0 0 18px var(--accent-glow);
+}
+.gem-role {
+  display: block; font-family: var(--font-mono); font-size: 9px;
+  letter-spacing: 3px; text-transform: uppercase; color: var(--text-dim); margin-top: 2px;
+}
+
+.orb-center { position: absolute; bottom: 62px; z-index: 2; }
 .start-btn {
-  width: 170px; height: 170px; border-radius: 50%; border: none; cursor: pointer;
+  width: 118px; height: 118px; border-radius: 50%; border: none; cursor: pointer;
   background: radial-gradient(circle at 40% 35%, var(--accent-glow), transparent 70%),
     rgba(0,0,0,0.55);
   position: relative; display: grid; place-items: center;
@@ -753,3 +783,95 @@ label select option { background: #0a0f1a; }
   .nav-label { display: none; }
   .nav-ico { margin: 0 auto; }
 }
+
+/* ============================================================
+   Download — desktop installers
+   ============================================================ */
+.download-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 13px; border-radius: 18px; cursor: pointer;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: linear-gradient(135deg, var(--accent-dim), transparent 70%), rgba(0,0,0,.35);
+  border: 1px solid var(--accent-soft);
+  transition: transform .18s cubic-bezier(.34,1.56,.64,1), box-shadow .25s ease, background .25s ease;
+}
+.download-btn:hover { transform: translateY(-1px); box-shadow: 0 0 18px var(--accent-glow); background: var(--accent-dim); }
+.download-btn:active { transform: translateY(0) scale(.98); }
+.download-btn svg { animation: dl-bob 2.6s ease-in-out infinite; }
+@keyframes dl-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(2px); } }
+
+.download-modal { max-width: 660px; }
+.dl-lede { color: var(--text-dim); font-size: 13px; line-height: 1.65; margin: 0 0 18px; }
+
+.dl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 620px) { .dl-grid { grid-template-columns: 1fr; } }
+
+.dl-card {
+  position: relative; display: flex; flex-direction: column; gap: 4px;
+  padding: 16px 14px; border-radius: 12px; text-decoration: none;
+  background: rgba(0,0,0,.32); border: 1px solid var(--panel-border);
+  transition: transform .2s cubic-bezier(.34,1.56,.64,1), border-color .2s, box-shadow .25s;
+}
+.dl-card:hover { transform: translateY(-3px); border-color: var(--accent-soft); box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 22px var(--accent-glow); }
+.dl-ico { font-size: 22px; line-height: 1; color: var(--accent); }
+.dl-os { font-size: 14px; font-weight: 700; letter-spacing: .5px; }
+.dl-meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); letter-spacing: .5px; }
+.dl-cta { margin-top: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--accent); letter-spacing: 1px; }
+
+.dl-card.recommended { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft), 0 0 24px var(--accent-glow); }
+.dl-card.recommended::after {
+  content: 'YOUR SYSTEM'; position: absolute; top: -8px; right: 10px;
+  font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 1.4px;
+  padding: 3px 8px; border-radius: 10px; color: #04060c; background: var(--accent);
+}
+.dl-card.unavailable { opacity: .55; }
+
+.dl-status {
+  margin-top: 16px; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-dim); letter-spacing: .4px; line-height: 1.6;
+}
+.dl-details { margin-top: 16px; }
+.dl-details summary { cursor: pointer; font-size: 12px; color: var(--accent); letter-spacing: .4px; }
+.dl-code {
+  margin: 10px 0 0; padding: 12px 14px; border-radius: 10px; overflow-x: auto;
+  background: rgba(0,0,0,.5); border: 1px solid var(--panel-border);
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.7; color: var(--text-dim);
+}
+
+/* ============================================================
+   Live subtitles — what Gem is saying, and what you said
+   ============================================================ */
+.caption-bar {
+  position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%) translateY(8px);
+  z-index: 4; width: min(88%, 520px);
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 15px; border-radius: 12px;
+  background: linear-gradient(180deg, rgba(4,8,16,.82), rgba(4,8,16,.68));
+  border: 1px solid var(--panel-border);
+  backdrop-filter: blur(10px);
+  opacity: 0; pointer-events: none;
+  transition: opacity .28s ease, transform .28s cubic-bezier(.2,.8,.25,1);
+}
+.caption-bar.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.caption-bar.user { border-color: rgba(255,255,255,.14); }
+.caption-bar.user .caption-who { color: var(--text-dim); border-color: rgba(255,255,255,.16); }
+
+.caption-who {
+  flex: 0 0 auto; margin-top: 1px;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 2px;
+  padding: 3px 7px; border-radius: 6px;
+  color: var(--accent); border: 1px solid var(--accent-soft);
+}
+.caption-text {
+  margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--text-dim);
+  max-height: 4.7em; overflow: hidden;
+}
+.caption-text .said { color: #fff; }
+.caption-text .cursor {
+  display: inline-block; width: 7px; height: 2px; margin-left: 2px;
+  background: var(--accent); vertical-align: baseline;
+  animation: cap-blink 1s steps(2) infinite;
+}
+@keyframes cap-blink { 0%,100% { opacity: 1; } 50% { opacity: .2; } }

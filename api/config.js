@@ -1,4 +1,4 @@
-// GemAI serverless — exposes PUBLIC config to the browser (never secret keys).
+// GemAir serverless — exposes PUBLIC config to the browser (never secret keys).
 module.exports = (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({

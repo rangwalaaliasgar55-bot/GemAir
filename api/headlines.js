@@ -1,4 +1,4 @@
-// GemAI serverless — free headlines (Hacker News API, no key)
+// GemAir serverless — free headlines (Hacker News API, no key)
 module.exports = async (req, res) => {
   const limit = Math.min(30, parseInt(req.query.limit) || 12);
   try {

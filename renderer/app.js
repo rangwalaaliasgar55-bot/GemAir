@@ -1,12 +1,12 @@
 /* ============================================================
-   GemAI — renderer application logic
+   GemAir — renderer application logic
    ============================================================ */
 'use strict';
 
 // ---------------------------------------------------------------------------
 // Bridge: Electron IPC (or a mock when opened in a plain browser preview)
 // ---------------------------------------------------------------------------
-const isElectron = !!(window.gemai);
+const isElectron = !!(window.gemair);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const MOCK_MEMORY = {
@@ -15,7 +15,7 @@ const MOCK_MEMORY = {
     { id: 'm2', text: 'User prefers concise answers', category: 'preference', importance: 1 }
   ],
   transcript: [],
-  notes: [{ id: 'n1', text: 'Welcome to GemAI — your persistent notebook.' }],
+  notes: [{ id: 'n1', text: 'Welcome to GemAir — your persistent notebook.' }],
   reminders: [],
   todos: [],
   mood: [],
@@ -27,19 +27,19 @@ const MOCK_MEMORY = {
 };
 
 const api = {
-  platform: window.gemai ? window.gemai.platform : 'browser',
+  platform: window.gemair ? window.gemair.platform : 'browser',
   async getSystemInfo() {
-    if (window.gemai) return window.gemai.getSystemInfo();
+    if (window.gemair) return window.gemair.getSystemInfo();
     const total = 16 * 1024 * 1024 * 1024;
     const used = total * (0.4 + 0.25 * Math.random());
     return {
-      platform: 'browser-preview', release: 'n/a', hostname: 'gemai.local', arch: 'x64', cpus: 8,
+      platform: 'browser-preview', release: 'n/a', hostname: 'gemair.local', arch: 'x64', cpus: 8,
       cpuLoad: Math.round(10 + Math.random() * 40), memTotal: total, memFree: total - used, memUsed: used,
       memPercent: Math.round((used / total) * 100), uptime: 3600 * 14, loadavg: [0.8, 1.1, 1.3]
     };
   },
-  async getProfile() { if (window.gemai) return window.gemai.getProfile(); return window.webStore ? window.webStore.getProfile() : {}; },
-  async setProfile(d) { if (window.gemai) return window.gemai.setProfile(d); if (window.webStore) await window.webStore.setProfile(d); },
+  async getProfile() { if (window.gemair) return window.gemair.getProfile(); return window.webStore ? window.webStore.getProfile() : {}; },
+  async setProfile(d) { if (window.gemair) return window.gemair.setProfile(d); if (window.webStore) await window.webStore.setProfile(d); },
 
   async _webChat(messages) {
     try {
@@ -48,72 +48,72 @@ const api = {
     } catch (e) { return { ok: false, error: e.message }; }
   },
   async aiChat(config, messages) {
-    if (window.gemai) return window.gemai.aiChat(config, messages);
+    if (window.gemair) return window.gemair.aiChat(config, messages);
     return await this._webChat(messages);
   },
   async aiChatStream(config, messages, onDelta) {
-    if (window.gemai) return window.gemai.aiChatStream(config, messages, onDelta);
+    if (window.gemair) return window.gemair.aiChatStream(config, messages, onDelta);
     const res = await this._webChat(messages);
     if (!res.ok) return res;
     const text = res.reply;
     for (const ch of text) { onDelta(ch); await sleep(12); } // simulate streaming locally
     return { ok: true, reply: text };
   },
-  async aiSummarize(config, text) { if (window.gemai) return window.gemai.aiSummarize(config, text); return { ok: true, summary: null }; },
+  async aiSummarize(config, text) { if (window.gemair) return window.gemair.aiSummarize(config, text); return { ok: true, summary: null }; },
   async aiOffline(text) {
-    if (window.gemai) return window.gemai.aiOffline(text);
+    if (window.gemair) return window.gemair.aiOffline(text);
     return { ok: true, reply: await offlineBrain(text) };
   },
 
   // memory (Electron IPC | browser localStorage + optional Supabase)
-  async memoryGet() { if (window.gemai) return window.gemai.memoryGet(); return window.webStore ? window.webStore.get() : JSON.parse(JSON.stringify(MOCK_MEMORY)); },
-  async memoryAppend(role, content) { if (window.gemai) return window.gemai.memoryAppend(role, content); if (window.webStore) await window.webStore.append(role, content); },
-  async memoryClearTranscript() { if (window.gemai) return window.gemai.memoryClearTranscript(); if (window.webStore) await window.webStore.clearTranscript(); },
-  async memoryAddFact(fact) { if (window.gemai) return window.gemai.memoryAddFact(fact); if (window.webStore) await window.webStore.addFact(fact); },
-  async memoryDeleteFact(id) { if (window.gemai) return window.gemai.memoryDeleteFact(id); if (window.webStore) await window.webStore.deleteFact(id); },
-  async memoryAddNote(text) { if (window.gemai) return window.gemai.memoryAddNote(text); if (window.webStore) await window.webStore.addNote(text); },
-  async memoryDeleteNote(id) { if (window.gemai) return window.gemai.memoryDeleteNote(id); if (window.webStore) await window.webStore.deleteNote(id); },
-  async memoryAddReminder(text, at) { if (window.gemai) return window.gemai.memoryAddReminder(text, at); if (window.webStore) await window.webStore.addReminder(text, at); },
-  async memoryDeleteReminder(id) { if (window.gemai) return window.gemai.memoryDeleteReminder(id); if (window.webStore) await window.webStore.deleteReminder(id); },
-  async memoryMarkReminder(id, done) { if (window.gemai) return window.gemai.memoryMarkReminder(id, done); if (window.webStore) await window.webStore.markReminder(id, done); },
+  async memoryGet() { if (window.gemair) return window.gemair.memoryGet(); return window.webStore ? window.webStore.get() : JSON.parse(JSON.stringify(MOCK_MEMORY)); },
+  async memoryAppend(role, content) { if (window.gemair) return window.gemair.memoryAppend(role, content); if (window.webStore) await window.webStore.append(role, content); },
+  async memoryClearTranscript() { if (window.gemair) return window.gemair.memoryClearTranscript(); if (window.webStore) await window.webStore.clearTranscript(); },
+  async memoryAddFact(fact) { if (window.gemair) return window.gemair.memoryAddFact(fact); if (window.webStore) await window.webStore.addFact(fact); },
+  async memoryDeleteFact(id) { if (window.gemair) return window.gemair.memoryDeleteFact(id); if (window.webStore) await window.webStore.deleteFact(id); },
+  async memoryAddNote(text) { if (window.gemair) return window.gemair.memoryAddNote(text); if (window.webStore) await window.webStore.addNote(text); },
+  async memoryDeleteNote(id) { if (window.gemair) return window.gemair.memoryDeleteNote(id); if (window.webStore) await window.webStore.deleteNote(id); },
+  async memoryAddReminder(text, at) { if (window.gemair) return window.gemair.memoryAddReminder(text, at); if (window.webStore) await window.webStore.addReminder(text, at); },
+  async memoryDeleteReminder(id) { if (window.gemair) return window.gemair.memoryDeleteReminder(id); if (window.webStore) await window.webStore.deleteReminder(id); },
+  async memoryMarkReminder(id, done) { if (window.gemair) return window.gemair.memoryMarkReminder(id, done); if (window.webStore) await window.webStore.markReminder(id, done); },
   async memoryExtract(config, u, a) {
-    if (window.gemai) return window.gemai.memoryExtract(config, u, a);
+    if (window.gemair) return window.gemair.memoryExtract(config, u, a);
     const facts = localExtract(u); let n = 0;
     const mem = window.webStore ? await window.webStore.get() : MOCK_MEMORY;
     for (const f of facts) { if (!mem.facts.some(x => x.text === f.text)) { await this.memoryAddFact(f); n++; } }
     return n;
   },
-  async memoryAddMood(emotion, note) { if (window.gemai) return window.gemai.memoryAddMood(emotion, note); if (window.webStore) await window.webStore.addMood(emotion, note); },
-  async memoryAddGoal(text, category) { if (window.gemai) return window.gemai.memoryAddGoal(text, category); if (window.webStore) await window.webStore.addGoal(text, category); },
-  async memoryDeleteGoal(id) { if (window.gemai) return window.gemai.memoryDeleteGoal(id); if (window.webStore) await window.webStore.deleteGoal(id); },
-  async memoryToggleGoal(id) { if (window.gemai) return window.gemai.memoryToggleGoal(id); if (window.webStore) await window.webStore.toggleGoal(id); },
-  async memoryAddSkill(text, name) { if (window.gemai) return window.gemai.memoryAddSkill(text, name); if (window.webStore) await window.webStore.addSkill(text, name); },
-  async memoryDeleteSkill(id) { if (window.gemai) return window.gemai.memoryDeleteSkill(id); if (window.webStore) await window.webStore.deleteSkill(id); },
-  async memoryAddInstruction(text) { if (window.gemai) return window.gemai.memoryAddInstruction(text); if (window.webStore) await window.webStore.addInstruction(text); },
-  async memoryDeleteInstruction(id) { if (window.gemai) return window.gemai.memoryDeleteInstruction(id); if (window.webStore) await window.webStore.deleteInstruction(id); },
-  async analyzeEmotion(text) { return window.gemai ? window.gemai.analyzeEmotion(text) : analyzeEmotion(text); },
+  async memoryAddMood(emotion, note) { if (window.gemair) return window.gemair.memoryAddMood(emotion, note); if (window.webStore) await window.webStore.addMood(emotion, note); },
+  async memoryAddGoal(text, category) { if (window.gemair) return window.gemair.memoryAddGoal(text, category); if (window.webStore) await window.webStore.addGoal(text, category); },
+  async memoryDeleteGoal(id) { if (window.gemair) return window.gemair.memoryDeleteGoal(id); if (window.webStore) await window.webStore.deleteGoal(id); },
+  async memoryToggleGoal(id) { if (window.gemair) return window.gemair.memoryToggleGoal(id); if (window.webStore) await window.webStore.toggleGoal(id); },
+  async memoryAddSkill(text, name) { if (window.gemair) return window.gemair.memoryAddSkill(text, name); if (window.webStore) await window.webStore.addSkill(text, name); },
+  async memoryDeleteSkill(id) { if (window.gemair) return window.gemair.memoryDeleteSkill(id); if (window.webStore) await window.webStore.deleteSkill(id); },
+  async memoryAddInstruction(text) { if (window.gemair) return window.gemair.memoryAddInstruction(text); if (window.webStore) await window.webStore.addInstruction(text); },
+  async memoryDeleteInstruction(id) { if (window.gemair) return window.gemair.memoryDeleteInstruction(id); if (window.webStore) await window.webStore.deleteInstruction(id); },
+  async analyzeEmotion(text) { return window.gemair ? window.gemair.analyzeEmotion(text) : analyzeEmotion(text); },
 
   async saveCode(content, name) {
-    if (window.gemai) return window.gemai.saveCode(content, name);
-    downloadText(content, name || 'gemai-output.txt');
-    return { ok: true, path: name || 'gemai-output.txt' };
+    if (window.gemair) return window.gemair.saveCode(content, name);
+    downloadText(content, name || 'gemair-output.txt');
+    return { ok: true, path: name || 'gemair-output.txt' };
   },
   async getHeadlines(limit) {
-    if (window.gemai) return window.gemai.getHeadlines(limit);
+    if (window.gemair) return window.gemair.getHeadlines(limit);
     try { const r = await fetch('/api/headlines?limit=' + (limit || 14)); return await r.json(); } catch { return []; }
   },
-  openExternal(url) { if (window.gemai) window.gemai.openExternal(url); else window.open(url, '_blank'); },
-  async version() { return window.gemai ? window.gemai.version() : '1.0.0'; },
-  onReminder(cb) { if (window.gemai) window.gemai.onReminder(cb); },
-  onWakeToggle(cb) { if (window.gemai) window.gemai.onWakeToggle(cb); },
+  openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
+  async version() { return window.gemair ? window.gemair.version() : '1.0.0'; },
+  onReminder(cb) { if (window.gemair) window.gemair.onReminder(cb); },
+  onWakeToggle(cb) { if (window.gemair) window.gemair.onWakeToggle(cb); },
 
   // report & backup
   async generateReport() {
-    if (window.gemai) return window.gemai.generateReport();
+    if (window.gemair) return window.gemair.generateReport();
     return buildReportOffline();
   },
   async needsCheckIn() {
-    if (window.gemai) return window.gemai.needsCheckIn();
+    if (window.gemair) return window.gemair.needsCheckIn();
     const mood = (memory.mood || []).slice(-7);
     if (mood.length < 3) return false;
     const vals = mood.map((x) => x.valence || 0);
@@ -121,11 +121,11 @@ const api = {
     return avg < 0.2 && vals[vals.length - 1] < 0;
   },
   async exportMemory() {
-    if (window.gemai) return window.gemai.exportMemory();
+    if (window.gemair) return window.gemair.exportMemory();
     return { memory, profile };
   },
   async importMemory(data) {
-    if (window.gemai) return window.gemai.importMemory(data);
+    if (window.gemair) return window.gemair.importMemory(data);
     if (data && data.memory) { memory = { ...memory, ...data.memory }; if (window.webStore) await window.webStore.setMemoryLocal(data.memory); }
     if (data && data.profile) { profile = { ...profile, ...data.profile }; await persistProfile(); }
     return { ok: true };
@@ -146,7 +146,7 @@ function downloadText(content, name) {
 }
 
 const mockHeadlines = [
-  { title: 'Open-source JARVIS-style assistants are on the rise', score: 421, by: 'gemai', url: '#' },
+  { title: 'Open-source JARVIS-style assistants are on the rise', score: 421, by: 'gemair', url: '#' },
   { title: 'Local-first AI: why running models on your own machine matters', score: 388, by: 'dev', url: '#' },
   { title: 'Voice interfaces are quietly taking over the desktop', score: 312, by: 'ui', url: '#' }
 ];
@@ -166,13 +166,14 @@ async function webGet(path, params) {
 // Offline brain (browser/web mirror) — genuinely searches the web for free
 // ---------------------------------------------------------------------------
 async function offlineBrain(text) {
-  const q = (text || '').toLowerCase().trim();
+  // route on the typo-repaired text; keep `text` for anything echoed back
+  const q = normaliseInput(text);
   if (!q) return "I didn't catch that. Say it again?";
   const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 
   if (/^(hi|hello|hey|salam|yo|good (morning|evening|afternoon))\b/.test(q) && q.length < 14)
-    return 'Hello. GemAI online. I can search the web, check weather, prices, translate and more — all free, no API key needed.';
-  if (/your name|who are you/.test(q)) return "I'm GemAI — your personal AI. I understand how you feel and I search the real web for free (no API key required).";
+    return 'Hello. GemAir online. I can search the web, check weather, prices, translate and more — all free, no API key needed.';
+  if (/your name|who are you/.test(q)) return "I'm GemAir — your personal AI. I understand how you feel and I search the real web for free (no API key required).";
   if (/how are you/.test(q)) return 'All circuits nominal — and glad you asked. How are you doing?';
   if (/time|clock/.test(q)) return `The current time is ${time}.`;
   if (/\bdate\b|what day/.test(q)) return `Today is ${new Date().toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`;
@@ -352,6 +353,7 @@ let profile = {
 let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
 let currentLang = 'en';
+let awaitingName = false;   // first-run: Gem is waiting to be told the user's name
 
 let listening = false, recognition = null, isRunning = false;
 const chatHistory = []; // working context window
@@ -383,6 +385,365 @@ function stopSpeaking() {
   speechGen++;
   try { speechSynthesis.cancel(); } catch (e) {}
   if (currentNeuralAudio) { try { currentNeuralAudio.pause(); currentNeuralAudio = null; } catch (e) {} }
+  avatar({ speaking: false });
+  hideCaption(200);
+}
+
+// ---------------------------------------------------------------------------
+// Download — desktop installers
+//
+// Assets are published by .github/workflows/release.yml to GitHub Releases.
+// We query the GitHub API for the newest release and match each platform to a
+// real asset, so the buttons always point at the current version. If the API
+// is unreachable (offline, rate-limited, no release yet) we fall back to the
+// /releases/latest page, which always resolves.
+// ---------------------------------------------------------------------------
+const GH_REPO = 'rangwalaaliasgar55-bot/GemAir';
+const GH_RELEASES = `https://github.com/${GH_REPO}/releases`;
+
+/** Which installer belongs to which platform. */
+const OS_MATCHERS = {
+  win: (n) => /\.exe$/i.test(n),
+  mac: (n) => /\.dmg$/i.test(n) || /mac.*\.zip$/i.test(n),
+  linux: (n) => /\.appimage$/i.test(n) || /\.deb$/i.test(n)
+};
+
+function detectOS() {
+  const p = (api.platform || '').toLowerCase();
+  if (p === 'win32') return 'win';
+  if (p === 'darwin') return 'mac';
+  if (p === 'linux') return 'linux';
+  const ua = (navigator.userAgent || '') + ' ' + (navigator.platform || '');
+  if (/win/i.test(ua)) return 'win';
+  if (/mac|iphone|ipad/i.test(ua)) return 'mac';
+  if (/linux|android|x11/i.test(ua)) return 'linux';
+  return null;
+}
+
+function openDownload() {
+  const modal = $('#downloadModal');
+  if (!modal) return;
+  modal.classList.add('open');
+  highlightOS();
+  loadReleaseAssets();
+}
+function closeDownload() { const m = $('#downloadModal'); if (m) m.classList.remove('open'); }
+
+function highlightOS() {
+  const os = detectOS();
+  $$('#dlGrid .dl-card').forEach((c) => c.classList.toggle('recommended', c.dataset.os === os));
+}
+
+let releaseLoaded = false;
+async function loadReleaseAssets() {
+  const status = $('#dlStatus');
+  const relLink = $('#dlReleases');
+  if (relLink) relLink.href = GH_RELEASES;
+
+  // sensible fallback before/if the API call fails
+  $$('#dlGrid .dl-card').forEach((c) => { if (!c.href || c.href.endsWith('#')) c.href = GH_RELEASES + '/latest'; });
+  if (releaseLoaded) return;
+
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GH_REPO}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const rel = await r.json();
+    const assets = Array.isArray(rel.assets) ? rel.assets : [];
+
+    let matched = 0;
+    $$('#dlGrid .dl-card').forEach((card) => {
+      const match = OS_MATCHERS[card.dataset.os];
+      const asset = match && assets.find((a) => match(a.name || ''));
+      if (asset) {
+        card.href = asset.browser_download_url;
+        matched++;
+        const mb = asset.size ? ` · ${(asset.size / 1048576).toFixed(0)} MB` : '';
+        const meta = card.querySelector('.dl-meta');
+        if (meta) meta.textContent = meta.textContent.split(' · ')[0] + mb;
+      } else {
+        card.classList.add('unavailable');
+        const cta = card.querySelector('.dl-cta');
+        if (cta) cta.textContent = 'Build from source';
+      }
+    });
+
+    if (status) {
+      status.textContent = matched
+        ? `Latest release ${rel.tag_name || ''} — published ${new Date(rel.published_at).toLocaleDateString()}.`
+        : `Release ${rel.tag_name || ''} has no prebuilt installers yet — clone and run from source below.`;
+    }
+    releaseLoaded = true;
+  } catch (e) {
+    if (status) {
+      status.innerHTML = 'Could not reach the GitHub API. ' +
+        `<a class="accent-link" href="${GH_RELEASES}" target="_blank" rel="noopener">Open the releases page</a> ` +
+        'or build from source below.';
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Failure isolation
+//
+// Hard-won rule: one broken init step must never be able to stop the rest of
+// the app from wiring up. Anything optional goes through safe()/safeAsync(),
+// which log loudly but always return control to the caller.
+// ---------------------------------------------------------------------------
+function safe(label, fn) {
+  try {
+    return fn();
+  } catch (e) {
+    console.error(`[GemAir] "${label}" failed:`, e);
+    reportInitFailure(label, e);
+    return undefined;
+  }
+}
+
+async function safeAsync(label, fn) {
+  try {
+    return await fn();
+  } catch (e) {
+    console.error(`[GemAir] "${label}" failed:`, e);
+    reportInitFailure(label, e);
+    return undefined;
+  }
+}
+
+const _initFailures = [];
+function reportInitFailure(label, err) {
+  _initFailures.push({ label, message: err && err.message });
+  // surface it once, quietly, instead of failing silently in the console
+  if (_initFailures.length === 1) {
+    setTimeout(() => {
+      try {
+        toast('DEGRADED', `${_initFailures.length} component(s) failed to start — the rest of GemAir still works.`, '⚠');
+      } catch (e) {}
+    }, 1200);
+  }
+}
+window.__gemairInitFailures = _initFailures;
+
+// Last-resort net: if anything at all throws during startup, make sure the
+// controls are still wired so the user is never left with a dead interface.
+window.addEventListener('error', (e) => {
+  console.error('[GemAir] uncaught:', e && e.error ? e.error : e && e.message);
+  ensureInteractive();
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[GemAir] unhandled rejection:', e && e.reason);
+  ensureInteractive();
+});
+
+let _eventsBound = false;
+function ensureInteractive() {
+  if (_eventsBound) return;
+  _eventsBound = true;
+  try {
+    bindEvents();
+    console.warn('[GemAir] recovered: events bound by the safety net.');
+  } catch (e) {
+    console.error('[GemAir] safety net could not bind events:', e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Live subtitles
+//
+// Shows what Gem is saying under the avatar, with the already-spoken words
+// highlighted, plus what the user just said. Speech-synthesis boundary events
+// give us a real word cursor; neural TTS has no boundaries, so we fall back to
+// estimating from an average speaking rate.
+// ---------------------------------------------------------------------------
+let captionTimer = null;
+let captionFullText = '';
+let captionProgressTimer = null;
+
+function setCaption(who, text, opts) {
+  const bar = $('#captionBar'), whoEl = $('#captionWho'), textEl = $('#captionText');
+  if (!bar || !textEl) return;
+  clearTimeout(captionTimer);
+  clearInterval(captionProgressTimer);
+  captionFullText = String(text || '').trim();
+  if (!captionFullText) { bar.classList.remove('show'); return; }
+
+  bar.classList.toggle('user', who === 'user');
+  if (whoEl) whoEl.textContent = who === 'user' ? (profile.name || 'YOU').toUpperCase() : 'GEM';
+  textEl.innerHTML = `<span class="said"></span><span class="rest">${escapeHtml(captionFullText)}</span>`;
+  bar.classList.add('show');
+
+  if (opts && opts.autoHide) {
+    captionTimer = setTimeout(() => bar.classList.remove('show'), opts.autoHide);
+  }
+}
+
+/** Move the "already spoken" cursor to a character index. */
+function captionProgress(charIndex) {
+  const textEl = $('#captionText');
+  if (!textEl || !captionFullText) return;
+  const i = Math.max(0, Math.min(captionFullText.length, charIndex | 0));
+  const said = captionFullText.slice(0, i);
+  const rest = captionFullText.slice(i);
+  textEl.innerHTML = `<span class="said">${escapeHtml(said)}</span>${rest ? escapeHtml(rest) : ''}` +
+    (rest ? '<span class="cursor"></span>' : '');
+}
+
+/** No boundary events (neural TTS) — sweep at an average speaking rate. */
+function captionAutoAdvance(text) {
+  clearInterval(captionProgressTimer);
+  const chars = text.length;
+  const cps = 14.5;                          // ~870 characters per minute
+  const step = 60;
+  let elapsed = 0;
+  captionProgressTimer = setInterval(() => {
+    elapsed += step;
+    const i = Math.round((elapsed / 1000) * cps);
+    captionProgress(i);
+    if (i >= chars) clearInterval(captionProgressTimer);
+  }, step);
+}
+
+function hideCaption(delay) {
+  const bar = $('#captionBar');
+  if (!bar) return;
+  clearInterval(captionProgressTimer);
+  clearTimeout(captionTimer);
+  captionTimer = setTimeout(() => bar.classList.remove('show'), delay || 900);
+}
+
+// ---------------------------------------------------------------------------
+// Typo tolerance
+//
+// People type fast and misspell. The LLM path handles that on its own, but the
+// free offline brain routes on keywords, so "wats teh wether in mumbi" used to
+// match nothing. normaliseInput() repairs the text before intent matching. The
+// user's ORIGINAL wording is always what gets displayed and remembered — this
+// is only used for routing.
+// ---------------------------------------------------------------------------
+
+// Chat shorthand and the typos that are too irregular for edit distance.
+const TYPO_MAP = {
+  u: 'you', ur: 'your', urs: 'yours', r: 'are', y: 'why', k: 'ok', kk: 'ok',
+  plz: 'please', pls: 'please', pl: 'please', pleease: 'please', plese: 'please', thx: 'thanks', ty: 'thanks',
+  teh: 'the', hte: 'the', adn: 'and', nad: 'and', taht: 'that', thta: 'that',
+  wat: 'what', wht: 'what', whats: 'what is', wats: 'what is', wt: 'what',
+  hw: 'how', hwo: 'how', hou: 'how', wen: 'when', wher: 'where', whr: 'where',
+  y2: 'why', bcz: 'because', bcoz: 'because', coz: 'because', cuz: 'because',
+  wanna: 'want to', gonna: 'going to', gimme: 'give me', lemme: 'let me',
+  dont: "don't", cant: "can't", wont: "won't", im: "i'm", ive: "i've",
+  tmrw: 'tomorrow', tmr: 'tomorrow', tdy: 'today', yest: 'yesterday',
+  msg: 'message', msgs: 'messages', pic: 'picture', pics: 'pictures',
+  info: 'information', tell: 'tell', abt: 'about', bout: 'about',
+  wrk: 'work', wrking: 'working', srch: 'search', srchr: 'search',
+  temp: 'temperature', wthr: 'weather', calc: 'calculate', conv: 'convert'
+};
+
+// The words the offline router actually keys on. Edit distance is measured
+// against this list only, so ordinary English is left alone.
+const INTENT_VOCAB = [
+  'weather', 'temperature', 'forecast', 'rain', 'search', 'google', 'find',
+  'translate', 'translation', 'define', 'definition', 'meaning', 'dictionary',
+  'crypto', 'bitcoin', 'ethereum', 'price', 'currency', 'convert', 'exchange',
+  'news', 'headlines', 'remind', 'reminder', 'note', 'notes', 'goal', 'goals',
+  'todo', 'task', 'time', 'date', 'clock', 'calculate', 'calculator', 'math',
+  'open', 'launch', 'play', 'youtube', 'wikipedia', 'summarise', 'summarize',
+  'email', 'screenshot', 'volume', 'file', 'folder', 'download', 'settings',
+  'hello', 'thanks', 'music', 'song', 'help', 'breathe', 'mood', 'focus',
+  'report', 'memory', 'remember', 'forget', 'delete', 'update', 'story',
+  'joke', 'quote', 'affirmation', 'wellness', 'exercise', 'sleep', 'water'
+];
+const INTENT_SET = new Set(INTENT_VOCAB);
+
+// Ordinary English that happens to sit within edit distance of an intent word
+// ("today" is one edit from "todo"). These are never rewritten.
+const PROTECTED = new Set(`today tomorrow tonight yesterday morning evening night
+  week month year hour minute second daily weekly monthly
+  this that these those there their them then than they
+  what when where which while whose whom
+  about above after again against along among around
+  could would should might must shall will can may
+  other others another every each some many much more most
+  first last next previous final
+  thing think thought through though
+  right left front back down over under into onto from with without
+  good great small large long short high low best better worse
+  name work home life love need want know like make take come give
+  tell feel look show hear read write speak start stop
+  also just only even well very really quite still
+  people person friend family
+  not now new old own same still such sure than too use used
+  water sleep exercise money`.split(/\s+/).filter(Boolean));
+
+/**
+ * Damerau-Levenshtein distance, capped for speed.
+ * A true transposition needs the row from TWO steps back — with only one
+ * previous row, "tiem" -> "time" scores 2 instead of 1 and never matches.
+ */
+function editDistance(a, b, max) {
+  const al = a.length, bl = b.length;
+  if (Math.abs(al - bl) > max) return max + 1;
+  let prev2 = null;
+  let prev = new Array(bl + 1);
+  let cur = new Array(bl + 1);
+  for (let j = 0; j <= bl; j++) prev[j] = j;
+  for (let i = 1; i <= al; i++) {
+    cur[0] = i;
+    let best = cur[0];
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (prev2 && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        cur[j] = Math.min(cur[j], prev2[j - 2] + 1); // transposition
+      }
+      if (cur[j] < best) best = cur[j];
+    }
+    if (best > max) return max + 1;
+    prev2 = prev; prev = cur; cur = prev2 === cur ? new Array(bl + 1) : (prev2 && new Array(bl + 1));
+    if (!cur) cur = new Array(bl + 1);
+  }
+  return prev[bl];
+}
+
+/** Repair one token: shorthand map first, then nearest intent keyword. */
+function correctWord(word) {
+  const w = word.toLowerCase();
+  if (TYPO_MAP[w]) return TYPO_MAP[w];
+  if (w.length < 3 || INTENT_SET.has(w) || PROTECTED.has(w)) return w;
+  // collapse silly repetition: "pleeeease" -> "pleease" -> "please"
+  let squashed = w.replace(/(.)\1{2,}/g, '$1$1');
+  if (TYPO_MAP[squashed]) return TYPO_MAP[squashed];
+  if (INTENT_SET.has(squashed)) return squashed;
+  const single = squashed.replace(/(.)\1+/g, '$1');
+  if (TYPO_MAP[single]) return TYPO_MAP[single];
+  if (INTENT_SET.has(single)) return single;
+  const tolerance = squashed.length <= 4 ? 1 : squashed.length <= 7 ? 2 : 3;
+  let best = null, bestD = tolerance + 1;
+  for (const v of INTENT_VOCAB) {
+    if (Math.abs(v.length - squashed.length) > tolerance) continue;
+    const d = editDistance(squashed, v, tolerance);
+    if (d < bestD) { bestD = d; best = v; }
+  }
+  return bestD <= tolerance && best ? best : squashed;
+}
+
+/**
+ * Normalise free text for intent matching. Returns the repaired string;
+ * never mutates what the user sees.
+ */
+function normaliseInput(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[""'']/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map((tok) => {
+      const m = tok.match(/^([^\w]*)([\w']+)([^\w]*)$/);
+      if (!m) return tok;
+      return m[1] + correctWord(m[2]) + m[3];
+    })
+    .join(' ');
 }
 
 // ---------------------------------------------------------------------------
@@ -499,9 +860,15 @@ function startBackground3D() {
   let w, h, dpr, mx = 0, my = 0;
   function resize() {
     dpr = window.devicePixelRatio || 1;
-    w = canvas.clientWidth = window.innerWidth;
-    h = canvas.clientHeight = window.innerHeight;
-    canvas.width = w * dpr; canvas.height = h * dpr;
+    // NB: clientWidth/clientHeight are READ-ONLY getters on Element. Assigning
+    // to them throws a TypeError under 'use strict', which used to kill boot()
+    // before bindEvents() ran — i.e. the whole UI became unclickable.
+    w = window.innerWidth;
+    h = window.innerHeight;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   resize();
@@ -688,7 +1055,7 @@ function addMessage(role, text, opts = {}) {
   head.className = 'msg-head';
   const label = document.createElement('span');
   label.className = 'label';
-  label.textContent = role === 'ai' ? '◈ GEMAI' : (profile.name || 'YOU').toUpperCase();
+  label.textContent = role === 'ai' ? '◈ GEM' : (profile.name || 'YOU').toUpperCase();
   head.appendChild(label);
   const ts = document.createElement('span');
   ts.className = 'msg-time';
@@ -756,7 +1123,7 @@ function renderRich(p, text) {
     btn.addEventListener('click', async () => {
       const codeEl = document.getElementById(btn.dataset.code);
       if (!codeEl) return;
-      const res = await api.saveCode(codeEl.textContent, 'gemai-output.txt');
+      const res = await api.saveCode(codeEl.textContent, 'gemair-output.txt');
       addMessage('system-msg', res.ok ? `Saved to ${res.path}` : `Save failed: ${res.error || 'cancelled'}`);
     });
   });
@@ -836,9 +1203,10 @@ function buildSystemPrompt() {
   return {
     role: 'system',
     content:
-      `You are GemAI — a warm, emotionally intelligent personal AI companion (a free, open-source JARVIS). ` +
+      `Your name is Gem. You are the intelligence inside GemAir — a warm, emotionally intelligent personal AI companion (a free, open-source JARVIS). ` +
+      `Always refer to yourself as Gem, never as GemAir (GemAir is the app you live in). ` +
       `You are the user's friend, mentor, life coach and career advisor — genuinely caring, perceptive and wise. ` +
-      `The user's name is ${profile.name || 'Commander'}. ` +
+      `The user's name is ${profile.name || 'Commander'}. Address them by their name naturally — at the start of a greeting, when reassuring them, or when something matters. Do not repeat it in every sentence; roughly once per reply at most. ` +
       `Personality — warmth ${s.warmth ?? 60}/100, wit ${s.wit ?? 40}/100, brevity ${s.brevity ?? 70}/100. ` +
       `LANGUAGE: Respond in the user's language. They are currently writing in ${currentLang === 'hi' ? 'Hindi' : currentLang === 'ur' ? 'Urdu' : currentLang === 'hinglish' ? 'Hinglish (Roman Hindi/Urdu)' : 'English'} — mirror it, including for Hindi/Urdu speakers. ` +
       `TRUTH & ACCURACY (non-negotiable): Always be truthful. Never fabricate facts, citations, quotes, statistics or events. ` +
@@ -855,6 +1223,20 @@ function buildSystemPrompt() {
       (goals ? `Their ACTIVE GOALS:\n${goals}\n\n` : '') +
       (skills ? `SKILLS YOU HAVE LEARNED (reuse when relevant):\n${skills}\n\n` : '') +
       (instructions ? `THE USER'S STANDING INSTRUCTIONS (always follow these):\n${instructions}\n\n` : '') +
+      `INPUT HANDLING: The user often types fast with misspellings, missing letters, no punctuation, or mixed Hindi/Urdu romanisation. Silently infer what they meant and answer that. Never correct their spelling, never comment on it, and never ask "did you mean" unless the intent is genuinely ambiguous between two real options.\n` +
+      `ANSWER STYLE (follow strictly):\n` +
+      `- Lead with the answer. No preamble, no "Great question", no restating what was asked.\n` +
+      `- Default to 1-3 sentences. Expand only when the user asks for detail, or the task genuinely needs steps.\n` +
+      `- Use a short bulleted list for 3+ parallel items; never bullet a single idea.\n` +
+      `- Cut filler: "I think", "it seems", "as an AI", "let me help you with that", closing offers of further help.\n` +
+      `- One follow-up question at most, and only when you genuinely cannot proceed without it.\n` +
+      `- Spoken replies are read aloud, so prefer plain sentences over markdown scaffolding.\n` +
+      `VERIFICATION CONTRACT:\n` +
+      `- Anything factual, current, numeric, or about a real person/product MUST come from a tool call this turn.\n` +
+      `- Cite inline as [source](url) immediately after the claim it supports.\n` +
+      `- If a search returns nothing usable, say "I could not verify that" — never fill the gap from memory.\n` +
+      `- Separate what you verified from what you are inferring, in plain words.\n` +
+      `- If the user's premise is wrong, correct it first, briefly.\n` +
       `Use tools for real actions or live data. Be genuinely helpful, concise but human, and always kind.`
   };
 }
@@ -887,11 +1269,57 @@ function localExtract(text) {
   return facts;
 }
 
+/**
+ * Pull a usable name out of a free-form reply: "I'm Ali", "call me Ali",
+ * "my name is Ali", or just "Ali". Falls back to Commander.
+ */
+function extractName(text) {
+  let t = String(text || '').trim();
+  const m = t.match(/(?:my name is|i am|i'm|im|call me|this is|it's|its)\s+([^.,!?\n]+)/i);
+  if (m) t = m[1];
+  t = t.replace(/[.,!?"']/g, ' ')
+       .replace(/\b(please|thanks|thank you|sir|maam|ma'am)\b/gi, ' ')
+       .replace(/\s+/g, ' ')
+       .trim();
+  const words = t.split(' ').filter(Boolean).slice(0, 3);
+  if (!words.length) return 'Commander';
+  const name = words
+    .map((wd) => wd.charAt(0).toUpperCase() + wd.slice(1).toLowerCase())
+    .join(' ');
+  return name.length > 40 ? name.slice(0, 40) : name;
+}
+
 async function sendMessage(text) {
   text = (text || '').trim();
   if (!text) return;
   addMessage('user', text);
   $('#chatInput').value = '';
+  setCaption('user', text, { autoHide: 3200 });
+  avatar({ thinking: true }); // Gem visibly starts reasoning
+  try {
+    return await handleMessage(text);
+  } finally {
+    avatar({ thinking: false });
+  }
+}
+
+async function handleMessage(text) {
+  // First run: Gem asked for a name, so this reply IS the name.
+  if (awaitingName) {
+    awaitingName = false;
+    const name = extractName(text);
+    profile.name = name;
+    await persistProfile();
+    await api.memoryAddFact({ text: `The user's name is ${name}`, category: 'identity' });
+    await loadMemory();
+    renderAllMemory();
+    renderBriefing();
+    const welcome = `Lovely to meet you, ${name}. I'm Gem. I'll remember that — along with anything else you tell me. What would you like to do first?`;
+    addMessage('ai', welcome);
+    await api.memoryAppend('assistant', welcome);
+    speak(welcome);
+    return;
+  }
 
   // Understand the user's emotion — always, automatically
   const emo = await api.analyzeEmotion(text);
@@ -946,15 +1374,15 @@ async function sendMessage(text) {
     chatHistory.push({ role: 'user', content: text });
     const replyEl = typing.querySelector('p');
     typewriterToken++;
-    if (useAI && window.gemai) {
+    if (useAI && window.gemair) {
       const sys = buildSystemPrompt();
-      const res = await window.gemai.aiAgentChat(agentName, cfg, chatHistory.slice(-16));
+      const res = await window.gemair.aiAgentChat(agentName, cfg, chatHistory.slice(-16));
       if (res.ok) { reply = res.reply; chatHistory.push({ role: 'assistant', content: reply }); }
       else { reply = '⚠ ' + humanError(res.error); }
     } else if (useAI) {
       // web mode: no per-agent backend — use main brain but tag the agent role
       reply = await (async () => {
-        const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a resident agent of GemAI. Help with: ${task}. Be truthful and concise.` }, ...chatHistory.slice(-14)]);
+        const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a resident agent of GemAir. Help with: ${task}. Be truthful and concise.` }, ...chatHistory.slice(-14)]);
         return res.ok ? res.reply : '⚠ ' + humanError(res.error);
       })();
       chatHistory.push({ role: 'assistant', content: reply });
@@ -1026,7 +1454,7 @@ async function maybeConsolidateMemory() {
   if (Date.now() - lastConsolidation < 10 * 60 * 1000) return; // at most every 10 min
   if ((memory.transcript || []).length < 160) return;
   lastConsolidation = Date.now();
-  const older = memory.transcript.slice(0, -60).map((m) => (m.role === 'user' ? 'User: ' : 'GemAI: ') + m.content).join('\n');
+  const older = memory.transcript.slice(0, -60).map((m) => (m.role === 'user' ? 'User: ' : 'GemAir: ') + m.content).join('\n');
   const res = await api.aiSummarize(cfg, older);
   if (res.ok && res.summary) {
     await api.memoryAddFact({ text: res.summary, category: 'summary' });
@@ -1050,6 +1478,9 @@ function speak(text) {
   const gen = ++speechGen;
   const mode = profile.voice?.mode || 'neural';
   document.body.classList.add('rgb-speaking'); // RGB while AI speaks
+  avatar({ speaking: true });                  // Gem's mouth starts moving
+  setCaption('gem', clean);                    // live subtitle
+  if (mode === 'neural') captionAutoAdvance(clean);
   speechQueue = speechQueue.then(async () => {
     if (gen !== speechGen) return; // superseded
     if (mode === 'neural') {
@@ -1057,8 +1488,24 @@ function speak(text) {
     }
     if (gen === speechGen) speakSystem(clean);
   }).catch(() => {}).finally(() => {
-    if (gen === speechGen) document.body.classList.remove('rgb-speaking');
+    if (gen === speechGen) {
+      document.body.classList.remove('rgb-speaking');
+      avatar({ speaking: false });
+      captionProgress(captionFullText.length);
+      hideCaption(1400);
+    }
   });
+}
+
+/**
+ * Push state to Gem's avatar. Every call is optional and guarded, so the app
+ * keeps working if avatar.js fails to load.
+ */
+function avatar(state) {
+  try { if (window.gemAvatar) window.gemAvatar.setState(state); } catch (e) {}
+}
+function avatarEmotion(e) {
+  try { if (window.gemAvatar) window.gemAvatar.setEmotion(e); } catch (err) {}
 }
 
 // Adjust speaking style to the current emotion (emotional voice intelligence)
@@ -1089,6 +1536,14 @@ function speakSystem(text) {
       const female = voices.find((v) => v.lang && /^en/i.test(v.lang) && VOICE_SENTINELS.some((s) => v.name.toLowerCase().includes(s)));
       if (female) u.voice = female;
     }
+    // Drive the avatar's mouth from the real speech timeline: every word
+    // boundary re-triggers a syllable so the lip-sync tracks the audio.
+    u.onboundary = (ev) => {
+      try { window.gemAvatar && window.gemAvatar.syllable(); } catch (e) {}
+      if (ev && typeof ev.charIndex === 'number') captionProgress(ev.charIndex + (ev.charLength || 0));
+    };
+    u.onstart = () => avatar({ speaking: true });
+    u.onend = () => avatar({ speaking: false });
     speechSynthesis.speak(u);
   } catch (e) {}
 }
@@ -1413,7 +1868,7 @@ function renderMissionLog() {
   const log = $('#missionLog');
   if (!log) return;
   const actions = (memory.actionLog || []).slice(0, 40);
-  if (!actions.length) { log.innerHTML = '<div class="empty">No actions performed yet. Every action GemAI takes will be logged here.</div>'; return; }
+  if (!actions.length) { log.innerHTML = '<div class="empty">No actions performed yet. Every action GemAir takes will be logged here.</div>'; return; }
   log.innerHTML = '';
   actions.forEach((a) => {
     const div = document.createElement('div');
@@ -1474,7 +1929,7 @@ function renderSkills() {
   const list = $('#skillsList');
   if (!list) return;
   const skills = (memory.skills || []).slice();
-  if (!skills.length) { list.innerHTML = '<div class="empty">No skills yet. Say "teach me to…" or add one below — GemAI will remember and reuse it.</div>'; return; }
+  if (!skills.length) { list.innerHTML = '<div class="empty">No skills yet. Say "teach me to…" or add one below — GemAir will remember and reuse it.</div>'; return; }
   list.innerHTML = '';
   skills.forEach((s) => {
     const div = document.createElement('div');
@@ -1488,7 +1943,7 @@ function renderInstructions() {
   const list = $('#instructionsList');
   if (!list) return;
   const instr = (memory.instructions || []).slice();
-  if (!instr.length) { list.innerHTML = '<div class="empty">No standing instructions. Add a rule like "always be concise" or "call me Boss" — GemAI will follow it forever.</div>'; return; }
+  if (!instr.length) { list.innerHTML = '<div class="empty">No standing instructions. Add a rule like "always be concise" or "call me Boss" — GemAir will follow it forever.</div>'; return; }
   list.innerHTML = '';
   instr.forEach((i) => {
     const div = document.createElement('div');
@@ -1553,6 +2008,7 @@ function buildReportOffline() {
 // Companion: mood, goals, wellness
 // ---------------------------------------------------------------------------
 function updateMoodIndicator(emo) {
+  avatarEmotion(emo);
   const e = emo || currentEmotion;
   const emojiEl = $('#moodEmoji'), labelEl = $('#moodLabel'), subEl = $('#moodSub');
   if (!emojiEl) return;
@@ -1822,7 +2278,7 @@ function populateNeuralVoices() {
 function updateAiHint() {
   const base = $('#setBaseURL').value.trim(), key = $('#setApiKey').value.trim();
   const el = $('#aiStatusHint');
-  if (key && base) el.textContent = '✓ AI brain locked to your endpoint — GemAI will use THIS key only.';
+  if (key && base) el.textContent = '✓ AI brain locked to your endpoint — GemAir will use THIS key only.';
   else if (base && /localhost|127\.0\.0\.1/.test(base)) el.textContent = '✓ Local model detected (no key needed).';
   else el.textContent = 'No key set — running on the built-in offline brain.';
 }
@@ -1845,6 +2301,8 @@ function applyPreset(p) {
 // Events
 // ---------------------------------------------------------------------------
 function bindEvents() {
+  if (_eventsBound) return;
+  _eventsBound = true;
   $$('.nav-btn').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.view)));
   $$('.theme-btn').forEach((b) => b.addEventListener('click', () => { profile.theme = b.dataset.theme; applyTheme(profile.theme); persistProfile(); }));
 
@@ -1956,7 +2414,7 @@ function bindEvents() {
   // Export memory
   $('#exportBtn').addEventListener('click', async () => {
     const data = await api.exportMemory();
-    downloadText(JSON.stringify(data, null, 2), 'gemai-backup-' + Date.now() + '.json');
+    downloadText(JSON.stringify(data, null, 2), 'gemair-backup-' + Date.now() + '.json');
     toast('BACKUP', 'Memory exported as JSON.', '⬇');
   });
 
@@ -1968,6 +2426,21 @@ function bindEvents() {
   }));
 
   // settings
+  // download
+  const dlBtn = $('#downloadBtn');
+  if (dlBtn) {
+    // inside the packaged desktop app there is nothing to download
+    if (window.gemair) dlBtn.hidden = true;
+    else dlBtn.addEventListener('click', openDownload);
+  }
+  $('#downloadClose').addEventListener('click', closeDownload);
+  $('#downloadClose2').addEventListener('click', closeDownload);
+  $('#downloadModal').addEventListener('click', (e) => { if (e.target === $('#downloadModal')) closeDownload(); });
+  // let the OS links open in the user's real browser when running in Electron
+  $$('#dlGrid .dl-card').forEach((c) => c.addEventListener('click', (e) => {
+    if (window.gemair) { e.preventDefault(); api.openExternal(c.href); }
+  }));
+
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#settingsClose').addEventListener('click', closeSettings);
   $('#settingsModal').addEventListener('click', (e) => { if (e.target === $('#settingsModal')) closeSettings(); });
@@ -2030,7 +2503,7 @@ function bindEvents() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') { $('#chatInput').focus(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === ',') { openSettings(); }
-    else if (e.key === 'Escape') { closeSettings(); closePalette(); }
+    else if (e.key === 'Escape') { closeSettings(); closePalette(); closeDownload(); }
   });
 
   // voice preview + sliders
@@ -2042,7 +2515,7 @@ function bindEvents() {
     profile.voice.name = $('#setVoice').value;
     profile.voice.rate = Number($('#setRate').value);
     profile.voice.pitch = Number($('#setPitch').value);
-    speak('Hello, I am GemAI, your personal assistant. How can I help you today?');
+    speak('Hello, I am GemAir, your personal assistant. How can I help you today?');
     profile.voice.mode = prevMode; profile.voice.neuralVoice = prevNeural;
   });
   $('#setRate').addEventListener('input', () => { $('#rateVal').textContent = $('#setRate').value; });
@@ -2066,7 +2539,7 @@ function bindEvents() {
   $('#micBtn').addEventListener('click', () => {
     if (!recognition) { addMessage('system-msg', 'Speech recognition unavailable here — type a command instead.'); return; }
     if (listening) stopListening();
-    else { listening = true; $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); try { recognition.start(); } catch (e) {} }
+    else { listening = true; avatar({ listening: true }); $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); try { recognition.start(); } catch (e) {} }
   });
 
   $('#refreshNews').addEventListener('click', refreshHeadlines);
@@ -2093,7 +2566,7 @@ function startAiLoop() {
   if (recognition) { try { recognition.start(); $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); } catch (e) {} }
 }
 
-// Continuous wake-word listening ("Hey GemAI")
+// Continuous wake-word listening ("Hey GemAir")
 let wakeRecognition = null;
 function configureWakeWord(enabled) {
   if (!enabled) {
@@ -2109,7 +2582,7 @@ function configureWakeWord(enabled) {
     r.onresult = (e) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = (e.results[i][0].transcript || '').toLowerCase();
-        if (/hey gemai|hey gem|a gemai|hi gemai/.test(t)) {
+        if (/hey gemair|hey gem|a gemair|hi gemair/.test(t)) {
           addMessage('system-msg', 'Wake word detected — going online.');
           startAiLoop();
           speak('Yes? I am listening.');
@@ -2121,10 +2594,11 @@ function configureWakeWord(enabled) {
     wakeRecognition = r;
   }
   try { wakeRecognition.start(); } catch (e) {}
-  addMessage('system-msg', 'Wake word armed — say "Hey GemAI" anytime.');
+  addMessage('system-msg', 'Wake word armed — say "Hey GemAir" anytime.');
 }
 
 function stopListening() {
+  avatar({ listening: false });
   listening = false;
   $('#micBtn').classList.remove('recording');
   document.body.classList.remove('rgb-recording');
@@ -2185,37 +2659,81 @@ async function boot() {
   await runBootSequence();
 
   // web mode: load public config (Supabase / AI) from the Vercel API
-  if (!window.gemai) {
+  if (!window.gemair) {
     try {
       const cfg = await fetch('/api/config').then((r) => r.json()).catch(() => null);
       if (cfg && cfg.supabase && window.webStore) {
         const ok = await window.webStore.initSupabase(cfg.supabase);
-        if (ok) toast('CLOUD', 'Supabase connected — your memory syncs across devices.', '🗄');
+        if (ok) {
+          toast('CLOUD', 'Supabase connected — your memory syncs across devices.', '🗄');
+        } else {
+          // Explain *why* rather than failing silently. Memory still works
+          // locally, so this is a downgrade, not an error.
+          const err = window.webStore.lastError || {};
+          if (err.code === 'ANON_DISABLED') {
+            toast('CLOUD OFF', 'Enable Authentication → Providers → Anonymous in Supabase to sync across devices. Memory is saved on this device meanwhile.', '🔒');
+          } else if (err.code && err.code !== 'NO_CONFIG') {
+            toast('CLOUD OFF', (err.message || 'Supabase unavailable') + ' Memory is saved on this device.', '🔒');
+          }
+          console.warn('[GemAir] cloud sync unavailable:', err.code, err.message);
+        }
       }
-      window.__gemaiAiConfigured = !!(cfg && cfg.aiConfigured);
+      window.__gemairAiConfigured = !!(cfg && cfg.aiConfigured);
     } catch (e) {}
   }
 
-  await loadProfile();
-  await loadMemory();
-  applyTheme(profile.theme || 'crimson');
-  startBackground3D();
-  startOrb(); startGlobe(); startCommandMap();
-  startAgentTown(); renderAllMemory(); animateCircuits();
-  bindEvents(); bindSoulSliders(); updateLinkMode();
-  updateMoodIndicator(currentEmotion);
-  setTimeout(() => startPanelTilt(), 300);
+  await safeAsync('loadProfile', loadProfile);
+  await safeAsync('loadMemory', loadMemory);
+
+  // ---------------------------------------------------------------------
+  // BARRIER: wire the UI *first*, and isolate every other init step.
+  //
+  // These three lines are what make the app usable. They used to run near the
+  // end of boot(), so a single throw in any decorative step above them (a
+  // canvas resize, a 3D scene, a renderer) left every button dead. Now the
+  // controls are live before anything that can fail, and each remaining step
+  // runs inside safe() so one failure can never cascade.
+  // ---------------------------------------------------------------------
+  safe('applyTheme', () => applyTheme(profile.theme || 'cyan'));
+  safe('bindEvents', bindEvents);
+  safe('bindSoulSliders', bindSoulSliders);
+  safe('updateLinkMode', updateLinkMode);
+
+  // Everything below is presentation. Any of it may fail without taking the
+  // interface down with it.
+  safe('background3D', startBackground3D);
+  safe('orb', startOrb);
+  safe('globe', startGlobe);
+  safe('commandMap', startCommandMap);
+  safe('avatar', () => { if (window.gemAvatar) window.gemAvatar.mount('#avatarCanvas'); });
+  safe('agentTown', startAgentTown);
+  safe('renderMemory', renderAllMemory);
+  safe('circuits', animateCircuits);
+  safe('moodIndicator', () => updateMoodIndicator(currentEmotion));
+  setTimeout(() => safe('panelTilt', startPanelTilt), 300);
 
   // restore recent conversation history from persistent memory
   const last = (memory.transcript || []).slice(-40);
-  const greeting = `${greetByTime()}, ${profile.name || 'Commander'}. All systems online and I remember everything about you.`;
-  if (last.length) {
+  const knowsUser = !!(profile.name && profile.name !== 'Commander');
+  const greeting = knowsUser
+    ? `${greetByTime()}, ${profile.name}. Gem here — all systems online, and I remember everything about you.`
+    : `${greetByTime()}. I'm Gem, the intelligence inside GemAir.`;
+
+  // First run: introduce Gem, then ask what to call the user. The next thing
+  // they type is captured as their name (see handleMessage).
+  if (!knowsUser && !last.length) {
+    addMessage('ai', greeting);
+    const ask = 'Before we begin — what should I call you?';
+    addMessage('ai', ask);
+    awaitingName = true;
+    setTimeout(() => speak(greeting + ' ' + ask), 700);
+  } else if (last.length) {
     addMessage('system-msg', `↻ Restored ${last.length} past messages from persistent memory.`);
     last.forEach((m) => { if (m.role === 'user') addMessage('user', m.content); else if (m.role === 'assistant') addMessage('ai', m.content); });
     last.forEach((m) => { if (m.role === 'user' || m.role === 'assistant') chatHistory.push({ role: m.role, content: m.content }); });
-  } else {
+  } else if (!awaitingName) {
     addMessage('ai', greeting);
-    addMessage('system-msg', 'GemAI online. Paste a free Groq key in Settings for a full LLM brain — or just start talking, the offline brain already handles the web, weather, apps and files.');
+    addMessage('system-msg', 'Gem is online. Paste a free Groq key in Settings for a full LLM brain — or just start talking, the offline brain already handles the web, weather, apps and files.');
   }
 
   if (!profile.ai?.apiKey) toast('TIP', 'Add a free Groq key in Settings → AI Brain for a full brain.', '⚡');
@@ -2238,7 +2756,7 @@ async function boot() {
   } catch (e) {}
 
   // speak the greeting
-  if (!last.length) setTimeout(() => speak(greeting), 800);
+  if (!last.length && !awaitingName) setTimeout(() => speak(greeting), 800);
 }
 
 function runBootSequence() {
