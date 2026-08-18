@@ -28,8 +28,11 @@ GemAI is a fully working desktop app (Windows · macOS · Linux) with: a voice a
 | ⏰ **Reminders** | Persistent, with native OS notifications + spoken alerts when they fire. |
 | 📝 **Notes** | A persistent notebook — save, view, delete. |
 | 🖥 **System Core** | Live CPU / memory gauges, hostname, uptime, load average; **Memory / Notes / Reminders / Soul** tabs. |
-| ▦ **Agent Town** | Four resident agents (Alice, Bob, Carol, Dave) at their desks with roles and live status. |
-| ◍ **World Monitor** | A living 3D globe with pulsing hotspots, live UTC clock, streaming headlines feed (free). |
+| ▦ **Agent Town** | A **living pixel-art office**: Alice, Bob, Carol and Dave wander between desks, the whiteboard, the server rack and the coffee machine, with status rings, thought bubbles, and a live activity feed. Click any agent to assign a task. |
+| 🛠 **Desktop automation ("missions")** | `organize_folder` (scan → classify → create folders → move), `find_duplicates`, `rename_files` by pattern, `archive_old_files` — multi-step workflows with a full **Mission Log** of every action (transparency). |
+| 🩺 **System guardian** | "What's slowing my PC down?" — live scan of CPU, RAM, and top processes, with one-line advice. |
+| 👁 **Screen awareness** | `see_screen` captures your screen so the AI is aware of what's on it. |
+| ◍ **World Monitor** | A living 3D globe with pulsing hotspots, a **2D command map**, live UTC clock, and a streaming headlines feed (free). |
 | 🎨 **Themes** | Crimson, Emerald, and Cyan — re-skins the entire command center. |
 | 🔒 **Local-first** | Profile, memories, notes, reminders and settings live on your disk. No telemetry. |
 

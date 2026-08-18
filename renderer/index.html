@@ -330,11 +330,28 @@
         <!-- ============ AGENT TOWN ============ -->
         <section class="view" id="view-town">
           <div class="town-head">
-            <h2 class="view-title">AGENT TOWN <span class="dim">— A LIVING OFFICE INSIDE YOUR PC</span></h2>
-            <p class="view-sub">Four resident agents, each online at their desk with their own specialty. Walk up and hand one a task.</p>
+            <h2 class="view-title">AGENT TOWN <span class="dim">— A LIVING PIXEL OFFICE INSIDE YOUR PC</span></h2>
+            <p class="view-sub">Alice, Bob, Carol and Dave aren't decorations — they're resident agents who walk the office, work at desks, and report in. Click an agent to assign a task face-to-face.</p>
           </div>
-          <div class="town-grid" id="townGrid">
-            <!-- agents injected by JS -->
+          <div class="town-layout">
+            <div class="hud-panel town-canvas-panel">
+              <canvas id="townCanvas" width="900" height="520"></canvas>
+              <div class="town-legend" id="townLegend"></div>
+            </div>
+            <div class="town-side">
+              <div class="hud-panel activity-panel">
+                <h3 class="panel-title">LIVE ACTIVITY <span class="dim">— WORKER FEED</span></h3>
+                <div class="activity-feed" id="activityFeed">
+                  <div class="empty">Agents are idle. Assign a task to get started.</div>
+                </div>
+              </div>
+              <div class="hud-panel mission-panel">
+                <h3 class="panel-title">MISSION LOG <span class="dim">— FULL TRANSPARENCY</span></h3>
+                <div class="mission-log" id="missionLog">
+                  <div class="empty">No actions performed yet. Every action GemAI takes will be logged here.</div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -345,6 +362,11 @@
               <h3 class="panel-title">WORLD MONITOR <span class="dim">— LIVE UTC <span id="utcTime">--:--:--</span></span></h3>
               <canvas id="globeCanvas" width="640" height="640"></canvas>
               <div class="globe-caption">3D GLOBE · ACTIVE HOTSPOTS</div>
+            </div>
+            <div class="hud-panel map-panel">
+              <h3 class="panel-title">2D COMMAND MAP <span class="dim">— FULL SITUATION</span></h3>
+              <canvas id="mapCanvas" width="560" height="360"></canvas>
+              <div class="globe-caption">FLIP TO 2D · ALL SITES</div>
             </div>
             <div class="hud-panel news-panel">
               <h3 class="panel-title">HEADLINES <span class="dim">— STREAMING IN</span></h3>

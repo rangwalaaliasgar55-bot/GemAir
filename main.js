@@ -107,7 +107,7 @@ function writeJSON(file, data) {
 const readProfile = () => readJSON(PROFILE_FILE, {});
 const writeProfile = (d) => writeJSON(PROFILE_FILE, d);
 
-const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], summary: '' };
+const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], actionLog: [], summary: '' };
 const readMemory = () => {
   const m = readJSON(MEMORY_FILE, EMPTY_MEMORY);
   // ensure shape
@@ -282,7 +282,14 @@ const TOOLS = [
   { type: 'function', function: { name: 'list_goals', description: 'List the user\'s goals.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'complete_goal', description: 'Mark a goal as achieved by its text.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
   { type: 'function', function: { name: 'get_affirmation', description: 'Give the user an uplifting affirmation.', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'get_wellness_tip', description: 'Give a practical wellness / self-care tip.', parameters: { type: 'object', properties: { area: { type: 'string', enum: ['focus', 'stress', 'sleep', 'energy', 'productivity', 'motivation'] } } } } }
+  { type: 'function', function: { name: 'get_wellness_tip', description: 'Give a practical wellness / self-care tip.', parameters: { type: 'object', properties: { area: { type: 'string', enum: ['focus', 'stress', 'sleep', 'energy', 'productivity', 'motivation'] } } } } },
+  { type: 'function', function: { name: 'organize_folder', description: 'Organize a folder by file type — scans, classifies, creates subfolders and moves files (a multi-step mission).', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Folder to organize (defaults to Downloads)' } } } } },
+  { type: 'function', function: { name: 'find_duplicates', description: 'Find duplicate files in a folder (by size + name).', parameters: { type: 'object', properties: { path: { type: 'string' } } } } },
+  { type: 'function', function: { name: 'rename_files', description: 'Rename files in a folder by a pattern (e.g. prefix + number).', parameters: { type: 'object', properties: { path: { type: 'string' }, pattern: { type: 'string', description: 'e.g. "project" or "photo_" — a counter is appended' } }, required: ['path', 'pattern'] } } },
+  { type: 'function', function: { name: 'archive_old_files', description: 'Move files older than N days into an _archive folder.', parameters: { type: 'object', properties: { path: { type: 'string' }, days: { type: 'number' } }, required: ['days'] } } },
+  { type: 'function', function: { name: 'system_scan', description: 'Scan the PC — what is using CPU/RAM, disk space, battery. "What is slowing my PC down?"', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'see_screen', description: 'Capture the current screen so the AI is aware of what is on it.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'get_action_log', description: 'Get the recent log of actions the AI has performed (transparency).', parameters: { type: 'object', properties: {} } } }
 ];
 
 function safeEval(expr) {
@@ -618,6 +625,186 @@ function getWellnessTip(area) {
   return { area: area || 'motivation', tip: list[Math.floor(Math.random() * list.length)] };
 }
 
+// ---------------------------------------------------------------------------
+// Action log (transparency — every action the AI takes is logged)
+// ---------------------------------------------------------------------------
+function logAction(action, detail) {
+  const m = readMemory();
+  m.actionLog.unshift({ action, detail: String(detail || '').slice(0, 300), ts: Date.now() });
+  if (m.actionLog.length > 200) m.actionLog = m.actionLog.slice(0, 200);
+  writeMemory(m);
+}
+
+// ---------------------------------------------------------------------------
+// File automation "missions" — the desktop-automation engine
+// ---------------------------------------------------------------------------
+const FILE_CATEGORIES = {
+  images: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'heic', 'raw'],
+  documents: ['pdf', 'doc', 'docx', 'txt', 'md', 'rtf', 'odt', 'xls', 'xlsx', 'csv', 'ppt', 'pptx'],
+  videos: ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'webm', 'flv'],
+  audio: ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a'],
+  archives: ['zip', 'rar', '7z', 'tar', 'gz'],
+  code: ['js', 'ts', 'py', 'java', 'c', 'cpp', 'html', 'css', 'json', 'go', 'rs', 'rb', 'php', 'sh'],
+  installers: ['exe', 'msi', 'dmg', 'pkg', 'deb', 'appimage'],
+  books: ['epub', 'mobi']
+};
+
+function categorizeFile(name) {
+  const ext = path.extname(name).slice(1).toLowerCase();
+  for (const [cat, exts] of Object.entries(FILE_CATEGORIES)) if (exts.includes(ext)) return cat;
+  return 'others';
+}
+
+function organizeFolder(dir) {
+  const base = dir || path.join(os.homedir(), 'Downloads');
+  try {
+    const entries = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
+    const moved = {}, total = entries.length;
+    for (const e of entries) {
+      const cat = categorizeFile(e.name);
+      const dest = path.join(base, cat);
+      if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+      fs.renameSync(path.join(base, e.name), path.join(dest, e.name));
+      moved[cat] = (moved[cat] || 0) + 1;
+    }
+    logAction('organize_folder', `Organized ${total} files into ${Object.keys(moved).length} categories in ${base}`);
+    return { ok: true, total, categories: moved, base };
+  } catch (e) { return { error: e.message }; }
+}
+
+function findDuplicates(dir) {
+  const base = dir || os.homedir();
+  try {
+    const map = {};
+    const walk = (d, depth) => {
+      if (depth > 4) return;
+      let entries;
+      try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (e.name.startsWith('.')) continue;
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) walk(full, depth + 1);
+        else {
+          let key;
+          try {
+            const st = fs.statSync(full);
+            key = e.name.toLowerCase() + ':' + st.size;
+          } catch { key = e.name.toLowerCase(); }
+          (map[key] = map[key] || []).push(full);
+        }
+      }
+    };
+    walk(base, 0);
+    const dups = Object.values(map).filter((arr) => arr.length > 1).slice(0, 20);
+    logAction('find_duplicates', `Found ${dups.length} duplicate groups in ${base}`);
+    return { duplicates: dups, count: dups.length };
+  } catch (e) { return { error: e.message }; }
+}
+
+function renameFiles(dir, pattern) {
+  const base = dir || os.homedir();
+  const pat = String(pattern || 'file').replace(/[^\w\- ]/g, '');
+  try {
+    const files = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
+    let n = 0;
+    for (const e of files) {
+      const ext = path.extname(e.name);
+      const newName = pat + '-' + String(n + 1).padStart(3, '0') + ext;
+      fs.renameSync(path.join(base, e.name), path.join(base, newName));
+      n++;
+    }
+    logAction('rename_files', `Renamed ${n} files with pattern "${pat}"`);
+    return { ok: true, renamed: n, pattern: pat };
+  } catch (e) { return { error: e.message }; }
+}
+
+function archiveOldFiles(dir, days) {
+  const base = dir || os.homedir();
+  const cutoff = Date.now() - days * 86400000;
+  try {
+    const archive = path.join(base, '_archive');
+    if (!fs.existsSync(archive)) fs.mkdirSync(archive, { recursive: true });
+    let n = 0;
+    const entries = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
+    for (const e of entries) {
+      const full = path.join(base, e.name);
+      try { if (fs.statSync(full).mtimeMs < cutoff) { fs.renameSync(full, path.join(archive, e.name)); n++; } } catch {}
+    }
+    logAction('archive_old_files', `Archived ${n} files older than ${days} days`);
+    return { ok: true, archived: n, archive };
+  } catch (e) { return { error: e.message }; }
+}
+
+// ---------------------------------------------------------------------------
+// System guardian — "what's slowing my PC down?"
+// ---------------------------------------------------------------------------
+function listTopProcesses() {
+  const p = process.platform;
+  if (p === 'win32') {
+    return new Promise((resolve) => {
+      exec('powershell -NoProfile -Command "Get-Process | Sort-Object CPU -Descending | Select-Object -First 8 Name,CPU,@{n=\'MemMB\';e={[math]::Round($_.WS/1MB)}} | ConvertTo-Json -Compress"', { timeout: 8000 }, (err, out) => {
+        try { resolve(JSON.parse(out)); } catch { resolve([]); }
+      });
+    });
+  }
+  if (p === 'darwin') {
+    return new Promise((resolve) => {
+      exec('ps -A -o comm,%cpu,%mem -r | head -9', { timeout: 8000 }, (err, out) => {
+        const lines = (out || '').trim().split('\n').slice(1).map((l) => {
+          const parts = l.trim().split(/\s+/);
+          return { Name: parts[0], CPU: parseFloat(parts[1]) || 0, MemPct: parseFloat(parts[2]) || 0 };
+        });
+        resolve(lines);
+      });
+    });
+  }
+  return new Promise((resolve) => {
+    exec('ps -eo comm,%cpu,%mem --sort=-%cpu | head -9', { timeout: 8000 }, (err, out) => {
+      const lines = (out || '').trim().split('\n').slice(1).map((l) => {
+        const parts = l.trim().split(/\s+/);
+        return { Name: parts[0], CPU: parseFloat(parts[1]) || 0, MemPct: parseFloat(parts[2]) || 0 };
+      });
+      resolve(lines);
+    });
+  });
+}
+
+function getStorage() {
+  const total = os.totalmem(), free = os.freemem();
+  return { ramTotal: total, ramUsed: total - free, ramPercent: Math.round(((total - free) / total) * 100) };
+}
+
+function getBattery() {
+  return null; // no reliable cross-platform battery without native modules
+}
+
+async function systemScan() {
+  const procs = await listTopProcesses();
+  const storage = getStorage();
+  const cpu = await cpuUsage();
+  const up = os.uptime();
+  return {
+    cpuPercent: cpu,
+    ramPercent: storage.ramPercent,
+    ramUsedGB: Math.round(storage.ramUsed / 1e9),
+    ramTotalGB: Math.round(storage.ramTotal / 1e9),
+    uptime: Math.floor(up / 3600) + 'h ' + Math.floor((up % 3600) / 60) + 'm',
+    topProcesses: procs,
+    advice: cpu > 80 ? 'CPU is very high — a runaway process may be active.' : cpu > 50 ? 'CPU is moderately busy.' : 'CPU is healthy.',
+    battery: getBattery()
+  };
+}
+
+async function seeScreen() {
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1280, height: 720 } });
+  const source = sources[0];
+  if (!source || !source.thumbnail) return { error: 'No screen available' };
+  const file = path.join(app.getPath('pictures'), `gemai-screen-${Date.now()}.png`);
+  fs.writeFileSync(file, source.thumbnail.toPNG());
+  logAction('see_screen', `Captured screen to ${file}`);
+  return { ok: true, file, note: 'Screen captured. If your AI model supports vision, it can analyze this image.' };
+}
+
 function parseWhen(text) {
   const t = String(text || '').trim();
   const rel = t.match(/in\s+(\d+)\s*(second|sec|s|minute|min|m|hour|hr|h|day|d)/i);
@@ -760,6 +947,22 @@ async function executeTool(name, args) {
         return getAffirmation();
       case 'get_wellness_tip':
         return getWellnessTip(args.area);
+      case 'organize_folder':
+        return organizeFolder(args.path);
+      case 'find_duplicates':
+        return findDuplicates(args.path);
+      case 'rename_files':
+        return renameFiles(args.path, args.pattern);
+      case 'archive_old_files':
+        return archiveOldFiles(args.path, args.days);
+      case 'system_scan':
+        return await systemScan();
+      case 'see_screen':
+        return await seeScreen();
+      case 'get_action_log': {
+        const m = readMemory();
+        return { log: (m.actionLog || []).slice(0, 30) };
+      }
       case 'calculate':
         return { result: safeEval(args.expression) };
       case 'set_reminder': {

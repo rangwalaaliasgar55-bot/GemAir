@@ -20,6 +20,7 @@ const MOCK_MEMORY = {
   todos: [],
   mood: [],
   goals: [],
+  actionLog: [],
   summary: ''
 };
 
@@ -159,7 +160,7 @@ let profile = {
   voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' },
   memoryOn: true, allowShell: false, wakeWord: false
 };
-let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], summary: '' };
+let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], actionLog: [], summary: '' };
 let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
 
 let listening = false, recognition = null, isRunning = false;
@@ -801,37 +802,276 @@ function initRecognition() {
 }
 
 // ---------------------------------------------------------------------------
-// Agent Town
+// Agent Town — animated pixel-art office (canvas)
 // ---------------------------------------------------------------------------
-function renderAgents() {
-  const grid = $('#townGrid');
-  grid.innerHTML = '';
-  const chatter = [
-    'Paper jam again?', 'Backing up the backups…', 'Coffee run in 5.', 'Syncing with the mainframe.',
-    'That last task is looking good.', 'Reindexing your files…', 'On it, chief.', 'Watching the network.'
+function startAgentTown() {
+  const canvas = $('#townCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const accent = () => getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#ff3b3b';
+
+  // office furniture layout
+  const desks = [
+    { x: 130, y: 90 }, { x: 620, y: 90 }, { x: 130, y: 320 }, { x: 620, y: 320 }
   ];
-  AGENTS.forEach((a, i) => {
-    const desk = document.createElement('div');
-    desk.className = 'agent-desk';
-    desk.innerHTML = `
-      <div class="agent-avatar">${a.emoji}</div>
-      <div class="agent-info">
-        <div class="agent-name">${a.name}</div>
-        <div class="agent-role">${a.role}</div>
-        <div class="agent-status"><span class="dot online"></span>ONLINE · SEAT ${String(i + 1).padStart(2, '0')}</div>
-        <div class="agent-talk">${a.talk}</div>
-      </div>
-      <button class="agent-assign" data-agent="${a.name}">ASSIGN TASK</button>`;
-    grid.appendChild(desk);
-    // small-talk rotation
-    const talkEl = desk.querySelector('.agent-talk');
-    setInterval(() => { talkEl.textContent = chatter[Math.floor(Math.random() * chatter.length)]; }, 9000 + i * 1800);
-  });
-  $$('.agent-assign').forEach((btn) => btn.addEventListener('click', () => {
-    switchView('assistant');
-    $('#chatInput').value = `Ask ${btn.dataset.agent} to help me with: `;
-    $('#chatInput').focus();
+  const whiteboard = { x: 860, y: 120 };
+  const server = { x: 40, y: 440 };
+  const coffee = { x: 470, y: 210 };
+
+  const agentColors = { Alice: '#ff5d8f', Bob: '#5d9cff', Carol: '#4be3a1', Dave: '#c78bff' };
+  const agents = AGENTS.map((a, i) => ({
+    name: a.name, role: a.role, color: agentColors[a.name],
+    home: desks[i], pos: { x: desks[i].x, y: desks[i].y - 20 }, target: { ...desks[i] },
+    state: 'idle', task: '', timer: 0, phase: Math.random() * Math.PI * 2
   }));
+
+  const waypoints = [...desks.map((d) => ({ x: d.x, y: d.y - 24 })), { x: whiteboard.x - 30, y: whiteboard.y + 60 }, { x: server.x + 40, y: server.y - 30 }, { x: coffee.x, y: coffee.y + 40 }];
+
+  // click -> assign task
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const sx = W / rect.width, sy = H / rect.height;
+    const mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy;
+    for (const a of agents) {
+      if (Math.hypot(mx - a.pos.x, my - a.pos.y) < 22) {
+        switchView('assistant');
+        $('#chatInput').value = `Ask ${a.name} to help me with: `;
+        $('#chatInput').focus();
+        addActivity(a.name, 'received a new task from you');
+        return;
+      }
+    }
+  });
+
+  function assignTask(name, task) {
+    const a = agents.find((x) => x.name === name);
+    if (!a) return;
+    a.state = 'busy'; a.task = task || 'Working…'; a.timer = 0;
+    addActivity(name, 'started: ' + a.task);
+  }
+  window.__assignAgentTask = assignTask;
+
+  function drawFloor() {
+    ctx.fillStyle = '#070b14';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y <= H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  }
+
+  function drawDesk(d, a) {
+    ctx.fillStyle = 'rgba(20,28,44,0.9)';
+    ctx.fillRect(d.x - 44, d.y, 88, 8);       // tabletop
+    ctx.fillRect(d.x - 36, d.y - 26, 72, 26); // back panel
+    ctx.fillStyle = '#0a0f1a';
+    ctx.fillRect(d.x - 28, d.y - 20, 56, 16); // screen
+    ctx.fillStyle = a.color;
+    ctx.globalAlpha = 0.35;
+    ctx.fillRect(d.x - 28, d.y - 20, 56, 16);
+    ctx.globalAlpha = 1;
+    // nameplate
+    ctx.fillStyle = '#111a2c';
+    ctx.fillRect(d.x - 20, d.y + 2, 40, 10);
+    ctx.fillStyle = '#9fb2d0';
+    ctx.font = '7px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(a.name.toUpperCase(), d.x, d.y + 10);
+  }
+
+  function drawWhiteboard() {
+    ctx.fillStyle = '#e8eef7';
+    ctx.fillRect(whiteboard.x, whiteboard.y, 8, 70);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(whiteboard.x + 8, whiteboard.y + 4, 4, 62);
+    // scribbles
+    ctx.fillStyle = '#2b4b8a';
+    ctx.fillRect(whiteboard.x + 16, whiteboard.y + 8, 20, 3);
+    ctx.fillRect(whiteboard.x + 16, whiteboard.y + 16, 14, 3);
+    ctx.fillStyle = '#c0392b';
+    ctx.fillRect(whiteboard.x + 16, whiteboard.y + 26, 18, 3);
+  }
+
+  function drawServer() {
+    ctx.fillStyle = '#182238';
+    ctx.fillRect(server.x, server.y, 44, 60);
+    ctx.fillStyle = '#0c1424';
+    for (let i = 0; i < 4; i++) ctx.fillRect(server.x + 4, server.y + 6 + i * 14, 36, 10);
+    // blinking LEDs
+    for (let i = 0; i < 4; i++) {
+      const on = (Math.floor(Date.now() / 400) + i) % 3 !== 0;
+      ctx.fillStyle = on ? (i % 2 ? '#4be3a1' : '#ffd166') : '#334';
+      ctx.fillRect(server.x + 40, server.y + 9 + i * 14, 4, 4);
+    }
+  }
+
+  function drawCoffee() {
+    ctx.fillStyle = '#2a1a12';
+    ctx.fillRect(coffee.x, coffee.y, 30, 34);
+    ctx.fillStyle = '#1a0f0a';
+    ctx.fillRect(coffee.x + 2, coffee.y + 4, 26, 10);
+    ctx.fillStyle = '#5b3a1e';
+    ctx.fillRect(coffee.x + 12, coffee.y + 16, 8, 12);
+    ctx.fillStyle = '#0a0f1a';
+    ctx.fillRect(coffee.x + 26, coffee.y + 8, 8, 12); // cup
+  }
+
+  function drawAgent(a, t) {
+    const bob = a.state === 'busy' ? Math.sin(t * 0.02) * 1.5 : Math.abs(Math.sin(t * 0.01 + a.phase)) * 2;
+    const x = Math.round(a.pos.x), y = Math.round(a.pos.y) - Math.round(bob);
+    // shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(x - 6, a.pos.y + 8, 12, 3);
+    // legs
+    ctx.fillStyle = '#1a2336';
+    ctx.fillRect(x - 4, y + 10, 3, 8);
+    ctx.fillRect(x + 1, y + 10, 3, 8);
+    // body
+    ctx.fillStyle = a.color;
+    ctx.fillRect(x - 5, y + 2, 10, 9);
+    // head
+    ctx.fillStyle = '#f0c9a8';
+    ctx.fillRect(x - 4, y - 8, 8, 8);
+    // eyes
+    ctx.fillStyle = '#111';
+    ctx.fillRect(x - 2, y - 5, 2, 2);
+    ctx.fillRect(x + 2, y - 5, 2, 2);
+    // status ring
+    const ringColor = a.state === 'busy' ? '#ffc24b' : a.state === 'done' ? accent() : '#3dff9a';
+    ctx.strokeStyle = ringColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x, y + 2, 11, 0, Math.PI * 2);
+    ctx.stroke();
+    // name
+    ctx.fillStyle = '#9fb2d0';
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(a.name, x, y - 14);
+  }
+
+  function drawBubble(a) {
+    if (a.state === 'idle') return;
+    const lines = wrapText(a.task, 18);
+    const bw = Math.min(150, Math.max(60, ...lines.map((l) => l.length)) * 6 + 12);
+    const bh = lines.length * 9 + 10;
+    const bx = a.pos.x - bw / 2, by = a.pos.y - 34 - bh;
+    ctx.fillStyle = 'rgba(6,10,18,0.92)';
+    ctx.strokeStyle = a.state === 'done' ? accent() : '#ffc24b';
+    ctx.lineWidth = 1;
+    roundRect(ctx, bx, by, bw, bh, 6);
+    ctx.fill(); ctx.stroke();
+    // tail
+    ctx.beginPath(); ctx.moveTo(a.pos.x - 3, by + bh); ctx.lineTo(a.pos.x, a.pos.y - 24); ctx.lineTo(a.pos.x + 3, by + bh); ctx.closePath();
+    ctx.fillStyle = 'rgba(6,10,18,0.92)'; ctx.fill();
+    ctx.fillStyle = '#dfe8ff';
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'center';
+    lines.forEach((l, i) => ctx.fillText(l, a.pos.x, by + 12 + i * 9));
+  }
+
+  function roundRect(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+  }
+
+  function wrapText(text, max) {
+    const words = String(text).split(' ');
+    const lines = []; let cur = '';
+    for (const w of words) {
+      if ((cur + ' ' + w).trim().length <= max) cur = (cur + ' ' + w).trim();
+      else { if (cur) lines.push(cur); cur = w; }
+    }
+    if (cur) lines.push(cur);
+    return lines.slice(0, 4);
+  }
+
+  function updateAgent(a) {
+    a.timer++;
+    if (a.state === 'busy') {
+      // walk home, work, then done
+      moveToward(a, a.home);
+      if (Math.hypot(a.pos.x - a.home.x, a.pos.y - a.home.y) < 4) {
+        if (a.timer > 160) { a.state = 'done'; a.timer = 0; addActivity(a.name, 'completed: ' + a.task); }
+      }
+      return;
+    }
+    if (a.state === 'done') {
+      if (a.timer > 220) { a.state = 'idle'; a.task = ''; a.timer = 0; }
+      return;
+    }
+    // idle wander
+    if (Math.hypot(a.pos.x - a.target.x, a.pos.y - a.target.y) < 3 || a.timer > 400) {
+      a.target = waypoints[Math.floor(Math.random() * waypoints.length)];
+      a.timer = 0;
+    }
+    moveToward(a, a.target);
+  }
+
+  function moveToward(a, tgt) {
+    const dx = tgt.x - a.pos.x, dy = tgt.y - a.pos.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const sp = a.state === 'busy' ? 1.2 : 0.5;
+    a.pos.x += (dx / d) * sp;
+    a.pos.y += (dy / d) * sp;
+  }
+
+  // legend
+  const legend = $('#townLegend');
+  legend.innerHTML = '';
+  agents.forEach((a) => {
+    const div = document.createElement('div');
+    div.className = 'legend-agent';
+    div.innerHTML = `<span class="legend-dot idle" id="lg-${a.name}"></span><span>${a.name} — <span class="dim">${a.role}</span></span>`;
+    legend.appendChild(div);
+  });
+
+  let raf;
+  function loop(t) {
+    ctx.clearRect(0, 0, W, H);
+    drawFloor();
+    drawWhiteboard(); drawServer(); drawCoffee();
+    agents.forEach((a, i) => { drawDesk(desks[i], a); });
+    agents.forEach((a) => updateAgent(a));
+    agents.forEach((a) => drawAgent(a, t));
+    agents.forEach((a) => drawBubble(a));
+    // update legend dots
+    agents.forEach((a) => {
+      const dot = document.getElementById('lg-' + a.name);
+      if (dot) { dot.className = 'legend-dot ' + a.state; }
+    });
+    raf = requestAnimationFrame(loop);
+  }
+  raf = requestAnimationFrame(loop);
+}
+
+function addActivity(who, text) {
+  const feed = $('#activityFeed');
+  if (!feed) return;
+  if (feed.querySelector('.empty')) feed.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'activity-item';
+  const t = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+  div.innerHTML = `<span class="who">${escapeHtml(who)}</span> ${escapeHtml(text)}<span class="when">${t}</span>`;
+  feed.prepend(div);
+  while (feed.children.length > 30) feed.removeChild(feed.lastChild);
+}
+
+function renderMissionLog() {
+  const log = $('#missionLog');
+  if (!log) return;
+  const actions = (memory.actionLog || []).slice(0, 40);
+  if (!actions.length) { log.innerHTML = '<div class="empty">No actions performed yet. Every action GemAI takes will be logged here.</div>'; return; }
+  log.innerHTML = '';
+  actions.forEach((a) => {
+    const div = document.createElement('div');
+    div.className = 'mission-item';
+    const t = new Date(a.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+    div.innerHTML = `<div class="m-action">▸ ${escapeHtml(a.action)} <span class="m-time">${t}</span></div><div class="m-detail">${escapeHtml(a.detail)}</div>`;
+    log.appendChild(div);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -880,7 +1120,7 @@ function renderReminders() {
     list.appendChild(div);
   });
 }
-function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); }
+function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); renderMissionLog(); }
 
 // ---------------------------------------------------------------------------
 // Companion: mood, goals, wellness
@@ -1015,6 +1255,65 @@ function animateCircuits() {
   $('#memCircuit').style.width = memPct + '%'; $('#memCircuitVal').textContent = memPct + '%';
   $('#skillCircuit').style.width = '85%'; $('#skillCircuitVal').textContent = '85%';
   $('#soulCircuit').style.width = soulPct + '%'; $('#soulCircuitVal').textContent = soulPct + '%';
+}
+
+// ---------------------------------------------------------------------------
+// 2D command map (World Monitor)
+// ---------------------------------------------------------------------------
+function startCommandMap() {
+  const canvas = $('#mapCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#ff3b3b';
+
+  // stylized continents (rough blobs) + city markers
+  const cities = [
+    { name: 'NYC', lat: 40.7, lon: -74 }, { name: 'LON', lat: 51.5, lon: -0.1 },
+    { name: 'TYO', lat: 35.7, lon: 139.7 }, { name: 'SYD', lat: -33.9, lon: 151.2 },
+    { name: 'KHI', lat: 24.8, lon: 67 }, { name: 'DEL', lat: 28.6, lon: 77.2 },
+    { name: 'SFO', lat: 37.8, lon: -122.4 }, { name: 'RIO', lat: -22.9, lon: -43.2 },
+    { name: 'DXB', lat: 25.2, lon: 55.3 }, { name: 'SIN', lat: 1.35, lon: 103.8 }
+  ];
+  const continents = [
+    { name: 'NA', x: 0.16, y: 0.22, w: 0.2, h: 0.22 }, { name: 'SA', x: 0.27, y: 0.52, w: 0.09, h: 0.26 },
+    { name: 'EU', x: 0.47, y: 0.2, w: 0.12, h: 0.16 }, { name: 'AF', x: 0.47, y: 0.4, w: 0.12, h: 0.26 },
+    { name: 'AS', x: 0.58, y: 0.16, w: 0.26, h: 0.24 }, { name: 'AU', x: 0.78, y: 0.62, w: 0.1, h: 0.14 }
+  ];
+  const proj = (lat, lon) => ({ x: (lon + 180) / 360 * W, y: (90 - lat) / 180 * H });
+
+  function draw(t) {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#070b14';
+    ctx.fillRect(0, 0, W, H);
+
+    // graticule
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 12; i++) { const x = (i / 12) * W; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let i = 0; i <= 6; i++) { const y = (i / 6) * H; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+    // continents
+    ctx.fillStyle = hexToRgba(accent, 0.12);
+    continents.forEach((c) => {
+      ctx.beginPath();
+      ctx.ellipse(c.x * W + c.w * W / 2, c.y * H + c.h * H / 2, c.w * W / 2, c.h * H / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // city markers + arcs
+    for (const c of cities) {
+      const p = proj(c.lat, c.lon);
+      const pulse = 0.5 + 0.5 * Math.sin(t * 0.004 + c.lon);
+      ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.9; ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.fillStyle = accent; ctx.globalAlpha = 0.3; ctx.arc(p.x, p.y, 4 + pulse * 5, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.8; ctx.fillStyle = accent; ctx.font = '8px monospace'; ctx.textAlign = 'left';
+      ctx.fillText(c.name, p.x + 5, p.y - 3);
+    }
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
 }
 
 // ---------------------------------------------------------------------------
@@ -1359,8 +1658,8 @@ async function boot() {
   await loadMemory();
   applyTheme(profile.theme || 'crimson');
   startBackground3D();
-  startOrb(); startGlobe();
-  renderAgents(); renderAllMemory(); animateCircuits();
+  startOrb(); startGlobe(); startCommandMap();
+  startAgentTown(); renderAllMemory(); animateCircuits();
   bindEvents(); bindSoulSliders(); updateLinkMode();
   updateMoodIndicator(currentEmotion);
   setTimeout(() => startPanelTilt(), 300);

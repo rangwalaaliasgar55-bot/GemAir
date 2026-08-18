@@ -423,10 +423,33 @@ body {
 }
 .agent-assign:hover { background: var(--accent-dim); box-shadow: 0 0 12px var(--accent-glow); }
 
+/* animated pixel office */
+.town-layout { display: grid; grid-template-columns: 1.7fr 1fr; gap: 20px; }
+.town-canvas-panel { position: relative; padding: 10px; }
+#townCanvas { width: 100%; height: auto; display: block; border-radius: 10px; image-rendering: pixelated; }
+.town-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+.legend-agent { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+.legend-dot.idle { background: var(--good); box-shadow: 0 0 8px var(--good); }
+.legend-dot.busy { background: var(--warn); box-shadow: 0 0 8px var(--warn); animation: blink 1s infinite; }
+.legend-dot.done { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.town-side { display: flex; flex-direction: column; gap: 16px; }
+.activity-feed { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+.activity-item { font-size: 12px; padding: 8px 10px; background: rgba(0,0,0,0.3); border-radius: 8px; border-left: 2px solid var(--accent); animation: fadeIn .3s ease; }
+.activity-item .who { color: var(--accent); font-weight: 600; }
+.activity-item .when { color: var(--text-dim); font-family: var(--font-mono); font-size: 9px; margin-left: 6px; }
+.mission-log { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
+.mission-item { font-size: 12px; padding: 8px 10px; background: rgba(0,0,0,0.3); border-radius: 8px; border-left: 2px solid var(--accent-soft); }
+.mission-item .m-action { color: var(--accent); font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; }
+.mission-item .m-detail { margin-top: 3px; color: var(--text-dim); }
+.mission-item .m-time { color: var(--text-dim); font-family: var(--font-mono); font-size: 9px; }
+
 /* ============ WORLD MONITOR ============ */
-.world-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 22px; flex: 1; min-height: 0; }
-.globe-panel { display: flex; flex-direction: column; }
+.world-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; flex: 1; min-height: 0; align-items: start; }
+.globe-panel { display: flex; flex-direction: column; grid-row: span 2; }
+.map-panel { display: flex; flex-direction: column; }
 #globeCanvas { width: 100%; max-height: 520px; }
+#mapCanvas { width: 100%; height: auto; display: block; }
 .globe-caption { text-align: center; font-family: var(--font-mono); font-size: 10px; letter-spacing: 3px; color: var(--text-dim); margin-top: 8px; }
 
 .news-panel { display: flex; flex-direction: column; }
