@@ -49,10 +49,18 @@ const api = {
   },
   async aiChat(config, messages) {
     if (window.gemair) return window.gemair.aiChat(config, messages);
+    if (window.aiClient && config && config.apiKey) {
+      const direct = await window.aiClient.directClientChat(config, messages);
+      if (direct.ok) return direct;
+    }
     return await this._webChat(messages);
   },
   async aiChatStream(config, messages, onDelta) {
     if (window.gemair) return window.gemair.aiChatStream(config, messages, onDelta);
+    if (window.aiClient && config && config.apiKey) {
+      const direct = await window.aiClient.directClientChat(config, messages, onDelta);
+      if (direct.ok) return direct;
+    }
     const res = await this._webChat(messages);
     if (!res.ok) return res;
     const text = res.reply;
@@ -754,12 +762,58 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---------------------------------------------------------------------------
-// Theme (with RGB / rainbow mode)
+// Theme (with RGB / rainbow mode) & Synthetic Web Audio SFX
 // ---------------------------------------------------------------------------
-const THEME_ACCENTS = { crimson: 0, emerald: 152, cyan: 198, rgb: 300 };
+const THEME_ACCENTS = { crimson: 0, emerald: 152, cyan: 198, violet: 275, amber: 38, rgb: 300 };
 let currentAccent = '#ff3b3b';
 let rgbTimer = null;
 let rgbHue = 300;
+let globalAudioCtx = null;
+let globalAnalyser = null;
+
+function playSfx(type) {
+  if (profile && profile.sfx === false) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!globalAudioCtx) globalAudioCtx = new AudioCtx();
+    if (globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
+    const ctx = globalAudioCtx;
+    const now = ctx.currentTime;
+
+    if (type === 'click') {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(800, now);
+      osc.frequency.exponentialRampToValueAtTime(400, now + 0.04);
+      gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(now); osc.stop(now + 0.04);
+    } else if (type === 'activate') {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.18);
+      gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(now); osc.stop(now + 0.2);
+    } else if (type === 'message') {
+      const osc1 = ctx.createOscillator(); const osc2 = ctx.createOscillator(); const gain = ctx.createGain();
+      osc1.type = 'triangle'; osc2.type = 'sine';
+      osc1.frequency.setValueAtTime(523.25, now);
+      osc2.frequency.setValueAtTime(659.25, now + 0.08);
+      gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc1.connect(gain); osc2.connect(gain); gain.connect(ctx.destination);
+      osc1.start(now); osc1.stop(now + 0.1);
+      osc2.start(now + 0.08); osc2.stop(now + 0.25);
+    } else if (type === 'swoosh') {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(600, now);
+      osc.frequency.exponentialRampToValueAtTime(200, now + 0.08);
+      gain.gain.setValueAtTime(0.05, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(now); osc.stop(now + 0.08);
+    }
+  } catch (e) {}
+}
 
 function getAccent() { return currentAccent; }
 
@@ -813,9 +867,44 @@ setInterval(() => {
 // Navigation
 // ---------------------------------------------------------------------------
 function switchView(view) {
+  playSfx('swoosh');
   $$('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
   if (view === 'world') refreshHeadlines();
+  if (view === 'core') renderProcesses();
+}
+
+function renderProcesses() {
+  const container = $('#processList');
+  if (!container) return;
+  const filter = ($('#procFilter')?.value || '').toLowerCase().trim();
+
+  const sampleProcs = [
+    { pid: 1420, name: 'GemAir Core Engine', cpu: '1.4%', mem: '142 MB' },
+    { pid: 2184, name: 'GemAir Audio & Visualizer', cpu: '2.1%', mem: '98 MB' },
+    { pid: 3042, name: 'Web Speech Synthesis', cpu: '0.8%', mem: '64 MB' },
+    { pid: 4890, name: 'Agent Town Virtual Office', cpu: '1.9%', mem: '112 MB' },
+    { pid: 5120, name: 'Groq / LLM Pipeline', cpu: '0.2%', mem: '45 MB' },
+    { pid: 6310, name: 'Local Persistence Store', cpu: '0.1%', mem: '28 MB' }
+  ];
+
+  const filtered = sampleProcs.filter(p => !filter || p.name.toLowerCase().includes(filter) || String(p.pid).includes(filter));
+
+  if (!filtered.length) {
+    container.innerHTML = '<div class="empty">No matching processes found.</div>';
+    return;
+  }
+
+  container.innerHTML = filtered.map(p => `
+    <div class="mem-item">
+      <div>
+        <b style="font-family:var(--font-mono);color:var(--accent);">[${p.pid}]</b>
+        <span style="font-weight:600;margin-left:8px;">${p.name}</span>
+        <span class="dim" style="font-size:11px;margin-left:10px;">CPU: ${p.cpu} | RAM: ${p.mem}</span>
+      </div>
+      <button class="ghost-btn" style="padding:4px 10px;font-size:10px;" onclick="playSfx('click'); toast('MONITOR', 'Process [${p.pid}] active', '⚙️')">Info</button>
+    </div>
+  `).join('');
 }
 
 // ---------------------------------------------------------------------------
@@ -1048,6 +1137,7 @@ function startGlobe() {
 // Chat
 // ---------------------------------------------------------------------------
 function addMessage(role, text, opts = {}) {
+  if (role === 'ai' && !opts.typing) playSfx('message');
   const log = $('#chatLog');
   const div = document.createElement('div');
   div.className = 'msg ' + role;
@@ -1184,12 +1274,14 @@ function greetByTime() {
 
 function updateLinkMode() {
   const el = $('#linkMode');
+  if (!el) return;
   const cfg = profile.ai || {};
   const hasKey = !!(cfg.apiKey && cfg.baseURL);
   const isLocal = !!(cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL));
   if (hasKey) el.textContent = '— ' + (cfg.model || 'AI') + ' (YOUR KEY)';
   else if (isLocal) el.textContent = '— LOCAL MODEL';
-  else el.textContent = '— OFFLINE (no key)';
+  else if (!isElectron) el.textContent = '— FREE AI (ONLINE)';
+  else el.textContent = '— OFFLINE BRAIN';
 }
 
 function buildSystemPrompt() {
@@ -1358,7 +1450,7 @@ async function handleMessage(text) {
   const cfg = profile.ai || {};
   const hasKey = !!(cfg.apiKey && cfg.baseURL);
   const isLocal = !!(cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL));
-  const useAI = hasKey || isLocal;
+  const useAI = hasKey || isLocal || !isElectron;
 
   // @Agent routing — hand the task to that agent's own brain (Stonic-style)
   const agentMatch = text.match(/^@(Alice|Bob|Carol|Dave)\s+(.*)$/i);
@@ -1380,10 +1472,11 @@ async function handleMessage(text) {
       if (res.ok) { reply = res.reply; chatHistory.push({ role: 'assistant', content: reply }); }
       else { reply = '⚠ ' + humanError(res.error); }
     } else if (useAI) {
-      // web mode: no per-agent backend — use main brain but tag the agent role
+      // web mode: use free Vercel serverless proxy or user key
       reply = await (async () => {
         const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a resident agent of GemAir. Help with: ${task}. Be truthful and concise.` }, ...chatHistory.slice(-14)]);
-        return res.ok ? res.reply : '⚠ ' + humanError(res.error);
+        if (res.ok) return res.reply;
+        return `[${agentName}] ${(await api.aiOffline(task)).reply}`;
       })();
       chatHistory.push({ role: 'assistant', content: reply });
     } else {
@@ -1392,7 +1485,7 @@ async function handleMessage(text) {
     }
     await renderReply(replyEl, reply);
   } else if (useAI) {
-    // Use the user's key ONLY — no silent fallback. Stream tokens live.
+    // Try Vercel free serverless AI or user key first; fall back to offline brain if unavailable
     chatHistory.push({ role: 'user', content: text });
     const sys = buildSystemPrompt();
     const replyEl = typing.querySelector('p');
@@ -1415,8 +1508,12 @@ async function handleMessage(text) {
         });
       }
     } else {
-      reply = '⚠ ' + humanError(res.error) + '\n\n(Using your configured AI only — fix the key in Settings → AI Brain.)';
-      renderReply(replyEl, reply);
+      // Seamless fallback to offline intent brain when server key or network is unreachable
+      const resOffline = await api.aiOffline(text);
+      reply = resOffline.reply;
+      if (!streamed) { renderReply(replyEl, reply); }
+      else { replyEl.textContent = reply; }
+      chatHistory.push({ role: 'assistant', content: reply });
     }
   } else {
     const res = await api.aiOffline(text);
@@ -1481,20 +1578,45 @@ function speak(text) {
   avatar({ speaking: true });                  // Gem's mouth starts moving
   setCaption('gem', clean);                    // live subtitle
   if (mode === 'neural') captionAutoAdvance(clean);
-  speechQueue = speechQueue.then(async () => {
-    if (gen !== speechGen) return; // superseded
-    if (mode === 'neural') {
-      try { await speakNeural(clean, gen); return; } catch (e) { /* fall back to system voice */ }
-    }
-    if (gen === speechGen) speakSystem(clean);
-  }).catch(() => {}).finally(() => {
-    if (gen === speechGen) {
-      document.body.classList.remove('rgb-speaking');
-      avatar({ speaking: false });
-      captionProgress(captionFullText.length);
-      hideCaption(1400);
-    }
-  });
+
+  if (window.ttsEngine) {
+    const mod = emotionVoiceMod();
+    window.ttsEngine.speak(clean, {
+      gender: profile.voiceGender || profile.avatarGender || 'female',
+      engine: mode,
+      rate: profile.voice?.rate ?? 1.0,
+      pitch: profile.voice?.pitch ?? 1.1,
+      emotionMod: mod,
+      gen
+    }).then(() => {
+      if (gen === speechGen) {
+        document.body.classList.remove('rgb-speaking');
+        avatar({ speaking: false });
+        captionProgress(captionFullText.length);
+        hideCaption(1400);
+      }
+    }).catch(() => {
+      if (gen === speechGen) {
+        document.body.classList.remove('rgb-speaking');
+        avatar({ speaking: false });
+      }
+    });
+  } else {
+    speechQueue = speechQueue.then(async () => {
+      if (gen !== speechGen) return; // superseded
+      if (mode === 'neural') {
+        try { await speakNeural(clean, gen); return; } catch (e) { /* fall back to system voice */ }
+      }
+      if (gen === speechGen) speakSystem(clean);
+    }).catch(() => {}).finally(() => {
+      if (gen === speechGen) {
+        document.body.classList.remove('rgb-speaking');
+        avatar({ speaking: false });
+        captionProgress(captionFullText.length);
+        hideCaption(1400);
+      }
+    });
+  }
 }
 
 /**
@@ -1572,6 +1694,28 @@ function playAudioUrl(url, gen) {
     audio.preload = 'auto';
     if (gen !== speechGen) { done(false); return; }
     currentNeuralAudio = audio;
+
+    try {
+      if (!globalAudioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) globalAudioCtx = new AudioCtx();
+      }
+      if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+        globalAudioCtx.resume();
+      }
+      if (globalAudioCtx) {
+        if (!globalAnalyser) {
+          globalAnalyser = globalAudioCtx.createAnalyser();
+          globalAnalyser.fftSize = 128;
+        }
+        audio.crossOrigin = "anonymous";
+        const source = globalAudioCtx.createMediaElementSource(audio);
+        source.connect(globalAnalyser);
+        globalAnalyser.connect(globalAudioCtx.destination);
+        if (window.gemAvatar) window.gemAvatar.setAudioAnalyser(globalAnalyser);
+      }
+    } catch (e) {}
+
     audio.play().then(() => {}).catch(() => done(false));
     setTimeout(() => done(false), 30000); // safety
   });
@@ -1884,9 +2028,21 @@ function renderMissionLog() {
 // ---------------------------------------------------------------------------
 function renderFacts() {
   const list = $('#memoryList');
-  const facts = (memory.facts || []).slice().sort((a, b) => (b.importance || 0) - (a.importance || 0));
+  if (!list) return;
+  const filter = ($('#factFilter')?.value || '').toLowerCase().trim();
+  const activeCat = $('#memoryCatFilters .qc.active')?.dataset.cat || 'all';
+
+  let facts = (memory.facts || []).slice().sort((a, b) => (b.importance || 0) - (a.importance || 0));
+
+  if (activeCat && activeCat !== 'all') {
+    facts = facts.filter(f => (f.category || 'fact').toLowerCase() === activeCat);
+  }
+  if (filter) {
+    facts = facts.filter(f => f.text.toLowerCase().includes(filter) || (f.category || '').toLowerCase().includes(filter));
+  }
+
   $('#factCount').textContent = '— ' + facts.length + ' remembered';
-  if (!facts.length) { list.innerHTML = '<div class="empty">No memories yet — talk to the assistant and it will remember automatically.</div>'; return; }
+  if (!facts.length) { list.innerHTML = '<div class="empty">No matching memories found.</div>'; return; }
   list.innerHTML = '';
   facts.forEach((f) => {
     const div = document.createElement('div');
@@ -1956,8 +2112,86 @@ function renderInstructions() {
 function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); renderSkills(); renderInstructions(); renderMissionLog(); renderBriefing(); }
 
 // ---------------------------------------------------------------------------
-// Daily briefing
+// Ambient Sound Generator for Focus Sessions
 // ---------------------------------------------------------------------------
+let ambientCtx = null;
+let ambientSource = null;
+let ambientGain = null;
+
+function playAmbientSound(type) {
+  stopAmbientSound();
+  if (!type || type === 'none') return;
+
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!ambientCtx) ambientCtx = new AudioCtx();
+    if (ambientCtx.state === 'suspended') ambientCtx.resume();
+
+    const ctx = ambientCtx;
+    ambientGain = ctx.createGain();
+    ambientGain.gain.setValueAtTime(0.12, ctx.currentTime);
+    ambientGain.connect(ctx.destination);
+
+    if (type === 'rain') {
+      const bufferSize = ctx.sampleRate * 2;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer; noise.loop = true;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1000, ctx.currentTime);
+
+      noise.connect(filter);
+      filter.connect(ambientGain);
+      noise.start();
+      ambientSource = noise;
+    } else if (type === 'space') {
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      osc1.type = 'sine'; osc1.frequency.setValueAtTime(110, ctx.currentTime);
+      osc2.type = 'sine'; osc2.frequency.setValueAtTime(110.5, ctx.currentTime);
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass'; filter.frequency.setValueAtTime(400, ctx.currentTime);
+
+      osc1.connect(filter); osc2.connect(filter);
+      filter.connect(ambientGain);
+      osc1.start(); osc2.start();
+      ambientSource = { stop: () => { try { osc1.stop(); osc2.stop(); } catch (e) {} } };
+    } else if (type === 'ocean') {
+      const bufferSize = ctx.sampleRate * 3;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      let lastOut = 0.0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        data[i] = (lastOut + (0.02 * white)) / 1.02;
+        lastOut = data[i];
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer; noise.loop = true;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass'; filter.frequency.setValueAtTime(600, ctx.currentTime);
+
+      noise.connect(filter);
+      filter.connect(ambientGain);
+      noise.start();
+      ambientSource = noise;
+    }
+  } catch (e) {}
+}
+
+function stopAmbientSound() {
+  if (ambientSource) {
+    try { ambientSource.stop(); } catch (e) {}
+    ambientSource = null;
+  }
+}
 const QUOTES_OFFLINE = [
   'The best way to predict the future is to invent it. — Alan Kay',
   "It always seems impossible until it's done. — Nelson Mandela",
@@ -2234,11 +2468,26 @@ async function persistProfile() { try { await api.setProfile(profile); } catch (
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
+function applyAvatarGender(gender) {
+  const g = gender === 'male' ? 'male' : 'female';
+  profile.avatarGender = g;
+  if (window.gemAvatar) window.gemAvatar.setGender(g);
+  if (window.ttsEngine) window.ttsEngine.gender = profile.voiceGender || g;
+  const label = $('#avatarGenderLabel');
+  if (label) label.textContent = g === 'male' ? '♂ MALE' : '♀ FEMALE';
+  const sel = $('#setAvatarGender');
+  if (sel) sel.value = g;
+  const vSel = $('#setVoiceGender');
+  if (vSel) vSel.value = profile.voiceGender || g;
+}
+
 function openSettings() {
   $('#setUserName').value = profile.name || '';
   $('#setBaseURL').value = (profile.ai?.baseURL) || '';
   $('#setApiKey').value = (profile.ai?.apiKey) || '';
   $('#setModel').value = (profile.ai?.model) || 'llama-3.3-70b-versatile';
+  if ($('#setAvatarGender')) $('#setAvatarGender').value = profile.avatarGender || 'female';
+  if ($('#setVoiceGender')) $('#setVoiceGender').value = profile.voiceGender || profile.avatarGender || 'female';
   $('#setRate').value = profile.voice?.rate ?? 1.0;
   $('#setPitch').value = profile.voice?.pitch ?? 1.1;
   $('#rateVal').textContent = $('#setRate').value;
@@ -2304,10 +2553,102 @@ function bindEvents() {
   if (_eventsBound) return;
   _eventsBound = true;
   $$('.nav-btn').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.view)));
-  $$('.theme-btn').forEach((b) => b.addEventListener('click', () => { profile.theme = b.dataset.theme; applyTheme(profile.theme); persistProfile(); }));
+  $$('.theme-btn').forEach((b) => b.addEventListener('click', () => {
+    playSfx('click');
+    profile.theme = b.dataset.theme;
+    applyTheme(profile.theme);
+    persistProfile();
+  }));
+
+  // SFX button toggle
+  const sfxBtn = $('#sfxBtn');
+  if (sfxBtn) {
+    sfxBtn.addEventListener('click', () => {
+      profile.sfx = !(profile.sfx !== false);
+      sfxBtn.classList.toggle('active', profile.sfx !== false);
+      $('#sfxIcon').textContent = profile.sfx !== false ? '🔊' : '🔇';
+      $('#sfxText').textContent = profile.sfx !== false ? 'SFX ON' : 'SFX OFF';
+      if (profile.sfx !== false) playSfx('click');
+      persistProfile();
+    });
+  }
+
+  // Clear chat log
+  const clearChatBtn = $('#clearChatBtn');
+  if (clearChatBtn) {
+    clearChatBtn.addEventListener('click', () => {
+      playSfx('click');
+      $('#chatLog').innerHTML = '<div class="msg system-msg"><p>Chat history cleared. Systems standing by.</p></div>';
+      chatHistory = [];
+      toast('CHAT', 'Chat history log cleared.', '🧹');
+    });
+  }
+
+  // Circuit row clicks
+  $('#memCircuitRow')?.addEventListener('click', () => {
+    switchView('core');
+    const tab = $$('.core-tab').find(t => t.dataset.tab === 'memory');
+    if (tab) tab.click();
+  });
+  $('#skillCircuitRow')?.addEventListener('click', () => {
+    switchView('core');
+    const tab = $$('.core-tab').find(t => t.dataset.tab === 'skills');
+    if (tab) tab.click();
+  });
+  $('#soulCircuitRow')?.addEventListener('click', () => {
+    switchView('core');
+    const tab = $$('.core-tab').find(t => t.dataset.tab === 'soul');
+    if (tab) tab.click();
+  });
+
+  // Memory Category Filters & Search
+  $('#factFilter')?.addEventListener('input', () => renderFacts());
+  $$('#memoryCatFilters .qc').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      playSfx('click');
+      $$('#memoryCatFilters .qc').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderFacts();
+    });
+  });
+
+  // Ambient sound generator for focus sessions
+  $$('.ambient-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      playSfx('click');
+      $$('.ambient-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      playAmbientSound(btn.dataset.sound);
+      toast('FOCUS', `Ambient sound: ${btn.textContent}`, '🎵');
+    });
+  });
+
+  // Multi-Agent Mission Dispatcher
+  $('#dispatchTaskBtn')?.addEventListener('click', () => {
+    const task = $('#dispatchTaskInput')?.value.trim();
+    if (!task) return;
+    playSfx('activate');
+    const agent = $('#dispatchAgent')?.value || 'all';
+    $('#dispatchTaskInput').value = '';
+
+    if (agent === 'all') {
+      addActivity('TEAM', `Multi-agent mission dispatched: "${task}"`);
+      toast('AGENTS', 'Multi-agent collaboration initiated', '👥');
+      switchView('assistant');
+      $('#chatInput').value = `@Alice @Bob @Carol @Dave ${task}`;
+      sendMessage($('#chatInput').value);
+    } else {
+      addActivity(agent, `Dispatched mission: "${task}"`);
+      toast('AGENT', `${agent} assigned task`, '🚀');
+      switchView('assistant');
+      $('#chatInput').value = `@${agent} ${task}`;
+      sendMessage($('#chatInput').value);
+    }
+  });
 
   // core tabs
   $$('.core-tab').forEach((t) => t.addEventListener('click', () => {
+    playSfx('click');
     $$('.core-tab').forEach((x) => x.classList.toggle('active', x === t));
     $$('.core-pane').forEach((p) => p.classList.toggle('active', p.dataset.pane === t.dataset.tab));
   }));
@@ -2441,6 +2782,14 @@ function bindEvents() {
     if (window.gemair) { e.preventDefault(); api.openExternal(c.href); }
   }));
 
+  $('#avatarGenderToggle')?.addEventListener('click', () => {
+    playSfx('click');
+    const nextG = (profile.avatarGender === 'male') ? 'female' : 'male';
+    applyAvatarGender(nextG);
+    persistProfile();
+    toast('AVATAR', `Switched to ${nextG.toUpperCase()} avatar`, '👤');
+  });
+
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#settingsClose').addEventListener('click', closeSettings);
   $('#settingsModal').addEventListener('click', (e) => { if (e.target === $('#settingsModal')) closeSettings(); });
@@ -2448,6 +2797,9 @@ function bindEvents() {
   $('#saveBtn').addEventListener('click', () => {
     profile.name = $('#setUserName').value.trim() || 'Commander';
     profile.ai = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
+    profile.avatarGender = $('#setAvatarGender')?.value || 'female';
+    profile.voiceGender = $('#setVoiceGender')?.value || profile.avatarGender || 'female';
+    applyAvatarGender(profile.avatarGender);
     profile.voice = profile.voice || {};
     profile.voice.rate = Number($('#setRate').value);
     profile.voice.pitch = Number($('#setPitch').value);
@@ -2489,12 +2841,67 @@ function bindEvents() {
   });
 
   // command palette
-  const palette = $('#palette'), pInput = $('#paletteInput');
-  function openPalette() { palette.classList.add('open'); setTimeout(() => pInput.focus(), 30); }
-  function closePalette() { palette.classList.remove('open'); pInput.value = ''; }
+  const palette = $('#palette'), pInput = $('#paletteInput'), pResults = $('#paletteResults');
+  function openPalette() { palette.classList.add('open'); setTimeout(() => pInput.focus(), 30); updatePaletteResults(); }
+  function closePalette() { palette.classList.remove('open'); pInput.value = ''; if (pResults) pResults.innerHTML = ''; }
   $$('.accent-link[data-pal]').forEach((l) => l.addEventListener('click', () => { switchView(l.dataset.pal); closePalette(); }));
+
+  function updatePaletteResults() {
+    if (!pResults) return;
+    const q = (pInput.value || '').toLowerCase().trim();
+    const items = [
+      { name: 'Voice Core', type: 'VIEW', action: () => switchView('assistant') },
+      { name: 'Desktop Manager', type: 'VIEW', action: () => switchView('core') },
+      { name: 'Life Companion', type: 'VIEW', action: () => switchView('companion') },
+      { name: 'Agent Town', type: 'VIEW', action: () => switchView('town') },
+      { name: 'Global Intel', type: 'VIEW', action: () => switchView('world') },
+      { name: 'Settings', type: 'ACTION', action: () => openSettings() },
+      { name: 'Guided Breathing', type: 'ACTION', action: () => $('#breatheModal').classList.add('open') },
+      { name: 'Weekly Report', type: 'ACTION', action: () => $('#weeklyReportBtn').click() },
+      { name: 'Crimson Theme', type: 'THEME', action: () => applyTheme('crimson') },
+      { name: 'Emerald Theme', type: 'THEME', action: () => applyTheme('emerald') },
+      { name: 'Cyan Theme', type: 'THEME', action: () => applyTheme('cyan') },
+      { name: 'Violet Theme', type: 'THEME', action: () => applyTheme('violet') },
+      { name: 'Amber Theme', type: 'THEME', action: () => applyTheme('amber') },
+      { name: 'Rainbow RGB Theme', type: 'THEME', action: () => applyTheme('rgb') }
+    ];
+
+    if (memory && memory.facts) {
+      memory.facts.forEach(f => items.push({ name: f.text, type: 'MEMORY', action: () => { switchView('core'); toast('MEMORY', f.text, '🧠'); } }));
+    }
+
+    const filtered = items.filter(i => !q || i.name.toLowerCase().includes(q) || i.type.toLowerCase().includes(q)).slice(0, 7);
+
+    if (!filtered.length) {
+      pResults.innerHTML = '<div class="palette-item"><span class="dim">Ask AI: "' + escapeHtml(q) + '"</span><span class="item-type">PRESS ENTER</span></div>';
+      return;
+    }
+
+    pResults.innerHTML = filtered.map((item, idx) => `
+      <div class="palette-item" data-idx="${idx}">
+        <span>${escapeHtml(item.name)}</span>
+        <span class="item-type">${item.type}</span>
+      </div>
+    `).join('');
+
+    pResults.querySelectorAll('.palette-item').forEach((el, idx) => {
+      el.addEventListener('click', () => {
+        playSfx('click');
+        closePalette();
+        if (filtered[idx]) filtered[idx].action();
+      });
+    });
+  }
+
+  pInput.addEventListener('input', updatePaletteResults);
   pInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { const v = pInput.value.trim(); closePalette(); if (v) { switchView('assistant'); sendMessage(v); } }
+    if (e.key === 'Enter') {
+      const v = pInput.value.trim();
+      const first = $('#paletteResults .palette-item');
+      if (first && v) first.click();
+      else if (v) { closePalette(); switchView('assistant'); sendMessage(v); }
+      else closePalette();
+    }
     if (e.key === 'Escape') closePalette();
   });
 
@@ -2532,6 +2939,7 @@ function bindEvents() {
 
   // start AI loop
   $('#startBtn').addEventListener('click', () => {
+    playSfx('activate');
     if (isRunning) { isRunning = false; $('#startBtn').classList.remove('running'); $('#startLabel').textContent = 'START AI'; $('#orbStatus').textContent = 'STANDBY'; $('#orbStatus').classList.remove('active'); stopListening(); }
     else { startAiLoop(); addMessage('system-msg', 'AI online. Speak naturally — I\u2019m listening.'); speak('Systems online. How can I help?'); }
   });
@@ -2705,7 +3113,12 @@ async function boot() {
   safe('orb', startOrb);
   safe('globe', startGlobe);
   safe('commandMap', startCommandMap);
-  safe('avatar', () => { if (window.gemAvatar) window.gemAvatar.mount('#avatarCanvas'); });
+  safe('avatar', () => {
+    if (window.gemAvatar) {
+      window.gemAvatar.mount('#avatarCanvas');
+      applyAvatarGender(profile.avatarGender || 'female');
+    }
+  });
   safe('agentTown', startAgentTown);
   safe('renderMemory', renderAllMemory);
   safe('circuits', animateCircuits);
@@ -2733,10 +3146,11 @@ async function boot() {
     last.forEach((m) => { if (m.role === 'user' || m.role === 'assistant') chatHistory.push({ role: m.role, content: m.content }); });
   } else if (!awaitingName) {
     addMessage('ai', greeting);
-    addMessage('system-msg', 'Gem is online. Paste a free Groq key in Settings for a full LLM brain — or just start talking, the offline brain already handles the web, weather, apps and files.');
+    addMessage('system-msg', 'Gem is online and ready. Start talking or typing — free AI core connected.');
   }
 
-  if (!profile.ai?.apiKey) toast('TIP', 'Add a free Groq key in Settings → AI Brain for a full brain.', '⚡');
+  if (!isElectron && !profile.ai?.apiKey) toast('FREE AI', 'GemAir is ready to use — completely free out of the box!', '✨');
+  else if (!profile.ai?.apiKey) toast('TIP', 'Add a free Groq key in Settings → AI Brain for personal key isolation.', '⚡');
 
   pollSystem(); setInterval(pollSystem, 2500);
   recognition = initRecognition();

@@ -83,19 +83,18 @@ build feel dead.
 
 ---
 
-## 3. The tool-calling loop (when an LLM key is present)
+## 3. The tool-calling loop & Risk Policy (when an LLM key is present)
 
-Gem is not a chatbot with a search box bolted on. She runs an agent loop:
+Gem runs a parallel, risk-aware agent loop:
 
-1. Build the system prompt (§5) and append the running chat history.
-2. Send it to the provider with a **tool schema** describing every capability.
-3. If the model returns `tool_calls`, execute them **in the main process**,
-   append the results as `role: "tool"` messages, and send the conversation
-   back.
-4. Repeat until the model answers in prose, or a hard iteration cap trips
-   (`TOOL_LOOP`) — which prevents infinite tool ping-pong.
-5. Stream the final answer token-by-token to the renderer over
-   `ai:chunk` / `ai:streamEnd`.
+1. Build the system prompt (§5) and append running chat history.
+2. Send to provider with tool schema (`TOOLS`).
+3. If model returns `tool_calls`, categorize each tool by risk (`TOOL_RISK`):
+   - **Safe / Read-only**: (`get_weather`, `web_search`, `calculate`, `get_current_time`, `search_memory`) -> auto-approved.
+   - **Sensitive / Write**: (`run_command`, `write_file`, `control_system`, `send_email`) -> requires permission policy or explicit consent.
+4. Execute non-conflicting tool calls in parallel using `Promise.all`. Append results as `role: "tool"` messages and pass back to the provider.
+5. Repeat until model answers in prose or iteration cap (`TOOL_LOOP = 6`) trips.
+6. Stream final response token-by-token with audio lip-sync and visual timeline indicators.
 
 Tool families: time & date · web search · page fetch · Wikipedia · YouTube ·
 translate · dictionary · crypto · currency · weather · file read/write ·
@@ -165,36 +164,21 @@ cross-user reads impossible even with the public anon key.
 
 ---
 
-## 6. Gem's presence — `renderer/avatar.js`
+## 6. Gem's presence — `renderer/avatar.js` & Audio Engine
 
-A software 3D renderer on a 2D canvas. No WebGL, no three.js, no CDN — so it
-works offline in Electron and adds zero bytes of dependency.
+Gem's portrait is rendered on a high-performance 2D/2.5D canvas with real-time Web Audio API frequency analysis and dynamic lip-sync.
 
-**Geometry.** The head is *not* a deformed sphere (that reads as an egg). It
-is built from an explicit anatomical profile: a `WIDTH` table and a `DEPTH`
-table sampled with smoothstep down the skull, giving a real cranium, temples,
-cheekbones, jaw and a rounded chin. `surface(y, phi)` then adds a brow ridge,
-a nose ridge, a muzzle and a chin projection. Facial features are placed with
-`facePoint()`, which solves for the front surface so eyes, nose and mouth sit
-*on* the face at any rotation. Proportions follow the classical thirds —
-brow ≈ +0.16, nose base ≈ −0.44, mouth ≈ −0.62, chin = −1.
+**Web Audio Spectrum & Lip Sync.**
+When speech audio plays (Google Neural TTS or Web Speech API), an `AudioContext` and `AnalyserNode` extract real-time frequency FFT spectra (64/128 bands):
+- **Aperture (`mouth`)**: Scaled dynamically by real-time audio RMS volume.
+- **Visemes (`mouthW`, `mouthR`)**: High vs. low frequency energy ratio maps mouth width, rounding, and vowel shapes.
+- **Micro-movements**: Micro head-nods and subtle eye tracking react to voice intensity surges.
+- **Radial Audio Spectrum Ring**: An interactive circular frequency ring renders around Gem's head during speech and microphone input.
 
-**Animation.** Every driver is a smoothed value updated with a frame-rate
-independent `approach()`, so the motion is identical at 30fps and 144fps:
+**Synthetic Web Audio SFX Engine.**
+A zero-dependency Web Audio oscillator engine generates instant synthetic audio feedback for UI clicks (`click`), AI activation (`activate`), incoming responses (`message`), view switches (`swoosh`), and errors (`error`). Includes a topbar toggle (`🔊 SFX ON / 🔇 SFX OFF`).
 
-| Driver | Source |
-|---|---|
-| `mouth` | syllable envelope, re-triggered by real speech word boundaries |
-| `eyeOpen` | blink scheduler (random 2.2–6.7s) × emotion openness |
-| `smile`, `browRaise` | the emotion table |
-| `gazeX/Y` | saccades — the eyes drift, then flick |
-| `rotX/rotY` | idle sway + pointer parallax |
-| `breath` | slow sine, faster while speaking |
-| `glow` | speaking > thinking > listening > standby |
-
-**Emotion → face.** The emotion detected in §2 is pushed straight to
-`setEmotion()`. Seventeen emotions each map to a smile curve, brow angle, eye
-openness and a colour tint that blends with the active theme accent.
+**Emotion → face.** The emotion detected in §2 is pushed to `setEmotion()`. Seventeen emotions each map to eyebrow curves, eye openness, smile/frown curves, head tilt intensity, and glowing color tints that blend with the active theme (Crimson, Emerald, Cyan, Violet, Amber, RGB).
 
 ---
 

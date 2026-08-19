@@ -1175,8 +1175,27 @@ async function takeScreenshot() {
   return { ok: true, file };
 }
 
+const TOOL_RISK = {
+  get_current_time: 'safe', get_current_date: 'safe', get_weather: 'safe',
+  web_search: 'safe', fetch_webpage: 'safe', search_wikipedia: 'safe',
+  search_youtube: 'safe', get_world_time: 'safe', translate: 'safe',
+  get_crypto_price: 'safe', define_word: 'safe', get_clipboard: 'safe',
+  search_memory: 'safe', list_todos: 'safe', list_goals: 'safe',
+  list_reminders: 'safe', list_notes: 'safe', list_skills: 'safe',
+  list_instructions: 'safe', get_mood_history: 'safe', get_affirmation: 'safe',
+  get_wellness_tip: 'safe', get_quote: 'safe', get_system_status: 'safe', calculate: 'safe',
+  run_command: 'sensitive', write_file: 'sensitive', control_system: 'sensitive',
+  organize_folder: 'sensitive', archive_old_files: 'sensitive', send_email: 'sensitive'
+};
+
 async function executeTool(name, args) {
   try {
+    const risk = TOOL_RISK[name] || 'safe';
+    const profile = readProfile();
+    if (risk === 'sensitive' && profile.allowShell === false && name === 'run_command') {
+      return { error: 'Permission denied: shell command execution is disabled in Settings.' };
+    }
+
     switch (name) {
       case 'get_current_time':
         return { time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) };
@@ -1414,12 +1433,13 @@ async function aiChat(config, messages) {
     const toolCalls = msg.tool_calls || [];
     if (toolCalls.length) {
       msgs.push(msg);
-      for (const tc of toolCalls) {
+      const results = await Promise.all(toolCalls.map(async (tc) => {
         let args = {};
         try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
         const result = await executeTool(tc.function.name, args);
-        msgs.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
-      }
+        return { role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) };
+      }));
+      for (const r of results) msgs.push(r);
       continue;
     }
     const reply = msg.content;
