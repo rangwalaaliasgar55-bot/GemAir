@@ -570,6 +570,16 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
   padding: 14px 18px; color: var(--text); font-size: 15px; outline: none; font-family: inherit;
 }
 .palette input:focus { border-color: var(--accent); box-shadow: 0 0 18px var(--accent-glow); }
+.palette-results { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; max-height: 280px; overflow-y: auto; }
+.palette-item {
+  padding: 10px 14px; border-radius: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border);
+  display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: all .15s ease;
+  font-size: 13px; color: var(--text);
+}
+.palette-item:hover, .palette-item.selected {
+  background: var(--accent-dim); border-color: var(--accent-soft); color: #fff; box-shadow: 0 0 12px var(--accent-glow);
+}
+.palette-item .item-type { font-family: var(--font-mono); font-size: 10px; color: var(--accent); letter-spacing: 1px; }
 .palette-hint { font-size: 11.5px; color: var(--text-dim); margin-top: 12px; letter-spacing: 0.5px; }
 .accent-link { color: var(--accent); cursor: pointer; text-decoration: underline; }
 

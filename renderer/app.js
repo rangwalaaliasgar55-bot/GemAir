@@ -49,10 +49,18 @@ const api = {
   },
   async aiChat(config, messages) {
     if (window.gemair) return window.gemair.aiChat(config, messages);
+    if (window.aiClient && config && config.apiKey) {
+      const direct = await window.aiClient.directClientChat(config, messages);
+      if (direct.ok) return direct;
+    }
     return await this._webChat(messages);
   },
   async aiChatStream(config, messages, onDelta) {
     if (window.gemair) return window.gemair.aiChatStream(config, messages, onDelta);
+    if (window.aiClient && config && config.apiKey) {
+      const direct = await window.aiClient.directClientChat(config, messages, onDelta);
+      if (direct.ok) return direct;
+    }
     const res = await this._webChat(messages);
     if (!res.ok) return res;
     const text = res.reply;
@@ -2644,12 +2652,67 @@ function bindEvents() {
   });
 
   // command palette
-  const palette = $('#palette'), pInput = $('#paletteInput');
-  function openPalette() { palette.classList.add('open'); setTimeout(() => pInput.focus(), 30); }
-  function closePalette() { palette.classList.remove('open'); pInput.value = ''; }
+  const palette = $('#palette'), pInput = $('#paletteInput'), pResults = $('#paletteResults');
+  function openPalette() { palette.classList.add('open'); setTimeout(() => pInput.focus(), 30); updatePaletteResults(); }
+  function closePalette() { palette.classList.remove('open'); pInput.value = ''; if (pResults) pResults.innerHTML = ''; }
   $$('.accent-link[data-pal]').forEach((l) => l.addEventListener('click', () => { switchView(l.dataset.pal); closePalette(); }));
+
+  function updatePaletteResults() {
+    if (!pResults) return;
+    const q = (pInput.value || '').toLowerCase().trim();
+    const items = [
+      { name: 'Voice Core', type: 'VIEW', action: () => switchView('assistant') },
+      { name: 'Desktop Manager', type: 'VIEW', action: () => switchView('core') },
+      { name: 'Life Companion', type: 'VIEW', action: () => switchView('companion') },
+      { name: 'Agent Town', type: 'VIEW', action: () => switchView('town') },
+      { name: 'Global Intel', type: 'VIEW', action: () => switchView('world') },
+      { name: 'Settings', type: 'ACTION', action: () => openSettings() },
+      { name: 'Guided Breathing', type: 'ACTION', action: () => $('#breatheModal').classList.add('open') },
+      { name: 'Weekly Report', type: 'ACTION', action: () => $('#weeklyReportBtn').click() },
+      { name: 'Crimson Theme', type: 'THEME', action: () => applyTheme('crimson') },
+      { name: 'Emerald Theme', type: 'THEME', action: () => applyTheme('emerald') },
+      { name: 'Cyan Theme', type: 'THEME', action: () => applyTheme('cyan') },
+      { name: 'Violet Theme', type: 'THEME', action: () => applyTheme('violet') },
+      { name: 'Amber Theme', type: 'THEME', action: () => applyTheme('amber') },
+      { name: 'Rainbow RGB Theme', type: 'THEME', action: () => applyTheme('rgb') }
+    ];
+
+    if (memory && memory.facts) {
+      memory.facts.forEach(f => items.push({ name: f.text, type: 'MEMORY', action: () => { switchView('core'); toast('MEMORY', f.text, '🧠'); } }));
+    }
+
+    const filtered = items.filter(i => !q || i.name.toLowerCase().includes(q) || i.type.toLowerCase().includes(q)).slice(0, 7);
+
+    if (!filtered.length) {
+      pResults.innerHTML = '<div class="palette-item"><span class="dim">Ask AI: "' + escapeHtml(q) + '"</span><span class="item-type">PRESS ENTER</span></div>';
+      return;
+    }
+
+    pResults.innerHTML = filtered.map((item, idx) => `
+      <div class="palette-item" data-idx="${idx}">
+        <span>${escapeHtml(item.name)}</span>
+        <span class="item-type">${item.type}</span>
+      </div>
+    `).join('');
+
+    pResults.querySelectorAll('.palette-item').forEach((el, idx) => {
+      el.addEventListener('click', () => {
+        playSfx('click');
+        closePalette();
+        if (filtered[idx]) filtered[idx].action();
+      });
+    });
+  }
+
+  pInput.addEventListener('input', updatePaletteResults);
   pInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { const v = pInput.value.trim(); closePalette(); if (v) { switchView('assistant'); sendMessage(v); } }
+    if (e.key === 'Enter') {
+      const v = pInput.value.trim();
+      const first = $('#paletteResults .palette-item');
+      if (first && v) first.click();
+      else if (v) { closePalette(); switchView('assistant'); sendMessage(v); }
+      else closePalette();
+    }
     if (e.key === 'Escape') closePalette();
   });
 

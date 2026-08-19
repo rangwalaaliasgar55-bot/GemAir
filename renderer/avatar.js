@@ -526,6 +526,14 @@
         else if (typeof e === 'string') emotion = { emotion: e, valence: 0 };
       },
       syllable() { S.syllableT = 0; S.syllablePhase = 0; },
+      onViseme(f) {
+        if (!f) return;
+        if (typeof f.open === 'number') S.mouthTarget = f.open;
+        if (typeof f.width === 'number') S.mouthWTarget = f.width;
+        if (typeof f.round === 'number') S.mouthRTarget = f.round;
+        if (f.viseme) S.viseme = f.viseme;
+        S.speaking = true;
+      },
       setAudioAnalyser(node) { audioAnalyser = node; },
       setMicAnalyser(node) { micAnalyser = node; },
       destroy() {

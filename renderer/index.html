@@ -660,13 +660,15 @@
   <!-- COMMAND PALETTE -->
   <div class="palette-backdrop" id="palette">
     <div class="palette">
-      <input type="text" id="paletteInput" placeholder="Type a command, question, or search…" autocomplete="off" />
-      <div class="palette-hint">⏎ ask AI · esc close · quick: <span class="accent-link" data-pal="system">system</span> · <span class="accent-link" data-pal="memory">memory</span> · <span class="accent-link" data-pal="world">world</span> · <span class="accent-link" data-pal="town">town</span> · <span class="accent-link" data-pal="settings">settings</span></div>
+      <input type="text" id="paletteInput" placeholder="Type a command, search memory, or ask a question…" autocomplete="off" />
+      <div class="palette-results" id="paletteResults"></div>
+      <div class="palette-hint">⏎ ask AI · esc close · quick: <span class="accent-link" data-pal="assistant">assistant</span> · <span class="accent-link" data-pal="core">system</span> · <span class="accent-link" data-pal="companion">companion</span> · <span class="accent-link" data-pal="town">town</span> · <span class="accent-link" data-pal="world">world</span></div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="store.js"></script>
+  <script src="ai-client.js"></script>
   <script src="avatar.js"></script>
   <script src="app.js"></script>
 </body>
