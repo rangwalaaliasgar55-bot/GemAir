@@ -754,12 +754,58 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---------------------------------------------------------------------------
-// Theme (with RGB / rainbow mode)
+// Theme (with RGB / rainbow mode) & Synthetic Web Audio SFX
 // ---------------------------------------------------------------------------
-const THEME_ACCENTS = { crimson: 0, emerald: 152, cyan: 198, rgb: 300 };
+const THEME_ACCENTS = { crimson: 0, emerald: 152, cyan: 198, violet: 275, amber: 38, rgb: 300 };
 let currentAccent = '#ff3b3b';
 let rgbTimer = null;
 let rgbHue = 300;
+let globalAudioCtx = null;
+let globalAnalyser = null;
+
+function playSfx(type) {
+  if (profile && profile.sfx === false) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!globalAudioCtx) globalAudioCtx = new AudioCtx();
+    if (globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
+    const ctx = globalAudioCtx;
+    const now = ctx.currentTime;
+
+    if (type === 'click') {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(800, now);
+      osc.frequency.exponentialRampToValueAtTime(400, now + 0.04);
+      gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(now); osc.stop(now + 0.04);
+    } else if (type === 'activate') {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.18);
+      gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(now); osc.stop(now + 0.2);
+    } else if (type === 'message') {
+      const osc1 = ctx.createOscillator(); const osc2 = ctx.createOscillator(); const gain = ctx.createGain();
+      osc1.type = 'triangle'; osc2.type = 'sine';
+      osc1.frequency.setValueAtTime(523.25, now);
+      osc2.frequency.setValueAtTime(659.25, now + 0.08);
+      gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc1.connect(gain); osc2.connect(gain); gain.connect(ctx.destination);
+      osc1.start(now); osc1.stop(now + 0.1);
+      osc2.start(now + 0.08); osc2.stop(now + 0.25);
+    } else if (type === 'swoosh') {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(600, now);
+      osc.frequency.exponentialRampToValueAtTime(200, now + 0.08);
+      gain.gain.setValueAtTime(0.05, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(now); osc.stop(now + 0.08);
+    }
+  } catch (e) {}
+}
 
 function getAccent() { return currentAccent; }
 
@@ -813,9 +859,44 @@ setInterval(() => {
 // Navigation
 // ---------------------------------------------------------------------------
 function switchView(view) {
+  playSfx('swoosh');
   $$('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
   if (view === 'world') refreshHeadlines();
+  if (view === 'core') renderProcesses();
+}
+
+function renderProcesses() {
+  const container = $('#processList');
+  if (!container) return;
+  const filter = ($('#procFilter')?.value || '').toLowerCase().trim();
+
+  const sampleProcs = [
+    { pid: 1420, name: 'GemAir Core Engine', cpu: '1.4%', mem: '142 MB' },
+    { pid: 2184, name: 'GemAir Audio & Visualizer', cpu: '2.1%', mem: '98 MB' },
+    { pid: 3042, name: 'Web Speech Synthesis', cpu: '0.8%', mem: '64 MB' },
+    { pid: 4890, name: 'Agent Town Virtual Office', cpu: '1.9%', mem: '112 MB' },
+    { pid: 5120, name: 'Groq / LLM Pipeline', cpu: '0.2%', mem: '45 MB' },
+    { pid: 6310, name: 'Local Persistence Store', cpu: '0.1%', mem: '28 MB' }
+  ];
+
+  const filtered = sampleProcs.filter(p => !filter || p.name.toLowerCase().includes(filter) || String(p.pid).includes(filter));
+
+  if (!filtered.length) {
+    container.innerHTML = '<div class="empty">No matching processes found.</div>';
+    return;
+  }
+
+  container.innerHTML = filtered.map(p => `
+    <div class="mem-item">
+      <div>
+        <b style="font-family:var(--font-mono);color:var(--accent);">[${p.pid}]</b>
+        <span style="font-weight:600;margin-left:8px;">${p.name}</span>
+        <span class="dim" style="font-size:11px;margin-left:10px;">CPU: ${p.cpu} | RAM: ${p.mem}</span>
+      </div>
+      <button class="ghost-btn" style="padding:4px 10px;font-size:10px;" onclick="playSfx('click'); toast('MONITOR', 'Process [${p.pid}] active', '⚙️')">Info</button>
+    </div>
+  `).join('');
 }
 
 // ---------------------------------------------------------------------------
@@ -1048,6 +1129,7 @@ function startGlobe() {
 // Chat
 // ---------------------------------------------------------------------------
 function addMessage(role, text, opts = {}) {
+  if (role === 'ai' && !opts.typing) playSfx('message');
   const log = $('#chatLog');
   const div = document.createElement('div');
   div.className = 'msg ' + role;
@@ -1572,6 +1654,28 @@ function playAudioUrl(url, gen) {
     audio.preload = 'auto';
     if (gen !== speechGen) { done(false); return; }
     currentNeuralAudio = audio;
+
+    try {
+      if (!globalAudioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) globalAudioCtx = new AudioCtx();
+      }
+      if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+        globalAudioCtx.resume();
+      }
+      if (globalAudioCtx) {
+        if (!globalAnalyser) {
+          globalAnalyser = globalAudioCtx.createAnalyser();
+          globalAnalyser.fftSize = 128;
+        }
+        audio.crossOrigin = "anonymous";
+        const source = globalAudioCtx.createMediaElementSource(audio);
+        source.connect(globalAnalyser);
+        globalAnalyser.connect(globalAudioCtx.destination);
+        if (window.gemAvatar) window.gemAvatar.setAudioAnalyser(globalAnalyser);
+      }
+    } catch (e) {}
+
     audio.play().then(() => {}).catch(() => done(false));
     setTimeout(() => done(false), 30000); // safety
   });
@@ -2304,10 +2408,61 @@ function bindEvents() {
   if (_eventsBound) return;
   _eventsBound = true;
   $$('.nav-btn').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.view)));
-  $$('.theme-btn').forEach((b) => b.addEventListener('click', () => { profile.theme = b.dataset.theme; applyTheme(profile.theme); persistProfile(); }));
+  $$('.theme-btn').forEach((b) => b.addEventListener('click', () => {
+    playSfx('click');
+    profile.theme = b.dataset.theme;
+    applyTheme(profile.theme);
+    persistProfile();
+  }));
+
+  // SFX button toggle
+  const sfxBtn = $('#sfxBtn');
+  if (sfxBtn) {
+    sfxBtn.addEventListener('click', () => {
+      profile.sfx = !(profile.sfx !== false);
+      sfxBtn.classList.toggle('active', profile.sfx !== false);
+      $('#sfxIcon').textContent = profile.sfx !== false ? '🔊' : '🔇';
+      $('#sfxText').textContent = profile.sfx !== false ? 'SFX ON' : 'SFX OFF';
+      if (profile.sfx !== false) playSfx('click');
+      persistProfile();
+    });
+  }
+
+  // Clear chat log
+  const clearChatBtn = $('#clearChatBtn');
+  if (clearChatBtn) {
+    clearChatBtn.addEventListener('click', () => {
+      playSfx('click');
+      $('#chatLog').innerHTML = '<div class="msg system-msg"><p>Chat history cleared. Systems standing by.</p></div>';
+      chatHistory = [];
+      toast('CHAT', 'Chat history log cleared.', '🧹');
+    });
+  }
+
+  // Circuit row clicks
+  $('#memCircuitRow')?.addEventListener('click', () => {
+    switchView('core');
+    const tab = $$('.core-tab').find(t => t.dataset.tab === 'memory');
+    if (tab) tab.click();
+  });
+  $('#skillCircuitRow')?.addEventListener('click', () => {
+    switchView('core');
+    const tab = $$('.core-tab').find(t => t.dataset.tab === 'skills');
+    if (tab) tab.click();
+  });
+  $('#soulCircuitRow')?.addEventListener('click', () => {
+    switchView('core');
+    const tab = $$('.core-tab').find(t => t.dataset.tab === 'soul');
+    if (tab) tab.click();
+  });
+
+  // Process monitor controls
+  $('#refreshProcsBtn')?.addEventListener('click', () => { playSfx('click'); renderProcesses(); });
+  $('#procFilter')?.addEventListener('input', () => renderProcesses());
 
   // core tabs
   $$('.core-tab').forEach((t) => t.addEventListener('click', () => {
+    playSfx('click');
     $$('.core-tab').forEach((x) => x.classList.toggle('active', x === t));
     $$('.core-pane').forEach((p) => p.classList.toggle('active', p.dataset.pane === t.dataset.tab));
   }));
@@ -2532,6 +2687,7 @@ function bindEvents() {
 
   // start AI loop
   $('#startBtn').addEventListener('click', () => {
+    playSfx('activate');
     if (isRunning) { isRunning = false; $('#startBtn').classList.remove('running'); $('#startLabel').textContent = 'START AI'; $('#orbStatus').textContent = 'STANDBY'; $('#orbStatus').classList.remove('active'); stopListening(); }
     else { startAiLoop(); addMessage('system-msg', 'AI online. Speak naturally — I\u2019m listening.'); speak('Systems online. How can I help?'); }
   });

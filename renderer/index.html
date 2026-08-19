@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://vercel.live https://*.vercel.live; style-src 'self' 'unsafe-inline' https://vercel.live; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' blob: data: https:; frame-src 'self' https://vercel.live; worker-src 'self' blob:" />
-  <title>GemAir — Command Center</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://vercel.live https://*.vercel.live; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://vercel.live; img-src 'self' data: blob: https:; font-src 'self' data: https: https://fonts.gstatic.com; connect-src 'self' https: wss:; media-src 'self' blob: data: https:; frame-src 'self' https://vercel.live; worker-src 'self' blob:" />
+  <title>GemAir — Mission Control AI Center</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="apple-touch-icon" href="favicon.svg" />
   <link rel="stylesheet" href="style.css" />
@@ -13,20 +13,20 @@
   <div class="scanlines" aria-hidden="true"></div>
   <div class="vignette" aria-hidden="true"></div>
 
-  <!-- boot sequence -->
+  <!-- Boot sequence -->
   <div class="boot-overlay" id="bootOverlay">
     <div class="boot-core">
       <div class="boot-orb"><span></span></div>
       <div class="boot-title">GEM<span>AIR</span></div>
-      <div class="boot-line" id="bootLine">INITIALIZING CORE…</div>
+      <div class="boot-line" id="bootLine">INITIALIZING CORE SYSTEMS…</div>
       <div class="boot-bar"><i id="bootBar"></i></div>
     </div>
   </div>
 
-  <!-- 3D background scene -->
+  <!-- 3D dynamic background scene -->
   <canvas id="bgCanvas" aria-hidden="true"></canvas>
 
-  <!-- toast container -->
+  <!-- Toast notification system -->
   <div class="toasts" id="toasts"></div>
 
   <div class="app">
@@ -50,23 +50,32 @@
           <span class="dot" id="sysDot"></span>
           <span id="sysChipText">SYSTEMS NOMINAL</span>
         </div>
-        <div class="theme-switcher" id="themeSwitcher">
-          <button class="theme-btn" data-theme="crimson" title="Crimson theme"><i></i></button>
-          <button class="theme-btn" data-theme="emerald" title="Emerald theme"><i></i></button>
-          <button class="theme-btn" data-theme="cyan" title="Cyan theme"><i></i></button>
-          <button class="theme-btn rgb" data-theme="rgb" title="Rainbow RGB theme"><i></i></button>
-        </div>
-        <button class="download-btn" id="downloadBtn" title="Download the desktop app">
-          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 3v11m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
-          <span>Get the app</span>
+
+        <button class="sfx-btn active" id="sfxBtn" title="Toggle interface sound effects">
+          <span id="sfxIcon">🔊</span> <span id="sfxText">SFX ON</span>
         </button>
+
+        <div class="theme-switcher" id="themeSwitcher">
+          <button class="theme-btn active" data-theme="crimson" title="Crimson Jarvis theme"><i></i></button>
+          <button class="theme-btn" data-theme="emerald" title="Emerald Hacker theme"><i></i></button>
+          <button class="theme-btn" data-theme="cyan" title="Cyan Cyberpunk theme"><i></i></button>
+          <button class="theme-btn" data-theme="violet" title="Violet Nebula theme"><i></i></button>
+          <button class="theme-btn" data-theme="amber" title="Amber Core theme"><i></i></button>
+          <button class="theme-btn rgb" data-theme="rgb" title="Rainbow Dynamic RGB theme"><i></i></button>
+        </div>
+
+        <button class="download-btn" id="downloadBtn" title="Download the desktop app">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v11m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+          <span>Get App</span>
+        </button>
+
         <button class="icon-btn" id="settingsBtn" title="Settings">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.03 1.56V21a2 2 0 11-4 0v-.09A1.7 1.7 0 008.98 19.4a1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.56-1.03H3a2 2 0 110-4h.09A1.7 1.7 0 004.6 8.98a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001.03-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.03 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9a1.7 1.7 0 001.56 1.03H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.56 1.03z"/></svg>
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.03 1.56V21a2 2 0 11-4 0v-.09A1.7 1.7 0 008.98 19.4a1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.56-1.03H3a2 2 0 110-4h.09A1.7 1.7 0 004.6 8.98a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001.03-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.03 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9a1.7 1.7 0 001.56 1.03H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.56 1.03z"/></svg>
         </button>
       </div>
     </header>
 
-    <!-- ===================== BODY ===================== -->
+    <!-- ===================== BODY LAYOUT ===================== -->
     <div class="layout">
       <!-- Side nav -->
       <nav class="sidenav">
@@ -92,7 +101,7 @@
         </button>
       </nav>
 
-      <!-- Main -->
+      <!-- Main Content Area -->
       <main class="main">
         <!-- ============ VOICE ASSISTANT ============ -->
         <section class="view active" id="view-assistant">
@@ -100,28 +109,31 @@
             <div class="orb-panel hud-panel">
               <canvas id="orbCanvas" width="560" height="560"></canvas>
               <canvas id="avatarCanvas" width="560" height="560" aria-hidden="true"></canvas>
+
               <div class="gem-nameplate">
                 <span class="gem-name">GEM</span>
                 <span class="gem-role" id="gemRole">personal intelligence</span>
               </div>
+
               <div class="orb-center">
                 <button class="start-btn" id="startBtn">
                   <span class="start-ring"></span>
                   <span class="start-label" id="startLabel">START AI</span>
                 </button>
               </div>
+
               <div class="caption-bar" id="captionBar" aria-live="polite">
                 <span class="caption-who" id="captionWho">GEM</span>
                 <p class="caption-text" id="captionText"></p>
               </div>
+
               <div class="orb-status" id="orbStatus">STANDBY</div>
             </div>
-
 
             <div class="assistant-side">
               <div class="hud-panel briefing">
                 <div class="briefing-top">
-                  <span class="briefing-greet" id="briefingGreet">—</span>
+                  <span class="briefing-greet" id="briefingGreet">Good Day</span>
                   <span class="briefing-date" id="briefingDate"></span>
                 </div>
                 <div class="briefing-row">
@@ -129,22 +141,22 @@
                   <span class="briefing-chip" id="briefGoal" title="Top goal">🎯 —</span>
                   <button class="briefing-chip as-btn" id="breatheBtn" title="Guided breathing">🌬 Breathe</button>
                 </div>
-                <div class="briefing-quote" id="briefQuote">“…”</div>
+                <div class="briefing-quote" id="briefQuote">“The best way to predict the future is to create it.”</div>
               </div>
 
               <div class="hud-panel circuits">
                 <h3 class="panel-title">CORE CIRCUITS</h3>
-                <div class="circuit-row">
+                <div class="circuit-row" id="memCircuitRow" style="cursor:pointer;" title="Click to view memory details">
                   <span class="circuit-name">MEMORY</span>
                   <div class="circuit-bar"><i id="memCircuit" style="width:0%"></i></div>
                   <span class="circuit-val" id="memCircuitVal">0%</span>
                 </div>
-                <div class="circuit-row">
+                <div class="circuit-row" id="skillCircuitRow" style="cursor:pointer;" title="Click to view learned skills">
                   <span class="circuit-name">SKILLS</span>
                   <div class="circuit-bar"><i id="skillCircuit" style="width:0%"></i></div>
                   <span class="circuit-val" id="skillCircuitVal">0%</span>
                 </div>
-                <div class="circuit-row">
+                <div class="circuit-row" id="soulCircuitRow" style="cursor:pointer;" title="Click to tune personality">
                   <span class="circuit-name">SOUL</span>
                   <div class="circuit-bar"><i id="soulCircuit" style="width:0%"></i></div>
                   <span class="circuit-val" id="soulCircuitVal">0%</span>
@@ -152,27 +164,33 @@
               </div>
 
               <div class="hud-panel chat-panel">
-                <h3 class="panel-title">LINK <span class="dim" id="linkMode">— OFFLINE</span></h3>
+                <h3 class="panel-title">
+                  LINK <span class="dim" id="linkMode">— OFFLINE BRAIN</span>
+                  <button class="refresh-btn" id="clearChatBtn" style="padding:3px 10px;font-size:10px;">Clear</button>
+                </h3>
                 <div class="chat-log" id="chatLog">
                   <div class="msg system-msg">
-                    <p>GemAir online. Systems standing by.</p>
-                    <p class="sub">Speak naturally, or type below. Say "open calculator", "what time is it", or connect an AI key for full intelligence.</p>
+                    <p>GemAir online. Audio lip-sync & spectrum engines ready.</p>
+                    <p class="sub">Speak naturally, or type below. Press <b>Ctrl+K</b> for instant command palette.</p>
                   </div>
                 </div>
+
                 <div class="chat-input-row">
-                  <button class="mic-btn" id="micBtn" title="Talk">
-                    <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z"/><path fill="none" stroke="currentColor" stroke-width="1.7" d="M19 11a7 7 0 01-14 0M12 18v3"/></svg>
+                  <button class="mic-btn" id="micBtn" title="Talk to Gem (Speech Recognition)">
+                    <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M19 11a7 7 0 01-14 0M12 18v3"/></svg>
                   </button>
-                  <input type="text" id="chatInput" placeholder="Say or type a command…" autocomplete="off" />
-                  <button class="send-btn" id="sendBtn" title="Send">➤</button>
+                  <input type="text" id="chatInput" placeholder="Ask Gem anything or type a command…" autocomplete="off" />
+                  <button class="send-btn" id="sendBtn" title="Send message">➤</button>
                 </div>
+
                 <div class="quick-commands" id="quickCommands">
                   <button class="qc" data-cmd="What's the weather?">🌦 Weather</button>
-                  <button class="qc" data-cmd="Search the web for ">🔎 Web search</button>
-                  <button class="qc" data-cmd="Open ">🚀 Open app</button>
+                  <button class="qc" data-cmd="Search the web for ">🔎 Search</button>
+                  <button class="qc" data-cmd="Open calculator">🚀 Calculator</button>
                   <button class="qc" data-cmd="Remind me to ">⏰ Reminder</button>
                   <button class="qc" data-cmd="Write a note: ">📝 Note</button>
                   <button class="qc" data-cmd="Tell me a joke">😄 Joke</button>
+                  <button class="qc" data-cmd="Show system status">📊 Telemetry</button>
                 </div>
               </div>
             </div>
@@ -194,31 +212,34 @@
                   <div class="gauge-label">MEMORY <b id="memVal">0%</b></div>
                 </div>
               </div>
+
               <div class="telemetry" id="telemetry">
-                <div class="tele-row"><span>HOSTNAME</span><b id="tHost">—</b></div>
-                <div class="tele-row"><span>PLATFORM</span><b id="tPlatform">—</b></div>
-                <div class="tele-row"><span>CORES</span><b id="tCores">—</b></div>
-                <div class="tele-row"><span>UPTIME</span><b id="tUptime">—</b></div>
-                <div class="tele-row"><span>MEMORY USED</span><b id="tMemUsed">—</b></div>
-                <div class="tele-row"><span>LOAD AVG</span><b id="tLoad">—</b></div>
+                <div class="tele-row"><span>HOSTNAME</span><b id="tHost">LOCAL-HOST</b></div>
+                <div class="tele-row"><span>PLATFORM</span><b id="tPlatform">WEB-SYSTEM</b></div>
+                <div class="tele-row"><span>CORES</span><b id="tCores">8 V-CORES</b></div>
+                <div class="tele-row"><span>UPTIME</span><b id="tUptime">0h 0m</b></div>
+                <div class="tele-row"><span>MEMORY USED</span><b id="tMemUsed">3.2 GB / 16 GB</b></div>
+                <div class="tele-row"><span>LOAD AVG</span><b id="tLoad">0.42</b></div>
               </div>
+
               <div class="skills-grid" style="margin-top:16px">
-                <span class="skill-chip">🎙 Voice control</span>
-                <span class="skill-chip">🖥 System telemetry</span>
-                <span class="skill-chip">🌦 Live weather</span>
-                <span class="skill-chip">🔎 Web search</span>
-                <span class="skill-chip">⏰ Reminders</span>
-                <span class="skill-chip">📝 Notes</span>
-                <span class="skill-chip">🧠 Persistent memory</span>
-                <span class="skill-chip">🚀 App launcher</span>
-                <span class="skill-chip">🔊 Volume</span>
-                <span class="skill-chip">📸 Screenshot</span>
+                <span class="skill-chip">🎙 Audio Lip-Sync Engine</span>
+                <span class="skill-chip">🖥 Real-Time Telemetry</span>
+                <span class="skill-chip">🌦 Weather & Forecasts</span>
+                <span class="skill-chip">🔎 Live Web Search</span>
+                <span class="skill-chip">⏰ Reminders & Alarms</span>
+                <span class="skill-chip">📝 Auto-Memory Notes</span>
+                <span class="skill-chip">🧠 Long-Term Memory</span>
+                <span class="skill-chip">🚀 System Quick Launch</span>
+                <span class="skill-chip">🔊 Audio SFX Feedback</span>
+                <span class="skill-chip">📸 Screenshot Capture</span>
               </div>
             </div>
 
             <div class="core-right">
               <div class="core-tabs">
                 <button class="core-tab active" data-tab="memory">MEMORY</button>
+                <button class="core-tab" data-tab="processes">PROCESSES</button>
                 <button class="core-tab" data-tab="notes">NOTES</button>
                 <button class="core-tab" data-tab="reminders">REMINDERS</button>
                 <button class="core-tab" data-tab="skills">SKILLS</button>
@@ -233,12 +254,23 @@
                   <button class="mini-btn" id="factAdd">+</button>
                 </div>
                 <div class="memory-list" id="memoryList">
-                  <div class="empty">No memories yet — talk to the assistant and it will remember automatically.</div>
+                  <div class="empty">No memories yet — talk to Gem and facts will save automatically.</div>
+                </div>
+              </div>
+
+              <div class="hud-panel core-pane" data-pane="processes">
+                <h3 class="panel-title">ACTIVE PROCESSES <span class="dim">— SYSTEM MONITOR</span></h3>
+                <div class="inline-add">
+                  <input type="text" id="procFilter" placeholder="Filter process name or PID…" />
+                  <button class="refresh-btn" id="refreshProcsBtn">⟳ Refresh</button>
+                </div>
+                <div class="memory-list" id="processList">
+                  <div class="empty">Loading process monitor…</div>
                 </div>
               </div>
 
               <div class="hud-panel core-pane" data-pane="notes">
-                <h3 class="panel-title">NOTEBOOK <span class="dim">— PERSISTENT</span></h3>
+                <h3 class="panel-title">NOTEBOOK <span class="dim">— PERSISTENT NOTES</span></h3>
                 <div class="inline-add">
                   <input type="text" id="noteInput" placeholder="Write a note…" />
                   <button class="mini-btn" id="noteAdd">+</button>
@@ -249,10 +281,10 @@
               </div>
 
               <div class="hud-panel core-pane" data-pane="reminders">
-                <h3 class="panel-title">REMINDERS <span class="dim">— PERSISTENT</span></h3>
+                <h3 class="panel-title">REMINDERS <span class="dim">— ACTIVE ALARMS</span></h3>
                 <div class="inline-add">
                   <input type="text" id="remText" placeholder="Remind me to…" />
-                  <input type="text" id="remWhen" placeholder="e.g. in 10 minutes" />
+                  <input type="text" id="remWhen" placeholder="e.g. in 10 minutes" style="width:140px" />
                   <button class="mini-btn" id="remAdd">+</button>
                 </div>
                 <div class="memory-list" id="remindersList">
@@ -261,30 +293,30 @@
               </div>
 
               <div class="hud-panel core-pane" data-pane="skills">
-                <h3 class="panel-title">SKILLS <span class="dim">— THINGS IT HAS LEARNED</span></h3>
+                <h3 class="panel-title">LEARNED SKILLS <span class="dim">— CUSTOM KNOWLEDGE</span></h3>
                 <div class="inline-add">
-                  <input type="text" id="skillName" placeholder="Skill name (optional)" />
-                  <input type="text" id="skillInput" placeholder="e.g. how to format my reports" />
+                  <input type="text" id="skillName" placeholder="Skill name (optional)" style="width:140px" />
+                  <input type="text" id="skillInput" placeholder="e.g. how to structure my reports" />
                   <button class="mini-btn" id="skillAdd">+</button>
                 </div>
                 <div class="memory-list" id="skillsList">
-                  <div class="empty">No skills yet. Teach GemAir something and it remembers forever.</div>
+                  <div class="empty">No custom skills saved yet.</div>
                 </div>
               </div>
 
               <div class="hud-panel core-pane" data-pane="instructions">
-                <h3 class="panel-title">STANDING RULES <span class="dim">— ALWAYS FOLLOWS</span></h3>
+                <h3 class="panel-title">STANDING RULES <span class="dim">— PERMANENT INSTRUCTIONS</span></h3>
                 <div class="inline-add">
-                  <input type="text" id="instructionInput" placeholder='e.g. "always be concise" or "call me Boss"' />
+                  <input type="text" id="instructionInput" placeholder='e.g. "always keep replies concise"' />
                   <button class="mini-btn" id="instructionAdd">+</button>
                 </div>
                 <div class="memory-list" id="instructionsList">
-                  <div class="empty">No rules yet. Add instructions and GemAir will follow them forever.</div>
+                  <div class="empty">No rules set. Add rules and Gem will obey them across every conversation.</div>
                 </div>
               </div>
 
               <div class="hud-panel core-pane" data-pane="soul">
-                <h3 class="panel-title">SOUL <span class="dim">— TUNE PERSONALITY</span></h3>
+                <h3 class="panel-title">SOUL <span class="dim">— PERSONALITY TUNING</span></h3>
                 <div class="soul-slider">
                   <span>WARMTH</span><input type="range" id="soulWarmth" min="0" max="100" value="60" /><b id="soulWarmthVal">60</b>
                 </div>
@@ -296,61 +328,60 @@
                 </div>
                 <div class="memory-count-line dim" style="margin-top:14px;font-size:11px">
                   Conversations saved: <b id="transcriptCount">0</b> messages
-                  <button class="link-btn" id="clearTranscript">clear history</button>
+                  <button class="link-btn" id="clearTranscript">clear transcript</button>
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        <!-- ============ COMPANION (life · career · wellness) ============ -->
+        <!-- ============ COMPANION ============ -->
         <section class="view" id="view-companion">
           <div class="companion-grid">
             <div class="hud-panel mood-panel">
-              <h3 class="panel-title">MOOD <span class="dim">— HOW YOU'VE BEEN FEELING</span></h3>
+              <h3 class="panel-title">MOOD <span class="dim">— EMOTIONAL BASELINE</span></h3>
               <div class="mood-current" id="moodCurrent">
                 <span class="mood-emoji" id="moodEmoji">😊</span>
                 <div>
-                  <div class="mood-label" id="moodLabel">Neutral</div>
-                  <div class="mood-sub" id="moodSub">Your emotional baseline</div>
+                  <div class="mood-label" id="moodLabel">Balanced</div>
+                  <div class="mood-sub" id="moodSub">Your emotional baseline is stable</div>
                 </div>
               </div>
               <canvas id="moodCanvas" width="520" height="140"></canvas>
               <div class="mood-checkin">
                 <span class="dim" style="font-size:11px;letter-spacing:2px">QUICK CHECK-IN</span>
                 <div class="mood-btns" id="moodBtns">
-                  <button data-mood="great 😄">😄</button>
-                  <button data-mood="good 🙂">🙂</button>
-                  <button data-mood="okay 😐">😐</button>
-                  <button data-mood="down 😔">😔</button>
-                  <button data-mood="stressed 😰">😰</button>
-                  <button data-mood="angry 😠">😠</button>
+                  <button data-mood="great 😄" title="Great">😄</button>
+                  <button data-mood="good 🙂" title="Good">🙂</button>
+                  <button data-mood="okay 😐" title="Okay">😐</button>
+                  <button data-mood="down 😔" title="Down">😔</button>
+                  <button data-mood="stressed 😰" title="Stressed">😰</button>
+                  <button class="btn-angry" data-mood="angry 😠" title="Angry">😠</button>
                 </div>
               </div>
             </div>
 
             <div class="hud-panel goals-panel">
-              <h3 class="panel-title">GOALS <span class="dim">— LIFE · CAREER · STUDY</span></h3>
+              <h3 class="panel-title">HABITS & GOALS <span class="dim">— CAREER & WELLNESS</span></h3>
               <div class="inline-add">
-                <input type="text" id="goalInput" placeholder="Add a goal…" />
+                <input type="text" id="goalInput" placeholder="Add a habit or goal…" />
                 <select id="goalCategory" class="goal-cat">
                   <option value="career">Career</option>
                   <option value="study">Study</option>
                   <option value="health">Health</option>
                   <option value="finance">Finance</option>
                   <option value="personal">Personal</option>
-                  <option value="relationship">Relationship</option>
                 </select>
                 <button class="mini-btn" id="goalAdd">+</button>
               </div>
               <div class="goals-list" id="goalsList">
-                <div class="empty">No goals yet. Tell the assistant "I want to become a…" and it will help you set goals.</div>
+                <div class="empty">No goals added yet. Add habits and track your progress daily!</div>
               </div>
             </div>
 
             <div class="hud-panel wellness-panel">
-              <h3 class="panel-title">WELLNESS <span class="dim">— SELF-CARE, ON TAP</span></h3>
-              <div class="affirmation" id="affirmation">"You are capable of more than you realize."</div>
+              <h3 class="panel-title">WELLNESS & FOCUS <span class="dim">— SELF-CARE</span></h3>
+              <div class="affirmation" id="affirmation">"You are capable of achieve extraordinary things."</div>
               <button class="refresh-btn" id="newAffirmation">⟳ NEW AFFIRMATION</button>
               <div class="wellness-tips" id="wellnessTips">
                 <button class="tip-chip" data-area="focus">🎯 Focus</button>
@@ -358,36 +389,32 @@
                 <button class="tip-chip" data-area="sleep">😴 Sleep</button>
                 <button class="tip-chip" data-area="energy">⚡ Energy</button>
                 <button class="tip-chip" data-area="productivity">✅ Productivity</button>
-                <button class="tip-chip" data-area="motivation">🔥 Motivation</button>
               </div>
-              <div class="tip-box" id="tipBox">Tap a category for a practical tip, or just ask me in chat.</div>
+              <div class="tip-box" id="tipBox">Click a category above for actionable advice, or ask Gem in chat.</div>
               <div class="wellness-actions">
-                <button class="refresh-btn" id="focusBtn" style="flex:1">🍅 FOCUS TIMER</button>
+                <button class="refresh-btn" id="focusBtn" style="flex:1">🍅 FOCUS POMODORO</button>
                 <button class="refresh-btn" id="weeklyReportBtn" style="flex:1">📊 WEEKLY REPORT</button>
               </div>
-              <div class="focus-timer" id="focusTimer" hidden>
-                <div class="focus-time" id="focusTime">25:00</div>
-                <div class="focus-controls">
-                  <button class="mini-btn" id="focusToggle">▶</button>
+              <div class="focus-timer" id="focusTimer" hidden style="margin-top:14px;">
+                <div class="focus-time" id="focusTime" style="font-family:var(--font-mono);font-size:32px;font-weight:700;color:var(--accent);">25:00</div>
+                <div class="focus-controls" style="display:flex;gap:10px;margin-top:8px;">
+                  <button class="primary-btn" id="focusToggle">▶ START</button>
                   <button class="ghost-btn" id="focusReset">RESET</button>
                 </div>
               </div>
             </div>
 
             <div class="hud-panel career-panel">
-              <h3 class="panel-title">LIFE &amp; CAREER <span class="dim">— YOUR COMPASS</span></h3>
-              <p class="career-intro dim">
-                I'm not just a tool — I'm here for the big stuff: career moves, tough decisions,
-                studies, relationships, and your wellbeing. Talk to me like a friend. I'll remember,
-                adapt to how you feel, and help you think clearly.
+              <h3 class="panel-title">LIFE COMPASS <span class="dim">— ADVICE & STRATEGY</span></h3>
+              <p class="career-intro dim" style="font-size:12.5px;line-height:1.6;">
+                GemAir adaptively remembers your moods and long-term goals. Click a compass prompt to talk through your life decisions.
               </p>
               <div class="career-prompts">
-                <button class="prompt-chip" data-prompt="I'm feeling stuck in my career. Help me figure out my next step.">🧭 Career direction</button>
-                <button class="prompt-chip" data-prompt="Help me make a study plan for the next 30 days.">📚 Study plan</button>
-                <button class="prompt-chip" data-prompt="I'm stressed about a big decision. Help me think it through.">🤔 Big decision</button>
-                <button class="prompt-chip" data-prompt="How can I build better daily habits?">🌱 Daily habits</button>
-                <button class="prompt-chip" data-prompt="Help me prepare for a job interview.">💼 Interview prep</button>
-                <button class="prompt-chip" data-prompt="I've been feeling low lately. Talk to me.">💙 Just talk</button>
+                <button class="prompt-chip" data-prompt="I'm feeling stuck in my career. Help me figure out my next step.">🧭 Career direction & roadmap</button>
+                <button class="prompt-chip" data-prompt="Help me build a 30-day study & productivity plan.">📚 30-Day study strategy</button>
+                <button class="prompt-chip" data-prompt="I am facing a difficult decision. Help me weigh the pros and cons.">🤔 Decision matrix</button>
+                <button class="prompt-chip" data-prompt="How can I optimize my daily habits for peak energy?">🌱 Daily habit stacking</button>
+                <button class="prompt-chip" data-prompt="Help me prepare for an upcoming technical interview.">💼 Interview preparation</button>
               </div>
             </div>
           </div>
@@ -396,46 +423,49 @@
         <!-- ============ AGENT TOWN ============ -->
         <section class="view" id="view-town">
           <div class="town-head">
-            <h2 class="view-title">AGENT TOWN <span class="dim">— A LIVING PIXEL OFFICE INSIDE YOUR PC</span></h2>
-            <p class="view-sub">Alice, Bob, Carol and Dave aren't decorations — they're resident agents who walk the office, work at desks, and report in. Click an agent to assign a task face-to-face.</p>
+            <h2 class="view-title">AGENT TOWN <span class="dim">— RESIDENT AI OFFICE</span></h2>
+            <p class="view-sub">Alice, Bob, Carol, and Dave walk, work, and collaborate inside your virtual office. Click an agent to dispatch tasks or open direct 1-on-1 chat.</p>
           </div>
           <div class="town-layout">
             <div class="hud-panel town-canvas-panel">
               <canvas id="townCanvas" width="900" height="520"></canvas>
               <div class="town-legend" id="townLegend"></div>
             </div>
+
             <div class="town-side">
               <div class="hud-panel activity-panel">
-                <h3 class="panel-title">LIVE ACTIVITY <span class="dim">— WORKER FEED</span></h3>
+                <h3 class="panel-title">AGENT FEED <span class="dim">— LIVE STATUS</span></h3>
                 <div class="activity-feed" id="activityFeed">
-                  <div class="empty">Agents are idle. Assign a task to get started.</div>
+                  <div class="empty">Agents are standing by. Assign a task to begin multi-agent execution.</div>
                 </div>
               </div>
               <div class="hud-panel mission-panel">
-                <h3 class="panel-title">MISSION LOG <span class="dim">— FULL TRANSPARENCY</span></h3>
+                <h3 class="panel-title">MISSION LOG <span class="dim">— ACTION HISTORY</span></h3>
                 <div class="mission-log" id="missionLog">
-                  <div class="empty">No actions performed yet. Every action GemAir takes will be logged here.</div>
+                  <div class="empty">No actions logged yet.</div>
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        <!-- ============ WORLD MONITOR ============ -->
+        <!-- ============ GLOBAL INTEL ============ -->
         <section class="view" id="view-world">
           <div class="world-grid">
             <div class="hud-panel globe-panel">
-              <h3 class="panel-title">WORLD MONITOR <span class="dim">— LIVE UTC <span id="utcTime">--:--:--</span></span></h3>
+              <h3 class="panel-title">WORLD MONITOR <span class="dim">— UTC <span id="utcTime">--:--:--</span></span></h3>
               <canvas id="globeCanvas" width="640" height="640"></canvas>
-              <div class="globe-caption">3D GLOBE · ACTIVE HOTSPOTS</div>
+              <div class="globe-caption">3D GLOBE · LIVE SATELLITE MONITOR</div>
             </div>
+
             <div class="hud-panel map-panel">
-              <h3 class="panel-title">2D COMMAND MAP <span class="dim">— FULL SITUATION</span></h3>
+              <h3 class="panel-title">COMMAND MAP <span class="dim">— 2D GRID</span></h3>
               <canvas id="mapCanvas" width="560" height="360"></canvas>
-              <div class="globe-caption">FLIP TO 2D · ALL SITES</div>
+              <div class="globe-caption">FLIP MAP · GLOBAL SITES</div>
             </div>
-            <div class="hud-panel news-panel">
-              <h3 class="panel-title">HEADLINES <span class="dim">— STREAMING IN</span></h3>
+
+            <div class="hud-panel news-panel" style="grid-column: span 2;">
+              <h3 class="panel-title">GLOBAL HEADLINES <span class="dim">— LIVE INTELLIGENCE FEED</span></h3>
               <div class="news-list" id="newsList">
                 <div class="empty">Fetching headlines…</div>
               </div>
@@ -454,58 +484,6 @@
   </div>
 
   <!-- ===================== SETTINGS MODAL ===================== -->
-  <!-- ===================== DOWNLOAD ===================== -->
-  <div class="modal-backdrop" id="downloadModal">
-    <div class="modal download-modal">
-      <div class="modal-head">
-        <h2>GET GEMAIR</h2>
-        <button class="icon-btn" id="downloadClose" title="Close">✕</button>
-      </div>
-      <div class="modal-body">
-        <p class="dl-lede">
-          Install GemAir on your desktop and Gem gains hands — real control over your
-          files, apps and system, plus offline memory and a tray-resident wake word.
-          Free and open source, no licence key.
-        </p>
-
-        <div class="dl-grid" id="dlGrid">
-          <a class="dl-card" data-os="win" href="#" target="_blank" rel="noopener">
-            <span class="dl-ico">⊞</span>
-            <span class="dl-os">Windows</span>
-            <span class="dl-meta">10 / 11 · 64-bit installer</span>
-            <span class="dl-cta">Download .exe</span>
-          </a>
-          <a class="dl-card" data-os="mac" href="#" target="_blank" rel="noopener">
-            <span class="dl-ico">⌘</span>
-            <span class="dl-os">macOS</span>
-            <span class="dl-meta">Apple Silicon &amp; Intel</span>
-            <span class="dl-cta">Download .dmg</span>
-          </a>
-          <a class="dl-card" data-os="linux" href="#" target="_blank" rel="noopener">
-            <span class="dl-ico">🐧</span>
-            <span class="dl-os">Linux</span>
-            <span class="dl-meta">AppImage &amp; .deb</span>
-            <span class="dl-cta">Download AppImage</span>
-          </a>
-        </div>
-
-        <div class="dl-status" id="dlStatus">Checking for the latest release…</div>
-
-        <details class="dl-details">
-          <summary>Or run it from source</summary>
-<pre class="dl-code">git clone https://github.com/rangwalaaliasgar55-bot/GemAir.git
-cd GemAir
-npm install
-npm start</pre>
-        </details>
-      </div>
-      <div class="modal-foot">
-        <a class="btn ghost" id="dlReleases" href="#" target="_blank" rel="noopener">All releases</a>
-        <button class="btn" id="downloadClose2">Close</button>
-      </div>
-    </div>
-  </div>
-
   <div class="modal-backdrop" id="settingsModal">
     <div class="modal">
       <div class="modal-head">
@@ -521,50 +499,53 @@ npm start</pre>
         </fieldset>
 
         <fieldset>
-          <legend>AI BRAIN <span class="dim">— paste your key, it uses THIS only</span></legend>
-          <div class="groq-callout">
-            ⚡ <b>Recommended:</b> get a free Groq key at <span class="accent-link" id="groqLink">console.groq.com</span> (very fast, free tier). Paste it below — GemAir will use it (and nothing else) for everything.
+          <legend>AI BRAIN <span class="dim">— YOUR API KEY</span></legend>
+          <div class="groq-callout" style="font-size:12px;line-height:1.5;margin-bottom:8px;">
+            ⚡ <b>Recommended:</b> paste a free Groq key from <span class="accent-link" id="groqLink">console.groq.com</span> (fast & free tier).
           </div>
           <label>API key
             <input type="password" id="setApiKey" placeholder="gsk_…" />
-            <span class="hint">Your key never leaves this computer — it is stored only on your disk.</span>
+            <span class="hint" style="font-size:11px;color:var(--text-dim)">Stored on your disk only. Never shared.</span>
           </label>
-          <label>Provider / Base URL
+          <label>Base URL
             <input type="text" id="setBaseURL" placeholder="https://api.groq.com/openai/v1" />
           </label>
           <label>Model
             <input type="text" id="setModel" placeholder="llama-3.3-70b-versatile" />
           </label>
-          <div class="quick-presets">
-            <button class="preset" data-preset="groq">Groq (free tier)</button>
-            <button class="preset" data-preset="openai">OpenAI</button>
-            <button class="preset" data-preset="openrouter">OpenRouter</button>
-            <button class="preset" data-preset="ollama">Ollama (local)</button>
-            <button class="preset" data-preset="offline">Offline brain</button>
+          <div class="quick-presets" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+            <button class="preset mini-btn" data-preset="groq">Groq</button>
+            <button class="preset mini-btn" data-preset="openai">OpenAI</button>
+            <button class="preset mini-btn" data-preset="openrouter">OpenRouter</button>
+            <button class="preset mini-btn" data-preset="ollama">Ollama</button>
+            <button class="preset mini-btn" data-preset="offline">Offline</button>
           </div>
-          <div class="hint" id="aiStatusHint">No key set — running on the built-in offline brain.</div>
-          <button class="test-btn" id="testConn" type="button">🔌 TEST CONNECTION</button> <span class="test-result" id="testResult"></span>
+          <div class="hint" id="aiStatusHint" style="font-size:11px;margin-top:6px;">Offline brain active.</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+            <button class="test-btn" id="testConn" type="button">🔌 TEST CONNECTION</button>
+            <span class="test-result" id="testResult"></span>
+          </div>
           <label style="margin-top:12px" class="check-label">
-            <input type="checkbox" id="setMemoryOn" checked /> Auto memory — remember facts about me across sessions (long-term memory)
+            <input type="checkbox" id="setMemoryOn" checked /> Auto memory — remember facts across conversations
           </label>
         </fieldset>
 
         <fieldset>
-          <legend>VOICE <span class="dim">— natural female voice</span></legend>
+          <legend>VOICE & SPEECH</legend>
           <label class="check-label" style="margin-bottom:12px">
-            <input type="checkbox" id="setWakeWord" /> Wake word — always listen for "Hey GemAir" (starts the assistant when spoken)
+            <input type="checkbox" id="setWakeWord" /> Wake word — listen for "Hey GemAir"
           </label>
           <label>Voice engine
             <select id="setVoiceMode">
-              <option value="neural">Neural (smooth female — free, needs internet)</option>
-              <option value="system">System (offline, uses your OS voice)</option>
+              <option value="neural">Neural (smooth female — free, internet required)</option>
+              <option value="system">System (offline OS voice)</option>
             </select>
           </label>
           <label>Neural accent
             <select id="setNeuralVoice"></select>
             <button class="preview-btn" id="previewVoice" type="button">▶ Preview</button>
           </label>
-          <label>System voice (when engine = System)
+          <label>System voice
             <select id="setVoice"></select>
           </label>
           <label>Speech recognition language
@@ -573,36 +554,75 @@ npm start</pre>
               <option value="en-GB">English (UK)</option>
               <option value="en-IN">English (India)</option>
               <option value="hi-IN">Hindi</option>
-              <option value="ur-PK">Urdu</option>
               <option value="es-ES">Spanish</option>
               <option value="fr-FR">French</option>
             </select>
           </label>
-          <div class="soul-slider">
+          <div class="soul-slider" style="display:flex;align-items:center;gap:12px;">
             <span>RATE</span><input type="range" id="setRate" min="0.6" max="1.4" step="0.05" value="1.0" /><b id="rateVal">1.0</b>
           </div>
-          <div class="soul-slider">
+          <div class="soul-slider" style="display:flex;align-items:center;gap:12px;">
             <span>PITCH</span><input type="range" id="setPitch" min="0.7" max="1.5" step="0.05" value="1.1" /><b id="pitchVal">1.1</b>
           </div>
         </fieldset>
 
         <fieldset>
-          <legend>ADVANCED <span class="dim">— full computer access</span></legend>
+          <legend>ADVANCED</legend>
           <label class="check-label">
-            <input type="checkbox" id="setAllowShell" /> Allow shell commands (GemAir can run terminal commands after confirming each one)
+            <input type="checkbox" id="setAllowShell" /> Allow shell command execution (confirms each command)
           </label>
-          <div class="hint">Enables the run-command tool so GemAir can operate your whole computer. Every command is confirmed first and a few dangerous patterns are blocked.</div>
         </fieldset>
       </div>
+
       <div class="modal-foot">
         <button class="ghost-btn" id="exportBtn">⬇ EXPORT MEMORY</button>
-        <button class="ghost-btn" id="resetBtn">Reset to defaults</button>
-        <button class="primary-btn" id="saveBtn">SAVE &amp; APPLY</button>
+        <button class="ghost-btn" id="resetBtn">Reset</button>
+        <button class="primary-btn" id="saveBtn">SAVE & APPLY</button>
       </div>
     </div>
   </div>
 
-  <!-- guided breathing modal -->
+  <!-- DOWNLOAD MODAL -->
+  <div class="modal-backdrop" id="downloadModal">
+    <div class="modal download-modal">
+      <div class="modal-head">
+        <h2>GET GEMAIR DESKTOP</h2>
+        <button class="icon-btn" id="downloadClose" title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="dl-lede">
+          Install GemAir on your desktop for system control over files, apps, processes, offline memory, and a tray-resident wake word.
+        </p>
+        <div class="dl-grid" id="dlGrid">
+          <a class="dl-card" data-os="win" href="#" target="_blank" rel="noopener">
+            <span class="dl-ico">⊞</span>
+            <span class="dl-os">Windows</span>
+            <span class="dl-meta">10 / 11 · 64-bit installer</span>
+            <span class="dl-cta">Download .exe</span>
+          </a>
+          <a class="dl-card" data-os="mac" href="#" target="_blank" rel="noopener">
+            <span class="dl-ico">⌘</span>
+            <span class="dl-os">macOS</span>
+            <span class="dl-meta">Apple Silicon & Intel</span>
+            <span class="dl-cta">Download .dmg</span>
+          </a>
+          <a class="dl-card" data-os="linux" href="#" target="_blank" rel="noopener">
+            <span class="dl-ico">🐧</span>
+            <span class="dl-os">Linux</span>
+            <span class="dl-meta">AppImage & .deb</span>
+            <span class="dl-cta">Download AppImage</span>
+          </a>
+        </div>
+        <div class="dl-status" id="dlStatus">Checking for latest release…</div>
+      </div>
+      <div class="modal-foot">
+        <a class="ghost-btn" id="dlReleases" href="#" target="_blank" rel="noopener">All releases</a>
+        <button class="primary-btn" id="downloadClose2">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GUIDED BREATHING MODAL -->
   <div class="modal-backdrop" id="breatheModal">
     <div class="modal breathe-modal">
       <div class="modal-head">
@@ -611,8 +631,8 @@ npm start</pre>
       </div>
       <div class="modal-body breathe-body">
         <div class="breathe-circle" id="breatheCircle"><span id="breatheLabel">READY</span><b id="breatheCount"></b></div>
-        <p class="breathe-hint dim" id="breatheHint">Follow the circle: it grows as you inhale and shrinks as you exhale. 4-7-8 calming breath.</p>
-        <div class="breathe-controls">
+        <p class="breathe-hint dim" id="breatheHint">4-7-8 calming breathing cycle. Follow the circle.</p>
+        <div class="breathe-controls" style="display:flex;gap:12px;margin-top:16px;">
           <button class="primary-btn" id="breatheStart">START</button>
           <button class="ghost-btn" id="breatheStop">STOP</button>
         </div>
@@ -620,7 +640,7 @@ npm start</pre>
     </div>
   </div>
 
-  <!-- weekly report modal -->
+  <!-- WEEKLY REPORT MODAL -->
   <div class="modal-backdrop" id="reportModal">
     <div class="modal">
       <div class="modal-head">
@@ -628,8 +648,8 @@ npm start</pre>
         <button class="icon-btn" id="reportClose">✕</button>
       </div>
       <div class="modal-body">
-        <div class="report-content" id="reportContent">Generating…</div>
-        <div class="modal-foot" style="padding:0;margin-top:14px;border:none">
+        <div class="report-content" id="reportContent">Generating analysis…</div>
+        <div class="modal-foot" style="padding:0;margin-top:14px;border:none;">
           <button class="ghost-btn" id="reportCopy">COPY</button>
           <button class="primary-btn" id="reportClose2">CLOSE</button>
         </div>
@@ -637,10 +657,10 @@ npm start</pre>
     </div>
   </div>
 
-  <!-- command palette -->
+  <!-- COMMAND PALETTE -->
   <div class="palette-backdrop" id="palette">
     <div class="palette">
-      <input type="text" id="paletteInput" placeholder="Type a command or question…" autocomplete="off" />
+      <input type="text" id="paletteInput" placeholder="Type a command, question, or search…" autocomplete="off" />
       <div class="palette-hint">⏎ ask AI · esc close · quick: <span class="accent-link" data-pal="system">system</span> · <span class="accent-link" data-pal="memory">memory</span> · <span class="accent-link" data-pal="world">world</span> · <span class="accent-link" data-pal="town">town</span> · <span class="accent-link" data-pal="settings">settings</span></div>
     </div>
   </div>
