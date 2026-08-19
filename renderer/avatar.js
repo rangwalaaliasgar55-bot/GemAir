@@ -20,16 +20,30 @@
   const TAU = Math.PI * 2;
   const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 
-  // ---- Calibrated feature positions, as fractions of the artwork ----------
-  const ART = {
-    src: 'assets/gem-character.png',
-    leftEye:  { x: 0.393, y: 0.319 },
-    rightEye: { x: 0.597, y: 0.319 },
-    eyeR:     { x: 0.052, y: 0.030 },
-    mouth:    { x: 0.499, y: 0.453 },
-    mouthHalfW: 0.070,
-    skinSample: { x: 0.50, y: 0.235 }   // forehead — used for eyelid colour
+  // ---- Calibrated feature positions for Female and Male Avatars ----------
+  const ART_PRESETS = {
+    female: {
+      src: 'assets/gem-character.png',
+      leftEye:  { x: 0.393, y: 0.319 },
+      rightEye: { x: 0.597, y: 0.319 },
+      eyeR:     { x: 0.052, y: 0.030 },
+      mouth:    { x: 0.499, y: 0.453 },
+      mouthHalfW: 0.070,
+      skinSample: { x: 0.50, y: 0.235 }
+    },
+    male: {
+      src: 'assets/gem-character-male.png',
+      leftEye:  { x: 0.393, y: 0.319 },
+      rightEye: { x: 0.597, y: 0.319 },
+      eyeR:     { x: 0.052, y: 0.030 },
+      mouth:    { x: 0.499, y: 0.453 },
+      mouthHalfW: 0.070,
+      skinSample: { x: 0.50, y: 0.235 }
+    }
   };
+
+  let activeGender = 'female';
+  let ART = ART_PRESETS.female;
 
   function parseColor(str) {
     if (!str) return null;
@@ -524,6 +538,13 @@
       setEmotion(e) {
         if (e && typeof e === 'object') emotion = e;
         else if (typeof e === 'string') emotion = { emotion: e, valence: 0 };
+      },
+      setGender(g) {
+        if (g !== 'female' && g !== 'male') return;
+        activeGender = g;
+        ART = ART_PRESETS[g] || ART_PRESETS.female;
+        imgReady = false;
+        img.src = ART.src;
       },
       syllable() { S.syllableT = 0; S.syllablePhase = 0; },
       onViseme(f) {

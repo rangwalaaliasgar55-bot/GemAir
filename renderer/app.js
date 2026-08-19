@@ -1571,20 +1571,45 @@ function speak(text) {
   avatar({ speaking: true });                  // Gem's mouth starts moving
   setCaption('gem', clean);                    // live subtitle
   if (mode === 'neural') captionAutoAdvance(clean);
-  speechQueue = speechQueue.then(async () => {
-    if (gen !== speechGen) return; // superseded
-    if (mode === 'neural') {
-      try { await speakNeural(clean, gen); return; } catch (e) { /* fall back to system voice */ }
-    }
-    if (gen === speechGen) speakSystem(clean);
-  }).catch(() => {}).finally(() => {
-    if (gen === speechGen) {
-      document.body.classList.remove('rgb-speaking');
-      avatar({ speaking: false });
-      captionProgress(captionFullText.length);
-      hideCaption(1400);
-    }
-  });
+
+  if (window.ttsEngine) {
+    const mod = emotionVoiceMod();
+    window.ttsEngine.speak(clean, {
+      gender: profile.voiceGender || profile.avatarGender || 'female',
+      engine: mode,
+      rate: profile.voice?.rate ?? 1.0,
+      pitch: profile.voice?.pitch ?? 1.1,
+      emotionMod: mod,
+      gen
+    }).then(() => {
+      if (gen === speechGen) {
+        document.body.classList.remove('rgb-speaking');
+        avatar({ speaking: false });
+        captionProgress(captionFullText.length);
+        hideCaption(1400);
+      }
+    }).catch(() => {
+      if (gen === speechGen) {
+        document.body.classList.remove('rgb-speaking');
+        avatar({ speaking: false });
+      }
+    });
+  } else {
+    speechQueue = speechQueue.then(async () => {
+      if (gen !== speechGen) return; // superseded
+      if (mode === 'neural') {
+        try { await speakNeural(clean, gen); return; } catch (e) { /* fall back to system voice */ }
+      }
+      if (gen === speechGen) speakSystem(clean);
+    }).catch(() => {}).finally(() => {
+      if (gen === speechGen) {
+        document.body.classList.remove('rgb-speaking');
+        avatar({ speaking: false });
+        captionProgress(captionFullText.length);
+        hideCaption(1400);
+      }
+    });
+  }
 }
 
 /**
@@ -2346,11 +2371,26 @@ async function persistProfile() { try { await api.setProfile(profile); } catch (
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
+function applyAvatarGender(gender) {
+  const g = gender === 'male' ? 'male' : 'female';
+  profile.avatarGender = g;
+  if (window.gemAvatar) window.gemAvatar.setGender(g);
+  if (window.ttsEngine) window.ttsEngine.gender = profile.voiceGender || g;
+  const label = $('#avatarGenderLabel');
+  if (label) label.textContent = g === 'male' ? '♂ MALE' : '♀ FEMALE';
+  const sel = $('#setAvatarGender');
+  if (sel) sel.value = g;
+  const vSel = $('#setVoiceGender');
+  if (vSel) vSel.value = profile.voiceGender || g;
+}
+
 function openSettings() {
   $('#setUserName').value = profile.name || '';
   $('#setBaseURL').value = (profile.ai?.baseURL) || '';
   $('#setApiKey').value = (profile.ai?.apiKey) || '';
   $('#setModel').value = (profile.ai?.model) || 'llama-3.3-70b-versatile';
+  if ($('#setAvatarGender')) $('#setAvatarGender').value = profile.avatarGender || 'female';
+  if ($('#setVoiceGender')) $('#setVoiceGender').value = profile.voiceGender || profile.avatarGender || 'female';
   $('#setRate').value = profile.voice?.rate ?? 1.0;
   $('#setPitch').value = profile.voice?.pitch ?? 1.1;
   $('#rateVal').textContent = $('#setRate').value;
@@ -2604,6 +2644,14 @@ function bindEvents() {
     if (window.gemair) { e.preventDefault(); api.openExternal(c.href); }
   }));
 
+  $('#avatarGenderToggle')?.addEventListener('click', () => {
+    playSfx('click');
+    const nextG = (profile.avatarGender === 'male') ? 'female' : 'male';
+    applyAvatarGender(nextG);
+    persistProfile();
+    toast('AVATAR', `Switched to ${nextG.toUpperCase()} avatar`, '👤');
+  });
+
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#settingsClose').addEventListener('click', closeSettings);
   $('#settingsModal').addEventListener('click', (e) => { if (e.target === $('#settingsModal')) closeSettings(); });
@@ -2611,6 +2659,9 @@ function bindEvents() {
   $('#saveBtn').addEventListener('click', () => {
     profile.name = $('#setUserName').value.trim() || 'Commander';
     profile.ai = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
+    profile.avatarGender = $('#setAvatarGender')?.value || 'female';
+    profile.voiceGender = $('#setVoiceGender')?.value || profile.avatarGender || 'female';
+    applyAvatarGender(profile.avatarGender);
     profile.voice = profile.voice || {};
     profile.voice.rate = Number($('#setRate').value);
     profile.voice.pitch = Number($('#setPitch').value);
@@ -2924,7 +2975,12 @@ async function boot() {
   safe('orb', startOrb);
   safe('globe', startGlobe);
   safe('commandMap', startCommandMap);
-  safe('avatar', () => { if (window.gemAvatar) window.gemAvatar.mount('#avatarCanvas'); });
+  safe('avatar', () => {
+    if (window.gemAvatar) {
+      window.gemAvatar.mount('#avatarCanvas');
+      applyAvatarGender(profile.avatarGender || 'female');
+    }
+  });
   safe('agentTown', startAgentTown);
   safe('renderMemory', renderAllMemory);
   safe('circuits', animateCircuits);

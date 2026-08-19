@@ -113,6 +113,9 @@
               <div class="gem-nameplate">
                 <span class="gem-name">GEM</span>
                 <span class="gem-role" id="gemRole">personal intelligence</span>
+                <button class="gender-toggle-btn" id="avatarGenderToggle" title="Switch Avatar Gender (Female / Male)">
+                  <span id="avatarGenderLabel">♀ FEMALE</span>
+                </button>
               </div>
 
               <div class="orb-center">
@@ -531,14 +534,26 @@
         </fieldset>
 
         <fieldset>
-          <legend>VOICE & SPEECH</legend>
+          <legend>AVATAR & VOICE</legend>
+          <label>Avatar Gender
+            <select id="setAvatarGender">
+              <option value="female">Female (Gem)</option>
+              <option value="male">Male (Gem)</option>
+            </select>
+          </label>
           <label class="check-label" style="margin-bottom:12px">
             <input type="checkbox" id="setWakeWord" /> Wake word — listen for "Hey GemAir"
           </label>
+          <label>Voice Gender
+            <select id="setVoiceGender">
+              <option value="female">Female (Warm & Natural)</option>
+              <option value="male">Male (Deep & Natural)</option>
+            </select>
+          </label>
           <label>Voice engine
             <select id="setVoiceMode">
-              <option value="neural">Neural (smooth female — free, internet required)</option>
-              <option value="system">System (offline OS voice)</option>
+              <option value="neural">Neural (Smooth — free, internet required)</option>
+              <option value="system">System (Offline OS voice)</option>
             </select>
           </label>
           <label>Neural accent
@@ -669,6 +684,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="store.js"></script>
   <script src="ai-client.js"></script>
+  <script src="tts-engine.js"></script>
   <script src="avatar.js"></script>
   <script src="app.js"></script>
 </body>
