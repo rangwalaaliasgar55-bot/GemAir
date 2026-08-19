@@ -58,11 +58,14 @@ GemAir/
 
 | Module | What it's for |
 | --- | --- |
-| **Voice Core** | Talk or type. The particle orb + START AI loop + streaming replies. |
-| **Desktop Manager** | Live telemetry, **Memory / Notes / Reminders / Skills / Rules / Soul** tabs, file missions. |
-| **Life Companion** | Mood graph, goals, affirmations, wellness tips, career prompts. |
+| **Voice Core** | Talk or type. Particle orb + 2.5D Audio Spectrum Avatar with real-time FFT lip-sync + START AI loop + streaming replies. |
+| **Desktop Manager** | Live telemetry gauges, **Memory / Processes / Notes / Reminders / Skills / Rules / Soul** tabs. |
+| **Life Companion** | Mood graph, habits & goals checklist, Pomodoro focus timer, affirmations, wellness tips, life compass prompts. |
 | **Agent Town** | Assign tasks to Alice/Bob/Carol/Dave — each has its own brain. |
-| **Global Intel** | 3D globe, 2D command map, live headlines. |
+| **Global Intel** | 3D globe, 2D command map, live crypto ticker, world weather, and headlines. |
+
+### Themes & Sound FX
+Choose between 6 dynamic theme presets (Crimson, Emerald, Cyan, Violet, Amber, Rainbow RGB) and toggle synthetic Web Audio sound effects (`🔊 SFX ON / 🔇 SFX OFF`).
 
 ### Talking to agents (independent brains)
 Prefix a message with an agent's name to route it to *that* agent's own role-brain:
