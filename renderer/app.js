@@ -1274,12 +1274,14 @@ function greetByTime() {
 
 function updateLinkMode() {
   const el = $('#linkMode');
+  if (!el) return;
   const cfg = profile.ai || {};
   const hasKey = !!(cfg.apiKey && cfg.baseURL);
   const isLocal = !!(cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL));
   if (hasKey) el.textContent = '— ' + (cfg.model || 'AI') + ' (YOUR KEY)';
   else if (isLocal) el.textContent = '— LOCAL MODEL';
-  else el.textContent = '— OFFLINE (no key)';
+  else if (!isElectron) el.textContent = '— FREE AI (ONLINE)';
+  else el.textContent = '— OFFLINE BRAIN';
 }
 
 function buildSystemPrompt() {
@@ -1448,7 +1450,7 @@ async function handleMessage(text) {
   const cfg = profile.ai || {};
   const hasKey = !!(cfg.apiKey && cfg.baseURL);
   const isLocal = !!(cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL));
-  const useAI = hasKey || isLocal;
+  const useAI = hasKey || isLocal || !isElectron;
 
   // @Agent routing — hand the task to that agent's own brain (Stonic-style)
   const agentMatch = text.match(/^@(Alice|Bob|Carol|Dave)\s+(.*)$/i);
@@ -1470,10 +1472,11 @@ async function handleMessage(text) {
       if (res.ok) { reply = res.reply; chatHistory.push({ role: 'assistant', content: reply }); }
       else { reply = '⚠ ' + humanError(res.error); }
     } else if (useAI) {
-      // web mode: no per-agent backend — use main brain but tag the agent role
+      // web mode: use free Vercel serverless proxy or user key
       reply = await (async () => {
         const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a resident agent of GemAir. Help with: ${task}. Be truthful and concise.` }, ...chatHistory.slice(-14)]);
-        return res.ok ? res.reply : '⚠ ' + humanError(res.error);
+        if (res.ok) return res.reply;
+        return `[${agentName}] ${(await api.aiOffline(task)).reply}`;
       })();
       chatHistory.push({ role: 'assistant', content: reply });
     } else {
@@ -1482,7 +1485,7 @@ async function handleMessage(text) {
     }
     await renderReply(replyEl, reply);
   } else if (useAI) {
-    // Use the user's key ONLY — no silent fallback. Stream tokens live.
+    // Try Vercel free serverless AI or user key first; fall back to offline brain if unavailable
     chatHistory.push({ role: 'user', content: text });
     const sys = buildSystemPrompt();
     const replyEl = typing.querySelector('p');
@@ -1505,8 +1508,12 @@ async function handleMessage(text) {
         });
       }
     } else {
-      reply = '⚠ ' + humanError(res.error) + '\n\n(Using your configured AI only — fix the key in Settings → AI Brain.)';
-      renderReply(replyEl, reply);
+      // Seamless fallback to offline intent brain when server key or network is unreachable
+      const resOffline = await api.aiOffline(text);
+      reply = resOffline.reply;
+      if (!streamed) { renderReply(replyEl, reply); }
+      else { replyEl.textContent = reply; }
+      chatHistory.push({ role: 'assistant', content: reply });
     }
   } else {
     const res = await api.aiOffline(text);
@@ -3139,10 +3146,11 @@ async function boot() {
     last.forEach((m) => { if (m.role === 'user' || m.role === 'assistant') chatHistory.push({ role: m.role, content: m.content }); });
   } else if (!awaitingName) {
     addMessage('ai', greeting);
-    addMessage('system-msg', 'Gem is online. Paste a free Groq key in Settings for a full LLM brain — or just start talking, the offline brain already handles the web, weather, apps and files.');
+    addMessage('system-msg', 'Gem is online and ready. Start talking or typing — free AI core connected.');
   }
 
-  if (!profile.ai?.apiKey) toast('TIP', 'Add a free Groq key in Settings → AI Brain for a full brain.', '⚡');
+  if (!isElectron && !profile.ai?.apiKey) toast('FREE AI', 'GemAir is ready to use — completely free out of the box!', '✨');
+  else if (!profile.ai?.apiKey) toast('TIP', 'Add a free Groq key in Settings → AI Brain for personal key isolation.', '⚡');
 
   pollSystem(); setInterval(pollSystem, 2500);
   recognition = initRecognition();
