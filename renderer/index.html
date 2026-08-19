@@ -253,8 +253,17 @@
               <div class="hud-panel core-pane active" data-pane="memory">
                 <h3 class="panel-title">LONG-TERM MEMORY <span class="dim" id="factCount"></span></h3>
                 <div class="inline-add">
+                  <input type="text" id="factFilter" placeholder="Filter memories by keyword…" style="width:160px;" />
                   <input type="text" id="factInput" placeholder="Add a fact to remember…" />
                   <button class="mini-btn" id="factAdd">+</button>
+                </div>
+                <div class="category-filters" id="memoryCatFilters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+                  <button class="qc active" data-cat="all">ALL</button>
+                  <button class="qc" data-cat="identity">IDENTITY</button>
+                  <button class="qc" data-cat="preference">PREFERENCES</button>
+                  <button class="qc" data-cat="project">PROJECTS</button>
+                  <button class="qc" data-cat="goal">GOALS</button>
+                  <button class="qc" data-cat="fact">FACTS</button>
                 </div>
                 <div class="memory-list" id="memoryList">
                   <div class="empty">No memories yet — talk to Gem and facts will save automatically.</div>
@@ -404,6 +413,13 @@
                   <button class="primary-btn" id="focusToggle">▶ START</button>
                   <button class="ghost-btn" id="focusReset">RESET</button>
                 </div>
+                <div class="ambient-sounds" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center;">
+                  <span class="dim" style="font-size:11px;font-family:var(--font-mono);">AMBIENT:</span>
+                  <button class="qc ambient-btn active" data-sound="none">🔇 Off</button>
+                  <button class="qc ambient-btn" data-sound="rain">🌧️ Rain</button>
+                  <button class="qc ambient-btn" data-sound="space">🚀 Space Drone</button>
+                  <button class="qc ambient-btn" data-sound="ocean">🌊 Ocean</button>
+                </div>
               </div>
             </div>
 
@@ -428,6 +444,20 @@
           <div class="town-head">
             <h2 class="view-title">AGENT TOWN <span class="dim">— RESIDENT AI OFFICE</span></h2>
             <p class="view-sub">Alice, Bob, Carol, and Dave walk, work, and collaborate inside your virtual office. Click an agent to dispatch tasks or open direct 1-on-1 chat.</p>
+          </div>
+          <div class="hud-panel dispatch-panel" style="margin-bottom:18px;">
+            <h3 class="panel-title">MISSION DISPATCH <span class="dim">— ASSIGN TASK TO AGENTS</span></h3>
+            <div class="inline-add">
+              <select id="dispatchAgent" style="width:200px;">
+                <option value="all">ALL AGENTS (Collaborate)</option>
+                <option value="Alice">Alice (Research & Writing)</option>
+                <option value="Bob">Bob (System & Automation)</option>
+                <option value="Carol">Carol (Creative & Design)</option>
+                <option value="Dave">Dave (Planning & Strategy)</option>
+              </select>
+              <input type="text" id="dispatchTaskInput" placeholder="Describe the mission or task for the agents…" />
+              <button class="primary-btn" id="dispatchTaskBtn">🚀 DISPATCH</button>
+            </div>
           </div>
           <div class="town-layout">
             <div class="hud-panel town-canvas-panel">

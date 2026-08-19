@@ -2021,9 +2021,21 @@ function renderMissionLog() {
 // ---------------------------------------------------------------------------
 function renderFacts() {
   const list = $('#memoryList');
-  const facts = (memory.facts || []).slice().sort((a, b) => (b.importance || 0) - (a.importance || 0));
+  if (!list) return;
+  const filter = ($('#factFilter')?.value || '').toLowerCase().trim();
+  const activeCat = $('#memoryCatFilters .qc.active')?.dataset.cat || 'all';
+
+  let facts = (memory.facts || []).slice().sort((a, b) => (b.importance || 0) - (a.importance || 0));
+
+  if (activeCat && activeCat !== 'all') {
+    facts = facts.filter(f => (f.category || 'fact').toLowerCase() === activeCat);
+  }
+  if (filter) {
+    facts = facts.filter(f => f.text.toLowerCase().includes(filter) || (f.category || '').toLowerCase().includes(filter));
+  }
+
   $('#factCount').textContent = '— ' + facts.length + ' remembered';
-  if (!facts.length) { list.innerHTML = '<div class="empty">No memories yet — talk to the assistant and it will remember automatically.</div>'; return; }
+  if (!facts.length) { list.innerHTML = '<div class="empty">No matching memories found.</div>'; return; }
   list.innerHTML = '';
   facts.forEach((f) => {
     const div = document.createElement('div');
@@ -2093,8 +2105,86 @@ function renderInstructions() {
 function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); renderSkills(); renderInstructions(); renderMissionLog(); renderBriefing(); }
 
 // ---------------------------------------------------------------------------
-// Daily briefing
+// Ambient Sound Generator for Focus Sessions
 // ---------------------------------------------------------------------------
+let ambientCtx = null;
+let ambientSource = null;
+let ambientGain = null;
+
+function playAmbientSound(type) {
+  stopAmbientSound();
+  if (!type || type === 'none') return;
+
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!ambientCtx) ambientCtx = new AudioCtx();
+    if (ambientCtx.state === 'suspended') ambientCtx.resume();
+
+    const ctx = ambientCtx;
+    ambientGain = ctx.createGain();
+    ambientGain.gain.setValueAtTime(0.12, ctx.currentTime);
+    ambientGain.connect(ctx.destination);
+
+    if (type === 'rain') {
+      const bufferSize = ctx.sampleRate * 2;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer; noise.loop = true;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1000, ctx.currentTime);
+
+      noise.connect(filter);
+      filter.connect(ambientGain);
+      noise.start();
+      ambientSource = noise;
+    } else if (type === 'space') {
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      osc1.type = 'sine'; osc1.frequency.setValueAtTime(110, ctx.currentTime);
+      osc2.type = 'sine'; osc2.frequency.setValueAtTime(110.5, ctx.currentTime);
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass'; filter.frequency.setValueAtTime(400, ctx.currentTime);
+
+      osc1.connect(filter); osc2.connect(filter);
+      filter.connect(ambientGain);
+      osc1.start(); osc2.start();
+      ambientSource = { stop: () => { try { osc1.stop(); osc2.stop(); } catch (e) {} } };
+    } else if (type === 'ocean') {
+      const bufferSize = ctx.sampleRate * 3;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      let lastOut = 0.0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        data[i] = (lastOut + (0.02 * white)) / 1.02;
+        lastOut = data[i];
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer; noise.loop = true;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass'; filter.frequency.setValueAtTime(600, ctx.currentTime);
+
+      noise.connect(filter);
+      filter.connect(ambientGain);
+      noise.start();
+      ambientSource = noise;
+    }
+  } catch (e) {}
+}
+
+function stopAmbientSound() {
+  if (ambientSource) {
+    try { ambientSource.stop(); } catch (e) {}
+    ambientSource = null;
+  }
+}
 const QUOTES_OFFLINE = [
   'The best way to predict the future is to invent it. — Alan Kay',
   "It always seems impossible until it's done. — Nelson Mandela",
@@ -2504,9 +2594,50 @@ function bindEvents() {
     if (tab) tab.click();
   });
 
-  // Process monitor controls
-  $('#refreshProcsBtn')?.addEventListener('click', () => { playSfx('click'); renderProcesses(); });
-  $('#procFilter')?.addEventListener('input', () => renderProcesses());
+  // Memory Category Filters & Search
+  $('#factFilter')?.addEventListener('input', () => renderFacts());
+  $$('#memoryCatFilters .qc').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      playSfx('click');
+      $$('#memoryCatFilters .qc').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderFacts();
+    });
+  });
+
+  // Ambient sound generator for focus sessions
+  $$('.ambient-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      playSfx('click');
+      $$('.ambient-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      playAmbientSound(btn.dataset.sound);
+      toast('FOCUS', `Ambient sound: ${btn.textContent}`, '🎵');
+    });
+  });
+
+  // Multi-Agent Mission Dispatcher
+  $('#dispatchTaskBtn')?.addEventListener('click', () => {
+    const task = $('#dispatchTaskInput')?.value.trim();
+    if (!task) return;
+    playSfx('activate');
+    const agent = $('#dispatchAgent')?.value || 'all';
+    $('#dispatchTaskInput').value = '';
+
+    if (agent === 'all') {
+      addActivity('TEAM', `Multi-agent mission dispatched: "${task}"`);
+      toast('AGENTS', 'Multi-agent collaboration initiated', '👥');
+      switchView('assistant');
+      $('#chatInput').value = `@Alice @Bob @Carol @Dave ${task}`;
+      sendMessage($('#chatInput').value);
+    } else {
+      addActivity(agent, `Dispatched mission: "${task}"`);
+      toast('AGENT', `${agent} assigned task`, '🚀');
+      switchView('assistant');
+      $('#chatInput').value = `@${agent} ${task}`;
+      sendMessage($('#chatInput').value);
+    }
+  });
 
   // core tabs
   $$('.core-tab').forEach((t) => t.addEventListener('click', () => {
