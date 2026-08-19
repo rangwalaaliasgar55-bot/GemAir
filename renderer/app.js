@@ -180,8 +180,8 @@ async function offlineBrain(text) {
   const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 
   if (/^(hi|hello|hey|salam|yo|good (morning|evening|afternoon))\b/.test(q) && q.length < 14)
-    return 'Hello. GemAir online. I can search the web, check weather, prices, translate and more — all free, no API key needed.';
-  if (/your name|who are you/.test(q)) return "I'm GemAir — your personal AI. I understand how you feel and I search the real web for free (no API key required).";
+    return 'Hello. Gem here — I can search the web, check weather, prices, translate and more, all free.';
+  if (/your name|who are you/.test(q)) return "I'm Gem — your personal AI inside GemAir. I understand how you feel, and I search the real web for free.";
   if (/how are you/.test(q)) return 'All circuits nominal — and glad you asked. How are you doing?';
   if (/time|clock/.test(q)) return `The current time is ${time}.`;
   if (/\bdate\b|what day/.test(q)) return `Today is ${new Date().toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`;
@@ -257,8 +257,7 @@ async function offlineBrain(text) {
     }
   }
 
-  return `I can help for free, no API key needed — try: "weather in Mumbai", "search latest AI news", "bitcoin price", "convert 100 usd to inr", "translate hello to hindi", "define serendipity", or just talk to me. ` +
-    `To unlock a full conversational AI brain, set a Groq key (Settings → AI Brain).`;
+  return `I can help for free — try: "weather in Mumbai", "search latest AI news", "bitcoin price", "convert 100 usd to inr", "translate hello to hindi", "define serendipity", or just talk to me.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -884,7 +883,7 @@ function renderProcesses() {
     { pid: 2184, name: 'GemAir Audio & Visualizer', cpu: '2.1%', mem: '98 MB' },
     { pid: 3042, name: 'Web Speech Synthesis', cpu: '0.8%', mem: '64 MB' },
     { pid: 4890, name: 'Agent Town Virtual Office', cpu: '1.9%', mem: '112 MB' },
-    { pid: 5120, name: 'Groq / LLM Pipeline', cpu: '0.2%', mem: '45 MB' },
+    { pid: 5120, name: 'Gem AI Core', cpu: '0.2%', mem: '45 MB' },
     { pid: 6310, name: 'Local Persistence Store', cpu: '0.1%', mem: '28 MB' }
   ];
 
@@ -1278,10 +1277,9 @@ function updateLinkMode() {
   const cfg = profile.ai || {};
   const hasKey = !!(cfg.apiKey && cfg.baseURL);
   const isLocal = !!(cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL));
-  if (hasKey) el.textContent = '— ' + (cfg.model || 'AI') + ' (YOUR KEY)';
-  else if (isLocal) el.textContent = '— LOCAL MODEL';
-  else if (!isElectron) el.textContent = '— FREE AI (ONLINE)';
-  else el.textContent = '— OFFLINE BRAIN';
+  if (isLocal) el.textContent = '— LOCAL';
+  else if (!isElectron || hasKey) el.textContent = '— LINK ONLINE';
+  else el.textContent = '— OFFLINE';
 }
 
 function buildSystemPrompt() {
@@ -1335,10 +1333,10 @@ function buildSystemPrompt() {
 
 const humanError = (err) => {
   if (!err) return 'unknown error';
-  if (err === 'NO_ENDPOINT') return 'No provider URL set. Open Settings → AI Brain and pick the Groq preset.';
-  if (err === 'NO_KEY') return 'API key missing. Paste your Groq (or other) key in Settings → AI Brain.';
+  if (err === 'NO_ENDPOINT') return 'AI core unavailable — I will answer with the built-in brain.';
+  if (err === 'NO_KEY') return 'AI core reconnecting — I am answering with the built-in brain for now.';
   if (err === 'TOOL_LOOP') return 'The model got stuck calling tools.';
-  if (err.startsWith('HTTP_401')) return '401 Unauthorized — your API key is invalid.';
+  if (err.startsWith('HTTP_401')) return 'AI core reconnecting (auth) — I will use the built-in brain for now.';
   if (err.startsWith('HTTP_429')) return '429 Rate limited — wait a moment and retry.';
   if (err.startsWith('HTTP_')) return 'HTTP error ' + err.replace('HTTP_', '').split(' ')[0];
   return String(err).slice(0, 140);
@@ -1364,7 +1362,11 @@ function localExtract(text) {
 /**
  * Pull a usable name out of a free-form reply: "I'm Ali", "call me Ali",
  * "my name is Ali", or just "Ali". Falls back to Commander.
+ * Pure greetings ("hey", "hi", "hello", …) are NOT names — they fall back to
+ * Commander so the caller can answer the greeting naturally and keep waiting.
  */
+const NAME_GREETINGS = /^(hey+|heyy+|hi+|hii+|hiii+|hello+|yo+|yo yo|sup+|wassup|whats ?up|salam|salaam|assalamu ?alaikum|namaste|namaskar|good (morning|afternoon|evening|night|day)|who are you|what'?s your name|how are you|how r u|how do you do|kaise ho|kya haal|kya chal raha|ok+|okay+|hmm+|hmmm+|haan|yes|no|nahi|nah|fine|good|great|nice|aur batao|aur sunao|hello there|hi there|hey there)[\s!?.~]*$/i;
+
 function extractName(text) {
   let t = String(text || '').trim();
   const m = t.match(/(?:my name is|i am|i'm|im|call me|this is|it's|its)\s+([^.,!?\n]+)/i);
@@ -1373,6 +1375,7 @@ function extractName(text) {
        .replace(/\b(please|thanks|thank you|sir|maam|ma'am)\b/gi, ' ')
        .replace(/\s+/g, ' ')
        .trim();
+  if (NAME_GREETINGS.test(t)) return 'Commander';
   const words = t.split(' ').filter(Boolean).slice(0, 3);
   if (!words.length) return 'Commander';
   const name = words
@@ -1396,21 +1399,27 @@ async function sendMessage(text) {
 }
 
 async function handleMessage(text) {
-  // First run: Gem asked for a name, so this reply IS the name.
+  // First run: Gem asked for a name, so this reply IS the name — unless it's
+  // just a greeting ("hey", "hi", …), which is never saved as a name: answer
+  // it naturally and keep waiting for the real name.
   if (awaitingName) {
-    awaitingName = false;
     const name = extractName(text);
-    profile.name = name;
-    await persistProfile();
-    await api.memoryAddFact({ text: `The user's name is ${name}`, category: 'identity' });
-    await loadMemory();
-    renderAllMemory();
-    renderBriefing();
-    const welcome = `Lovely to meet you, ${name}. I'm Gem. I'll remember that — along with anything else you tell me. What would you like to do first?`;
-    addMessage('ai', welcome);
-    await api.memoryAppend('assistant', welcome);
-    speak(welcome);
-    return;
+    if (name !== 'Commander') {
+      awaitingName = false;
+      profile.name = name;
+      await persistProfile();
+      await api.memoryAddFact({ text: `The user's name is ${name}`, category: 'identity' });
+      await loadMemory();
+      renderAllMemory();
+      renderBriefing();
+      const welcome = `Lovely to meet you, ${name}. I'm Gem. I'll remember that — along with anything else you tell me. What would you like to do first?`;
+      addMessage('ai', welcome);
+      await api.memoryAppend('assistant', welcome);
+      speak(welcome);
+      return;
+    }
+    // greeting/empty filler — keep waiting for a name, but answer naturally
+    awaitingName = true;
   }
 
   // Understand the user's emotion — always, automatically
@@ -2527,9 +2536,9 @@ function populateNeuralVoices() {
 function updateAiHint() {
   const base = $('#setBaseURL').value.trim(), key = $('#setApiKey').value.trim();
   const el = $('#aiStatusHint');
-  if (key && base) el.textContent = '✓ AI brain locked to your endpoint — GemAir will use THIS key only.';
+  if (key && base) el.textContent = '✓ Custom AI endpoint active — using your key only.';
   else if (base && /localhost|127\.0\.0\.1/.test(base)) el.textContent = '✓ Local model detected (no key needed).';
-  else el.textContent = 'No key set — running on the built-in offline brain.';
+  else el.textContent = '✨ Vercel Free AI Core Connected — 100% free out of the box.';
 }
 function applyPreset(p) {
   const map = {
@@ -2793,7 +2802,6 @@ function bindEvents() {
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#settingsClose').addEventListener('click', closeSettings);
   $('#settingsModal').addEventListener('click', (e) => { if (e.target === $('#settingsModal')) closeSettings(); });
-  $('#groqLink').addEventListener('click', () => api.openExternal('https://console.groq.com/keys'));
   $('#saveBtn').addEventListener('click', () => {
     profile.name = $('#setUserName').value.trim() || 'Commander';
     profile.ai = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
@@ -2835,7 +2843,7 @@ function bindEvents() {
     const cfg = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
     try {
       const res = await api.aiChat(cfg, [{ role: 'user', content: 'Reply with exactly: OK' }]);
-      if (res.ok) { resEl.textContent = '✓ Connected'; resEl.classList.add('ok'); }
+      if (res.ok) { resEl.textContent = '✓ OK'; resEl.classList.add('ok'); }
       else { resEl.textContent = '✗ ' + humanError(res.error); resEl.classList.add('bad'); }
     } catch (e) { resEl.textContent = '✗ ' + e.message; resEl.classList.add('bad'); }
   });
@@ -2941,7 +2949,7 @@ function bindEvents() {
   $('#startBtn').addEventListener('click', () => {
     playSfx('activate');
     if (isRunning) { isRunning = false; $('#startBtn').classList.remove('running'); $('#startLabel').textContent = 'START AI'; $('#orbStatus').textContent = 'STANDBY'; $('#orbStatus').classList.remove('active'); stopListening(); }
-    else { startAiLoop(); addMessage('system-msg', 'AI online. Speak naturally — I\u2019m listening.'); speak('Systems online. How can I help?'); }
+    else { startAiLoop(); addMessage('system-msg', 'Listening. Speak naturally.'); speak('I am listening. How can I help?'); }
   });
 
   $('#micBtn').addEventListener('click', () => {
@@ -2991,7 +2999,7 @@ function configureWakeWord(enabled) {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = (e.results[i][0].transcript || '').toLowerCase();
         if (/hey gemair|hey gem|a gemair|hi gemair/.test(t)) {
-          addMessage('system-msg', 'Wake word detected — going online.');
+          addMessage('system-msg', 'Wake word detected — listening.');
           startAiLoop();
           speak('Yes? I am listening.');
         }
@@ -3146,11 +3154,9 @@ async function boot() {
     last.forEach((m) => { if (m.role === 'user' || m.role === 'assistant') chatHistory.push({ role: m.role, content: m.content }); });
   } else if (!awaitingName) {
     addMessage('ai', greeting);
-    addMessage('system-msg', 'Gem is online and ready. Start talking or typing — free AI core connected.');
   }
 
-  if (!isElectron && !profile.ai?.apiKey) toast('FREE AI', 'GemAir is ready to use — completely free out of the box!', '✨');
-  else if (!profile.ai?.apiKey) toast('TIP', 'Add a free Groq key in Settings → AI Brain for personal key isolation.', '⚡');
+  toast('GEMAIR', 'GemAir is online — completely free out of the box!', '✨');
 
   pollSystem(); setInterval(pollSystem, 2500);
   recognition = initRecognition();

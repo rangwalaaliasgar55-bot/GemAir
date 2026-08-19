@@ -173,7 +173,7 @@
                 </h3>
                 <div class="chat-log" id="chatLog">
                   <div class="msg system-msg">
-                    <p>GemAir online. Audio lip-sync & spectrum engines ready.</p>
+                    <p>Audio lip-sync &amp; spectrum engines ready.</p>
                     <p class="sub">Speak naturally, or type below. Press <b>Ctrl+K</b> for instant command palette.</p>
                   </div>
                 </div>
@@ -532,15 +532,15 @@
         </fieldset>
 
         <fieldset>
-          <legend>AI BRAIN <span class="dim">— YOUR API KEY</span></legend>
+          <legend>AI BRAIN</legend>
           <div class="groq-callout" style="font-size:12px;line-height:1.5;margin-bottom:8px;">
-            ⚡ <b>Recommended:</b> paste a free Groq key from <span class="accent-link" id="groqLink">console.groq.com</span> (fast & free tier).
+            ✨ <b>Free AI Core:</b> GemAir runs on Vercel with free 70B AI responses. No API key or credit card required!
           </div>
-          <label>API key
+          <label>Custom API Key (Optional)
             <input type="password" id="setApiKey" placeholder="gsk_…" />
-            <span class="hint" style="font-size:11px;color:var(--text-dim)">Stored on your disk only. Never shared.</span>
+            <span class="hint" style="font-size:11px;color:var(--text-dim)">Only for your own personal provider. Stored on your disk only.</span>
           </label>
-          <label>Base URL
+          <label>Custom Base URL (Optional)
             <input type="text" id="setBaseURL" placeholder="https://api.groq.com/openai/v1" />
           </label>
           <label>Model
@@ -553,7 +553,7 @@
             <button class="preset mini-btn" data-preset="ollama">Ollama</button>
             <button class="preset mini-btn" data-preset="offline">Offline</button>
           </div>
-          <div class="hint" id="aiStatusHint" style="font-size:11px;margin-top:6px;">Offline brain active.</div>
+          <div class="hint" id="aiStatusHint" style="font-size:11px;margin-top:6px;">✨ Vercel Free AI Core Connected — 100% free out of the box.</div>
           <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
             <button class="test-btn" id="testConn" type="button">🔌 TEST CONNECTION</button>
             <span class="test-result" id="testResult"></span>

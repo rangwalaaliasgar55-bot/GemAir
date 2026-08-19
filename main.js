@@ -1565,7 +1565,7 @@ async function offlineBrain(text) {
   const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 
   if (/^(hi|hello|hey|salam|yo|good (morning|evening|afternoon))\b/.test(q) && q.length < 14)
-    return 'Hello. GemAir online. All systems standing by. (I am running on the built-in offline brain — add a free Groq key in Settings for full intelligence.)';
+    return 'Hello. Gem here — all systems standing by. I can search the web, check weather, prices, translate and more, all free.';
 
   if (/your name|who are you/.test(q)) return "I'm GemAir — your personal AI, like your own JARVIS. I can talk to any AI model you connect, and I remember everything we discuss.";
 
@@ -1673,7 +1673,7 @@ async function offlineBrain(text) {
   if (/bye|goodbye|good night|exit|quit/.test(q)) return 'Going to standby. Goodbye.';
 
   return `I'm in offline mode, so I handle the basics — time, date, weather, web search, math, reminders, notes, opening apps, volume and system control. ` +
-    `For a full AI brain, add a free Groq API key in Settings → AI Brain (groq.com/console, free tier available).`;
+    `On the web version the free AI core answers everything.`;
 }
 
 // ---------------------------------------------------------------------------

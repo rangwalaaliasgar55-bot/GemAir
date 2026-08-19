@@ -55,7 +55,7 @@ npm start
 | 🎙 **Voice Assistant** | Speak naturally or type. **Live streaming** replies (instant, JARVIS-fast), animated particle orb, START AI loop, **wake word ("Hey GemAir")**, speech recognition + spoken replies in a **smooth natural female voice** (neural, free — or your OS's voice, offline). |
 | ⌨️ **Human-like typing** | Replies stream/type out in real time, with code blocks and a 💾 save-to-file action. |
 | 👋 **Personalized** | Greets you by name and time of day (12-hour clock), and remembers who you are forever. |
-| 🧠 **AI Brain (your key only)** | Paste a **free Groq key** (or OpenAI / OpenRouter / local Ollama). GemAir uses **that key and nothing else** — no silent fallback, no other provider. |
+| 🧠 **AI Brain (free out of the box)** | On Vercel, GemAir's AI chat runs on the server's free AI core — no key, no card. Advanced users can optionally plug in their own provider (Groq / OpenAI / OpenRouter / local Ollama) in Settings → AI Brain. |
 | 🧠 **Long-Term Memory (never lost)** | Automatically extracts durable facts about you (name, preferences, projects, goals) using your own model, stores them **on disk forever**, and injects them into every conversation. Full chat history is also persisted and restored on every launch. |
 | 🛠 **Tool-calling (50+ tools)** | The AI can *do* things, not just chat. **Web**: live weather, **real web search (no AI needed)**, fetch & read any webpage, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, **AI image generation**, open URLs. **Computer**: open any app, list/read/write/search files, clipboard, volume, screenshots, system control, email draft, WhatsApp, to-dos, file-organizing "missions", and (optional) shell commands with per-command confirmation. **Mind & life**: quotes, breathing exercises, weekly reports, emotional support. |
 | ⏰ **World clock** | Time in any city, 12-hour format, live UTC clock. |
@@ -170,7 +170,7 @@ npm start
 
 GemAir is **Vercel-ready**: the same UI runs as a static site, and all the free tools
 (weather, web search, crypto, currency, translate, dictionary, headlines) are
-serverless functions in `/api` — **no Groq key required**.
+serverless functions in `/api` — **no key required, ever**.
 
 ```bash
 npm i -g vercel
@@ -181,7 +181,7 @@ vercel          # deploy; it auto-detects vercel.json (api/ functions + renderer
 
 | Variable | Purpose |
 | --- | --- |
-| `GROQ_API_KEY` | Optional — unlocks full AI chat (free key at console.groq.com/keys). Without it, the free offline brain + real web search still work. |
+| `GROQ_API_KEY` (also `OPENAI_API_KEY`, `AI_KEY`, `GROQ_KEY`, `VERCEL_GROQ_KEY`) | Optional — a server-side key unlocks full LLM chat. Without one, `/api/chat` answers with the built-in free conversational brain, so users are never asked for a key. |
 | `AI_BASE_URL` / `AI_MODEL` | Point at any OpenAI-compatible provider. |
 | `SUPABASE_URL` / `SUPABASE_ANON_KEY` | Optional — cloud memory sync (see below). |
 
@@ -244,14 +244,16 @@ Your installers land in the **`release/`** folder — share them, put them on a 
 
 ---
 
-## 🔌 Connecting your AI (Groq recommended — free & fast)
+## 🔌 Connecting your AI (optional — already free on Vercel)
 
-GemAir works out of the box with the **offline brain** (time, date, weather, web search, math, reminders, notes, app/system control — no key needed).
+On the **web version (Vercel)** GemAir's AI chat is free out of the box — the serverless `/api/chat` uses the server's AI key (if set) or the built-in free brain, and the end-user is **never** asked for a key.
 
-To unlock a full LLM brain, open **Settings → AI Brain**:
+The desktop app works out of the box with the **offline brain** (time, date, weather, web search, math, reminders, notes, app/system control — no key needed).
 
-1. Get a **free Groq key** at [console.groq.com/keys](https://console.groq.com/keys) (no card needed, very fast).
-2. Click the **Groq (free tier)** preset, paste your key, Save.
+If you want to plug in your **own** provider (fully optional), open **Settings → AI Brain**:
+
+1. Get a key from your provider (e.g. a free Groq key at [console.groq.com/keys](https://console.groq.com/keys) — no card needed, very fast).
+2. Click a preset, paste your key, Save.
 
 | Preset | Base URL | Needs key? |
 | --- | --- | --- |
