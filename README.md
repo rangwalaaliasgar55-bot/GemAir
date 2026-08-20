@@ -1,29 +1,31 @@
-# GemAir
+<div align="center">
 
-### Meet **Gem** — the intelligence inside GemAir.
+# GemAir 🪐
 
-**A free, open-source, emotionally intelligent personal AI — far more than a JARVIS clone.** Turn your PC into a sci-fi command center that *understands how you feel*, helps with your **life, career, studies and wellbeing**, remembers you **forever**, and runs on **your own AI key** — or entirely **free, with no key at all**. No subscription, no $56 license, no cloud lock-in. **Yours. Forever.**
+### The free, open-source, emotionally intelligent personal AI
 
-> 📖 Full walkthrough: **[GUIDE.md](GUIDE.md)** — architecture, every module, teaching GemAir, extending it, and the build/deploy guide.
+**Meet Gem** — the intelligence inside GemAir. A free, open-source, emotionally intelligent personal AI that turns your PC into a sci-fi command center. It understands how you feel, helps with your **life, career, studies and wellbeing**, remembers you **forever**, and runs on **your own AI key** — or entirely **free, with no key at all**.
 
-GemAir is a fully working desktop app (Windows · macOS · Linux) with: a voice assistant, a live system core, an agent town, a world monitor, **persistent long-term memory**, and **real tool-calling** (weather, web search, reminders, notes, volume, screenshots, system control) — all wrapped in a cinematic HUD you can re-skin in three themes.
+No subscription, no license fee, no cloud lock-in. **Yours. Forever.**
 
-> Built with **Electron** — runs entirely on your machine. Your data never leaves your PC (the only exception: the AI endpoint you choose to connect).
+[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
+[![Platform](https://img.shields.io/badge/Windows-macOS-Linux-2b7a78?style=for-the-badge)]()
+[![Built with Electron](https://img.shields.io/badge/Built_with-Electron-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://www.electronjs.org)
+[![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
+
+</div>
 
 ---
 
-## ⬇️ Download
+## 📥 Download
 
 | Platform | Installer |
 | --- | --- |
-| **Windows** 10 / 11 | [`GemAir-Setup.exe`](../../releases/latest) |
-| **macOS** (Apple Silicon & Intel) | [`GemAir.dmg`](../../releases/latest) |
-| **Linux** | [`GemAir.AppImage`](../../releases/latest) / `.deb` |
+| **Windows** 10 / 11 | `GemAir-Setup.exe` (from [Releases](https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest)) |
+| **macOS** (Apple Silicon & Intel) | `GemAir.dmg` |
+| **Linux** | `GemAir.AppImage` / `.deb` |
 
-Or press **“Get the app”** in the top bar of the web version — it detects your
-OS and links straight to the matching installer from the newest release.
-
-Prefer source?
+Or run from source:
 
 ```bash
 git clone https://github.com/rangwalaaliasgar55-bot/GemAir.git
@@ -32,19 +34,8 @@ npm install
 npm start
 ```
 
-> **Maintainers — activate automated builds (one time):**
-> ```bash
-> mkdir -p .github/workflows
-> git mv scripts/release-workflow.yml .github/workflows/release.yml
-> git commit -m "Add release workflow" && git push
-> ```
-> After that, pushing a `v*` tag builds all three installers and publishes them
-> to a GitHub Release automatically — and the in-app **Get the app** dialog
-> picks them up with no further changes.
-
-> 🏗 **How it all works:** [ARCHITECTURE.md](ARCHITECTURE.md) — the message
-> pipeline, the tool-calling loop, the memory model, and how Gem's 3D avatar
-> is rendered.
+> Full walkthrough: **[GUIDE.md](GUIDE.md)** — architecture, every module, teaching GemAir, extending it, and the build/deploy guide.
+> How it all works: **[ARCHITECTURE.md](ARCHITECTURE.md)** — the message pipeline, the tool-calling loop, the memory model, and how Gem's 3D avatar is rendered.
 
 ---
 
@@ -52,258 +43,71 @@ npm start
 
 | Module | What it does |
 | --- | --- |
-| 🎙 **Voice Assistant** | Speak naturally or type. **Live streaming** replies (instant, JARVIS-fast), animated particle orb, START AI loop, **wake word ("Hey GemAir")**, speech recognition + spoken replies in a **smooth natural female voice** (neural, free — or your OS's voice, offline). |
-| ⌨️ **Human-like typing** | Replies stream/type out in real time, with code blocks and a 💾 save-to-file action. |
-| 👋 **Personalized** | Greets you by name and time of day (12-hour clock), and remembers who you are forever. |
-| 🧠 **AI Brain (free out of the box)** | On Vercel, GemAir's AI chat runs on the server's free AI core — no key, no card. Advanced users can optionally plug in their own provider (Groq / OpenAI / OpenRouter / local Ollama) in Settings → AI Brain. |
-| 🧠 **Long-Term Memory (never lost)** | Automatically extracts durable facts about you (name, preferences, projects, goals) using your own model, stores them **on disk forever**, and injects them into every conversation. Full chat history is also persisted and restored on every launch. |
-| 🛠 **Tool-calling (50+ tools)** | The AI can *do* things, not just chat. **Web**: live weather, **real web search (no AI needed)**, fetch & read any webpage, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, **AI image generation**, open URLs. **Computer**: open any app, list/read/write/search files, clipboard, volume, screenshots, system control, email draft, WhatsApp, to-dos, file-organizing "missions", and (optional) shell commands with per-command confirmation. **Mind & life**: quotes, breathing exercises, weekly reports, emotional support. |
-| ⏰ **World clock** | Time in any city, 12-hour format, live UTC clock. |
-| 🎹 **Command palette** | `Ctrl/Cmd+K` to ask or navigate from anywhere; `Ctrl/Cmd+L` focuses chat; `Ctrl/Cmd+,` opens settings. |
-| 💛 **Emotional intelligence** | Detects **17 emotions** in real time, adapts tone + voice + empathy, and responds with structured compassion when you're low, guilty or anxious (crisis-aware, with real helplines). |
-| 🗣 **Multilingual** | Understands and replies in English, Hindi, Urdu (incl. Roman/Hinglish), Spanish and French. |
-| 🌅 **Daily Briefing** | Greets you by name & time of day, shows live weather, your top goal, and a rotating quote. |
-| 🌬 **Guided breathing** | A 4-7-8 calming-breathing exercise with an animated circle — tap "Breathe" when anxious. |
-| 📊 **Weekly report** | One-tap life report built from your mood, goals, tasks and memory (works offline, no key). |
-| 🍅 **Focus timer** | A Pomodoro timer in Life Companion. |
-| 💙 **Proactive check-in** | If your mood has been low for a few days, GemAir gently reaches out on launch. |
-| ⬇ **Backup & restore** | Export your whole memory (memories, notes, goals, mood) as JSON and import it back. |
-| 🧭 **Life & Career Companion** | Helps with career decisions, study plans, relationships, health, finances, self-improvement and emotional support — like a friend, mentor and coach. |
+| 🎙️ **Voice Assistant** | Speak naturally or type. Live streaming replies, animated particle orb, wake word ("Hey GemAir"), speech recognition + spoken replies in a smooth natural voice (free, or your OS's offline voice). |
+| ⌨️ **Human-like typing** | Replies stream and type out in real time, with code blocks and a save-to-file action. |
+| 👋 **Personalized** | Greets you by name and time of day, and remembers who you are forever. |
+| 🧠 **AI Brain (free out of the box)** | Runs on a free server-side AI core — no key, no card. Power users can plug in their own provider (Groq / OpenAI / OpenRouter / local Ollama) in Settings → AI Brain. |
+| 💾 **Long-term memory (never lost)** | Automatically extracts durable facts about you (name, preferences, projects, goals), stores them on disk forever, and injects them into every conversation. Full chat history is persisted and restored on launch. |
+| 🛠️ **Tool-calling (50+ tools)** | **Web**: weather, real web search, fetch & read any page, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, AI image generation. **Computer**: open apps, files, clipboard, volume, screenshots, system control, email drafts, WhatsApp, to-dos, file-organizing missions, optional shell commands with confirmation. **Mind & life**: quotes, breathing exercises, weekly reports, emotional support. |
+| 🌍 **World clock** | Time in any city, 12-hour format, live UTC clock. |
+| ⌨️ **Command palette** | `Ctrl/Cmd+K` to ask or navigate from anywhere; `Ctrl/Cmd+L` focuses chat; `Ctrl/Cmd+,` opens settings. |
+| ❤️ **Emotional intelligence** | Detects **17 emotions** in real time, adapts tone, voice and empathy, and responds with structured compassion when you're low, guilty or anxious (crisis-aware, with real helplines). |
+| 🌐 **Multilingual** | English, Hindi, Urdu (incl. Roman/Hinglish), Spanish and French. |
+| 📅 **Daily briefing** | Greets you by name, shows live weather, your top goal and a rotating quote. |
+| 🌬️ **Guided breathing** | A 4-7-8 calming exercise with an animated circle — tap "Breathe" when anxious. |
+| 📈 **Weekly report** | One-tap life report built from your mood, goals, tasks and memory (works offline, no key). |
+| ⏱️ **Focus timer** | A Pomodoro timer in Life Companion. |
+| 💬 **Proactive check-in** | If your mood has been low for a few days, GemAir gently reaches out on launch. |
+| 💾 **Backup & restore** | Export your whole memory (memories, notes, goals, mood) as JSON and import it back. |
+| 🤝 **Life & Career companion** | Career decisions, study plans, relationships, health, finances, self-improvement and emotional support — a friend, mentor and coach. |
 | 📊 **Mood tracking** | Visual mood graph, one-tap check-ins, affirmations and wellness tips (focus, stress, sleep, energy, motivation). |
 | 🎯 **Goals** | Persistent life/career/study/finance/health goals with categories and progress. |
-| 🌌 **3D dashboard** | Live 3D starfield + rotating wireframe polyhedron, parallax background, 3D-tilting panels, particle orb, boot sequence and animated HUD. |
-| 🌈 **RGB effects** | **RGB while you speak** (mic button + orb glow rainbow when recording), **RGB while the AI speaks** (animated orb), **RGB chat messages**, and a full **Rainbow theme** that cycles every accent color live. |
-| ⏰ **Reminders** | Persistent, with native OS notifications + spoken alerts when they fire. |
+| 🎨 **3D dashboard** | Live 3D starfield, rotating wireframe polyhedron, parallax background, particle orb, boot sequence and animated HUD. |
+| 🌈 **RGB effects** | RGB while you speak, RGB while the AI speaks, RGB chat messages, and a full Rainbow theme that cycles every accent color live. |
+| 🔔 **Reminders** | Persistent, with native OS notifications + spoken alerts. |
 | 📝 **Notes** | A persistent notebook — save, view, delete. |
-| 🖥 **System Core** | Live CPU / memory gauges, hostname, uptime, load average; **Memory / Notes / Reminders / Soul** tabs. |
-| ▦ **Agent Town** | A **living pixel-art office**: Alice, Bob, Carol and Dave wander between desks, the whiteboard, the server rack and the coffee machine. **Each agent has its own brain** (role + personality) — type `@Alice …` to route a task to them. |
-| 🛠 **Desktop automation ("missions")** | `organize_folder` (scan → classify → create folders → move), `find_duplicates`, `rename_files` by pattern, `archive_old_files` — multi-step workflows with a full **Mission Log** of every action (transparency). |
-| 🩺 **System guardian** | "What's slowing my PC down?" — live scan of CPU, RAM, and top processes, with one-line advice. |
-| 👁 **Screen awareness** | `see_screen` captures your screen so the AI is aware of what's on it. |
-| ◍ **World Monitor** | A living 3D globe with pulsing hotspots, a **2D command map**, live UTC clock, and a streaming headlines feed (free). |
-| 🎨 **Themes** | Crimson, Emerald, Cyan, and **RGB Rainbow** — the accent cycles through the full spectrum across the whole HUD. |
+| 🖥️ **System Core** | Live CPU / memory gauges, hostname, uptime, load average; Memory / Notes / Reminders / Soul tabs. |
+| 🏢 **Agent Town** | A living pixel-art office: Alice, Bob, Carol and Dave wander between desks, the whiteboard, the server rack and the coffee machine. Each agent has its own brain (role + personality) — type `@Alice` to route a task to them. |
+| 🗂️ **Desktop automation ("missions")** | `organize_folder`, `find_duplicates`, `rename_files`, `archive_old_files` — multi-step workflows with a full Mission Log of every action (transparency). |
+| 🛡️ **System guardian** | "What's slowing my PC down?" — live scan of CPU, RAM and top processes with one-line advice. |
+| 👁️ **Screen awareness** | `see_screen` captures your screen so the AI is aware of what's on it. |
+| 🌐 **World Monitor** | A living 3D globe with pulsing hotspots, a 2D command map, live UTC clock and a streaming headlines feed (free). |
+| 🎭 **Themes** | Crimson, Emerald, Cyan, and RGB Rainbow — the accent cycles through the full spectrum across the whole HUD. |
 | 🔒 **Local-first** | Profile, memories, notes, reminders and settings live on your disk. No telemetry. |
 
 ---
 
 ## 🧠 The memory that doesn't go away
 
-Stonic clones forget you the moment they close. GemAir doesn't:
+Most AI clones forget you the moment they close. GemAir doesn't:
 
-- **Automatic memory extraction** — after each exchange, GemAir asks your AI to list durable facts worth keeping ("user is a developer", "user prefers Python", "user's name is X") and saves them permanently.
+- **Automatic memory extraction** — after each exchange, GemAir asks your AI to list durable facts worth keeping and saves them permanently.
 - **Recency-weighted recall** — recent and important memories rank higher in every prompt.
-- **Auto-consolidation** — when the conversation grows long, older messages are summarized into durable long-term memory automatically (so context never overflows).
+- **Auto-consolidation** — long conversations are summarized into durable long-term memory so context never overflows.
 - **Memory search** — the AI can query its own memory on demand via a `search_memory` tool.
-- **Persistent transcript** — every message is written to disk and restored on launch, so you pick up exactly where you left off.
+- **Persistent transcript** — every message is written to disk and restored on launch.
 - **Injected context** — your memories are fed into every prompt, so GemAir always knows you.
-- **Your data, your disk** — everything is a local JSON file (`gemair-memory.json` in the app's data folder). Delete it any time, or manage memories from the UI.
+- **Your data, your disk** — everything is a local JSON file (`gemair-memory.json` in the app's data folder).
 
 Memory works even **offline** (simple heuristics) and becomes much smarter once you connect a key.
 
-### Truth & verified answers
-
-GemAir is built to **tell the truth, always**:
+### ✅ Truth & verified answers
 
 - **Never fabricates** — the system prompt forbids making up facts, quotes, statistics or citations.
 - **Search-first** — for anything factual or current it calls `web_search` / `fetch_webpage` and **cites its sources inline**.
 - **`verify_claim` tool** — ask "is it true that…?" and it fact-checks against real sources and reports *supported / unverified / no evidence* with links.
 - **Says "I don't know"** — when it can't verify something, it tells you plainly instead of guessing.
 
-### Skills & instructions in memory
+### 🎓 Skills & instructions in memory
 
-Teach GemAir and it remembers forever:
-
-- **Skills** — "teach me to…" or add one in System Core → **Skills**. GemAir reuses them whenever relevant.
-- **Standing Rules** — System Core → **Rules**. Add "always be concise", "call me Boss", "reply in Hindi" — GemAir follows them in every conversation.
-- Both are injected into every prompt and stored in your never-lost memory (local JSON + optional Supabase).
-
-### Emotional intelligence
-
-GemAir reads how you feel, not just what you say:
-
-- **Real-time emotion detection** — a built-in emotion engine classifies every message into joy, excitement, sadness, anxiety, anger, fear, love, gratitude, confidence, tiredness, boredom or curiosity (works offline, no key).
-- **Empathetic responses** — the AI's system prompt is informed by your current emotional state and recent mood trend, so it acknowledges your feelings first and adapts its tone and length.
-- **Mood history** — every meaningful exchange logs a mood point, charted on a live graph in the **Companion** panel, so you (and GemAir) can see how you've been trending.
-- **Check-ins** — one-tap mood buttons, daily affirmations, and practical wellness tips for focus, stress, sleep, energy, productivity and motivation.
+Teach GemAir and it remembers forever: **Skills** ("teach me to…") and **Standing Rules** ("always be concise", "call me Boss", "reply in Hindi") are injected into every prompt and stored in your never-lost memory.
 
 ---
 
-## ✅ Feature coverage vs Stonic AI
+## 🚀 Contributing
 
-Stonic AI (the $56 JARVIS app) — everything it advertises, GemAir does **free & open-source**:
+Found a bug or have an idea? Open an [Issue](https://github.com/rangwalaaliasgar55-bot/GemAir/issues) using the templates, or submit a [Pull Request](https://github.com/rangwalaaliasgar55-bot/GemAir/pulls). See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-| Stonic feature | GemAir |
-| --- | --- |
-| Voice assistant (speak naturally) | ✅ Neural female voice (EN/HI/UR/ES/FR) + STT |
-| System Core (memory / skills / soul / settings) | ✅ + **Skills** you teach it + **Standing Rules** it always follows |
-| Agent Town (pixel RPG, agents walk & work) | ✅ Animated pixel office, click-to-assign, live feed |
-| World Monitor (3D globe + 2D map + headlines) | ✅ All three |
-| Themes (Crimson / Emerald / Cyan) | ✅ Full re-skin |
-| Desktop automation (organize/duplicates/rename/archive) | ✅ Multi-step "missions" + **human-in-the-loop confirmation** |
-| Browser automation (open/search/navigate) | ✅ open_url, web_search, fetch_webpage, YouTube |
-| Screen awareness ("it sees") | ✅ `see_screen` captures your display |
-| System guardian ("what's slowing my PC") | ✅ `system_scan` + top-processes + advice |
-| WhatsApp messaging | ✅ `open_whatsapp` (wa.me) |
-| **Emotional voice intelligence** | ✅ Emotion detection + voice tone adapts + mood tracking |
-| Connect your own AI | ✅ Groq/OpenAI/OpenRouter/Ollama (or **free, no key**) |
-| Local-first privacy | ✅ All data stays on your machine |
-| Lifetime, no subscription | ✅ **$0 forever** |
+## 📄 License
 
-**Things GemAir has that Stonic doesn't:** persistent long-term memory that never forgets, emotional intelligence + mood graph, life/career coaching (goals, affirmations, wellness), real web search with **no AI required**, fact-checking (`verify_claim`), a command palette, wake word, tray icon, and a free Vercel web version with cloud sync.
-
----
-
-## 🚀 Run it
-
-Requirements: **Node.js 18+**.
-
-```bash
-git clone https://github.com/rangwalaaliasgar55-bot/GemAir.git
-cd GemAir
-npm install
-npm start
-```
-
----
-
-## 🌐 Deploy to Vercel (free web version)
-
-GemAir is **Vercel-ready**: the same UI runs as a static site, and all the free tools
-(weather, web search, crypto, currency, translate, dictionary, headlines) are
-serverless functions in `/api` — **no key required, ever**.
-
-```bash
-npm i -g vercel
-vercel          # deploy; it auto-detects vercel.json (api/ functions + renderer/ static)
-```
-
-**Environment variables (all optional)** — see `.env.example`:
-
-| Variable | Purpose |
-| --- | --- |
-| `GROQ_API_KEY` (also `OPENAI_API_KEY`, `AI_KEY`, `GROQ_KEY`, `VERCEL_GROQ_KEY`) | Optional — a server-side key unlocks full LLM chat. Without one, `/api/chat` answers with the built-in free conversational brain, so users are never asked for a key. |
-| `AI_BASE_URL` / `AI_MODEL` | Point at any OpenAI-compatible provider. |
-| `SUPABASE_URL` / `SUPABASE_ANON_KEY` | Optional — cloud memory sync (see below). |
-
-> 🔎 **Free web search, no AI:** queries like *"search latest AI news"*, *"weather in Mumbai"*, *"bitcoin price"*, *"convert 100 usd to inr"* hit the real DuckDuckGo/Wikipedia/Open-Meteo/CoinGecko APIs directly through `/api/*` — genuine results, zero cost, no key.
-
----
-
-## 🗄 Database: Supabase vs Neon
-
-**Use Supabase.** Here's why for this project:
-
-| | Supabase ✅ | Neon |
-| --- | --- | --- |
-| Auth | Built-in (Anonymous sign-ins → per-user Row-Level Security) | None — you wire it yourself |
-| Auto REST API | Instant PostgREST + JS client | Just a Postgres URL (need an API layer) |
-| Realtime / storage | Included | Not included |
-| Idle behavior | Free project stays warm | Free tier **suspends when idle** (cold starts) |
-| Best for | Full backend-in-a-box for a personal AI | Raw serverless Postgres behind your own API |
-
-**Setup — the schema applies itself:**
-1. Create a project at [supabase.com](https://supabase.com).
-2. Connect the repo: Supabase → **Integrations → GitHub** → pick this repo,
-   set **production branch** to `main`, turn **Deploy to production** on.
-   Everything in [`supabase/migrations/`](supabase/migrations) is then applied
-   automatically on every push to `main` — no copy-pasting SQL.
-3. Enable **Anonymous sign-ins** (Authentication → Providers → Anonymous).
-   This is an auth setting, not SQL, so it is the one switch you flip by hand.
-4. Connect Vercel: Supabase → **Integrations → Vercel** → *Add project connection*.
-   `SUPABASE_URL` + `SUPABASE_ANON_KEY` are injected into Vercel for you.
-
-> Prefer to do it manually? Run the contents of
-> [`supabase/migrations/`](supabase/migrations) in the SQL editor once.
-> The migration is idempotent, so re-running it is always safe.
-
-The app stores memory local-first (localStorage) and **mirrors** it to Supabase, so your
-memories, notes, goals and mood follow you across devices. No login screen — anonymous
-sign-ins keep it frictionless while Row-Level Security keeps each user's data private.
-
----
-
-## 📦 Build a downloadable installer for your OS
-
-GemAir ships with `electron-builder` pre-configured. Build an installer for your current OS:
-
-```bash
-npm run dist          # builds for your current OS
-```
-
-Or target a specific platform:
-
-```bash
-npm run dist:win      # Windows  (.exe NSIS installer)
-npm run dist:mac      # macOS   (.dmg)
-npm run dist:linux    # Linux   (.AppImage + .deb)
-```
-
-Your installers land in the **`release/`** folder — share them, put them on a flash drive, install on any computer.
-
-> **Note (Windows):** to sign the installer you'd add a code-signing certificate. Unsigned builds are perfectly usable — Windows may show a "More info → Run anyway" prompt, which is normal for free/open-source apps.
-
----
-
-## 🔌 Connecting your AI (optional — already free on Vercel)
-
-On the **web version (Vercel)** GemAir's AI chat is free out of the box — the serverless `/api/chat` uses the server's AI key (if set) or the built-in free brain, and the end-user is **never** asked for a key.
-
-The desktop app works out of the box with the **offline brain** (time, date, weather, web search, math, reminders, notes, app/system control — no key needed).
-
-If you want to plug in your **own** provider (fully optional), open **Settings → AI Brain**:
-
-1. Get a key from your provider (e.g. a free Groq key at [console.groq.com/keys](https://console.groq.com/keys) — no card needed, very fast).
-2. Click a preset, paste your key, Save.
-
-| Preset | Base URL | Needs key? |
-| --- | --- | --- |
-| **Groq (free tier)** ⚡ | `https://api.groq.com/openai/v1` | ✅ your key (free) |
-| OpenAI | `https://api.openai.com/v1` | ✅ your key |
-| OpenRouter | `https://openrouter.ai/api/v1` | ✅ your key (many free models) |
-| **Ollama (local)** | `http://localhost:11434/v1` | ❌ free & private |
-
-Any **OpenAI-compatible** endpoint works — and GemAir will use **only the endpoint you configure**. Your key is stored only on your own machine.
-
----
-
-## 📁 Project structure
-
-```
-GemAir/
-├── main.js            # Electron main process (AI + tool-calling, memory store,
-│                      #   weather/web search, reminders scheduler, system control, IPC)
-├── preload.js         # Secure context-bridge API
-├── renderer/
-│   ├── index.html     # UI structure (assistant / core / town / world)
-│   ├── style.css      # Sci-fi HUD + themes
-│   └── app.js         # App logic (orb, globe, voice, memory, agents…)
-├── build/icon.png     # App icon
-└── package.json       # Build config (electron-builder)
-```
-
-### Free, keyless services used
-- **Weather** — [Open-Meteo](https://open-meteo.com/) (no key)
-- **Web search** — [DuckDuckGo](https://duckduckgo.com/) Instant Answers (no key)
-- **Web pages** — fetched directly from any URL
-- **Wikipedia / Dictionary** — public APIs (no key)
-- **Crypto prices** — [CoinGecko](https://www.coingecko.com/) (no key)
-- **Currency** — [Frankfurter](https://frankfurter.app/) (no key)
-- **Translation** — [MyMemory](https://mymemory.translated.net/) (no key)
-- **Image generation** — [Pollinations](https://pollinations.ai/) (no key)
-- **Headlines** — [Hacker News](https://news.ycombinator.com/) API (no key)
-- **Voice** — Google neural TTS (free, female) with your OS voice as offline fallback
-
-Everything else is fully local.
-
-### Full computer access (opt-in)
-By default GemAir can open apps, manage files, control volume, take screenshots and control the system. To let it run **arbitrary shell commands**, enable *Advanced → Allow shell commands* in Settings — every command is shown to you for confirmation first, and a few obviously dangerous patterns are blocked.
-
----
-
-## 🧾 License
-
-[MIT](LICENSE) — free to use, modify, and share.
-
----
-
-*GemAir is an independent, free/open-source project. It is not affiliated with Stonic AI or any other product.*
+MIT — see [LICENSE](LICENSE). Free to use, modify and distribute.
