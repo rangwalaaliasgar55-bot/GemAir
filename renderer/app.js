@@ -107,7 +107,29 @@ const api = {
     for (const ch of text) { onDelta(ch); await sleep(12); } // simulate streaming locally
     return { ok: true, reply: text };
   },
-  async aiSummarize(config, text) { if (window.gemair) return window.gemair.aiSummarize(config, text); return { ok: true, summary: null }; },
+  /**
+   * S9 — browser summarizer.
+   *
+   * In the web build this returned `{ ok: true, summary: null }`, so context
+   * compaction silently did nothing in exactly the free/no-key mode GemAir
+   * advertises: the transcript grew until it was truncated. When a key IS
+   * configured we still prefer the model; otherwise we fall back to a local
+   * extractive summarizer that runs entirely in the page.
+   */
+  async aiSummarize(config, text) {
+    if (window.gemair) return window.gemair.aiSummarize(config, text);
+    if (config && config.apiKey && config.baseURL && window.aiClient) {
+      try {
+        const r = await window.aiClient.directClientChat(config, [
+          { role: 'system', content: 'Summarize the conversation below into a compact factual brief (max 8 sentences). Keep names, decisions, numbers and open tasks.' },
+          { role: 'user', content: String(text || '').slice(0, 12000) }
+        ]);
+        if (r && r.ok && r.reply) return { ok: true, summary: r.reply.trim(), via: 'model' };
+      } catch (e) { /* fall through to the local summarizer */ }
+    }
+    const summary = localExtractiveSummary(text);
+    return { ok: !!summary, summary, via: 'local' };
+  },
   async aiOffline(text) {
     if (window.gemair) return window.gemair.aiOffline(text);
     return { ok: true, reply: await offlineBrain(text) };
@@ -2171,6 +2193,10 @@ async function handleMessage(text) {
   // older turns become one summary message while recent turns remain verbatim.
   await compactChatContextIfNeeded(text);
 
+  // S6: contextual HUD dock — rain/storm questions open weather, focus/pomodoro
+  // opens the timer. Guarded so it never opens more than once per 10 minutes.
+  try { hudAutoFromMessage(text); } catch (e) {}
+
   // Understand the user's emotion — always, automatically
   const emo = await api.analyzeEmotion(text);
   const lang = detectLanguage(text);
@@ -2327,6 +2353,61 @@ async function handleMessage(text) {
   activeTypingEl = null; // reply finished — stop attaching tool chips
   updateContextMeter();
   if (!skipFinalSpeak) speak(reply);
+}
+
+/**
+ * S9 — local extractive summarizer (no model, no network, no key).
+ *
+ * Classic TF-based sentence scoring: rank sentences by the frequency of their
+ * non-stopword terms, boost lines that state a fact or a decision, then emit
+ * the best few IN ORIGINAL ORDER so the summary still reads chronologically.
+ * Good enough to keep the context window bounded in free mode, which is all
+ * compaction needs — and it never hallucinates, because it only ever quotes.
+ */
+const SUMMARY_STOPWORDS = new Set(('a an and are as at be been but by for from had has have he her his i if in is it its me my no not of on or our she so that the their them then there these they this to too us was we were what when which who will with you your yes okay ok just like really very gem user assistant').split(' '));
+
+function localExtractiveSummary(text, maxSentences = 8) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (raw.length < 200) return raw || null;
+
+  const sentences = (raw.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [])
+    .map((x) => x.trim())
+    .filter((x) => x.length > 25 && x.length < 400);
+  if (sentences.length <= maxSentences) return sentences.join(' ') || null;
+
+  // TF-IDF over the sentence set: a word repeated across MANY sentences is
+  // boilerplate, not signal, so it is down-weighted. (Plain term frequency put
+  // filler sentences at the top because they echoed each other's wording.)
+  const tokenize = (str) => (String(str).toLowerCase().match(/[a-z][a-z'-]{2,}/g) || []).filter((w) => !SUMMARY_STOPWORDS.has(w));
+  const df = new Map();
+  const sentTokens = sentences.map((sentence) => {
+    const set = new Set(tokenize(sentence));
+    for (const w of set) df.set(w, (df.get(w) || 0) + 1);
+    return set;
+  });
+  const N = sentences.length;
+
+  const scored = sentences.map((sentence, index) => {
+    const terms = sentTokens[index];
+    let score = 0;
+    for (const w of terms) {
+      score += Math.log(1 + N / (1 + (df.get(w) || 0)));
+    }
+    score /= Math.sqrt(Math.max(4, terms.size)); // normalise for length
+    // decisions, commitments, identity and numbers carry disproportionate value
+    if (/\b(decided|agreed|will|should|need|must|plan|prefer|remember|my name|deadline|because)\b/i.test(sentence)) score *= 1.45;
+    if (/\d/.test(sentence)) score *= 1.2;
+    if (/\b[A-Z][a-z]{2,}\b/.test(sentence)) score *= 1.1;   // proper nouns
+    return { sentence, index, score };
+  });
+
+  const picked = scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxSentences)
+    .sort((a, b) => a.index - b.index)
+    .map((x) => x.sentence);
+
+  return picked.join(' ') || null;
 }
 
 // Periodically summarize older transcript into durable long-term memory
@@ -2569,6 +2650,10 @@ async function startMicMeter() {
       micAnalyser = ctx.createAnalyser(); micAnalyser.fftSize = 128; micAnalyser.smoothingTimeConstant = 0.74;
       ctx.createMediaStreamSource(micStream).connect(micAnalyser);
     }
+    // S5: avatar.js implemented setMicAnalyser() and consumed micVolume for a
+    // reactive listening aura, but nothing ever called it — so the aura was
+    // dead code. Wire it here, where the mic stream actually exists.
+    try { if (window.gemAvatar) window.gemAvatar.setMicAnalyser(micAnalyser); } catch (e) {}
     if (micMeterFrame) return;
     const data = new Uint8Array(micAnalyser.frequencyBinCount);
     const draw = () => {
@@ -3385,6 +3470,90 @@ function startTownPreview() {
   }
   scheduleViewFrame('assistant', loop);
   canvas.addEventListener('click', () => { playSfx('swoosh'); switchView('town'); });
+}
+
+// ---------------------------------------------------------------------------
+// S10 — quick-command editor.
+//
+// The ＋ in the expert-panel tab strip had no handler at all — it was a dead
+// glyph. It now opens a small editor that appends to the SAME quickCommands
+// strip the built-ins live in, persisted to localStorage.
+// ---------------------------------------------------------------------------
+const QC_KEY = 'gemair:quick-commands';
+
+function readCustomQuickCommands() {
+  try {
+    const list = JSON.parse(localStorage.getItem(QC_KEY) || '[]');
+    return Array.isArray(list) ? list.filter((x) => x && x.label && x.cmd).slice(0, 12) : [];
+  } catch (e) { return []; }
+}
+
+function writeCustomQuickCommands(list) {
+  try { localStorage.setItem(QC_KEY, JSON.stringify(list.slice(0, 12))); } catch (e) {}
+}
+
+function renderQuickCommands() {
+  const strip = $('#quickCommands');
+  if (!strip) return;
+  strip.querySelectorAll('.qc.custom').forEach((n) => n.remove());
+  for (const item of readCustomQuickCommands()) {
+    const btn = document.createElement('button');
+    btn.className = 'qc custom';
+    btn.dataset.cmd = item.cmd;
+    btn.textContent = item.label;
+    btn.title = `${item.cmd} — right-click to remove`;
+    btn.addEventListener('click', () => {
+      const input = $('#chatInput');
+      if (!input) return;
+      input.value = item.cmd;
+      input.focus();
+      playSfx('click');
+    });
+    btn.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      writeCustomQuickCommands(readCustomQuickCommands().filter((x) => x.cmd !== item.cmd || x.label !== item.label));
+      renderQuickCommands();
+      toast('QUICK COMMANDS', `Removed “${item.label}”`, '⌫');
+    });
+    strip.appendChild(btn);
+  }
+}
+
+function openQuickCommandEditor() {
+  const strip = $('#quickCommands');
+  if (!strip || strip.querySelector('.qc-editor')) return;
+  playSfx('click');
+  const editor = document.createElement('div');
+  editor.className = 'qc-editor';
+  editor.innerHTML = `
+    <input type="text" id="qcEditorInput" placeholder="Label ⇢ command   e.g.  📦 Backup ⇢ Back up my documents" aria-label="New quick command" />
+    <button class="mini-btn" id="qcEditorSave" aria-label="Save quick command">✓</button>
+    <button class="mini-btn" id="qcEditorCancel" aria-label="Cancel">✕</button>`;
+  strip.parentNode.insertBefore(editor, strip);
+  const input = $('#qcEditorInput');
+  input?.focus();
+
+  const close = () => editor.remove();
+  const save = () => {
+    const raw = (input?.value || '').trim();
+    if (!raw) return close();
+    const [labelPart, ...rest] = raw.split(/⇢|=>|\|/);
+    const label = (labelPart || '').trim().slice(0, 24);
+    const cmd = (rest.join('⇢').trim() || labelPart || '').trim().slice(0, 200);
+    if (!label || !cmd) { toast('QUICK COMMANDS', 'Use “Label ⇢ command”.', '⚠️'); return; }
+    const list = readCustomQuickCommands();
+    list.push({ label, cmd });
+    writeCustomQuickCommands(list);
+    renderQuickCommands();
+    close();
+    toast('QUICK COMMANDS', `Added “${label}”`, '⚡');
+  };
+  $('#qcEditorSave')?.addEventListener('click', save);
+  $('#qcEditorCancel')?.addEventListener('click', close);
+  input?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -4580,6 +4749,18 @@ function bindEvents() {
   }));
 
   // memory / notes / reminders add
+  // S10 — the expert-panel ＋ finally does something
+  const expertPlus = document.querySelector('.expert-plus');
+  if (expertPlus) {
+    expertPlus.setAttribute('role', 'button');
+    expertPlus.setAttribute('tabindex', '0');
+    expertPlus.setAttribute('aria-label', 'Add a quick command');
+    expertPlus.setAttribute('title', 'Add a quick command');
+    expertPlus.addEventListener('click', openQuickCommandEditor);
+    expertPlus.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openQuickCommandEditor(); } });
+  }
+  renderQuickCommands();
+
   // S4 — interface language picker (+ RTL switch)
   const langSel = $('#setLanguage');
   if (langSel && window.GemAirI18n) {
@@ -5211,13 +5392,76 @@ let hudFocusTimer = null;
 
 function setupHudDock() {
   $('#hudDockClose')?.addEventListener('click', closeHudDock);
+  startHudAutoRules(); // S6
   if (api.onHudPanel) api.onHudPanel(({ action, panel, city }) => {
     if (action === 'close') closeHudDock();
     else openHudDock(panel, city);
   });
 }
 
+/**
+ * S6 — HUD dock auto-open rules.
+ *
+ * The dock could only be opened by an explicit tool call or the palette, so in
+ * practice it almost never appeared. These are the three contextual triggers
+ * from the roadmap. Each fires at most once per condition so the dock never
+ * fights the user, and all of them respect a manual close.
+ */
+let hudAutoState = { lastPanel: '', lastAt: 0, dismissedUntil: 0, reportShownWeek: '' };
+
+function hudAutoAllowed(panel) {
+  const now = Date.now();
+  if (now < hudAutoState.dismissedUntil) return false;                 // user closed it recently
+  if (hudAutoState.lastPanel === panel && now - hudAutoState.lastAt < 10 * 60 * 1000) return false;
+  return true;
+}
+
+function hudAutoOpen(panel, arg) {
+  if (!hudAutoAllowed(panel)) return false;
+  hudAutoState.lastPanel = panel;
+  hudAutoState.lastAt = Date.now();
+  openHudDock(panel, arg);
+  return true;
+}
+
+/** Rule 1 + 3: inspect the user's message for weather/focus intent. */
+function hudAutoFromMessage(text) {
+  const t = String(text || '').toLowerCase();
+  if (!t) return;
+  // rain / storm questions → weather panel
+  if (/\b(rain|raining|rainy|storm|stormy|thunder|downpour|monsoon|umbrella|drizzle|shower[s]?|hail|snow)\b/.test(t)) {
+    const city = (t.match(/\bin\s+([a-z][a-z\s]{2,30}?)(?:\s*[?.,]|$)/) || [])[1];
+    hudAutoOpen('weather', city ? city.trim() : (profile.city || DEFAULTS.city));
+    return;
+  }
+  // focus / pomodoro → focus timer
+  if (/\b(focus(ing|ed)?|pomodoro|deep work|concentrate|study session|work sprint)\b/.test(t)) {
+    hudAutoOpen('focus');
+  }
+}
+
+/** Rule 2: Friday evening → the weekly report is ready. */
+function hudAutoWeeklyReport() {
+  const now = new Date();
+  if (now.getDay() !== 5) return;              // Friday
+  if (now.getHours() < 17 || now.getHours() > 22) return;  // evening
+  const week = `${now.getFullYear()}-${now.getMonth()}-${Math.floor(now.getDate() / 7)}`;
+  if (hudAutoState.reportShownWeek === week) return;
+  hudAutoState.reportShownWeek = week;
+  try { localStorage.setItem('gemair:report-week', week); } catch (e) {}
+  hudAutoOpen('report');
+}
+
+function startHudAutoRules() {
+  try { hudAutoState.reportShownWeek = localStorage.getItem('gemair:report-week') || ''; } catch (e) {}
+  // check on boot, then hourly — cheap, and survives a long-running session
+  setTimeout(hudAutoWeeklyReport, 4000);
+  setInterval(hudAutoWeeklyReport, 30 * 60 * 1000);
+}
+
 function closeHudDock() {
+  // S6: a manual close means "leave me alone" — suppress auto-open for a while.
+  hudAutoState.dismissedUntil = Date.now() + 30 * 60 * 1000;
   $('#hudDock')?.classList.remove('open');
   if (hudClockTimer) { clearInterval(hudClockTimer); hudClockTimer = null; }
   if (hudFocusTimer) { clearInterval(hudFocusTimer); hudFocusTimer = null; }

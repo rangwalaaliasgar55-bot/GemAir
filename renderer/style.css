@@ -1234,3 +1234,11 @@ body.rtl .sat-item,
 body.rtl .todo-item { flex-direction: row-reverse; }
 body.rtl .core-tabs,
 body.rtl .sat-tabs { flex-direction: row-reverse; }
+
+/* S10 — quick-command editor */
+.qc-editor { display: flex; gap: 6px; margin: 8px 0 4px; }
+.qc-editor input {
+  flex: 1; min-width: 0; background: rgba(0,0,0,0.42); border: 1px solid var(--accent-soft);
+  border-radius: 8px; padding: 7px 10px; color: var(--text); font-size: 11.5px; outline: none;
+}
+.qc.custom { border-style: dashed; }
