@@ -567,7 +567,7 @@ function stripHtml(html) {
 async function fetchWebpage(url) {
   let u = String(url).trim();
   if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-  const res = await fetch(u, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GemAir/1.0)' } });
+  const res = await fetch(u, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GemAir/2.0)' } });
   if (!res.ok) return { error: 'HTTP ' + res.status };
   const html = await res.text();
   const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';

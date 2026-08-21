@@ -43,22 +43,22 @@ npm start
 
 | Module | What it does |
 | --- | --- |
-| 🎙️ **Voice Assistant** | Speak naturally or type. Live streaming replies, animated particle orb, wake word ("Hey GemAir"), speech recognition + spoken replies in a smooth natural voice (free, or your OS's offline voice). |
+| 🎙️ **Voice Assistant** | Speak naturally or type. Live streaming replies, “Hey Gem” interim wake loop, mic VU, instant speech barge-in, Gem/JARVIS/Nova presets, language quick-switch, and natural neural or offline OS voices. |
 | ⌨️ **Human-like typing** | Replies stream and type out in real time, with code blocks and a save-to-file action. |
 | 👋 **Personalized** | Greets you by name and time of day, and remembers who you are forever. |
 | 🧠 **AI Brain (free out of the box)** | Runs on a free server-side AI core — no key, no card. Power users plug in their own provider with one-click presets: **ChatGPT (OpenAI) · Gemini · Claude** · Groq / OpenRouter / local Ollama, in Settings → AI Brain. |
 | 💾 **Long-term memory (never lost)** | Automatically extracts durable facts about you (name, preferences, projects, goals), stores them on disk forever, and injects them into every conversation. Full chat history is persisted and restored on launch. |
 | 🛠️ **Tool-calling (50+ tools)** | **Web**: weather, real web search, fetch & read any page, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, AI image generation. **Computer**: open apps, files, clipboard, volume, screenshots, system control, email drafts, WhatsApp, to-dos, file-organizing missions, optional shell commands with confirmation. **Mind & life**: quotes, breathing exercises, weekly reports, emotional support. |
 | 🌍 **World clock** | Time in any city, 12-hour format, live UTC clock. |
-| ⌨️ **Command palette** | `Ctrl/Cmd+K` to ask or navigate from anywhere; `Ctrl/Cmd+L` focuses chat; `Ctrl/Cmd+,` opens settings. |
+| ⌨️ **Command palette** | Fuzzy `Ctrl/Cmd+K` search across views, themes, HUD panels, agents, memories and settings toggles, with recents; `Ctrl/Cmd+L` focuses chat. |
 | ❤️ **Emotional intelligence** | Detects **17 emotions** in real time, adapts tone, voice and empathy, and responds with structured compassion when you're low, guilty or anxious (crisis-aware, with real helplines). |
 | 🌐 **Multilingual** | English, Hindi, Urdu (incl. Roman/Hinglish), Spanish and French. |
 | 📅 **Daily briefing** | Greets you by name, shows live weather, your top goal and a rotating quote. |
 | 🌬️ **Guided breathing** | A 4-7-8 calming exercise with an animated circle — tap "Breathe" when anxious. |
-| 📈 **Weekly report** | One-tap life report built from your mood, goals, tasks and memory (works offline, no key). |
+| 📈 **Weekly report** | One-tap life report with canvas sparklines for mood, tasks completed per day and goal progress (works offline, no key). |
 | ⏱️ **Focus timer** | A Pomodoro timer in Life Companion. |
 | 💬 **Proactive check-in** | If your mood has been low for a few days, GemAir gently reaches out on launch. |
-| 💾 **Backup & restore** | Export your whole memory (memories, notes, goals, mood) as JSON and import it back. |
+| 💾 **Backup & restore** | Export and restore a validated JSON backup of your entire profile, memories, notes, goals, mood, voice and settings. |
 | 🤝 **Life & Career companion** | Career decisions, study plans, relationships, health, finances, self-improvement and emotional support — a friend, mentor and coach. |
 | 📊 **Mood tracking** | Visual mood graph, one-tap check-ins, affirmations and wellness tips (focus, stress, sleep, energy, motivation). |
 | 🎯 **Goals** | Persistent life/career/study/finance/health goals with categories and progress. |
@@ -67,11 +67,11 @@ npm start
 | 🔔 **Reminders** | Persistent, with native OS notifications + spoken alerts. |
 | 📝 **Notes** | A persistent notebook — save, view, delete. |
 | 🖥️ **System Core** | Live CPU / memory gauges, hostname, uptime, load average; Memory / Notes / Reminders / Soul tabs. |
-| 🏢 **Agent Town** | A living pixel-art office: Alice, Bob, Carol and Dave wander between desks, the whiteboard, the server rack and the coffee machine. Each agent has its own brain (role + personality) — type `@Alice` to route a task to them. |
+| 🏢 **Agent Town 2.0** | A time-lit pixel office where agents walk and collaborate with restricted real tools: Alice researches, Bob operates files, Carol verifies system health, and Dave opens communication drafts. Handoffs, actual results and every mission action stay visible. |
 | 🗂️ **Desktop automation ("missions")** | `organize_folder`, `find_duplicates`, `rename_files`, `archive_old_files` — multi-step workflows with a full Mission Log of every action (transparency). |
 | 🛡️ **System guardian** | "What's slowing my PC down?" — live scan of CPU, RAM and top processes with one-line advice. |
-| 👁️ **Screen awareness** | `see_screen` captures your screen so the AI is aware of what's on it. |
-| 🌐 **World Monitor** | A living 3D globe with pulsing hotspots, a 2D command map, live UTC clock and a streaming headlines feed (free). |
+| 👁️ **Screen awareness** | Optional active-session awareness compares privacy-preserving low-resolution fingerprints and describes meaningful screen changes without saving images. Explicit `see_screen` capture remains available. |
+| 🌐 **World Monitor** | Interactive dotted/wireframe globe with clickable news hotspots, dedicated 2D command-map mode, multi-city UTC strip and tech/world/business feeds. |
 | 🎭 **HUD Themes (string system)** | Crimson, Emerald, Cyan, Violet, Amber + RGB Rainbow. Every theme is a plain string token table (`renderer/themes.js`) — pick one from the top bar, `Ctrl+K`, or Settings → HUD THEMES and the **entire interface** re-skins: DOM, canvases, glows. Choice is saved and applies everywhere. |
 | 🔒 **Local-first** | Profile, memories, notes, reminders and settings live on your disk. No telemetry. |
 

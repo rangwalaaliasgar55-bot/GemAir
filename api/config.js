@@ -6,6 +6,6 @@ module.exports = (req, res) => {
       ? { url: process.env.SUPABASE_URL, anonKey: process.env.SUPABASE_ANON_KEY || '' }
       : null,
     aiConfigured: !!(process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY),
-    version: '1.0.0'
+    version: '2.0.0'
   });
 };

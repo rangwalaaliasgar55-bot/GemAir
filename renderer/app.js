@@ -120,7 +120,7 @@ const api = {
     try { const r = await fetch('/api/headlines?limit=' + (limit || 14) + '&category=' + encodeURIComponent(category || 'tech')); return await r.json(); } catch { return []; }
   },
   openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
-  async version() { return window.gemair ? window.gemair.version() : '1.0.0'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.0.0'; },
   onReminder(cb) { if (window.gemair) window.gemair.onReminder(cb); },
   onWakeToggle(cb) { if (window.gemair) window.gemair.onWakeToggle(cb); },
   onActivity(cb) { if (window.gemair && window.gemair.onActivity) window.gemair.onActivity(cb); },
@@ -1779,6 +1779,42 @@ const humanError = (err) => {
   return String(err).slice(0, 140);
 };
 
+async function runBrowserAgentTool(agentName, task) {
+  const started = Date.now();
+  let name, args, result;
+  if (agentName === 'Alice') {
+    name = 'web_search'; args = { query: task }; result = await webGet('search', { q: task });
+  } else if (agentName === 'Bob') {
+    name = /organize/i.test(task) ? 'organize_folder' : /read|list/i.test(task) ? 'list_directory' : 'write_file';
+    const filename = (task.match(/([\w.-]+\.(?:txt|md|json|csv))/i) || [])[1] || 'gemair-agent-output.md';
+    args = { path: filename };
+    if (name === 'write_file') {
+      const content = `# Bob · GemAir File Output\n\n${task}\n`;
+      downloadText(content, filename); result = { ok: true, path: filename + ' (browser download)', bytes: content.length };
+    } else result = { error: `${name} requires GemAir Desktop filesystem permission.` };
+  } else if (agentName === 'Carol') {
+    name = 'system_scan'; args = {}; result = await api.getSystemInfo();
+  } else {
+    const email = task.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    const phone = task.match(/\+?\d[\d\s()-]{7,}\d/);
+    if (email) { name = 'send_email'; args = { to: email[0], subject: 'GemAir draft', body: task }; }
+    else if (phone) { name = 'open_whatsapp'; args = { phone: phone[0].replace(/\D/g, ''), text: task }; }
+    else { name = 'send_email'; args = {}; result = { error: 'Provide an email address or WhatsApp phone number.' }; }
+    if (!result) {
+      const approved = window.confirm(`Open ${name === 'send_email' ? 'an email' : 'a WhatsApp'} draft for ${args.to || args.phone}?`);
+      if (approved) {
+        const url = name === 'send_email'
+          ? `mailto:${encodeURIComponent(args.to)}?subject=${encodeURIComponent(args.subject)}&body=${encodeURIComponent(args.body)}`
+          : `https://wa.me/${args.phone}?text=${encodeURIComponent(args.text)}`;
+        window.open(url, '_blank'); result = { ok: true, draftOpened: true, target: args.to || args.phone };
+      } else result = { error: 'Cancelled by user (human-in-the-loop confirmation).' };
+    }
+  }
+  const ok = !(result && result.error);
+  if (window.webStore && window.webStore.logAction) await window.webStore.logAction(name, `${agentName} ${ok ? 'completed' : 'failed'}: ${JSON.stringify(result).slice(0, 220)}`);
+  return { name, args, result, ok, ms: Date.now() - started };
+}
+
 // Don't treat tool commands as emotional distress
 function hasToolIntent(text) {
   return /\b(search|google|weather|open|launch|translate|convert|define|remind|note|screenshot|volume|what time|calculate|bitcoin|price|todo|goal|email|whatsapp|organize|rename|archive|list|find|show|status)\b/i.test(text);
@@ -1949,11 +1985,14 @@ async function handleMessage(text) {
       if (res.ok) { reply = res.reply; chatHistory.push({ role: 'assistant', content: reply }); }
       else { reply = '⚠ ' + humanError(res.error); }
     } else if (useAI) {
-      // web mode: use free Vercel serverless proxy or user key
+      // Web mode still performs the mapped browser-safe tool first; the model
+      // then explains the actual result instead of role-playing an action.
+      const toolRun = await runBrowserAgentTool(agentName, task);
+      agentToolRuns = [toolRun];
       reply = await (async () => {
-        const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a resident agent of GemAir. Help with: ${task}. Be truthful and concise.` }, ...chatHistory.slice(-14)]);
+        const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a GemAir resident agent. Report this REAL tool result truthfully and concisely: ${JSON.stringify(toolRun.result)}` }, ...chatHistory.slice(-14)]);
         if (res.ok) return res.reply;
-        return `[${agentName}] ${(await api.aiOffline(task)).reply}`;
+        return `[${agentName}] ${toolRun.ok ? '✓' : '✗'} ${toolRun.name}: ${JSON.stringify(toolRun.result)}`;
       })();
       chatHistory.push({ role: 'assistant', content: reply });
     } else {

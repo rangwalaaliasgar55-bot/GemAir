@@ -5,7 +5,7 @@ module.exports = (req, res) => {
   res.json({
     status: 'ok',
     name: 'GemAir',
-    version: '1.0.0',
+    version: '2.0.0',
     aiConfigured: !!(keyNames.map((n) => process.env[n]).find((v) => v && String(v).trim())),
     supabaseConfigured: !!process.env.SUPABASE_URL,
     time: new Date().toISOString()
