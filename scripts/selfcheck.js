@@ -63,14 +63,14 @@ ok('JSON files parse');
 try {
   const pkg = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
-  if (pkg.version !== '2.0.0') fail(`package version must be 2.0.0 (found ${pkg.version})`);
+  if (pkg.version !== '2.1.0') fail(`package version must be 2.1.0 (found ${pkg.version})`);
   if (lock.version !== pkg.version || (lock.packages && lock.packages[''] && lock.packages[''].version !== pkg.version)) fail('package-lock version does not match package.json');
   for (const asset of ['build/icon.png', 'build/icon.ico', 'build/icons/16x16.png', 'build/icons/256x256.png', 'build/icons/512x512.png', 'build/icons/1024x1024.png']) {
     const full = path.join(ROOT, asset);
     if (!fs.existsSync(full) || fs.statSync(full).size < 100) fail(`missing/empty release icon: ${asset}`);
   }
-  if (!fs.existsSync(path.join(ROOT, 'CHANGELOG.md')) || !read('CHANGELOG.md').includes('## [2.0.0]')) fail('CHANGELOG.md must document 2.0.0');
-  else ok('2.0.0 release metadata and platform icons present');
+  if (!fs.existsSync(path.join(ROOT, 'CHANGELOG.md')) || !read('CHANGELOG.md').includes('## [2.1.0]')) fail('CHANGELOG.md must document 2.1.0');
+  else ok('2.1.0 release metadata and platform icons present');
 } catch (e) { fail('release metadata check failed: ' + e.message); }
 
 // ---------------------------------------------------------------------------

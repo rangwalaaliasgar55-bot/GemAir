@@ -120,7 +120,7 @@ const api = {
     try { const r = await fetch('/api/headlines?limit=' + (limit || 14) + '&category=' + encodeURIComponent(category || 'tech')); return await r.json(); } catch { return []; }
   },
   openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
-  async version() { return window.gemair ? window.gemair.version() : '2.0.0'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.1.0'; },
   onReminder(cb) { if (window.gemair) window.gemair.onReminder(cb); },
   onWakeToggle(cb) { if (window.gemair) window.gemair.onWakeToggle(cb); },
   onActivity(cb) { if (window.gemair && window.gemair.onActivity) window.gemair.onActivity(cb); },
@@ -4154,7 +4154,7 @@ function bindEvents() {
   // Full profile + memory JSON backup and validated restore.
   $('#exportBtn').addEventListener('click', async () => {
     const data = await api.exportMemory();
-    const backup = { schema: 'gemair-backup', schemaVersion: 2, appVersion: '2.0.0', exportedAt: new Date().toISOString(), profile: data.profile || profile, memory: data.memory || memory };
+    const backup = { schema: 'gemair-backup', schemaVersion: 2, appVersion: '2.1.0', exportedAt: new Date().toISOString(), profile: data.profile || profile, memory: data.memory || memory };
     downloadText(JSON.stringify(backup, null, 2), 'gemair-backup-' + new Date().toISOString().slice(0, 10) + '.json');
     toast('BACKUP', 'Full profile and memory exported as JSON.', '⬇');
   });
@@ -4909,7 +4909,7 @@ function runBootSequence() {
   if (REDUCED_MOTION) { overlay.classList.add('done'); return Promise.resolve(); }
   const bios = $('#bootBios'), bar = $('#bootBar'), line = $('#bootLine');
   const trace = [
-    ['GEMAIR BIOS 2.0.0  //  LOCAL INTELLIGENCE RUNTIME', 'dim'],
+    ['GEMAIR BIOS 2.1.0  //  LOCAL INTELLIGENCE RUNTIME', 'dim'],
     ['POST  CPU VECTOR MATRIX ..................... OK', 'ok'],
     ['POST  MEMORY VAULT .......................... OK', 'ok'],
     ['MOUNT VOICE / EARS .......................... READY', 'ok'],
