@@ -2068,6 +2068,7 @@ async function collaborateAgents(task) {
 // IPC handlers
 // ---------------------------------------------------------------------------
 ipcMain.handle('system:info', () => getSystemInfo());
+ipcMain.handle('audit:get', () => executeTool('get_action_log', {}));
 ipcMain.handle('screen:inspect', () => inspectScreenChange());
 ipcMain.handle('profile:get', () => readProfile());
 ipcMain.handle('profile:set', (_e, data) => writeProfile(data || {}));

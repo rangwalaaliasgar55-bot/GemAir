@@ -8,6 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="apple-touch-icon" href="favicon.svg" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="reduced-motion.css" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -56,7 +57,7 @@
         </div>
         <div class="sys-chip" title="System status">
           <span class="dot" id="sysDot"></span>
-          <span id="sysChipText">SYSTEMS NOMINAL</span>
+          <span id="sysChipText" data-i18n="status.nominal">SYSTEMS NOMINAL</span>
         </div>
 
         <button class="sfx-btn active" id="sfxBtn" title="Toggle interface sound effects">
@@ -90,23 +91,23 @@
       <nav class="sidenav">
         <button class="nav-btn active" data-view="assistant">
           <span class="nav-ico">◉</span>
-          <span class="nav-label">Voice Core</span>
+          <span class="nav-label" data-i18n="nav.assistant">Voice Core</span>
         </button>
         <button class="nav-btn" data-view="core">
           <span class="nav-ico">⬢</span>
-          <span class="nav-label">Desktop Manager</span>
+          <span class="nav-label" data-i18n="nav.core">Desktop Manager</span>
         </button>
         <button class="nav-btn" data-view="companion">
           <span class="nav-ico">♥</span>
-          <span class="nav-label">Life Companion</span>
+          <span class="nav-label" data-i18n="nav.companion">Life Companion</span>
         </button>
         <button class="nav-btn" data-view="town">
           <span class="nav-ico">▦</span>
-          <span class="nav-label">Agent Town</span>
+          <span class="nav-label" data-i18n="nav.town">Agent Town</span>
         </button>
         <button class="nav-btn" data-view="world">
           <span class="nav-ico">◍</span>
-          <span class="nav-label">Global Intel</span>
+          <span class="nav-label" data-i18n="nav.world">Global Intel</span>
         </button>
       </nav>
 
@@ -372,6 +373,7 @@
                 <button class="core-tab" data-tab="reminders">REMINDERS</button>
                 <button class="core-tab" data-tab="skills">SKILLS</button>
                 <button class="core-tab" data-tab="instructions">RULES</button>
+                <button class="core-tab" data-tab="audit">AUDIT</button>
                 <button class="core-tab" data-tab="soul">SOUL</button>
               </div>
 
@@ -468,6 +470,17 @@
                 </div>
                 <div class="memory-list" id="instructionsList">
                   <div class="empty">No rules set. Add rules and Gem will obey them across every conversation.</div>
+                </div>
+              </div>
+
+              <div class="hud-panel core-pane" data-pane="audit">
+                <h3 class="panel-title">ACTION AUDIT LOG <span class="dim">— FED BY GET_ACTION_LOG</span></h3>
+                <div class="inline-add">
+                  <input type="text" id="auditToolFilter" placeholder="Filter by tool name (e.g. web_search)…" />
+                  <button class="refresh-btn" id="auditRefreshBtn">⟳ Refresh</button>
+                </div>
+                <div class="memory-list audit-log-list" id="auditLogList">
+                  <div class="empty">Reading transparent action history…</div>
                 </div>
               </div>
 
@@ -967,7 +980,7 @@
   <!-- COMMAND PALETTE -->
   <div class="palette-backdrop" id="palette">
     <div class="palette">
-      <input type="text" id="paletteInput" placeholder="Type a command, search memory, or ask a question…" autocomplete="off" />
+      <input type="text" id="paletteInput" data-i18n-placeholder="palette.placeholder" placeholder="Type a command, search memory, or ask a question…" autocomplete="off" />
       <div class="palette-results" id="paletteResults"></div>
       <div class="palette-hint">⏎ ask AI · esc close · quick: <span class="accent-link" data-pal="assistant">assistant</span> · <span class="accent-link" data-pal="core">system</span> · <span class="accent-link" data-pal="companion">companion</span> · <span class="accent-link" data-pal="town">town</span> · <span class="accent-link" data-pal="world">world</span></div>
     </div>
@@ -975,6 +988,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="themes.js"></script>
+  <script src="i18n.js"></script>
   <script src="store.js"></script>
   <script src="ai-client.js"></script>
   <script src="tts-engine.js"></script>

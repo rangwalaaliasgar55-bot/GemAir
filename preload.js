@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('gemair', {
   platform: process.platform,
   getSystemInfo: () => ipcRenderer.invoke('system:info'),
+  getActionLog: () => ipcRenderer.invoke('audit:get'),
   screenInspect: () => ipcRenderer.invoke('screen:inspect'),
   getProfile: () => ipcRenderer.invoke('profile:get'),
   setProfile: (data) => ipcRenderer.invoke('profile:set', data),

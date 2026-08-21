@@ -18,6 +18,7 @@
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const lerp = (a, b, t) => a + (b - a) * t;
   const TAU = Math.PI * 2;
+  const reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 
   // ---- Calibrated feature positions for Female and Male Avatars ----------
@@ -503,7 +504,7 @@
         ctx.restore();
       }
 
-      raf = requestAnimationFrame(draw);
+      if (!reducedMotion) raf = requestAnimationFrame(draw);
     }
 
     function onPointer(e) {

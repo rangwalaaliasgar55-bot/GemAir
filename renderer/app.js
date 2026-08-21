@@ -39,6 +39,10 @@ const api = {
       battery: { percent: 82, charging: true }, disk: { totalGB: 512, freeGB: 187, percent: 63 }
     };
   },
+  async getActionLog() {
+    if (window.gemair && window.gemair.getActionLog) return window.gemair.getActionLog();
+    return { log: (memory.actionLog || []).slice(0, 200) };
+  },
   async screenInspect() {
     if (window.gemair && window.gemair.screenInspect) return window.gemair.screenInspect();
     return { changed: false, changePercent: 0, description: 'Browser screen capture is unavailable; desktop mode is required.' };
@@ -982,6 +986,20 @@ function startRgb() {
   }, 40);
 }
 
+let rgbBurstTimer = null;
+function triggerRgbBurst() {
+  const restore = profile.theme || 'crimson';
+  if (rgbBurstTimer) clearTimeout(rgbBurstTimer);
+  document.body.classList.add('konami-burst');
+  applyTheme('rgb');
+  toast('KONAMI UNLOCKED', 'Full-spectrum arc reactor burst engaged.', '🌈');
+  rgbBurstTimer = setTimeout(() => {
+    document.body.classList.remove('konami-burst');
+    applyTheme(restore);
+    rgbBurstTimer = null;
+  }, REDUCED_MOTION ? 900 : 8000);
+}
+
 function applyTheme(t) {
   // String-driven theme engine (renderer/themes.js) is the single source
   // of truth: it writes all color tokens out as CSS variables and fires
@@ -1073,12 +1091,51 @@ setInterval(() => {
 }, 1000);
 
 // ---------------------------------------------------------------------------
+// View-aware animation scheduler. Hidden town/radar/globe canvases hold no
+// requestAnimationFrame at all; switching views resumes exactly one frame loop.
+// ---------------------------------------------------------------------------
+const REDUCED_MOTION = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+const viewFrameWaiters = new Map();
+const reducedMotionDrawn = new Set();
+function viewIsActive(view) {
+  if (typeof document.hidden === 'boolean' && document.hidden) return false;
+  if (!view) return true;
+  const element = document.getElementById('view-' + view);
+  return !!(element && element.classList.contains('active'));
+}
+function scheduleViewFrame(view, callback) {
+  if (REDUCED_MOTION) {
+    if (!reducedMotionDrawn.has(callback)) { reducedMotionDrawn.add(callback); requestAnimationFrame(callback); }
+    return;
+  }
+  if (viewIsActive(view)) requestAnimationFrame(callback);
+  else {
+    if (!viewFrameWaiters.has(view)) viewFrameWaiters.set(view, new Set());
+    viewFrameWaiters.get(view).add(callback);
+  }
+}
+function resumeViewFrames(view) {
+  const waiting = viewFrameWaiters.get(view);
+  if (!waiting) return;
+  viewFrameWaiters.delete(view);
+  waiting.forEach((callback) => requestAnimationFrame(callback));
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    const active = $$('.view').find((view) => view.classList.contains('active'));
+    if (active) resumeViewFrames(active.id.replace('view-', ''));
+    resumeViewFrames(null);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
 function switchView(view) {
   playSfx('swoosh');
   $$('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
+  resumeViewFrames(view);
   if (view === 'world') refreshHeadlines();
   if (view === 'core') renderProcesses();
 }
@@ -1237,13 +1294,14 @@ function startBackground3D() {
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    requestAnimationFrame(draw);
+    scheduleViewFrame(null, draw);
   }
-  requestAnimationFrame(draw);
+  scheduleViewFrame(null, draw);
 }
 
 // 3D tilt on panels
 function startPanelTilt() {
+  if (REDUCED_MOTION) return;
   const tiltables = document.querySelectorAll('.hud-panel, .agent-desk');
   tiltables.forEach((el) => {
     el.addEventListener('mousemove', (e) => {
@@ -1289,9 +1347,9 @@ function startOrb() {
       ctx.arc(x, y, p.size * (isRunning ? 1.5 : 1), 0, Math.PI * 2); ctx.fill();
     }
     ctx.globalAlpha = 1;
-    requestAnimationFrame(draw);
+    scheduleViewFrame('assistant', draw);
   }
-  requestAnimationFrame(draw);
+  scheduleViewFrame('assistant', draw);
 }
 
 // ---------------------------------------------------------------------------
@@ -1388,18 +1446,29 @@ function startGlobe() {
       visibleMarkers.push({ x, y, label: hotspot.label, headline });
     });
     ctx.globalAlpha = 1;
-    requestAnimationFrame(draw);
+    scheduleViewFrame('world', draw);
   }
-  requestAnimationFrame(draw);
+  scheduleViewFrame('world', draw);
 }
 
 // ---------------------------------------------------------------------------
-// Chat
+// Chat — keep roughly 200 DOM nodes by recycling older message containers.
+// Persistent transcript/history remains complete; only the visual window is bounded.
 // ---------------------------------------------------------------------------
+const MAX_CHAT_MESSAGES = 48;
+const chatNodePool = [];
+function trimChatDom(log) {
+  const messages = Array.from(log.querySelectorAll('.msg'));
+  while (messages.length > MAX_CHAT_MESSAGES) {
+    const old = messages.shift();
+    old.remove(); old.innerHTML = ''; old.className = 'msg';
+    if (chatNodePool.length < 12) chatNodePool.push(old);
+  }
+}
 function addMessage(role, text, opts = {}) {
   if (role === 'ai' && !opts.typing) playSfx('message');
   const log = $('#chatLog');
-  const div = document.createElement('div');
+  const div = chatNodePool.pop() || document.createElement('div');
   div.className = 'msg ' + role;
   const head = document.createElement('div');
   head.className = 'msg-head';
@@ -1418,6 +1487,7 @@ function addMessage(role, text, opts = {}) {
   else p.textContent = text;
   div.appendChild(p);
   log.appendChild(div);
+  trimChatDom(log);
   log.scrollTop = log.scrollHeight;
   return div;
 }
@@ -1533,6 +1603,7 @@ function renderRich(p, text) {
 // Human-like typewriter for AI replies
 let typewriterToken = 0;
 function typewrite(el, text, speed = 14) {
+  if (REDUCED_MOTION) { el.textContent = text; return Promise.resolve(); }
   typewriterToken++;
   const token = typewriterToken;
   return new Promise((resolve) => {
@@ -1794,6 +1865,18 @@ async function handleMessage(text) {
     }
     // greeting/empty filler — keep waiting for a name, but answer naturally
     awaitingName = true;
+  }
+
+  if (/^i\s+am\s+iron\s+man[.!?]*$/i.test(text.trim())) {
+    const special = 'And I am Gem. Proof that a heart, an arc reactor, and a little impossible engineering can change the world. Systems at maximum power, Mr. Stark.';
+    document.body.classList.add('iron-man-burst');
+    setTimeout(() => document.body.classList.remove('iron-man-burst'), REDUCED_MOTION ? 500 : 3200);
+    addMessage('ai', special);
+    chatHistory.push({ role: 'user', content: text }, { role: 'assistant', content: special });
+    updateContextMeter();
+    await api.memoryAppend('user', text); await api.memoryAppend('assistant', special);
+    speak(special);
+    return;
   }
 
   // Keep the real working context bounded before adding this turn. At 70%,
@@ -2154,7 +2237,7 @@ async function startMicMeter() {
     if (micMeterFrame) return;
     const data = new Uint8Array(micAnalyser.frequencyBinCount);
     const draw = () => {
-      micMeterFrame = requestAnimationFrame(draw);
+      micMeterFrame = REDUCED_MOTION ? null : requestAnimationFrame(draw);
       const meter = canvas.getContext('2d');
       micAnalyser.getByteFrequencyData(data);
       const level = data.reduce((sum, value) => sum + value, 0) / Math.max(1, data.length) / 255;
@@ -2570,9 +2653,9 @@ function startAgentTown() {
       const dot = document.getElementById('lg-' + a.name);
       if (dot) { dot.className = 'legend-dot ' + a.state; }
     });
-    raf = requestAnimationFrame(loop);
+    raf = scheduleViewFrame('town', loop);
   }
-  raf = requestAnimationFrame(loop);
+  raf = scheduleViewFrame('town', loop);
 }
 
 async function runCollaborationMission(task) {
@@ -2681,11 +2764,6 @@ function startRadar() {
   }, 4000);
 
   function loop(t) {
-    requestAnimationFrame(loop);
-    // skip painting while the System Core view is hidden
-    const view = document.getElementById('view-core');
-    if (view && !view.classList.contains('active')) return;
-
     ctx.clearRect(0, 0, W, H);
     const accent = getAccent();
 
@@ -2748,8 +2826,24 @@ function startRadar() {
     ctx.font = '10px monospace';
     ctx.textAlign = 'center';
     ctx.fillText(`CPU ${sys.cpu}%`, cx, H - 14);
+    scheduleViewFrame('core', loop);
   }
-  requestAnimationFrame(loop);
+  scheduleViewFrame('core', loop);
+}
+
+async function renderAuditLog() {
+  const list = $('#auditLogList'); if (!list) return;
+  const filter = ($('#auditToolFilter')?.value || '').toLowerCase().trim();
+  try {
+    const result = await api.getActionLog();
+    const entries = (result && result.log || []).filter((entry) => !filter || String(entry.action || '').toLowerCase().includes(filter));
+    if (!entries.length) { list.innerHTML = '<div class="empty">No matching tool actions.</div>'; return; }
+    list.innerHTML = entries.map((entry) => {
+      const time = new Date(entry.ts).toLocaleString();
+      const complete = /completed|success|done/i.test(entry.detail || '');
+      return `<div class="mission-item${complete ? ' complete' : ''}"><div class="m-action">${complete ? '✓' : '▸'} ${escapeHtml(entry.action || 'action')}<span class="m-time">${escapeHtml(time)}</span></div><div class="m-detail">${escapeHtml(entry.detail || '')}</div></div>`;
+    }).join('');
+  } catch (error) { list.innerHTML = `<div class="empty">Audit log unavailable: ${escapeHtml(error.message)}</div>`; }
 }
 
 function renderMissionLog() {
@@ -2913,8 +3007,6 @@ function startTownPreview() {
   const W = canvas.width, H = canvas.height;
   const S = 0.44, OX = (W - 900 * S) / 2, OY = (H - 520 * S) / 2;
   function loop() {
-    requestAnimationFrame(loop);
-    if (!canvas.offsetParent) return; // hidden view — skip work
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#070b14'; ctx.fillRect(0, 0, W, H);
     ctx.strokeStyle = 'rgba(255,255,255,0.045)'; ctx.lineWidth = 1;
@@ -2944,8 +3036,9 @@ function startTownPreview() {
       ctx.fillStyle = '#9fb2d0'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
       ctx.fillText(a.name, x, y - 14);
     });
+    scheduleViewFrame('assistant', loop);
   }
-  loop();
+  scheduleViewFrame('assistant', loop);
   canvas.addEventListener('click', () => { playSfx('swoosh'); switchView('town'); });
 }
 
@@ -2963,8 +3056,6 @@ function startSatLink() {
   }));
   let rot = 0;
   function loop() {
-    requestAnimationFrame(loop);
-    if (!canvas.offsetParent) return;
     rot += 0.004;
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#04070d'; ctx.fillRect(0, 0, W, H);
@@ -3008,8 +3099,9 @@ function startSatLink() {
       ctx.beginPath(); ctx.arc(x, y, h.r * 2.6, 0, Math.PI * 2); ctx.fill();
     }
     ctx.globalAlpha = 1;
+    scheduleViewFrame('assistant', loop);
   }
-  loop();
+  scheduleViewFrame('assistant', loop);
 }
 
 // Glowing data wires from the circuit cards into the orb
@@ -3021,8 +3113,6 @@ function startCircuitWires() {
   const colors = [null, '#ff9d3b', '#3dff9a', '#8a9bb2']; // memory uses theme accent
   let dash = 0;
   function loop(t) {
-    requestAnimationFrame(loop);
-    if (!canvas.offsetParent) return;
     const accent = getAccent();
     ctx.clearRect(0, 0, W, H);
     const n = 4, midY = H / 2, endX = W - 4;
@@ -3049,8 +3139,9 @@ function startCircuitWires() {
     }
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
     dash += 0.6;
+    scheduleViewFrame('assistant', loop);
   }
-  loop(0);
+  scheduleViewFrame('assistant', loop);
 }
 
 // ---------------------------------------------------------------------------
@@ -3627,9 +3718,9 @@ function startCommandMap() {
       ctx.fillText(c.name, p.x + 5, p.y - 3);
     }
     ctx.globalAlpha = 1;
-    requestAnimationFrame(draw);
+    scheduleViewFrame('world', draw);
   }
-  requestAnimationFrame(draw);
+  scheduleViewFrame('world', draw);
 }
 
 // ---------------------------------------------------------------------------
@@ -3869,6 +3960,8 @@ function bindEvents() {
   $('#factFilter')?.addEventListener('input', () => renderFacts());
   $('#memoryBrowserSearch').addEventListener('input', renderMemoryBrowser);
   $('#memoryBrowserType').addEventListener('change', renderMemoryBrowser);
+  $('#auditToolFilter').addEventListener('input', renderAuditLog);
+  $('#auditRefreshBtn').addEventListener('click', renderAuditLog);
   $$('#memoryCatFilters .qc').forEach((btn) => {
     btn.addEventListener('click', () => {
       playSfx('click');
@@ -3915,6 +4008,8 @@ function bindEvents() {
     playSfx('click');
     $$('.core-tab').forEach((x) => x.classList.toggle('active', x === t));
     $$('.core-pane').forEach((p) => p.classList.toggle('active', p.dataset.pane === t.dataset.tab));
+    if (t.dataset.tab === 'audit') renderAuditLog();
+    if (t.dataset.tab === 'browser') renderMemoryBrowser();
   }));
 
   // memory / notes / reminders add
@@ -4258,8 +4353,13 @@ function bindEvents() {
     } else if (event.key === 'Escape') closePalette();
   });
 
-  // keyboard shortcuts
+  // keyboard shortcuts + Konami easter egg
+  const konami = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
+  let konamiIndex = 0;
   window.addEventListener('keydown', (e) => {
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    konamiIndex = key === konami[konamiIndex] ? konamiIndex + 1 : (key === konami[0] ? 1 : 0);
+    if (konamiIndex === konami.length) { konamiIndex = 0; triggerRgbBurst(); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') { $('#chatInput').focus(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === ',') { openSettings(); }
@@ -4767,6 +4867,7 @@ async function boot() {
 function runBootSequence() {
   const overlay = $('#bootOverlay');
   if (!overlay) return Promise.resolve();
+  if (REDUCED_MOTION) { overlay.classList.add('done'); return Promise.resolve(); }
   const bios = $('#bootBios'), bar = $('#bootBar'), line = $('#bootLine');
   const trace = [
     ['GEMAIR BIOS 2.0.0  //  LOCAL INTELLIGENCE RUNTIME', 'dim'],

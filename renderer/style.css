@@ -113,6 +113,9 @@ body[data-theme='rgb'] .brand-orb { animation: rgbBorder 4s linear infinite; }
 body[data-theme='rgb'] .topbar::after { background: linear-gradient(90deg, transparent, #ff0040, #ff8c00, #ffe600, #2bff88, #00cfff, #7a4dff, #ff00d4, transparent); background-size: 300% 100%; }
 body[data-theme='rgb'] .typing-caret { background: linear-gradient(#ff0040,#00cfff); }
 body[data-theme='rgb'] .typing i { background: #ff3bff; }
+body.konami-burst .app { animation: konamiPulse .8s ease-in-out infinite alternate; }
+body.iron-man-burst .orb-panel { animation: rgbBorder .7s linear 4; }
+@keyframes konamiPulse { from { filter: saturate(1) brightness(1); } to { filter: saturate(1.7) brightness(1.12); } }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
