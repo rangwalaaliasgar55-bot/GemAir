@@ -8,6 +8,8 @@
 
 No subscription, no license fee, no cloud lock-in. **Yours. Forever.**
 
+> **GemAir 2.1 — FREE FOREVER.** Every feature runs on a free, keyless service (see **Settings → COST** — the badge says **$0.00 FOREVER**). The app boots fully working with **zero configuration**: the **FREE CORE** answers on Vercel serverless with a provider fallback chain (Groq → Gemini → OpenRouter free tiers), **Microsoft Edge neural voices** are the primary TTS engine at no cost, and **12 one-sentence workflows** (organize downloads, gather screenshots, find huge unused files, scaffold a project, launch the morning stack, close everything except X, focus block, open-and-search, multi-tabs, spoken RAM check, gaming optimize, hands-free WhatsApp) run as tested tool chains. Keys are optional and live under a collapsed **"Power user"** section.
+
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Windows-macOS-Linux-2b7a78?style=for-the-badge)]()
 [![Built with Electron](https://img.shields.io/badge/Built_with-Electron-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://www.electronjs.org)
@@ -43,7 +45,7 @@ npm start
 
 | Module | What it does |
 | --- | --- |
-| 🎙️ **Voice Assistant** | Speak naturally or type. Live streaming replies, “Hey Gem” interim wake loop, mic VU, instant speech barge-in, Gem/JARVIS/Nova presets, language quick-switch, and natural neural or offline OS voices. |
+| 🎙️ **Voice Assistant** | Speak naturally or type. Live streaming replies (sentence-by-sentence audio while the answer still types), “Hey Gem” interim wake loop, mic VU, instant speech barge-in, **Microsoft Edge neural voices** as the primary engine (real voice picker, incl. Hindi/Urdu), emotion-aware rate/pitch/volume, Gem/JARVIS/Nova presets, language quick-switch, and neural or offline OS fallbacks. |
 | ⌨️ **Human-like typing** | Replies stream and type out in real time, with code blocks and a save-to-file action. |
 | 👋 **Personalized** | Greets you by name and time of day, and remembers who you are forever. |
 | 🧠 **AI Brain (free out of the box)** | Runs on a free server-side AI core — no key, no card. Power users plug in their own provider with one-click presets: **ChatGPT (OpenAI) · Gemini · Claude** · Groq / OpenRouter / local Ollama, in Settings → AI Brain. |
@@ -68,7 +70,7 @@ npm start
 | 📝 **Notes** | A persistent notebook — save, view, delete. |
 | 🖥️ **System Core** | Live CPU / memory gauges, hostname, uptime, load average; Memory / Notes / Reminders / Soul tabs. |
 | 🏢 **Agent Town 2.0** | A time-lit pixel office where agents walk and collaborate with restricted real tools: Alice researches, Bob operates files, Carol verifies system health, and Dave opens communication drafts. Handoffs, actual results and every mission action stay visible. |
-| 🗂️ **Desktop automation ("missions")** | `organize_folder`, `find_duplicates`, `rename_files`, `archive_old_files` — multi-step workflows with a full Mission Log of every action (transparency). |
+| 🗂️ **Desktop automation ("missions")** | `organize_folder`, `find_duplicates`, `rename_files`, `archive_old_files`, plus GemAir 2.1's `close_app`, `find_large_files`, `create_folder_tree`, `move_files`, `optimize_gaming` — multi-step workflows (12 command-palette recipes) with a full Mission Log of every action (transparency + undo). |
 | 🛡️ **System guardian** | "What's slowing my PC down?" — live scan of CPU, RAM and top processes with one-line advice. |
 | 👁️ **Screen awareness** | Optional active-session awareness compares privacy-preserving low-resolution fingerprints and describes meaningful screen changes without saving images. Explicit `see_screen` capture remains available. |
 | 🌐 **World Monitor** | Interactive dotted/wireframe globe with clickable news hotspots, dedicated 2D command-map mode, multi-city UTC strip and tech/world/business feeds. |
