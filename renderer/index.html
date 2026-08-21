@@ -652,8 +652,8 @@
                 <div class="g-row"><kbd>E</kbd><span>Hover an agent + press E — hand a task face-to-face</span></div>
                 <div class="g-row"><kbd>@</kbd><span>Chat prefix: <b>@Alice organize my reports</b> routes to that agent's brain</span></div>
                 <div class="g-row"><kbd>🎙</kbd><span>"Dispatch a task to Bob" — spoken commands reach the same dispatch queue</span></div>
-                <div class="g-row"><kbd>⌘K</kbd><span>Command palette — jump to any view, memory or action</span></div>
-                <div class="g-row"><kbd>⌘L</kbd><span>Focus the chat input from anywhere</span></div>
+                <div class="g-row"><kbd class="kbd-mod">Ctrl</kbd><kbd>K</kbd><span>Command palette — jump to any view, memory or action</span></div>
+                <div class="g-row"><kbd class="kbd-mod">Ctrl</kbd><kbd>L</kbd><span>Focus the chat input from anywhere</span></div>
               </div>
             </div>
           </div>
@@ -759,10 +759,10 @@
   </div>
 
   <!-- FIRST-RUN THEME PICKER -->
-  <div class="modal-backdrop" id="themeModal">
+  <div class="modal-backdrop" id="themeModal" role="dialog" aria-modal="true" aria-labelledby="themeModalTitle">
     <div class="modal theme-modal">
       <div class="modal-head">
-        <h2>PICK YOUR HUD THEME</h2>
+        <h2 id="themeModalTitle">PICK YOUR HUD THEME</h2>
         <button class="icon-btn" id="themeModalClose" title="Close">✕</button>
       </div>
       <div class="modal-body">
@@ -782,10 +782,10 @@
   </div>
 
   <!-- ===================== SETTINGS MODAL ===================== -->
-  <div class="modal-backdrop" id="settingsModal">
+  <div class="modal-backdrop" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
     <div class="modal">
       <div class="modal-head">
-        <h2>SETTINGS</h2>
+        <h2 id="settingsModalTitle">SETTINGS</h2>
         <button class="icon-btn" id="settingsClose">✕</button>
       </div>
       <div class="modal-body">
@@ -985,10 +985,10 @@
   </div>
 
   <!-- DOWNLOAD MODAL -->
-  <div class="modal-backdrop" id="downloadModal">
+  <div class="modal-backdrop" id="downloadModal" role="dialog" aria-modal="true" aria-labelledby="downloadModalTitle">
     <div class="modal download-modal">
       <div class="modal-head">
-        <h2>GET GEMAIR DESKTOP</h2>
+        <h2 id="downloadModalTitle">GET GEMAIR DESKTOP</h2>
         <button class="icon-btn" id="downloadClose" title="Close">✕</button>
       </div>
       <div class="modal-body">
@@ -1025,10 +1025,10 @@
   </div>
 
   <!-- GUIDED BREATHING MODAL -->
-  <div class="modal-backdrop" id="breatheModal">
+  <div class="modal-backdrop" id="breatheModal" role="dialog" aria-modal="true" aria-labelledby="breatheModalTitle">
     <div class="modal breathe-modal">
       <div class="modal-head">
-        <h2>GUIDED BREATHING</h2>
+        <h2 id="breatheModalTitle">GUIDED BREATHING</h2>
         <button class="icon-btn" id="breatheClose">✕</button>
       </div>
       <div class="modal-body breathe-body">
@@ -1043,10 +1043,10 @@
   </div>
 
   <!-- WEEKLY REPORT MODAL -->
-  <div class="modal-backdrop" id="reportModal">
+  <div class="modal-backdrop" id="reportModal" role="dialog" aria-modal="true" aria-labelledby="reportModalTitle">
     <div class="modal">
       <div class="modal-head">
-        <h2>WEEKLY REPORT</h2>
+        <h2 id="reportModalTitle">WEEKLY REPORT</h2>
         <button class="icon-btn" id="reportClose">✕</button>
       </div>
       <div class="modal-body">

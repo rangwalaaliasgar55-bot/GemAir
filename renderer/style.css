@@ -233,7 +233,9 @@ body {
 .live-clock { font-family: var(--font-mono); font-size: 26px; letter-spacing: 3px; font-weight: 600; text-shadow: 0 0 12px var(--accent-glow); }
 .live-date { font-size: 11px; letter-spacing: 2px; color: var(--text-dim); margin-top: 2px; text-transform: uppercase; }
 
-.topbar-right { display: flex; align-items: center; gap: 12px; }
+/* U5: below ~1000px the chips overflowed the bar and spilled over the content
+   underneath. Allow wrapping and let the row grow instead. */
+.topbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; row-gap: 6px; }
 .stt-lang-chip {
   border: 1px solid var(--panel-border); border-radius: 18px; padding: 6px 10px;
   background: rgba(0,0,0,.35); color: var(--text-dim); cursor: pointer;
@@ -399,7 +401,9 @@ body {
 
 .orb-panel {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  position: relative; min-height: 560px;
+  /* U5: a flat 560px min-height forced scrollbars (and clipped the dock) on
+     short windows and laptops in split-screen. Scale with the viewport. */
+  position: relative; min-height: min(560px, calc(100vh - 220px));
 }
 #orbCanvas, #avatarCanvas {
   width: 100%; max-width: 540px; height: auto; aspect-ratio: 1;
@@ -513,7 +517,10 @@ body.rgb-recording #micVuCanvas, body.wake-armed #micVuCanvas { opacity: 1; bord
 .qc:hover { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); transform: translateY(-1px); }
 
 /* ============ SYSTEM CORE VIEW ============ */
-.core-grid { display: grid; grid-template-columns: 360px 1fr; gap: 22px; }
+/* U5: the fixed 360px first column only collapsed at 1100px, so between ~900px
+   and 1100px the right pane was squeezed to unusable width. minmax + a mid
+   breakpoint fix it. */
+.core-grid { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 22px; }
 .gauge-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
 .gauge { text-align: center; position: relative; }
 .gauge svg { width: 110px; height: 110px; transform: rotate(-90deg); }
@@ -1029,7 +1036,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
 .g-row kbd { font: 700 11px var(--font-mono); color: var(--accent); background: var(--accent-dim); border: 1px solid var(--accent-soft); border-radius: 6px; padding: 4px 10px; min-width: 34px; text-align: center; }
 
 /* ---- RIGHT: expert panel ---- */
-.expert-panel { display: flex; flex-direction: column; max-height: calc(100vh - 150px); min-height: 560px; overflow: hidden; }
+.expert-panel { display: flex; flex-direction: column; max-height: calc(100vh - 150px); min-height: min(560px, calc(100vh - 220px)); overflow: hidden; }
 .expert-tabs { display: flex; align-items: center; gap: 4px; padding: 12px 14px 0; border-bottom: 1px solid var(--panel-border); }
 .expert-tab { font: 700 11px var(--font-mono); letter-spacing: 2px; padding: 8px 16px 10px; color: var(--text-dim); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all .15s; }
 .expert-tab:hover { color: var(--text); }
@@ -1105,7 +1112,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
   font-size: 12px;
   letter-spacing: 0.5px;
   font-family: var(--font-mono, monospace);
-  color: var(--dim, #8aa0bd);
+  color: var(--text-dim, #8aa0bd);
   padding: 4px 0;
   user-select: none;
 }
@@ -1138,7 +1145,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
   font-size: 12px;
 }
 .cost-row .c-feature { color: var(--text, #e9f2ff); font-weight: 600; }
-.cost-row .c-service { color: var(--dim, #8aa0bd); font-size: 11px; font-family: var(--font-mono, monospace); }
+.cost-row .c-service { color: var(--text-dim, #8aa0bd); font-size: 11px; font-family: var(--font-mono, monospace); }
 .cost-row .c-price {
   font-family: var(--font-mono, monospace);
   font-weight: 700;
@@ -1162,7 +1169,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
   font-size: 12px;
   letter-spacing: 1px;
   font-family: var(--font-mono, monospace);
-  color: var(--dim, #8aa0bd);
+  color: var(--text-dim, #8aa0bd);
 }
 .cost-total .ct-badge {
   font-family: var(--font-mono, monospace);
@@ -1175,7 +1182,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
 .cost-note {
   margin-top: 8px;
   font-size: 10.5px;
-  color: var(--dim, #8aa0bd);
+  color: var(--text-dim, #8aa0bd);
   line-height: 1.5;
 }
 
@@ -1256,3 +1263,26 @@ body.rtl .sat-tabs { flex-direction: row-reverse; }
 .wf-ico { font-size: 16px; line-height: 1; }
 .wf-name { font-size: 11.5px; font-weight: 600; line-height: 1.3; }
 .wf-detail { font-size: 10px; color: var(--text-dim); line-height: 1.35; }
+
+/* U2 — honest status affordances */
+.tp-ready.busy { color: var(--warn); border-color: var(--warn); }
+.news-item.simulated .n-meta { color: var(--warn); }
+.briefing-chip.simulated { border-color: var(--warn); color: var(--warn); }
+body.sys-degraded .sys-chip,
+body.sys-degraded #sysChipText { color: var(--warn); }
+
+
+/* U5 — mid-width breakpoints (between the mobile 1100px rule and desktop) */
+@media (max-width: 1280px) {
+  .core-grid { grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); gap: 16px; }
+}
+@media (max-width: 1000px) {
+  .topbar { flex-wrap: wrap; height: auto; padding-bottom: 8px; }
+  .topbar-right { width: 100%; justify-content: flex-start; }
+  .core-grid { grid-template-columns: 1fr; }
+}
+@media (max-height: 760px) {
+  .orb-panel { min-height: 380px; }
+  .expert-panel { min-height: 380px; }
+  .chat-log { max-height: 220px; }
+}

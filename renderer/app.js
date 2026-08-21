@@ -805,7 +805,9 @@ async function safeAsync(label, fn) {
 const _initFailures = [];
 function reportInitFailure(label, err) {
   _initFailures.push({ label, message: err && err.message });
-  // surface it once, quietly, instead of failing silently in the console
+  // U2: 2.1 left the SYS chip frozen at "SYSTEMS NOMINAL" no matter how many
+  // subsystems failed to boot. Tell the truth instead.
+  updateSystemStatusChip();
   if (_initFailures.length === 1) {
     setTimeout(() => {
       try {
@@ -813,6 +815,29 @@ function reportInitFailure(label, err) {
       } catch (e) {}
     }, 1200);
   }
+}
+
+/** U2 — the SYS chip and footer reflect real init state, not a fixed string. */
+function updateSystemStatusChip() {
+  const chip = $('#sysChipText');
+  const footer = $('#footerRight');
+  const n = _initFailures.length;
+  const t = (k, fallback) => {
+    try { return (window.GemAirI18n && window.GemAirI18n.t(k)) || fallback; } catch (e) { return fallback; }
+  };
+  if (!n) {
+    if (chip) { chip.textContent = t('status.nominal', 'SYSTEMS NOMINAL'); chip.title = 'All subsystems started cleanly.'; }
+    if (footer) footer.textContent = 'ALL SYSTEMS NOMINAL';
+    document.body.classList.remove('sys-degraded');
+    return;
+  }
+  const names = _initFailures.map((f) => f.label).join(', ');
+  if (chip) {
+    chip.textContent = `${t('status.degraded', 'DEGRADED')} — ${n} SUBSYSTEM${n > 1 ? 'S' : ''}`;
+    chip.title = `Failed to start: ${names}`;
+  }
+  if (footer) footer.textContent = `DEGRADED — ${n} SUBSYSTEM${n > 1 ? 'S' : ''} OFFLINE`;
+  document.body.classList.add('sys-degraded');
 }
 window.__gemairInitFailures = _initFailures;
 
@@ -2778,7 +2803,10 @@ function initRecognition() {
     let interim = '', finalText = '';
     for (let i = event.resultIndex || 0; i < event.results.length; i++) {
       const text = event.results[i][0].transcript || '';
-      if (text.trim()) stopSpeaking(); // barge-in: any speech immediately cuts TTS
+      if (text.trim()) {
+        stopSpeaking();          // barge-in: any speech immediately cuts TTS
+        if (r.__resetBackoff) r.__resetBackoff(); // U6: healthy session
+      }
       if (event.results[i].isFinal) finalText += text; else interim += text;
     }
     if (interim) {
@@ -2787,16 +2815,41 @@ function initRecognition() {
     }
     if (finalText.trim()) { $('#chatInput').value = finalText.trim(); sendMessage(finalText.trim()); }
   };
+  // U6: 2.1 restarted recognition immediately on every end/error. Offline (or
+  // with the mic busy) the browser ends the session instantly, producing a hot
+  // restart loop that pegged a core and spammed errors. Back off exponentially
+  // and reset the delay as soon as a session actually produces a result.
+  let restartDelay = 300;
+  const RESTART_MAX = 20000;
+  let restartTimer = null;
+  const scheduleRestart = () => {
+    if (!(isRunning && listening)) return;
+    clearTimeout(restartTimer);
+    restartTimer = setTimeout(() => {
+      if (!(isRunning && listening)) return;
+      try { r.start(); } catch (e) { /* already started */ }
+    }, restartDelay);
+    restartDelay = Math.min(RESTART_MAX, Math.round(restartDelay * 1.8));
+  };
+  r.onstart = () => { avatar({ listening: true }); };
   r.onend = () => {
     $('#micBtn').classList.remove('recording'); document.body.classList.remove('rgb-recording');
-    if (isRunning && listening) { try { r.start(); } catch (e) {} } else stopMicMeter();
+    if (isRunning && listening) scheduleRestart(); else { clearTimeout(restartTimer); stopMicMeter(); }
   };
   r.onerror = (event) => {
     $('#micBtn').classList.remove('recording');
     document.body.classList.remove('rgb-recording');
-    if (event.error === 'not-allowed') addMessage('system-msg', 'Microphone denied. Enable mic permission, or type your command.');
-    if (isRunning && listening && event.error !== 'not-allowed') { try { r.start(); } catch (e) {} }
+    if (event.error === 'not-allowed') {
+      addMessage('system-msg', 'Microphone denied. Enable mic permission, or type your command.');
+      listening = false;
+      clearTimeout(restartTimer);
+      return;
+    }
+    // 'network' and 'no-speech' are the offline/quiet cases the backoff is for
+    if (event.error === 'network') restartDelay = Math.max(restartDelay, 4000);
+    scheduleRestart();
   };
+  r.__resetBackoff = () => { restartDelay = 300; clearTimeout(restartTimer); };
   return r;
 }
 
@@ -3409,6 +3462,17 @@ function renderTownChrome() {
   set('#townBusyMini', busy + '/' + total + ' busy');
   set('#townModel', model);
   set('#townModelMini', model);
+  // U2: townHeadState / townPreviewState were literally hardcoded "READY" in the
+  // markup and never touched again. Report the real town state.
+  const headState = busy ? `${busy} WORKING` : seated ? `${seated} SEATED` : 'READY';
+  const headClass = busy ? 'tp-ready busy' : 'tp-ready';
+  for (const id of ['#townHeadState', '#townPreviewState']) {
+    const el = $(id);
+    if (!el) continue;
+    if (el.textContent !== headState) el.textContent = headState;
+    if (el.className !== headClass) el.className = headClass;
+    el.title = `${seated}/${total} seated · ${busy}/${total} working`;
+  }
   [['#townCtx', ctxPct], ['#townCtxMini', ctxPct]].forEach(([id, pct]) => {
     const el = $(id); if (el) el.style.width = pct + '%';
   });
@@ -3557,6 +3621,102 @@ function startTownPreview() {
   }
   scheduleViewFrame('assistant', loop);
   canvas.addEventListener('click', () => { playSfx('swoosh'); switchView('town'); });
+}
+
+// ---------------------------------------------------------------------------
+// U4 — modal accessibility.
+//
+// 2.1 had five .modal-backdrop dialogs with no role, no aria-modal, no focus
+// management, and an Escape handler that only closed three of them (settings,
+// palette, download) — breathe / report / theme trapped the user with the
+// mouse. Every modal now announces itself, traps Tab, restores focus on close
+// and answers Escape.
+// ---------------------------------------------------------------------------
+const MODAL_IDS = ['themeModal', 'settingsModal', 'downloadModal', 'breatheModal', 'reportModal'];
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+let lastFocusedBeforeModal = null;
+
+function openModals() {
+  return MODAL_IDS.map((id) => document.getElementById(id)).filter((el) => el && el.classList.contains('open'));
+}
+
+/** Close every open modal AND the palette. Used by the global Escape handler. */
+function closeAllModals() {
+  let closed = false;
+  for (const el of openModals()) { el.classList.remove('open'); closed = true; }
+  try { closePalette(); } catch (e) {}
+  if (closed && lastFocusedBeforeModal && lastFocusedBeforeModal.isConnected) {
+    try { lastFocusedBeforeModal.focus(); } catch (e) {}
+  }
+  lastFocusedBeforeModal = null;
+  return closed;
+}
+
+function setupModalAccessibility() {
+  for (const id of MODAL_IDS) {
+    const backdrop = document.getElementById(id);
+    if (!backdrop) continue;
+    backdrop.setAttribute('role', 'dialog');
+    backdrop.setAttribute('aria-modal', 'true');
+
+    // click outside the dialog closes it
+    backdrop.addEventListener('mousedown', (e) => {
+      if (e.target === backdrop) closeAllModals();
+    });
+
+    // Tab focus trap
+    backdrop.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAllModals(); return; }
+      if (e.key !== 'Tab') return;
+      const items = [...backdrop.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+
+    // when a modal opens, remember what had focus and move focus inside
+    const observer = new MutationObserver(() => {
+      if (!backdrop.classList.contains('open')) return;
+      if (!lastFocusedBeforeModal) lastFocusedBeforeModal = document.activeElement;
+      const target = backdrop.querySelector('[autofocus]') || backdrop.querySelector(FOCUSABLE);
+      if (target) setTimeout(() => { try { target.focus(); } catch (e) {} }, 40);
+    });
+    observer.observe(backdrop, { attributes: true, attributeFilter: ['class'] });
+  }
+}
+
+/**
+ * U4 — icon-only buttons need names. Rather than hand-annotating dozens of
+ * elements in the markup (and letting them drift), derive the label from the
+ * existing title/data attribute at boot and warn in the console if neither
+ * exists, so a new unlabelled icon button is caught during development.
+ */
+function labelIconButtons() {
+  const buttons = document.querySelectorAll('button, .expert-plus, [role="button"]');
+  for (const el of buttons) {
+    if (el.getAttribute('aria-label')) continue;
+    const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    // a button with real words is already accessible
+    if (text && /[a-z]{3,}/i.test(text)) continue;
+    const label = el.getAttribute('title') || el.dataset.cmd || el.dataset.tab || el.dataset.etab ||
+      el.dataset.sat || el.dataset.ttab || el.dataset.tid || el.dataset.newsCategory || text;
+    if (label) el.setAttribute('aria-label', String(label).slice(0, 80));
+  }
+}
+
+/** U4 — the palette hint said ⌘K on every platform, including Windows/Linux. */
+function applyPlatformShortcutHints() {
+  const isMac = /mac|iphone|ipad/i.test((api.platform || '') + ' ' + navigator.userAgent + ' ' + (navigator.platform || ''));
+  const mod = isMac ? '⌘' : 'Ctrl';
+  document.querySelectorAll('.kbd-mod').forEach((el) => { el.textContent = mod; });
+  document.querySelectorAll('[data-shortcut-mod]').forEach((el) => {
+    el.textContent = el.dataset.shortcutMod.replace('{mod}', mod);
+  });
+  // the chat welcome line hardcodes the combo in prose
+  document.querySelectorAll('.msg.system-msg .sub b').forEach((el) => {
+    if (/^(ctrl|⌘)\+k$/i.test(el.textContent.trim())) el.textContent = `${mod}+K`;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -4215,10 +4375,22 @@ function renderBriefing() {
   const topGoal = (memory.goals || []).find((g) => !g.done);
   $('#briefGoal').textContent = topGoal ? '🎯 ' + topGoal.text.slice(0, 40) : '🎯 No active goal — add one!';
   // weather (free)
+  // U2: on any failure this used to sit on "🌤 Loading…" forever.
   webGet('weather', { city: profile.city || DEFAULTS.city }).then((w) => {
     const el = $('#briefWeather');
-    if (w && w.temperature != null) el.textContent = `🌤 ${w.city.split(',')[0]}: ${w.temperature}°C ${w.condition}`;
-  }).catch(() => {});
+    if (!el) return;
+    if (w && w.temperature != null) {
+      el.textContent = `${w.simulated ? '⚠' : '🌤'} ${String(w.city || '').split(',')[0]}: ${w.temperature}°C ${w.condition}`;
+      el.title = w.simulated ? 'Simulated — the weather service was unreachable.' : 'Live from Open-Meteo';
+      el.classList.toggle('simulated', !!w.simulated);
+    } else {
+      el.textContent = '🌤 Weather unavailable';
+      el.title = (w && w.error) || 'The weather service did not respond.';
+    }
+  }).catch(() => {
+    const el = $('#briefWeather');
+    if (el) { el.textContent = '🌤 Weather unavailable (offline)'; el.title = 'No network connection.'; }
+  });
 }
 
 function weeklyReportSeries() {
@@ -4462,7 +4634,15 @@ function animateCircuits() {
   const memPct = Math.min(100, Math.round(30 + (memory.facts || []).length * 8));
   const soulPct = Math.round(((profile.soul?.warmth ?? 60) + (profile.soul?.wit ?? 40)) / 2);
   $('#memCircuit').style.width = memPct + '%'; $('#memCircuitVal').textContent = memPct + '%';
-  $('#skillCircuit').style.width = '85%'; $('#skillCircuitVal').textContent = '85%';
+  // U6: this was hardcoded at 85% forever — it looked like telemetry but was a
+  // painted number. Derive it from the real learned-skill count (10 skills
+  // saturates the bar), floored at 20% so an empty bar still reads as a bar.
+  const skillCount = (memory.skills || []).length;
+  const skillPct = Math.max(20, Math.min(100, Math.round(20 + skillCount * 8)));
+  $('#skillCircuit').style.width = skillPct + '%';
+  $('#skillCircuitVal').textContent = skillPct + '%';
+  const skillRow = $('#skillCircuit').closest('.stx-circuit');
+  if (skillRow) skillRow.title = `${skillCount} learned skill${skillCount === 1 ? '' : 's'}`;
   $('#soulCircuit').style.width = soulPct + '%'; $('#soulCircuitVal').textContent = soulPct + '%';
 }
 
@@ -4536,14 +4716,20 @@ async function refreshHeadlines(category = worldCategory) {
   lists.forEach((list) => { list.innerHTML = `<div class="empty">Fetching ${worldCategory} headlines…</div>`; });
   try {
     const items = await api.getHeadlines(14, worldCategory);
-    worldHeadlines = items.length ? items : mockHeadlines.map((item, index) => ({ ...item, id: 'mock-' + index, category: worldCategory }));
+    // U2: 2.1 fell back to mockHeadlines and then labelled every row "LIVE".
+    // Fallback rows are now flagged and badged SIMULATED so nothing lies.
+    worldHeadlines = items.length
+      ? items
+      : mockHeadlines.map((item, index) => ({ ...item, id: 'mock-' + index, category: worldCategory, simulated: true }));
     const fill = (list) => {
       list.innerHTML = '';
       worldHeadlines.forEach((headline) => {
         const div = document.createElement('div');
         div.className = 'news-item';
         div.dataset.newsId = String(headline.id);
-        const meta = [String(headline.category || worldCategory).toUpperCase(), headline.by, headline.score ? '▲ ' + headline.score : 'LIVE'].filter(Boolean).join(' · ');
+        const status = headline.simulated ? 'SIMULATED' : (headline.score ? '▲ ' + headline.score : 'LIVE');
+        const meta = [String(headline.category || worldCategory).toUpperCase(), headline.by, status].filter(Boolean).join(' · ');
+        if (headline.simulated) div.classList.add('simulated');
         div.innerHTML = `<div class="n-title">${escapeHtml(headline.title)}</div><div class="n-meta">${escapeHtml(meta)}</div>`;
         div.addEventListener('click', () => api.openExternal(headline.url));
         list.appendChild(div);
@@ -5337,7 +5523,9 @@ function bindEvents() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') { $('#chatInput').focus(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === ',') { openSettings(); }
-    else if (e.key === 'Escape') { closeSettings(); closePalette(); closeDownload(); }
+    // U4: Escape now closes EVERY modal (breathe / report / theme included),
+    // not just settings + palette + download.
+    else if (e.key === 'Escape') { closeAllModals(); }
   });
 
   // voice presets, preview, and tuning
@@ -5386,7 +5574,16 @@ function bindEvents() {
   // start AI loop
   $('#startBtn').addEventListener('click', () => {
     playSfx('activate');
-    if (isRunning) { isRunning = false; $('#startBtn').classList.remove('running'); $('#startLabel').textContent = 'START AI'; $('#orbStatus').textContent = 'STANDBY'; $('#orbStatus').classList.remove('active'); stopListening(); updateMediaLink(); }
+    if (isRunning) {
+      isRunning = false;
+      $('#startBtn').classList.remove('running');
+      $('#startLabel').textContent = 'START AI';
+      $('#orbStatus').textContent = 'STANDBY';
+      $('#orbStatus').classList.remove('active');
+      stopListening();
+      stopSpeaking(); // U6: turning the loop OFF must also silence Gem mid-sentence
+      updateMediaLink();
+    }
     else { startAiLoop(); addMessage('system-msg', 'Listening. Speak naturally.'); speak('I am listening. How can I help?'); updateMediaLink(); }
   });
 
@@ -5475,11 +5672,14 @@ function startAiLoop() {
 
 // Continuous wake-word listening ("Hey GemAir")
 let wakeRecognition = null;
+let wakeArmed = false;
+let wakeBackoff = 250;
 function configureWakeWord(enabled) {
   document.body.classList.toggle('wake-armed', !!enabled);
   if (!enabled) {
     if (wakeRecognition) { try { wakeRecognition.stop(); } catch (e) {} }
     wakeRecognition = null;
+    wakeArmed = false;
     stopMicMeter();
     return;
   }
@@ -5493,7 +5693,7 @@ function configureWakeWord(enabled) {
     recognitionLoop.onresult = (event) => {
       for (let i = event.resultIndex || 0; i < event.results.length; i++) {
         const transcript = (event.results[i][0].transcript || '').toLowerCase().trim();
-        if (transcript) stopSpeaking(); // spoken barge-in always wins over TTS
+        if (transcript) { stopSpeaking(); wakeBackoff = 250; } // barge-in wins; healthy loop resets backoff
         if (/\bhey\s+gem(?:air)?\b|\bhi\s+gem(?:air)?\b/.test(transcript)) {
           addMessage('system-msg', 'Wake word “Hey Gem” detected — listening.');
           startAiLoop();
@@ -5502,13 +5702,24 @@ function configureWakeWord(enabled) {
         }
       }
     };
-    recognitionLoop.onerror = () => { /* onend restarts unless permission was revoked */ };
+    recognitionLoop.onerror = () => { /* onend restarts (with backoff) unless permission was revoked */ };
     recognitionLoop.onend = () => {
-      if (profile.wakeWord && wakeRecognition) setTimeout(() => { try { recognitionLoop.start(); } catch (e) {} }, 250);
+      // U6: back off when the wake loop cannot stay open (offline / no mic)
+      if (!profile.wakeWord || !wakeRecognition) { wakeArmed = false; return; }
+      wakeBackoff = Math.min(15000, Math.round(wakeBackoff * 1.7));
+      setTimeout(() => {
+        if (!profile.wakeWord || !wakeRecognition) return;
+        try { recognitionLoop.start(); } catch (e) {}
+      }, wakeBackoff);
     };
     wakeRecognition = recognitionLoop;
   }
-  wakeRecognition.lang = profile.voice?.sttLang || 'en-US';
+  wakeRecognition.lang = profile.voice?.sttLang || DEFAULTS.sttLang;
+  // U6: configureWakeWord() ran twice at boot (once from setupControls, once
+  // from the init tail), so the loop was armed twice and the confirmation
+  // message appeared twice. Arming is now idempotent.
+  if (wakeArmed) return;
+  wakeArmed = true;
   try { wakeRecognition.start(); } catch (e) {}
   addMessage('system-msg', 'Wake word armed — say “Hey Gem” anytime.');
 }
@@ -5845,6 +6056,10 @@ async function boot() {
   safe('commandMap', startCommandMap);
   safe('satLink', startSatLink);
   safe('satFeed', () => renderSatFeed('today')); // S1: load the real TODAY feed
+  safe('modalA11y', setupModalAccessibility);          // U4
+  safe('iconLabels', labelIconButtons);                // U4
+  safe('shortcutHints', applyPlatformShortcutHints);   // U4
+  safe('systemStatus', updateSystemStatusChip);        // U2
   safe('circuitWires', startCircuitWires);
   safe('townPreview', startTownPreview);
   safe('townChrome', initTownChrome);
