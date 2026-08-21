@@ -39,6 +39,10 @@ const api = {
       battery: { percent: 82, charging: true }, disk: { totalGB: 512, freeGB: 187, percent: 63 }
     };
   },
+  async screenInspect() {
+    if (window.gemair && window.gemair.screenInspect) return window.gemair.screenInspect();
+    return { changed: false, changePercent: 0, description: 'Browser screen capture is unavailable; desktop mode is required.' };
+  },
   async getProfile() { if (window.gemair) return window.gemair.getProfile(); return window.webStore ? window.webStore.getProfile() : {}; },
   async setProfile(d) { if (window.gemair) return window.gemair.setProfile(d); if (window.webStore) await window.webStore.setProfile(d); },
 
@@ -370,7 +374,7 @@ let profile = {
   name: 'Commander', theme: 'crimson',
   ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' },
   voice: { preset: 'gem', rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' },
-  memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false
+  memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false, screenAwareness: false
 };
 let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
@@ -381,6 +385,78 @@ let awaitingName = false;   // first-run: Gem is waiting to be told the user's n
 
 let listening = false, recognition = null, isRunning = false;
 const chatHistory = []; // working context window
+const CONTEXT_TOKEN_LIMIT = 16000;
+let contextCompacting = false;
+let activePlan = null;
+
+function estimateContextTokens(extraText = '') {
+  const chars = chatHistory.reduce((sum, message) => sum + String(message.content || '').length + String(message.role || '').length + 4, 0) + String(extraText || '').length;
+  return Math.ceil(chars / 4);
+}
+
+function updateContextMeter(extraText = '') {
+  const tokens = estimateContextTokens(extraText);
+  const percent = Math.min(100, Math.round(tokens / CONTEXT_TOKEN_LIMIT * 100));
+  const chip = $('#contextChip'), value = $('#contextValue'), bar = $('#contextBar');
+  if (value) value.textContent = tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'K' : String(tokens);
+  if (bar) bar.style.width = percent + '%';
+  if (chip) { chip.classList.toggle('warn', percent >= 70 && percent < 90); chip.classList.toggle('danger', percent >= 90); chip.title = `${tokens.toLocaleString()} estimated tokens · ${percent}% of ${CONTEXT_TOKEN_LIMIT.toLocaleString()}`; }
+  [['#townCtx', percent], ['#townCtxMini', percent]].forEach(([selector, pct]) => { const meter = $(selector); if (meter) meter.style.width = pct + '%'; });
+  return { tokens, percent };
+}
+
+async function compactChatContextIfNeeded(extraText = '') {
+  const usage = updateContextMeter(extraText);
+  if (usage.percent < 70 || contextCompacting || chatHistory.length < 10) return false;
+  contextCompacting = true;
+  try {
+    const keep = chatHistory.slice(-8);
+    const old = chatHistory.slice(0, -8);
+    const transcript = old.map((message) => `${message.role}: ${message.content}`).join('\n');
+    let summary = null;
+    try {
+      const result = await api.aiSummarize(profile.ai || {}, transcript);
+      if (result && result.ok) summary = result.summary;
+    } catch (e) {}
+    if (!summary) {
+      summary = old.slice(-8).map((message) => `• ${message.role}: ${String(message.content || '').replace(/\s+/g, ' ').slice(0, 180)}`).join('\n');
+    }
+    chatHistory.splice(0, chatHistory.length, { role: 'system', content: `Compacted conversation context:\n${summary}` }, ...keep);
+    updateContextMeter(extraText);
+    toast('CTX COMPACTED', 'Older turns summarized; the conversation continues seamlessly.', '◫');
+    return true;
+  } finally { contextCompacting = false; }
+}
+
+function planForRequest(text) {
+  const source = String(text || '').trim();
+  const explicit = source.split(/(?:\n\s*\d+[.)]\s*|\s+then\s+|\s+and then\s+|;)/i).map((part) => part.replace(/^\d+[.)]\s*/, '').trim()).filter((part) => part.length > 3);
+  if (explicit.length >= 2) return explicit.slice(0, 5);
+  const verbs = source.match(/\b(search|research|find|compare|write|create|save|verify|check|scan|send|email|organize|summarize|plan|open|read|build|test)\b/gi) || [];
+  if (verbs.length < 2 && source.length < 150) return [];
+  if (/research|search|find/i.test(source) && /write|create|save/i.test(source)) return ['Research and verify sources', 'Create and save the deliverable', 'Verify the result'];
+  return ['Understand scope and constraints', 'Execute the required tools', 'Verify and report the outcome'];
+}
+
+function renderPlanner(messageEl, text) {
+  const steps = planForRequest(text);
+  if (!messageEl || !steps.length) { activePlan = null; return; }
+  const panel = document.createElement('div');
+  panel.className = 'plan-checklist';
+  panel.innerHTML = `<div class="plan-title">NUMBERED EXECUTION PLAN</div><div class="plan-steps">${steps.map((step, index) => `<span class="plan-step${index === 0 ? ' running' : ''}" data-plan-step="${index}"><i>${index + 1}</i>${escapeHtml(step)}</span>`).join('')}</div>`;
+  const paragraph = messageEl.querySelector('p');
+  messageEl.insertBefore(panel, paragraph || messageEl.firstChild);
+  activePlan = { panel, steps, completed: 0 };
+}
+
+function tickPlannerStep() {
+  if (!activePlan || !activePlan.panel || !activePlan.panel.isConnected) return;
+  const nodes = activePlan.panel.querySelectorAll('.plan-step');
+  const current = nodes[activePlan.completed];
+  if (current) { current.classList.remove('running'); current.classList.add('done'); const icon = current.querySelector('i'); if (icon) icon.textContent = '✓'; }
+  activePlan.completed++;
+  const next = nodes[activePlan.completed]; if (next) next.classList.add('running');
+}
 
 const AGENTS = [
   { name: 'Alice', emoji: '👩‍💻', role: 'Web Research · search / fetch', talk: 'Verifying live sources on the web…' },
@@ -1506,6 +1582,7 @@ function toolChipUpdate({ name, state }) {
   }
   chip.className = 'tool-chip ' + (state === 'done' ? 'done' : state === 'error' ? 'error' : 'running');
   chip.innerHTML = `<span class="tc-dot"></span>${escapeHtml(label)}${state === 'done' ? ' ✓' : state === 'error' ? ' ✗' : ' …'}`;
+  if (state === 'done') tickPlannerStep();
   const orb = $('#orbStatus');
   if (orb && state === 'start') { orb.textContent = 'EXECUTING · ' + label.toUpperCase(); }
 }
@@ -1615,6 +1692,7 @@ function buildSystemPrompt() {
       `- If a search returns nothing usable, say "I could not verify that" — never fill the gap from memory.\n` +
       `- Separate what you verified from what you are inferring, in plain words.\n` +
       `- If the user's premise is wrong, correct it first, briefly.\n` +
+      `PLANNER: For a request with two or more steps, begin with a short numbered plan, then execute the necessary tools in order and report completion against that plan. ` +
       `Use tools for real actions or live data. Be genuinely helpful, concise but human, and always kind.`
   };
 }
@@ -1718,6 +1796,10 @@ async function handleMessage(text) {
     awaitingName = true;
   }
 
+  // Keep the real working context bounded before adding this turn. At 70%,
+  // older turns become one summary message while recent turns remain verbatim.
+  await compactChatContextIfNeeded(text);
+
   // Understand the user's emotion — always, automatically
   const emo = await api.analyzeEmotion(text);
   const lang = detectLanguage(text);
@@ -1762,6 +1844,7 @@ async function handleMessage(text) {
   const agentMatch = text.match(/^@(Alice|Bob|Carol|Dave)\s+(.*)$/i);
   const typing = addMessage('ai', '', { typing: true });
   activeTypingEl = typing;
+  renderPlanner(typing, text);
 
   let reply;
   let agentToolRuns = [];
@@ -1855,6 +1938,7 @@ async function handleMessage(text) {
   maybeConsolidateMemory();
 
   activeTypingEl = null; // reply finished — stop attaching tool chips
+  updateContextMeter();
   speak(reply);
 }
 
@@ -2497,6 +2581,7 @@ async function runCollaborationMission(task) {
   const typing = addMessage('ai', '', { typing: true });
   const replyEl = typing.querySelector('p');
   activeTypingEl = typing;
+  renderPlanner(typing, `Research ${task}; write the report; verify system readiness`);
   setThinking(true);
   addActivity('TEAM', `Mission started: ${task}`);
   if (window.__assignAgentTask) window.__assignAgentTask('Alice', 'Research: ' + task);
@@ -2520,6 +2605,7 @@ async function runCollaborationMission(task) {
     const reply = result.summary || result.error || 'The collaboration finished.';
     await renderReply(replyEl, reply);
     chatHistory.push({ role: 'user', content: `[TEAM MISSION] ${task}` }, { role: 'assistant', content: reply });
+    updateContextMeter();
     await api.memoryAppend('user', `[TEAM MISSION] ${task}`);
     await api.memoryAppend('assistant', reply);
     await loadMemory(); renderMissionLog(); updateTranscriptCount();
@@ -2549,6 +2635,7 @@ function renderAgentToolResults(messageEl, agentName, runs) {
   }).join('');
   messageEl.appendChild(block);
   runs.forEach((run) => {
+    if (run.ok) tickPlannerStep();
     pushToolActivity(run.name, run.args, run.result, (run.ms || 0) / 1000);
     addActivity(agentName, `${run.ok ? '✓' : '✗'} ${run.name}: ${stringify(run.result).replace(/\s+/g, ' ').slice(0, 110)}`);
   });
@@ -2711,7 +2798,7 @@ function renderTownChrome() {
   const total = list.length;
   const seated = list.filter((a) => (a.state || 'idle') !== 'idle').length;
   const busy = list.filter((a) => a.state === 'busy' || a.state === 'queued').length;
-  const ctxPct = Math.min(100, Math.round((chatHistory.length / 16) * 100));
+  const ctxPct = updateContextMeter().percent;
   const cfg = profile.ai || {};
   const prov = detectProvider(cfg.baseURL);
   const provName = { gemini: 'GEMINI', chatgpt: 'GPT', claude: 'CLAUDE', groq: 'LLAMA', openrouter: 'OPENROUTER' }[prov];
@@ -3562,6 +3649,7 @@ function openSettings() {
   $('#setMemoryOn').checked = profile.memoryOn !== false;
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setAmbientScore').checked = !!profile.ambientScore;
+  $('#setScreenAwareness').checked = !!profile.screenAwareness;
   $('#setWakeWord').checked = !!profile.wakeWord;
   populateVoices(); populateNeuralVoices(); updateAiHint();
   syncVoicePresetUi(profile.voice?.preset || 'gem');
@@ -3677,7 +3765,8 @@ function bindEvents() {
     clearChatBtn.addEventListener('click', () => {
       playSfx('click');
       $('#chatLog').innerHTML = '<div class="msg system-msg"><p>Chat history cleared. Systems standing by.</p></div>';
-      chatHistory = [];
+      chatHistory.splice(0, chatHistory.length);
+      updateContextMeter();
       toast('CHAT', 'Chat history log cleared.', '🧹');
     });
   }
@@ -3908,14 +3997,16 @@ function bindEvents() {
     profile.memoryOn = $('#setMemoryOn').checked;
     profile.allowShell = $('#setAllowShell').checked;
     profile.ambientScore = $('#setAmbientScore').checked;
+    profile.screenAwareness = $('#setScreenAwareness').checked;
     profile.wakeWord = $('#setWakeWord').checked;
     persistProfile().then(() => { updateLinkMode(); closeSettings(); });
     setAmbientScore(profile.ambientScore);
+    configureScreenAwareness(profile.screenAwareness);
     updateSttLanguageUi();
     configureWakeWord(profile.wakeWord);
   });
   $('#resetBtn').addEventListener('click', async () => {
-    profile = { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { preset: 'gem', rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' }, memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false };
+    profile = { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { preset: 'gem', rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' }, memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false, screenAwareness: false };
     setAmbientScore(false);
     await persistProfile(); applyTheme('crimson'); updateLinkMode(); openSettings();
   });
@@ -4160,11 +4251,36 @@ function bindEvents() {
   configureWakeWord(profile.wakeWord);
 }
 
+let screenAwarenessTimer = null;
+let screenInspecting = false;
+async function inspectActiveScreen() {
+  if (!profile.screenAwareness || (!isRunning && !listening) || screenInspecting) return;
+  screenInspecting = true;
+  try {
+    const result = await api.screenInspect();
+    if (result && result.changed) {
+      addActivity('SCREEN', '✓ ' + result.description);
+      pushToolActivity('see_screen', { mode: 'change detection' }, result, 0);
+      toast('SCREEN AWARENESS', result.description, '◫');
+    }
+  } catch (e) {
+    addActivity('SCREEN', 'Screen awareness unavailable: ' + e.message);
+  } finally { screenInspecting = false; }
+}
+function configureScreenAwareness(enabled) {
+  if (screenAwarenessTimer) clearInterval(screenAwarenessTimer);
+  screenAwarenessTimer = null;
+  if (!enabled) return;
+  screenAwarenessTimer = setInterval(inspectActiveScreen, 15000);
+  inspectActiveScreen();
+}
+
 // Start the assistant loop (used by START button + wake word)
 function startAiLoop() {
   isRunning = true;
   listening = true;
   startMicMeter();
+  if (profile.screenAwareness) inspectActiveScreen();
   $('#startBtn').classList.add('running');
   $('#startLabel').textContent = 'AI ONLINE';
   $('#orbStatus').textContent = 'LISTENING · SPEAK NOW';
@@ -4526,6 +4642,8 @@ async function boot() {
   try { $('#verTag').textContent = 'v' + (await api.version()); } catch (e) {}
 
   if (profile.wakeWord) configureWakeWord(true);
+  configureScreenAwareness(!!profile.screenAwareness);
+  updateContextMeter();
 
   // Proactive check-in: if mood has been low & declining, reach out gently
   try {

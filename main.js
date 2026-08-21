@@ -1175,6 +1175,34 @@ async function seeScreen() {
   return { ok: true, file, note: 'Screen captured. If your AI model supports vision, it can analyze this image.' };
 }
 
+let lastScreenFingerprint = null;
+async function inspectScreenChange() {
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 180, height: 100 } });
+  const source = sources[0];
+  if (!source || !source.thumbnail) return { error: 'No screen available' };
+  const bitmap = source.thumbnail.toBitmap();
+  const sample = [];
+  // NativeImage bitmaps are BGRA. Sparse luminance samples avoid storing or
+  // transmitting the screen itself while still detecting meaningful changes.
+  for (let i = 0; i + 2 < bitmap.length; i += 64) sample.push(Math.round(bitmap[i] * 0.114 + bitmap[i + 1] * 0.587 + bitmap[i + 2] * 0.299));
+  let delta = 0;
+  if (lastScreenFingerprint && lastScreenFingerprint.length === sample.length) {
+    for (let i = 0; i < sample.length; i++) delta += Math.abs(sample[i] - lastScreenFingerprint[i]);
+    delta = delta / sample.length / 255;
+  }
+  const first = !lastScreenFingerprint;
+  lastScreenFingerprint = sample;
+  const changed = !first && delta >= 0.045;
+  const percent = Math.round(delta * 100);
+  const description = first
+    ? `Screen awareness baseline created for ${source.name}; no image was saved.`
+    : changed
+      ? `${percent >= 18 ? 'Major' : 'Visible'} screen change on ${source.name} (${percent}% visual delta).`
+      : `No meaningful screen change on ${source.name} (${percent}% visual delta).`;
+  if (changed) logAction('see_screen', description);
+  return { ok: true, changed, changePercent: percent, description, display: source.name, captured: false, at: Date.now() };
+}
+
 // ---- skills & instructions (persistent, user-taught) ----
 function addSkill(text, name) {
   const m = readMemory();
@@ -2040,6 +2068,7 @@ async function collaborateAgents(task) {
 // IPC handlers
 // ---------------------------------------------------------------------------
 ipcMain.handle('system:info', () => getSystemInfo());
+ipcMain.handle('screen:inspect', () => inspectScreenChange());
 ipcMain.handle('profile:get', () => readProfile());
 ipcMain.handle('profile:set', (_e, data) => writeProfile(data || {}));
 

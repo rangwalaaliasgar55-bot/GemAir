@@ -51,6 +51,9 @@
 
       <div class="topbar-right">
         <button class="stt-lang-chip" id="sttLangChip" title="Quick-switch speech recognition language">🎙 EN-US</button>
+        <div class="context-chip" id="contextChip" title="Estimated working context tokens">
+          <span>CTX <b id="contextValue">0</b></span><i><em id="contextBar"></em></i>
+        </div>
         <div class="sys-chip" title="System status">
           <span class="dot" id="sysDot"></span>
           <span id="sysChipText">SYSTEMS NOMINAL</span>
@@ -841,6 +844,10 @@
             <input type="checkbox" id="setAmbientScore" /> Ambient command-center score (default off)
           </label>
           <span class="hint">A quiet, locally synthesized sci-fi soundscape. No audio is downloaded or recorded.</span>
+          <label class="check-label">
+            <input type="checkbox" id="setScreenAwareness" /> Optional screen awareness during active voice sessions
+          </label>
+          <span class="hint">Periodically compares a low-resolution screen fingerprint and reports meaningful changes. Default off.</span>
           <label class="check-label">
             <input type="checkbox" id="setAllowShell" /> Allow shell command execution (confirms each command)
           </label>
