@@ -369,7 +369,7 @@ function supportGuidance(emotion, crisis) {
 let profile = {
   name: 'Commander', theme: 'crimson',
   ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' },
-  voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' },
+  voice: { preset: 'gem', rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' },
   memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false
 };
 let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
@@ -390,6 +390,13 @@ const AGENTS = [
 ];
 
 // Neural voice accents (free Google TTS — smooth natural female, no key needed)
+const VOICE_PRESETS = {
+  gem: { label: 'Gem', gender: 'female', rate: 1.0, pitch: 1.1, neuralVoice: 'en' },
+  jarvis: { label: 'JARVIS', gender: 'male', rate: 0.86, pitch: 0.78, neuralVoice: 'en-GB' },
+  nova: { label: 'Nova', gender: 'female', rate: 1.08, pitch: 1.22, neuralVoice: 'en' }
+};
+const STT_LANGUAGES = ['en-US', 'en-GB', 'en-IN', 'hi-IN', 'ur-PK'];
+
 const NEURAL_VOICES = [
   { id: 'en', label: 'English (US) — smooth female' },
   { id: 'en-GB', label: 'English (UK) — smooth female' },
@@ -1894,6 +1901,8 @@ function speak(text) {
       engine: mode,
       rate: profile.voice?.rate ?? 1.0,
       pitch: profile.voice?.pitch ?? 1.1,
+      neuralVoice: profile.voice?.neuralVoice || 'en',
+      preset: profile.voice?.preset || 'gem',
       emotionMod: mod,
       gen
     }).then(() => {
@@ -2041,18 +2050,78 @@ async function speakNeural(text, gen) {
   }
   if (!any) throw new Error('neural TTS unavailable');
 }
+let micStream = null;
+let micAnalyser = null;
+let micMeterFrame = null;
+
+async function startMicMeter() {
+  const canvas = $('#micVuCanvas');
+  if (!canvas || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  try {
+    if (!micStream) micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = globalAudioCtx || new AudioCtx(); globalAudioCtx = ctx;
+    if (ctx.state === 'suspended') ctx.resume();
+    if (!micAnalyser) {
+      micAnalyser = ctx.createAnalyser(); micAnalyser.fftSize = 128; micAnalyser.smoothingTimeConstant = 0.74;
+      ctx.createMediaStreamSource(micStream).connect(micAnalyser);
+    }
+    if (micMeterFrame) return;
+    const data = new Uint8Array(micAnalyser.frequencyBinCount);
+    const draw = () => {
+      micMeterFrame = requestAnimationFrame(draw);
+      const meter = canvas.getContext('2d');
+      micAnalyser.getByteFrequencyData(data);
+      const level = data.reduce((sum, value) => sum + value, 0) / Math.max(1, data.length) / 255;
+      meter.clearRect(0, 0, canvas.width, canvas.height);
+      meter.fillStyle = 'rgba(2,5,10,.85)'; meter.fillRect(0, 0, canvas.width, canvas.height);
+      const bars = 24, gap = 2, width = (canvas.width - gap * (bars + 1)) / bars;
+      for (let i = 0; i < bars; i++) {
+        const magnitude = Math.max(2, Math.min(canvas.height - 8, (data[Math.floor(i * data.length / bars)] / 255 + level) * (canvas.height - 8)));
+        meter.fillStyle = i / bars < level * 1.9 ? getAccent() : 'rgba(130,155,190,.24)';
+        meter.fillRect(gap + i * (width + gap), (canvas.height - magnitude) / 2, width, magnitude);
+      }
+    };
+    draw();
+  } catch (e) { /* SpeechRecognition may still work without analyser access. */ }
+}
+
+function stopMicMeter() {
+  if (profile.wakeWord || listening) return;
+  if (micMeterFrame) cancelAnimationFrame(micMeterFrame);
+  micMeterFrame = null; micAnalyser = null;
+  if (micStream) micStream.getTracks().forEach((track) => track.stop());
+  micStream = null;
+}
+
 function initRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return null;
   const r = new SR();
-  r.continuous = false; r.interimResults = false; r.lang = profile.voice?.sttLang || 'en-US';
-  r.onresult = (e) => { const t = e.results[0][0].transcript; $('#chatInput').value = t; sendMessage(t); };
-  r.onend = () => { $('#micBtn').classList.remove('recording'); document.body.classList.remove('rgb-recording'); if (isRunning && listening) { try { r.start(); } catch (e) {} } };
-  r.onerror = (e) => {
+  r.continuous = false; r.interimResults = true; r.lang = profile.voice?.sttLang || 'en-US';
+  r.onresult = (event) => {
+    let interim = '', finalText = '';
+    for (let i = event.resultIndex || 0; i < event.results.length; i++) {
+      const text = event.results[i][0].transcript || '';
+      if (text.trim()) stopSpeaking(); // barge-in: any speech immediately cuts TTS
+      if (event.results[i].isFinal) finalText += text; else interim += text;
+    }
+    if (interim) {
+      $('#chatInput').value = interim;
+      setCaption('user', interim, { autoHide: 1200 });
+    }
+    if (finalText.trim()) { $('#chatInput').value = finalText.trim(); sendMessage(finalText.trim()); }
+  };
+  r.onend = () => {
+    $('#micBtn').classList.remove('recording'); document.body.classList.remove('rgb-recording');
+    if (isRunning && listening) { try { r.start(); } catch (e) {} } else stopMicMeter();
+  };
+  r.onerror = (event) => {
     $('#micBtn').classList.remove('recording');
     document.body.classList.remove('rgb-recording');
-    if (e.error === 'not-allowed') addMessage('system-msg', 'Microphone denied. Enable mic permission, or type your command.');
-    if (isRunning && listening && e.error !== 'not-allowed') { try { r.start(); } catch (e2) {} }
+    if (event.error === 'not-allowed') addMessage('system-msg', 'Microphone denied. Enable mic permission, or type your command.');
+    if (isRunning && listening && event.error !== 'not-allowed') { try { r.start(); } catch (e) {} }
   };
   return r;
 }
@@ -3455,6 +3524,27 @@ function applyAvatarGender(gender) {
   if (vSel) vSel.value = profile.voiceGender || g;
 }
 
+function syncVoicePresetUi(presetId) {
+  const id = VOICE_PRESETS[presetId] ? presetId : 'gem';
+  $$('.voice-preset').forEach((button) => button.classList.toggle('active', button.dataset.voicePreset === id));
+}
+
+function updateSttLanguageUi() {
+  const language = profile.voice?.sttLang || 'en-US';
+  const chip = $('#sttLangChip'); if (chip) chip.textContent = '🎙 ' + language.toUpperCase();
+  if (recognition) recognition.lang = language;
+  if (wakeRecognition) wakeRecognition.lang = language;
+}
+
+function applyVoicePresetToControls(presetId) {
+  const preset = VOICE_PRESETS[presetId] || VOICE_PRESETS.gem;
+  $('#setVoiceGender').value = preset.gender;
+  $('#setRate').value = preset.rate; $('#rateVal').textContent = preset.rate.toFixed(2);
+  $('#setPitch').value = preset.pitch; $('#pitchVal').textContent = preset.pitch.toFixed(2);
+  $('#setNeuralVoice').value = preset.neuralVoice;
+  syncVoicePresetUi(presetId);
+}
+
 function openSettings() {
   $('#setUserName').value = profile.name || '';
   $('#setBaseURL').value = (profile.ai?.baseURL) || '';
@@ -3474,6 +3564,7 @@ function openSettings() {
   $('#setAmbientScore').checked = !!profile.ambientScore;
   $('#setWakeWord').checked = !!profile.wakeWord;
   populateVoices(); populateNeuralVoices(); updateAiHint();
+  syncVoicePresetUi(profile.voice?.preset || 'gem');
   $('#settingsModal').classList.add('open');
 }
 function closeSettings() { $('#settingsModal').classList.remove('open'); }
@@ -3807,6 +3898,7 @@ function bindEvents() {
     profile.voiceGender = $('#setVoiceGender')?.value || profile.avatarGender || 'female';
     applyAvatarGender(profile.avatarGender);
     profile.voice = profile.voice || {};
+    profile.voice.preset = $('#voicePresets .voice-preset.active')?.dataset.voicePreset || 'gem';
     profile.voice.rate = Number($('#setRate').value);
     profile.voice.pitch = Number($('#setPitch').value);
     profile.voice.mode = $('#setVoiceMode').value;
@@ -3819,10 +3911,11 @@ function bindEvents() {
     profile.wakeWord = $('#setWakeWord').checked;
     persistProfile().then(() => { updateLinkMode(); closeSettings(); });
     setAmbientScore(profile.ambientScore);
+    updateSttLanguageUi();
     configureWakeWord(profile.wakeWord);
   });
   $('#resetBtn').addEventListener('click', async () => {
-    profile = { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' }, memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false };
+    profile = { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { preset: 'gem', rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' }, memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false };
     setAmbientScore(false);
     await persistProfile(); applyTheme('crimson'); updateLinkMode(); openSettings();
   });
@@ -3977,17 +4070,30 @@ function bindEvents() {
     else if (e.key === 'Escape') { closeSettings(); closePalette(); closeDownload(); }
   });
 
-  // voice preview + sliders
+  // voice presets, preview, and tuning
+  $$('.voice-preset').forEach((button) => button.addEventListener('click', () => {
+    applyVoicePresetToControls(button.dataset.voicePreset);
+    playSfx('click');
+  }));
+  $('#sttLangChip').addEventListener('click', () => {
+    profile.voice = profile.voice || {};
+    const current = STT_LANGUAGES.indexOf(profile.voice.sttLang || 'en-US');
+    profile.voice.sttLang = STT_LANGUAGES[(current + 1) % STT_LANGUAGES.length];
+    $('#setSttLang').value = profile.voice.sttLang;
+    updateSttLanguageUi(); persistProfile(); playSfx('click');
+    toast('VOICE LANGUAGE', profile.voice.sttLang, '🎙');
+  });
   $('#previewVoice').addEventListener('click', () => {
-    const prevMode = profile.voice.mode;
-    const prevNeural = profile.voice.neuralVoice;
+    const previousVoice = { ...profile.voice };
+    const previousGender = profile.voiceGender;
     profile.voice.mode = $('#setVoiceMode').value;
     profile.voice.neuralVoice = $('#setNeuralVoice').value;
     profile.voice.name = $('#setVoice').value;
     profile.voice.rate = Number($('#setRate').value);
     profile.voice.pitch = Number($('#setPitch').value);
-    speak('Hello, I am GemAir, your personal assistant. How can I help you today?');
-    profile.voice.mode = prevMode; profile.voice.neuralVoice = prevNeural;
+    profile.voiceGender = $('#setVoiceGender').value;
+    speak('Hello, I am Gem, your personal intelligence. All systems are ready.');
+    profile.voice = previousVoice; profile.voiceGender = previousGender;
   });
   $('#setRate').addEventListener('input', () => { $('#rateVal').textContent = $('#setRate').value; });
   $('#setPitch').addEventListener('input', () => { $('#pitchVal').textContent = $('#setPitch').value; });
@@ -4011,7 +4117,7 @@ function bindEvents() {
   $('#micBtn').addEventListener('click', () => {
     if (!recognition) { addMessage('system-msg', 'Speech recognition unavailable here — type a command instead.'); return; }
     if (listening) stopListening();
-    else { listening = true; avatar({ listening: true }); $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); try { recognition.start(); } catch (e) {} }
+    else { listening = true; startMicMeter(); avatar({ listening: true }); $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); try { recognition.start(); } catch (e) {} }
   });
 
   $('#refreshNews').addEventListener('click', () => refreshHeadlines(worldCategory));
@@ -4057,6 +4163,8 @@ function bindEvents() {
 // Start the assistant loop (used by START button + wake word)
 function startAiLoop() {
   isRunning = true;
+  listening = true;
+  startMicMeter();
   $('#startBtn').classList.add('running');
   $('#startLabel').textContent = 'AI ONLINE';
   $('#orbStatus').textContent = 'LISTENING · SPEAK NOW';
@@ -4067,32 +4175,41 @@ function startAiLoop() {
 // Continuous wake-word listening ("Hey GemAir")
 let wakeRecognition = null;
 function configureWakeWord(enabled) {
+  document.body.classList.toggle('wake-armed', !!enabled);
   if (!enabled) {
     if (wakeRecognition) { try { wakeRecognition.stop(); } catch (e) {} }
     wakeRecognition = null;
+    stopMicMeter();
     return;
   }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return;
+  startMicMeter();
   if (!wakeRecognition) {
-    const r = new SR();
-    r.continuous = true; r.interimResults = true; r.lang = 'en-US';
-    r.onresult = (e) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = (e.results[i][0].transcript || '').toLowerCase();
-        if (/hey gemair|hey gem|a gemair|hi gemair/.test(t)) {
-          addMessage('system-msg', 'Wake word detected — listening.');
+    const recognitionLoop = new SR();
+    recognitionLoop.continuous = true; recognitionLoop.interimResults = true;
+    recognitionLoop.lang = profile.voice?.sttLang || 'en-US';
+    recognitionLoop.onresult = (event) => {
+      for (let i = event.resultIndex || 0; i < event.results.length; i++) {
+        const transcript = (event.results[i][0].transcript || '').toLowerCase().trim();
+        if (transcript) stopSpeaking(); // spoken barge-in always wins over TTS
+        if (/\bhey\s+gem(?:air)?\b|\bhi\s+gem(?:air)?\b/.test(transcript)) {
+          addMessage('system-msg', 'Wake word “Hey Gem” detected — listening.');
           startAiLoop();
-          speak('Yes? I am listening.');
+          setCaption('user', transcript, { autoHide: 1600 });
+          break;
         }
       }
     };
-    r.onerror = () => { /* silently restart handled by onend */ };
-    r.onend = () => { if (profile.wakeWord && wakeRecognition) { try { r.start(); } catch (e) {} } };
-    wakeRecognition = r;
+    recognitionLoop.onerror = () => { /* onend restarts unless permission was revoked */ };
+    recognitionLoop.onend = () => {
+      if (profile.wakeWord && wakeRecognition) setTimeout(() => { try { recognitionLoop.start(); } catch (e) {} }, 250);
+    };
+    wakeRecognition = recognitionLoop;
   }
+  wakeRecognition.lang = profile.voice?.sttLang || 'en-US';
   try { wakeRecognition.start(); } catch (e) {}
-  addMessage('system-msg', 'Wake word armed — say "Hey GemAir" anytime.');
+  addMessage('system-msg', 'Wake word armed — say “Hey Gem” anytime.');
 }
 
 function stopListening() {
@@ -4101,6 +4218,7 @@ function stopListening() {
   $('#micBtn').classList.remove('recording');
   document.body.classList.remove('rgb-recording');
   if (recognition) { try { recognition.stop(); } catch (e) {} }
+  stopMicMeter();
 }
 
 // ---------------------------------------------------------------------------
@@ -4347,6 +4465,7 @@ async function boot() {
   safe('bindEvents', bindEvents);
   safe('bindSoulSliders', bindSoulSliders);
   safe('updateLinkMode', updateLinkMode);
+  safe('sttLanguage', updateSttLanguageUi);
 
   // Everything below is presentation. Any of it may fail without taking the
   // interface down with it.

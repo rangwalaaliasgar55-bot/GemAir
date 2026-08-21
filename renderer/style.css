@@ -231,6 +231,12 @@ body {
 .live-date { font-size: 11px; letter-spacing: 2px; color: var(--text-dim); margin-top: 2px; text-transform: uppercase; }
 
 .topbar-right { display: flex; align-items: center; gap: 12px; }
+.stt-lang-chip {
+  border: 1px solid var(--panel-border); border-radius: 18px; padding: 6px 10px;
+  background: rgba(0,0,0,.35); color: var(--text-dim); cursor: pointer;
+  font: 600 9px var(--font-mono); letter-spacing: .1em; white-space: nowrap;
+}
+.stt-lang-chip:hover { color: var(--accent); border-color: var(--accent-soft); }
 .sys-chip {
   display: flex; align-items: center; gap: 8px; font-family: var(--font-mono);
   font-size: 10px; letter-spacing: 2px; color: var(--good);
@@ -391,6 +397,12 @@ body {
   pointer-events: none; border-radius: 50%;
 }
 #avatarCanvas { position: absolute; inset: 0; margin: auto; }
+#micVuCanvas {
+  position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); z-index: 4;
+  width: 180px; height: 34px; border: 1px solid var(--panel-border); border-radius: 8px;
+  background: rgba(2,5,10,.7); opacity: .34; transition: opacity .2s, border-color .2s; pointer-events: none;
+}
+body.rgb-recording #micVuCanvas, body.wake-armed #micVuCanvas { opacity: 1; border-color: var(--accent-soft); box-shadow: 0 0 14px var(--accent-dim); }
 
 .gem-nameplate {
   position: absolute; top: 22px; left: 24px;
@@ -659,6 +671,11 @@ body {
 
 .modal-body { padding: 22px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
 fieldset { border: 1px solid var(--panel-border); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.voice-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.voice-preset { display: grid; gap: 3px; text-align: left; padding: 10px; border: 1px solid var(--panel-border); border-radius: 9px; background: rgba(0,0,0,.25); color: var(--text); cursor: pointer; }
+.voice-preset b { color: var(--accent); font: 700 10px var(--font-mono); letter-spacing: .12em; }
+.voice-preset span { color: var(--text-dim); font-size: 9px; }
+.voice-preset.active { border-color: var(--accent); background: var(--accent-dim); box-shadow: 0 0 12px var(--accent-dim); }
 legend { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; color: var(--accent); padding: 0 8px; font-weight: 600; }
 
 label { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--text-dim); }

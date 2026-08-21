@@ -92,7 +92,7 @@
 
       if (engine === 'neural') {
         try {
-          return await this.speakNeural(cleanText, gender, opts.gen);
+          return await this.speakNeural(cleanText, gender, opts.gen, opts.neuralVoice, finalRate);
         } catch (e) {
           // fallback to system TTS
         }
@@ -101,15 +101,16 @@
       return this.speakSystem(cleanText, gender, finalRate, finalPitch, opts.onBoundary);
     },
 
-    speakNeural(text, gender, gen) {
+    speakNeural(text, gender, gen, neuralVoice, rate) {
       return new Promise((resolve, reject) => {
-        const accent = gender === 'male' ? 'en-GB' : 'en';
+        const accent = neuralVoice || (gender === 'male' ? 'en-GB' : 'en');
         const url = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q=' + encodeURIComponent(text.slice(0, 200)) + '&tl=' + encodeURIComponent(accent);
 
         const audio = new Audio();
         audio.crossOrigin = 'anonymous';
         audio.src = url;
         audio.preload = 'auto';
+        audio.playbackRate = Math.max(0.75, Math.min(1.25, Number(rate || 1)));
 
         let settled = false;
         const done = (ok) => {

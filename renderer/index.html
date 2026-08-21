@@ -50,6 +50,7 @@
       </div>
 
       <div class="topbar-right">
+        <button class="stt-lang-chip" id="sttLangChip" title="Quick-switch speech recognition language">🎙 EN-US</button>
         <div class="sys-chip" title="System status">
           <span class="dot" id="sysDot"></span>
           <span id="sysChipText">SYSTEMS NOMINAL</span>
@@ -200,6 +201,7 @@
 
                   <canvas id="orbCanvas" width="560" height="560"></canvas>
                   <canvas id="avatarCanvas" width="560" height="560" aria-hidden="true"></canvas>
+                  <canvas id="micVuCanvas" width="180" height="34" aria-label="Microphone input level"></canvas>
 
                   <div class="gem-nameplate">
                     <span class="gem-name">GEM</span>
@@ -788,8 +790,13 @@
             </select>
           </label>
           <label class="check-label" style="margin-bottom:12px">
-            <input type="checkbox" id="setWakeWord" /> Wake word — listen for "Hey GemAir"
+            <input type="checkbox" id="setWakeWord" /> Wake word loop — listen for “Hey Gem”
           </label>
+          <div class="voice-presets" id="voicePresets" role="group" aria-label="Voice preset">
+            <button type="button" class="voice-preset active" data-voice-preset="gem"><b>GEM</b><span>warm · balanced</span></button>
+            <button type="button" class="voice-preset" data-voice-preset="jarvis"><b>JARVIS</b><span>deep · measured</span></button>
+            <button type="button" class="voice-preset" data-voice-preset="nova"><b>NOVA</b><span>bright · quick</span></button>
+          </div>
           <label>Voice Gender
             <select id="setVoiceGender">
               <option value="female">Female (Warm & Natural)</option>
@@ -815,6 +822,7 @@
               <option value="en-GB">English (UK)</option>
               <option value="en-IN">English (India)</option>
               <option value="hi-IN">Hindi</option>
+              <option value="ur-PK">Urdu</option>
               <option value="es-ES">Spanish</option>
               <option value="fr-FR">French</option>
             </select>
