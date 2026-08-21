@@ -3839,6 +3839,29 @@ function applyVoicePresetToControls(presetId) {
   syncVoicePresetUi(presetId);
 }
 
+// Section I — FREE FOREVER audit. Every feature maps to a free, keyless service.
+const COST_AUDIT = [
+  ['AI Core', 'Vercel serverless · FREE CORE', '$0'],
+  ['Text-to-Speech', 'Microsoft Edge neural voices', '$0'],
+  ['Speech-to-Text', 'Web Speech API', '$0'],
+  ['Images', 'pollinations.ai', '$0'],
+  ['Web Search', 'DuckDuckGo Lite + Wikipedia', '$0'],
+  ['Weather', 'Open-Meteo', '$0'],
+  ['News', 'Google News RSS', '$0'],
+  ['Crypto', 'CoinGecko', '$0'],
+  ['Currency', 'Frankfurter (free FX)', '$0'],
+  ['Translation', 'MyMemory', '$0'],
+  ['Dictionary', 'Free Dictionary API', '$0'],
+  ['Page Fetch', 'serverless fetch', '$0']
+];
+function renderCostPanel() {
+  const grid = $('#costGrid');
+  if (!grid) return;
+  grid.innerHTML = COST_AUDIT.map(([feature, service]) =>
+    `<div class="cost-row"><span class="c-feature">${escapeHtml(feature)}</span><span class="c-service">${escapeHtml(service)}</span><span class="c-price">$0.00</span></div>`
+  ).join('');
+}
+
 function openSettings() {
   $('#setUserName').value = profile.name || '';
   $('#setBaseURL').value = (profile.ai?.baseURL) || '';
@@ -3860,6 +3883,7 @@ function openSettings() {
   $('#setWakeWord').checked = !!profile.wakeWord;
   populateVoices(); populateNeuralVoices(); updateAiHint();
   syncVoicePresetUi(profile.voice?.preset || 'gem');
+  renderCostPanel();
   $('#settingsModal').classList.add('open');
 }
 function closeSettings() { $('#settingsModal').classList.remove('open'); }
