@@ -55,6 +55,7 @@
           <span id="sfxIcon">🔊</span> <span id="sfxText">SFX ON</span>
         </button>
 
+        <span class="theme-name-tag" id="themeNameTag" title="Active HUD theme — click swatches to recolour the entire interface">CRIMSON</span>
         <div class="theme-switcher" id="themeSwitcher">
           <button class="theme-btn active" data-theme="crimson" title="Crimson Jarvis theme"><i></i></button>
           <button class="theme-btn" data-theme="emerald" title="Emerald Hacker theme"><i></i></button>
@@ -589,12 +590,12 @@
             <input type="text" id="setModel" placeholder="llama-3.3-70b-versatile" />
           </label>
           <div class="quick-presets" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
-            <button class="preset mini-btn" data-preset="groq">Groq</button>
-            <button class="preset mini-btn" data-preset="openai">OpenAI</button>
-            <button class="preset mini-btn" data-preset="gemini">Gemini</button>
-            <button class="preset mini-btn" data-preset="claude">Claude</button>
-            <button class="preset mini-btn" data-preset="deepseek">DeepSeek</button>
-            <button class="preset mini-btn" data-preset="mistral">Mistral</button>
+            <button class="preset mini-btn" data-preset="groq" title="Groq — fast Llama (free tier)">Groq</button>
+            <button class="preset mini-btn" data-preset="openai" title="ChatGPT / OpenAI — use your OpenAI API key (platform.openai.com)">ChatGPT</button>
+            <button class="preset mini-btn" data-preset="gemini" title="Google Gemini — use your Google AI Studio key (aistudio.google.com)">Gemini</button>
+            <button class="preset mini-btn" data-preset="claude" title="Anthropic Claude — use your Anthropic key (console.anthropic.com)">Claude</button>
+            <button class="preset mini-btn" data-preset="deepseek" title="DeepSeek — use your DeepSeek key (platform.deepseek.com)">DeepSeek</button>
+            <button class="preset mini-btn" data-preset="mistral" title="Mistral — use your Mistral key (console.mistral.ai)">Mistral</button>
             <button class="preset mini-btn" data-preset="openrouter">OpenRouter</button>
             <button class="preset mini-btn" data-preset="ollama">Ollama</button>
             <button class="preset mini-btn" data-preset="offline">Offline</button>
@@ -607,6 +608,14 @@
           <label style="margin-top:12px" class="check-label">
             <input type="checkbox" id="setMemoryOn" checked /> Auto memory — remember facts across conversations
           </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>HUD THEMES</legend>
+          <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">
+            Recolour the entire interface — orb, panels, canvases and glows. Defined as string tokens in <b>themes.js</b>; your choice is saved and applies everywhere.
+          </p>
+          <div class="theme-grid" id="themeGrid"></div>
         </fieldset>
 
         <fieldset>
@@ -758,6 +767,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="themes.js"></script>
   <script src="store.js"></script>
   <script src="ai-client.js"></script>
   <script src="tts-engine.js"></script>

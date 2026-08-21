@@ -1,0 +1,190 @@
+# GemAir — AI Connection Framework
+
+How GemAir connects to AI brains (**ChatGPT / OpenAI · Google Gemini · Claude · Groq · OpenRouter · Ollama**), how the tool-calling engine works, and how the Stonic-style HUD theme system is built from plain strings.
+
+---
+
+## 1. The big picture — four layers
+
+Stonic's own blog describes their architecture as "an orchestra — four layers". GemAir follows the same shape, fully open-source:
+
+| Layer | Stonic's words | In GemAir |
+|---|---|---|
+| **Listening** | "Speech recognition tuned for natural commands" | Web Speech API recognition (`tts-engine.js`, mic button, wake word) |
+| **Reasoning** | "A language model interprets intent and breaks it into steps" | Any OpenAI-compatible brain — ChatGPT, Gemini, Claude, Groq, local Ollama |
+| **Action** | "A modular tool system executes steps… every action is logged, critical actions ask" | `TOOLS[]` + `executeTool()` in `main.js` — 30+ tools (weather, web search, files, shell, WhatsApp, memory…) with a max-6-rounds loop |
+| **Experience** | "A full cinematic interface — not a chat bubble" | The HUD: orb, circuits, Agent Town, Global Intel, themes, SFX |
+
+---
+
+## 2. How a message travels (data flow)
+
+```
+ You speak / type
+      │
+      ▼
+ renderer/app.js  ── sendMessage() → handleMessage()
+      │            emotion analysis, memory, system prompt
+      │
+      ├──────────────┬──────────────────────────┬───────────────────────┐
+      ▼              ▼                          ▼                       ▼
+ ELECTRON MODE   BROWSER DIRECT           VERCEL FREE CORE         OFFLINE BRAIN
+ (npm start)     (web mode + your key)    (web mode, no key)       (no network at all)
+      │              │                          │                       │
+ IPC ai:chatStream  ai-client.js            api/chat.js          local intent parser
+ (preload.js)       fetch() from browser    (Vercel serverless)  (regex brain)
+      │              │                          │
+      ▼              ▼                          ▼
+ main.js           SAME PROTOCOL            SAME PROTOCOL
+ aiChatStream()    POST /chat/completions   POST /chat/completions
+      │              │  (browser CORS)       (key hidden on server,
+      ▼              │                          model fallback chain,
+ TOOL-LOOP ◄─────────┴──────────────────────── freeBrain() fallback)
+ (see §4)
+      │
+      ▼
+ Streamed tokens → typewriter on screen → TTS speaks → memory extracted
+```
+
+- **Electron mode** (`npm start`): the renderer sends IPC `ai:chatStream`; the main process owns the network call (key never enters the renderer) and streams deltas back over `ai:chunk` events.
+- **Browser direct** (web mode): if you saved an API key, `renderer/ai-client.js` calls the provider straight from the page — Groq, OpenAI, Gemini, Claude and OpenRouter all expose browser-CORS OpenAI-compatible endpoints, so **zero backend is required**.
+- **Vercel free core** (web mode, no key): `api/chat.js` runs on Vercel; the key lives in server env vars and the browser never sees it. If no key is configured at all it answers with a built-in free conversational brain, so you never get a dead end.
+- **Offline brain**: regex intent parser — last-resort, fully local.
+
+---
+
+## 3. Connecting ChatGPT (OpenAI)
+
+### 3.1 The way GemAir implements it — OpenAI API key
+
+1. Create a key at <https://platform.openai.com/api-keys>.
+2. In GemAir: **Settings → AI BRAIN → click the `ChatGPT` preset** (fills Base URL `https://api.openai.com/v1` + model `gpt-4o-mini`), paste your key, **TEST CONNECTION**, Save.
+
+Under the hood it is one HTTP call per turn:
+
+```
+POST https://api.openai.com/v1/chat/completions
+Authorization: Bearer sk-…
+Content-Type: application/json
+
+{ "model": "gpt-4o-mini", "messages": […], "stream": true,
+  "tools": […], "tool_choice": "auto" }
+```
+
+Responses stream back as Server-Sent Events (`data: {…}` lines, `delta.content` chunks) — that's what produces the live JARVIS-style typewriter. Models to try: `gpt-4o-mini` (fast/cheap), `gpt-4o` (stronger), `gpt-4.1-mini`.
+
+### 3.2 The way Stonic does it — "Sign in with your ChatGPT account"
+
+Stonic's Terms (§5.1) say you can connect through your **existing ChatGPT account using OpenAI's own sign-in system** — no API key, and it runs within your ChatGPT plan's limits. That is a **consumer OAuth flow**:
+
+1. The app opens OpenAI's OAuth page (`Sign in with ChatGPT`).
+2. You authorize; a **server** (Stonic's backend, which is why the app needs activation/account) exchanges the code for a token.
+3. That backend proxies chat requests using your ChatGPT subscription instead of per-token API billing.
+
+**Why GemAir doesn't ship that path:** OpenAI's consumer sign-in is only available to registered OAuth apps, and using a ChatGPT *subscription* for programmatic chat requires a backend that holds your OAuth tokens — it is inherently a server-side, account-linked, closed flow (Stonic's source is explicitly "not supplied" — see their Terms §4). The **open, local-first equivalent is the API key path in §3.1**: same models, same streaming, your own billing, no third-party account proxy, and the key never leaves your disk (Electron mode) or browser storage (web mode).
+
+> If you ever want account-style access in GemAir, the clean design is: a small companion service that owns the OAuth client and exposes a local `/chat/completions` endpoint — the renderer already works with any OpenAI-compatible Base URL, so it would "just work".
+
+---
+
+## 4. Connecting Google Gemini
+
+### 4.1 The way GemAir implements it — Gemini's OpenAI-compatible endpoint
+
+Google ships an **OpenAI-compatible layer** of the Gemini API, so the exact same client code that talks to ChatGPT talks to Gemini:
+
+1. Create a key at <https://aistudio.google.com/apikey> (Google AI Studio — free tier available).
+2. In GemAir: **Settings → AI BRAIN → click the `Gemini` preset** (fills Base URL `https://generativelanguage.googleapis.com/v1beta/openai` + model `gemini-2.5-flash`), paste your key, **TEST CONNECTION**, Save.
+
+The call looks like:
+
+```
+POST https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+x-goog-api-key: AIza…            ← native Gemini header (sent alongside Bearer)
+Content-Type: application/json
+
+{ "model": "gemini-2.5-flash", "messages": […], "stream": true, "tools": […] }
+```
+
+Details handled by GemAir:
+
+- **Auth**: `aiHeaders()` (main.js) and `directClientChat()` (ai-client.js) add `x-goog-api-key` automatically when the base URL is Gemini.
+- **Tool compatibility**: if a Gemini model refuses the `tools` schema (400/404/422 mentioning tools/functions), the client **retries once without tools** so you still get an answer.
+- **Models**: `gemini-2.5-flash` (default), `gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-2.5-pro`.
+
+### 4.2 The way Stonic does its *voice* — Gemini Live API
+
+Stonic's Terms (§6) disclose that their **voice assistant is powered by Google's Gemini Live API** (free preview): a bidirectional **audio-streaming** session (mic audio in → spoken audio out) with ~15-minute session caps. That is the "it feels human" layer.
+
+GemAir today uses **text-in / TTS-out** (Web Speech recognition + neural TTS), which is the local-first, zero-preview-dependency choice. A Gemini Live integration would slot in behind the same `speak()`/recognition seams — the streaming protocol is a WebSocket (`wss://generativelanguage.googleapis.com/ws`) exchanging `realtimeInput`/`serverContent` messages. Tracked as future work, not required for the text brain.
+
+---
+
+## 5. Connecting Claude (bonus)
+
+Preset `Claude` → base `https://api.anthropic.com/v1` (Anthropic's OpenAI-compatible endpoint) + model `claude-sonnet-4-20250514`. Auth adds `x-api-key` + `anthropic-version` automatically. Key from <https://console.anthropic.com>.
+
+---
+
+## 6. The tool loop (how the brain gets "hands")
+
+Every OpenAI-compatible brain is called with a `tools` array (30+ in `main.js`). The loop, max 6 rounds:
+
+```
+1. POST chat/completions with tools
+2. if reply has tool_calls:
+     for each call → executeTool(name, args)   // weather, web_search, files, …
+     append assistant tool_calls + tool results to messages
+     goto 1
+3. else → final content is the answer (streamed while generated)
+```
+
+Tools the brain can drive include: `get_weather`, `web_search`, `fetch_webpage`, `open_application`, `run_command` (permission-gated), `save_note`, `remember_fact`, `search_memory`, `set_reminder`, `control_volume`, `take_screenshot`, `translate`, `get_crypto_price`, `send_email`, `open_whatsapp`, `generate_image` and more. Every execution is logged to the mission log.
+
+---
+
+## 7. HUD themes — the string system (Stonic v1.0.52 parity)
+
+Stonic: *"HUD themes — pick the look of the whole interface; your choice is saved and applies everywhere."*
+
+GemAir does this with **`renderer/themes.js`** — every theme is one object of **plain string tokens**:
+
+```js
+emerald: {
+  label: 'Emerald',
+  tagline: 'Hacker green — matrix terminal',
+  accent: '#35ffb0', hue: 152,
+  bg: '#040a08', bg2: '#071310',
+  text: '#e9fff5', dim: '#7fae9c',
+  good: '#3dff9a', warn: '#ffc24b'
+}
+```
+
+`GemAirThemes.apply('emerald')` then:
+
+1. writes every token out as a **CSS custom property** on `<body>` (`--accent`, `--accent-soft`, `--accent-glow`, `--bg`, …) → the whole DOM re-skins;
+2. fires `gemair:theme` → `app.js` sets `currentAccent` → every **canvas** (orb, 3D background, Agent Town, globe, map, mood) redraws in the new color;
+3. updates the top-bar swatches, the top-bar theme name tag and the Settings picker.
+
+**Pick a theme**: top-bar swatches, **Ctrl+K → "Emerald Theme"**, or **Settings → HUD THEMES** (the full swatch grid). The choice is saved in the profile and applied on every boot. **Add a theme**: add one string object to the table — swatch, settings card and command-palette entry all appear automatically.
+
+---
+
+## 8. Quick setup table
+
+| Brain | Get a key | Base URL | Model | Notes |
+|---|---|---|---|---|
+| **ChatGPT / OpenAI** | platform.openai.com | `https://api.openai.com/v1` | `gpt-4o-mini` | preset `ChatGPT` |
+| **Gemini** | aistudio.google.com/apikey | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.5-flash` | preset `Gemini`; free tier available |
+| **Claude** | console.anthropic.com | `https://api.anthropic.com/v1` | `claude-sonnet-4-20250514` | preset `Claude` |
+| **Groq** | console.groq.com | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` | preset `Groq`; fast + free tier |
+| **OpenRouter** | openrouter.ai | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.3-70b-instruct` | one key, many models |
+| **Ollama (local)** | none | `http://localhost:11434/v1` | `llama3` | fully offline |
+| **Free core (no key)** | none | — | — | web mode only, Vercel serverless |
+
+### Troubleshooting
+
+- `HTTP_401/403` — wrong/expired key, or key from the wrong provider for the Base URL.
+- `HTTP_404 model …` — model name not available on that provider/account; try a lighter model from the table.
+- Gemini with tools error — automatic retry without tools kicks in; you'll still get answers, just no live tool calls on that model.
+- Nothing happens in Electron — check **Settings → TEST CONNECTION** (it reports the provider name it detected: GEMINI / CHATGPT / CLAUDE / GROQ …).

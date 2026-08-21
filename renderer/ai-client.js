@@ -19,8 +19,9 @@
   }
 
   /**
-   * Direct client-side API completion (Groq / OpenAI / OpenRouter / Ollama).
-   * Groq supports browser CORS directly without any server-side proxy!
+   * Direct client-side API completion (Groq / OpenAI (ChatGPT) / Gemini /
+   * Claude / OpenRouter / Ollama). These providers expose browser-CORS
+   * OpenAI-compatible endpoints, so no server-side proxy is required!
    */
   async function directClientChat(config, messages, onDelta) {
     const key = (config && config.apiKey || '').trim();
@@ -42,6 +43,12 @@
       const isStream = typeof onDelta === 'function';
       const headers = { 'Content-Type': 'application/json' };
       if (key) headers['Authorization'] = 'Bearer ' + key;
+      // Native auth headers some providers want alongside Bearer:
+      if (key && baseURL.includes('generativelanguage.googleapis.com')) headers['x-goog-api-key'] = key; // Gemini
+      if (key && baseURL.includes('api.anthropic.com')) { // Claude (OpenAI-compatible endpoint)
+        headers['x-api-key'] = key;
+        headers['anthropic-version'] = '2023-06-01';
+      }
 
       const response = await fetch(url, {
         method: 'POST',

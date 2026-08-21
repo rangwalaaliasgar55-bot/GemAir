@@ -6,6 +6,14 @@
 // is never asked for one. If no key is configured at all, the endpoint still
 // answers with a built-in free conversational brain, so the user ALWAYS gets
 // a helpful reply and never a "please enter a key" error.
+//
+// Point AI_BASE_URL at any OpenAI-compatible provider:
+//   Groq     https://api.groq.com/openai/v1
+//   OpenAI   https://api.openai.com/v1                      (ChatGPT models)
+//   Gemini   https://generativelanguage.googleapis.com/v1beta/openai
+// Claude's compatibility endpoint also works, but note this proxy only sends
+// Authorization: Bearer — for Claude/Gemini the desktop/web direct-client
+// paths (main.js aiHeaders / ai-client.js) add the native headers too.
 
 const KEY_ENV_NAMES = ['GROQ_API_KEY', 'OPENAI_API_KEY', 'AI_KEY', 'GROQ_KEY', 'VERCEL_GROQ_KEY'];
 
@@ -91,11 +99,14 @@ module.exports = async (req, res) => {
   if (!key) return res.json({ ok: true, reply: freeBrain(prompt), free: true });
 
   // Try each model in turn (automatic fallback) until one replies.
+  const isGeminiBase = baseURL.includes('generativelanguage.googleapis.com');
   for (const model of models) {
     try {
+      const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key };
+      if (isGeminiBase) headers['x-goog-api-key'] = key; // Gemini native auth
       const r = await fetch(baseURL + '/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+        headers,
         body: JSON.stringify({ model, messages, temperature: 0.6, max_tokens: 1200 })
       });
       if (r.ok) {

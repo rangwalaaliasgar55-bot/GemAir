@@ -357,19 +357,47 @@ function normalizeBaseURL(base) {
   return b.replace(/\/+$/, '');
 }
 
+// Provider-aware auth headers. Every supported brain speaks the
+// OpenAI-compatible chat/completions protocol, but a few providers
+// also want their native header alongside the Bearer token:
+//   • Google Gemini  → x-goog-api-key
+//   • Anthropic Claude → x-api-key + anthropic-version (compat endpoint)
+function aiHeaders(base, key) {
+  const headers = { 'Content-Type': 'application/json' };
+  const b = (base || '').toLowerCase();
+  if (key) headers['Authorization'] = 'Bearer ' + key;
+  if (key && b.includes('generativelanguage.googleapis.com')) headers['x-goog-api-key'] = key;
+  if (key && b.includes('api.anthropic.com')) {
+    headers['x-api-key'] = key;
+    headers['anthropic-version'] = '2023-06-01';
+  }
+  return headers;
+}
+
 async function callChat(base, key, model, messages, tools) {
   const url = base + (base.endsWith('/chat/completions') ? '' : '/chat/completions');
-  const headers = { 'Content-Type': 'application/json' };
-  if (key) headers['Authorization'] = 'Bearer ' + key;
-  const body = { model, messages, temperature: 0.6, max_tokens: 1200 };
-  if (tools && tools.length) {
-    body.tools = tools;
-    body.tool_choice = 'auto';
-  }
-  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const doFetch = (withTools) => {
+    const body = { model, messages, temperature: 0.6, max_tokens: 1200 };
+    if (withTools && tools && tools.length) {
+      body.tools = tools;
+      body.tool_choice = 'auto';
+    }
+    return fetch(url, { method: 'POST', headers: aiHeaders(base, key), body: JSON.stringify(body) });
+  };
+  let res = await doFetch(true);
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error('HTTP_' + res.status + (text ? ' ' + text.slice(0, 300) : ''));
+    const firstText = await res.text().catch(() => '');
+    // Some providers (Gemini / Claude compat layers) reject tool schemas for
+    // certain models — retry once as a plain chat so the brain still answers.
+    if (tools && /tool|function|unsupported|invalid/i.test(firstText) && [400, 404, 422].includes(res.status)) {
+      res = await doFetch(false);
+      if (!res.ok) {
+        const t2 = await res.text().catch(() => '');
+        throw new Error('HTTP_' + res.status + (t2 ? ' ' + t2.slice(0, 300) : ''));
+      }
+    } else {
+      throw new Error('HTTP_' + res.status + (firstText ? ' ' + firstText.slice(0, 300) : ''));
+    }
   }
   const data = await res.json();
   if (!data.choices || !data.choices[0]) throw new Error('EMPTY_REPLY');
@@ -1536,14 +1564,24 @@ async function aiChat(config, messages) {
 // ---------------------------------------------------------------------------
 async function streamRequest(base, key, model, messages, onDelta) {
   const url = base + (base.endsWith('/chat/completions') ? '' : '/chat/completions');
-  const headers = { 'Content-Type': 'application/json' };
-  if (key) headers['Authorization'] = 'Bearer ' + key;
-  const body = { model, messages, temperature: 0.6, max_tokens: 1200, stream: true, tools: TOOLS, tool_choice: 'auto' };
+  const doFetch = (withTools) => {
+    const body = { model, messages, temperature: 0.6, max_tokens: 1200, stream: true };
+    if (withTools) { body.tools = TOOLS; body.tool_choice = 'auto'; }
+    return fetch(url, { method: 'POST', headers: aiHeaders(base, key), body: JSON.stringify(body) });
+  };
 
-  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  let res = await doFetch(true);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error('HTTP_' + res.status + (text ? ' ' + text.slice(0, 200) : ''));
+    // Gemini / Claude compat layers may refuse tools for some models —
+    // retry once as a plain stream so the brain still answers.
+    if (/tool|function|unsupported|invalid/i.test(text) && [400, 404, 422].includes(res.status)) {
+      res = await doFetch(false);
+    }
+    if (!res.ok) {
+      const t2 = await res.text().catch(() => '');
+      throw new Error('HTTP_' + res.status + ((t2 || text) ? ' ' + (t2 || text).slice(0, 200) : ''));
+    }
   }
 
   let content = '';

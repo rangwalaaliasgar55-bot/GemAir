@@ -846,13 +846,69 @@ function startRgb() {
 }
 
 function applyTheme(t) {
+  // String-driven theme engine (renderer/themes.js) is the single source
+  // of truth: it writes all color tokens out as CSS variables and fires
+  // `gemair:theme`, so the DOM and every canvas re-skin together.
+  if (window.GemAirThemes) {
+    const theme = window.GemAirThemes.apply(t);
+    if (t !== 'rgb') currentAccent = theme.accent; // string token → all canvases
+    const tag = $('#themeNameTag');
+    if (tag) tag.textContent = theme.label.toUpperCase();
+  }
   document.body.dataset.theme = t;
   $$('.theme-btn').forEach((b) => b.classList.toggle('active', b.dataset.theme === t));
+  const themeGrid = $('#themeGrid');
+  if (themeGrid) themeGrid.querySelectorAll('.theme-card').forEach((c) => c.classList.toggle('active', c.dataset.tid === t));
   if (t === 'rgb') { startRgb(); }
   else {
     stopRgb();
-    setAccentFromHue(THEME_ACCENTS[t] || 0);
+    if (!window.GemAirThemes) setAccentFromHue(THEME_ACCENTS[t] || 0); // legacy fallback
   }
+}
+
+// ---------------------------------------------------------------------------
+// AI provider detection — which brain is the endpoint talking to?
+// ---------------------------------------------------------------------------
+function detectProvider(base) {
+  const b = (base || '').toLowerCase();
+  if (!b) return 'free';
+  if (b.includes('generativelanguage.googleapis.com')) return 'gemini';
+  if (b.includes('api.openai.com')) return 'chatgpt';
+  if (b.includes('api.anthropic.com')) return 'claude';
+  if (b.includes('api.deepseek.com')) return 'deepseek';
+  if (b.includes('api.mistral.ai')) return 'mistral';
+  if (b.includes('api.groq.com')) return 'groq';
+  if (b.includes('openrouter.ai')) return 'openrouter';
+  if (/localhost|127\.0\.0\.1/.test(b)) return 'local';
+  return 'custom';
+}
+
+const PROVIDER_NAMES = {
+  gemini: 'Google Gemini', chatgpt: 'ChatGPT / OpenAI', claude: 'Anthropic Claude',
+  deepseek: 'DeepSeek', mistral: 'Mistral',
+  groq: 'Groq', openrouter: 'OpenRouter', local: 'Local model', custom: 'Custom endpoint'
+};
+
+// Settings → HUD THEMES picker, generated from the string theme table.
+function renderThemeGrid() {
+  const grid = $('#themeGrid');
+  if (!grid || !window.GemAirThemes) return;
+  grid.innerHTML = window.GemAirThemes.list().map((t) => `
+    <div class="theme-card${t.id === (profile && profile.theme) ? ' active' : ''}" data-tid="${t.id}" role="button" tabindex="0" title="Apply ${escapeHtml(t.label)} theme">
+      <span class="swatch" style="background:${t.accent};color:${t.accent}"></span>
+      <span class="tc-text"><span class="tc-name">${escapeHtml(t.label)}</span><span class="tc-tag">${escapeHtml(t.tagline)}</span></span>
+    </div>`).join('');
+  grid.querySelectorAll('.theme-card').forEach((c) => {
+    const pick = () => {
+      playSfx('click');
+      profile.theme = c.dataset.tid;
+      applyTheme(profile.theme);
+      persistProfile();
+      toast('THEMES', 'HUD theme → ' + c.dataset.tid.toUpperCase(), '🎨');
+    };
+    c.addEventListener('click', pick);
+    c.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1318,9 +1374,12 @@ function updateLinkMode() {
   const cfg = profile.ai || {};
   const hasKey = !!(cfg.apiKey && cfg.baseURL);
   const isLocal = !!(cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL));
+  const prov = detectProvider(cfg.baseURL);
   if (isLocal) el.textContent = '— LOCAL';
-  else if (!isElectron || hasKey) el.textContent = '— LINK ONLINE';
-  else el.textContent = '— OFFLINE';
+  else if (hasKey && ['gemini', 'chatgpt', 'claude', 'deepseek', 'mistral', 'groq', 'openrouter'].includes(prov)) el.textContent = '— ' + prov.toUpperCase();
+  else if (hasKey) el.textContent = '— LINK ONLINE';
+  else if (!isElectron) el.textContent = '— FREE CORE';
+  else el.textContent = '— OFFLINE BRAIN';
 }
 
 function buildSystemPrompt() {
@@ -2751,11 +2810,15 @@ function populateNeuralVoices() {
 function updateAiHint() {
   const base = $('#setBaseURL').value.trim(), key = $('#setApiKey').value.trim();
   const el = $('#aiStatusHint');
-  if (key && base) el.textContent = '✓ Custom AI endpoint active — using your key only.';
+  const prov = detectProvider(base);
+  if (key && base) el.textContent = '✓ ' + (PROVIDER_NAMES[prov] || 'Custom AI endpoint') + ' active — using your key only.';
   else if (base && /localhost|127\.0\.0\.1/.test(base)) el.textContent = '✓ Local model detected (no key needed).';
-  else el.textContent = '✨ Vercel Free AI Core Connected — 100% free out of the box.';
+  else el.textContent = '✨ Vercel Free AI Core Connected — 100% free out of the box. (Tip: pick a Gemini / ChatGPT / Claude preset above for your own key.)';
 }
 function applyPreset(p) {
+  // Provider presets — one click fills Base URL + Model. All of these speak
+  // the OpenAI-compatible chat/completions protocol, so the SAME tool-calling
+  // engine drives Groq, ChatGPT, Gemini and Claude (see AI-FRAMEWORK.md).
   const map = {
     groq: { baseURL: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
     openai: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
@@ -2787,6 +2850,9 @@ function bindEvents() {
     applyTheme(profile.theme);
     persistProfile();
   }));
+
+  // HUD Themes picker in Settings (generated from the string theme table)
+  renderThemeGrid();
 
   // SFX button toggle
   const sfxBtn = $('#sfxBtn');
@@ -3092,12 +3158,11 @@ function bindEvents() {
       { name: 'Focus Timer Panel', type: 'PANEL', action: () => openHudDock('focus') },
       { name: 'Live Telemetry Panel', type: 'PANEL', action: () => openHudDock('system') },
       { name: 'Headlines Panel', type: 'PANEL', action: () => openHudDock('news') },
-      { name: 'Crimson Theme', type: 'THEME', action: () => applyTheme('crimson') },
-      { name: 'Emerald Theme', type: 'THEME', action: () => applyTheme('emerald') },
-      { name: 'Cyan Theme', type: 'THEME', action: () => applyTheme('cyan') },
-      { name: 'Violet Theme', type: 'THEME', action: () => applyTheme('violet') },
-      { name: 'Amber Theme', type: 'THEME', action: () => applyTheme('amber') },
-      { name: 'Rainbow RGB Theme', type: 'THEME', action: () => applyTheme('rgb') }
+      // Theme entries are generated from the string theme table (themes.js)
+      ...((window.GemAirThemes ? window.GemAirThemes.list() : []).map((t) => ({
+        name: t.label + ' Theme', type: 'THEME',
+        action: () => { profile.theme = t.id; applyTheme(t.id); persistProfile(); }
+      })))
     ];
 
     if (memory && memory.facts) {

@@ -46,7 +46,7 @@ npm start
 | 🎙️ **Voice Assistant** | Speak naturally or type. Live streaming replies, animated particle orb, wake word ("Hey GemAir"), speech recognition + spoken replies in a smooth natural voice (free, or your OS's offline voice). |
 | ⌨️ **Human-like typing** | Replies stream and type out in real time, with code blocks and a save-to-file action. |
 | 👋 **Personalized** | Greets you by name and time of day, and remembers who you are forever. |
-| 🧠 **AI Brain (free out of the box)** | Runs on a free server-side AI core — no key, no card. Power users can plug in their own provider (Groq / OpenAI / OpenRouter / local Ollama) in Settings → AI Brain. |
+| 🧠 **AI Brain (free out of the box)** | Runs on a free server-side AI core — no key, no card. Power users plug in their own provider with one-click presets: **ChatGPT (OpenAI) · Gemini · Claude** · Groq / OpenRouter / local Ollama, in Settings → AI Brain. |
 | 💾 **Long-term memory (never lost)** | Automatically extracts durable facts about you (name, preferences, projects, goals), stores them on disk forever, and injects them into every conversation. Full chat history is persisted and restored on launch. |
 | 🛠️ **Tool-calling (50+ tools)** | **Web**: weather, real web search, fetch & read any page, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, AI image generation. **Computer**: open apps, files, clipboard, volume, screenshots, system control, email drafts, WhatsApp, to-dos, file-organizing missions, optional shell commands with confirmation. **Mind & life**: quotes, breathing exercises, weekly reports, emotional support. |
 | 🌍 **World clock** | Time in any city, 12-hour format, live UTC clock. |
@@ -72,8 +72,25 @@ npm start
 | 🛡️ **System guardian** | "What's slowing my PC down?" — live scan of CPU, RAM and top processes with one-line advice. |
 | 👁️ **Screen awareness** | `see_screen` captures your screen so the AI is aware of what's on it. |
 | 🌐 **World Monitor** | A living 3D globe with pulsing hotspots, a 2D command map, live UTC clock and a streaming headlines feed (free). |
-| 🎭 **Themes** | Crimson, Emerald, Cyan, and RGB Rainbow — the accent cycles through the full spectrum across the whole HUD. |
+| 🎭 **HUD Themes (string system)** | Crimson, Emerald, Cyan, Violet, Amber + RGB Rainbow. Every theme is a plain string token table (`renderer/themes.js`) — pick one from the top bar, `Ctrl+K`, or Settings → HUD THEMES and the **entire interface** re-skins: DOM, canvases, glows. Choice is saved and applies everywhere. |
 | 🔒 **Local-first** | Profile, memories, notes, reminders and settings live on your disk. No telemetry. |
+
+---
+
+## 🔌 AI brains: ChatGPT, Gemini, Claude & more
+
+Every brain speaks one protocol — the OpenAI-compatible `chat/completions` endpoint — so the **same streaming + tool-calling engine** drives all of them. One-click presets in **Settings → AI BRAIN**:
+
+| Brain | Where to get a key | Example model |
+| --- | --- | --- |
+| **ChatGPT / OpenAI** | [platform.openai.com](https://platform.openai.com/api-keys) | `gpt-4o-mini` |
+| **Google Gemini** (free tier) | [aistudio.google.com](https://aistudio.google.com/apikey) | `gemini-2.5-flash` |
+| **Claude** | [console.anthropic.com](https://console.anthropic.com) | `claude-sonnet-4-20250514` |
+| **Groq** (free tier) | console.groq.com | `llama-3.3-70b-versatile` |
+| **OpenRouter** | openrouter.ai | any of 200+ models |
+| **Ollama** (fully local) | — none — | `llama3` |
+
+Keys are stored only on your machine (Electron) or your browser storage (web); the app also runs **100% free with no key at all** (serverless core, then the offline brain). The complete walkthrough — how the ChatGPT and Gemini connections work under the hood, how Stonic's "sign in with your ChatGPT account" differs, Gemini Live voice, the tool loop, and the string-driven theme system — lives in **[AI-FRAMEWORK.md](AI-FRAMEWORK.md)**.
 
 ---
 
