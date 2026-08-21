@@ -1,4 +1,10 @@
-// GemAir serverless — free weather (Open-Meteo, with offline fallback)
+// GemAir serverless — free weather (Open-Meteo, with offline fallback).
+//
+// S1: the SAT-LINK FEED needs more than a temperature string, so this endpoint
+// now also returns the resolved coordinates (for the rain-radar tile lookup)
+// and, with ?mode=alerts, real advisories DERIVED from the Open-Meteo forecast.
+// These are explicitly labelled as derived — GemAir never presents them as
+// official government warnings.
 const CODES = {
   0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
   45: 'Fog', 48: 'Rime fog', 51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle',
@@ -6,29 +12,92 @@ const CODES = {
   80: 'Showers', 81: 'Rain showers', 82: 'Heavy showers', 95: 'Thunderstorm', 96: 'Storm + hail', 99: 'Storm + hail'
 };
 
+const TIMEOUT_MS = 8000;
+
+async function getJson(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const r = await fetch(url, { signal: controller.signal });
+    if (!r.ok) throw new Error('HTTP_' + r.status);
+    return await r.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Turn a raw Open-Meteo daily forecast into plain-language advisories. */
+function deriveAlerts(daily) {
+  const out = [];
+  if (!daily || !Array.isArray(daily.time)) return out;
+  for (let i = 0; i < Math.min(daily.time.length, 3); i++) {
+    const day = daily.time[i];
+    const code = (daily.weathercode || [])[i];
+    const rain = (daily.precipitation_sum || [])[i];
+    const wind = (daily.windspeed_10m_max || [])[i];
+    const tmax = (daily.temperature_2m_max || [])[i];
+    const tmin = (daily.temperature_2m_min || [])[i];
+
+    if (code >= 95) out.push({ level: 'severe', day, title: 'Thunderstorm expected', detail: 'Lightning and squalls likely — avoid open ground and secure loose items.' });
+    else if (rain >= 50) out.push({ level: 'severe', day, title: 'Very heavy rain', detail: `${Math.round(rain)} mm forecast — localised flooding possible.` });
+    else if (rain >= 20) out.push({ level: 'warn', day, title: 'Heavy rain', detail: `${Math.round(rain)} mm forecast — carry rain gear and allow extra travel time.` });
+
+    if (wind >= 60) out.push({ level: 'severe', day, title: 'Damaging winds', detail: `Gusts to ${Math.round(wind)} km/h.` });
+    else if (wind >= 40) out.push({ level: 'warn', day, title: 'Strong winds', detail: `Gusts to ${Math.round(wind)} km/h.` });
+
+    if (tmax >= 40) out.push({ level: 'severe', day, title: 'Extreme heat', detail: `${Math.round(tmax)}°C — hydrate and avoid midday sun.` });
+    else if (tmax >= 35) out.push({ level: 'warn', day, title: 'Heat advisory', detail: `${Math.round(tmax)}°C expected.` });
+    if (tmin <= 0) out.push({ level: 'warn', day, title: 'Freezing conditions', detail: `Low of ${Math.round(tmin)}°C — ice risk.` });
+  }
+  return out;
+}
+
 module.exports = async (req, res) => {
   const city = (req.query.city || '').trim();
+  const mode = (req.query.mode || 'current').trim();
   if (!city) return res.status(400).json({ error: 'city is required' });
+  res.setHeader('Cache-Control', 'public, max-age=300');
+
   try {
-    const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`).then(r => r.json());
+    const geo = await getJson(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`);
     const loc = geo.results && geo.results[0];
     if (!loc) return res.json({ error: 'City not found: ' + city });
-    const w = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current_weather=true`).then(r => r.json());
+
+    const label = loc.name + (loc.country ? ', ' + loc.country : '');
+    const base = `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}`;
+
+    if (mode === 'alerts') {
+      const w = await getJson(`${base}&daily=weathercode,precipitation_sum,windspeed_10m_max,temperature_2m_max,temperature_2m_min&forecast_days=3&timezone=auto`);
+      const alerts = deriveAlerts(w.daily);
+      return res.json({
+        city: label, latitude: loc.latitude, longitude: loc.longitude,
+        alerts, count: alerts.length,
+        source: 'Derived from the Open-Meteo forecast — not an official government warning.'
+      });
+    }
+
+    const w = await getJson(`${base}&current_weather=true`);
     const cw = w.current_weather || {};
     return res.json({
-      city: loc.name + (loc.country ? ', ' + loc.country : ''),
+      city: label,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
       temperature: cw.temperature,
       windspeed: cw.windspeed,
+      weathercode: cw.weathercode,
       condition: CODES[cw.weathercode] || 'Clear sky',
       units: '°C / km/h'
     });
   } catch (e) {
+    // U2: mark the fallback as SIMULATED so the UI never labels it LIVE.
     return res.json({
       city: city.charAt(0).toUpperCase() + city.slice(1),
       temperature: 22,
       windspeed: 12,
       condition: 'Partly cloudy',
-      units: '°C / km/h'
+      units: '°C / km/h',
+      simulated: true,
+      error: 'weather_unavailable'
     });
   }
 };

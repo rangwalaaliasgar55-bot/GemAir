@@ -112,8 +112,23 @@ const classes = new Set();
 for (const m of html.matchAll(/\bclass="([^"]+)"/g)) m[1].split(/\s+/).forEach((c) => c && classes.add(c));
 const dataAttrs = new Set([...html.matchAll(/\b(data-[a-z0-9-]+)=/g)].map((m) => m[1]));
 
+// V2: ids that app.js CREATES at runtime (injected into a container that does
+// exist in index.html). They can never appear in the static markup, so they are
+// declared here rather than silently weakening the check. Anything not in this
+// list must still exist in index.html.
+const RUNTIME_IDS = new Set([
+  // S1 — SAT-LINK SEARCH tab is rendered into #satPanel on demand
+  'satSearchInput', 'satSearchGo', 'satSearchResults',
+  // S7 — workflow gallery cards render into #workflowGallery
+  'wfGalleryGrid',
+  // S10 — quick-command editor renders into the expert panel
+  'qcEditorInput', 'qcEditorSave', 'qcEditorCancel',
+  // T2 — reasoning strip is created per reply
+  'reasonStrip'
+]);
+
 const refs = [...new Set([...appJs.matchAll(/\$\(\s*['"]#([A-Za-z0-9_-]+)['"]\s*\)/g)].map((m) => m[1]))];
-const missing = refs.filter((r) => !ids.has(r));
+const missing = refs.filter((r) => !ids.has(r) && !RUNTIME_IDS.has(r));
 if (missing.length) fail(`$('#id') with no matching element: ${missing.join(', ')}`);
 else ok(`${refs.length} $('#id') references all resolve`);
 

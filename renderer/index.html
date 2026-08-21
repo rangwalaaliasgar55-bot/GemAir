@@ -139,11 +139,15 @@
                   <canvas id="satCanvas" width="260" height="160"></canvas>
                   <span class="sat-beta">BETA</span>
                 </div>
-                <div class="sat-tabs">
-                  <button class="sat-tab active">TODAY</button>
-                  <button class="sat-tab">RAP</button>
-                  <button class="sat-tab">SEARCH</button>
-                  <button class="sat-tab">ALERTS</button>
+                <!-- S1: these tabs were cosmetic in 2.1. Each now drives a real feed. -->
+                <div class="sat-tabs" role="tablist" aria-label="Satellite feed">
+                  <button class="sat-tab active" data-sat="today" role="tab" aria-selected="true" aria-controls="satPanel">TODAY</button>
+                  <button class="sat-tab" data-sat="rap" role="tab" aria-selected="false" aria-controls="satPanel" title="Radar &amp; Precipitation">RAP</button>
+                  <button class="sat-tab" data-sat="search" role="tab" aria-selected="false" aria-controls="satPanel">SEARCH</button>
+                  <button class="sat-tab" data-sat="alerts" role="tab" aria-selected="false" aria-controls="satPanel">ALERTS</button>
+                </div>
+                <div class="sat-panel" id="satPanel" role="tabpanel" aria-live="polite">
+                  <div class="empty">Loading feed…</div>
                 </div>
               </div>
 

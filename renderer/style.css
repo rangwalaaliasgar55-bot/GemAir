@@ -1178,3 +1178,43 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
   color: var(--dim, #8aa0bd);
   line-height: 1.5;
 }
+
+
+/* ============================================================
+   S1 — SAT-LINK FEED live panels (TODAY / RAP / SEARCH / ALERTS)
+   ============================================================ */
+.sat-panel { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; max-height: 230px; overflow-y: auto; }
+.sat-badge {
+  align-self: flex-start; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 1.1px;
+  padding: 3px 8px; border-radius: 999px; border: 1px solid var(--accent-soft); color: var(--accent);
+  background: var(--accent-dim); text-transform: uppercase;
+}
+.sat-badge.sim { color: var(--warn); border-color: var(--warn); background: rgba(255,194,75,0.12); }
+.sat-badge.warn { color: var(--warn); border-color: var(--warn); background: rgba(255,194,75,0.12); }
+.sat-badge.sev { color: #ff6b6b; border-color: #ff6b6b; background: rgba(255,107,107,0.14); }
+.sat-item {
+  display: flex; gap: 8px; align-items: flex-start; padding: 7px 8px; border-radius: 8px;
+  background: rgba(0,0,0,0.28); border: 1px solid var(--panel-border);
+  font-size: 11.5px; line-height: 1.45; color: var(--text); text-decoration: none; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.sat-item:hover { border-color: var(--accent-soft); background: rgba(0,0,0,0.45); }
+.sat-item.alert.severe { border-color: rgba(255,107,107,0.55); }
+.sat-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); margin-top: 5px; flex: none; }
+.sat-note { font-size: 11px; color: var(--text-dim); padding: 2px 2px 0; }
+.sat-answer { font-size: 11.5px; line-height: 1.5; padding: 8px; border-radius: 8px; background: var(--accent-dim); border: 1px solid var(--accent-soft); }
+.sat-search { display: flex; gap: 6px; }
+.sat-search input {
+  flex: 1; min-width: 0; background: rgba(0,0,0,0.4); border: 1px solid var(--panel-border);
+  border-radius: 8px; padding: 7px 10px; color: var(--text); font-size: 12px; outline: none;
+}
+.sat-search input:focus { border-color: var(--accent-soft); }
+.sat-radar { position: relative; width: 100%; aspect-ratio: 1 / 1; max-height: 190px; border-radius: 10px; overflow: hidden; border: 1px solid var(--panel-border); }
+.sat-radar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.sat-radar img:first-child { filter: grayscale(1) brightness(0.55) contrast(1.1); }
+.sat-radar-overlay { mix-blend-mode: screen; }
+
+/* S3 — Tasks panel */
+.todo-item { display: flex; align-items: center; gap: 10px; }
+.todo-item input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+.todo-item.done { opacity: 0.75; }

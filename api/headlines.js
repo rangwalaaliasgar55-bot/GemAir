@@ -44,5 +44,10 @@ module.exports = async (req, res) => {
     const items = parseRss(await response.text(), category, limit);
     if (items.length) return res.json(items);
   } catch (error) { /* use local fallback below */ }
-  return res.json(FALLBACK_HEADLINES.filter((item) => item.category === category).slice(0, limit));
+  // U2: flag the offline fallback so the UI can badge it SIMULATED instead of
+  // presenting stale sample copy under a LIVE label.
+  return res.json(FALLBACK_HEADLINES
+    .filter((item) => item.category === category)
+    .slice(0, limit)
+    .map((item) => ({ ...item, simulated: true })));
 };

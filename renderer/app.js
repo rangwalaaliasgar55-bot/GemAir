@@ -3272,11 +3272,23 @@ function initTownChrome() {
     if (pane === 'visualhub') renderVisualHub();
   }));
 
-  // sat feed tabs (cosmetic, matches Stonic)
+  // S1: SAT-LINK FEED tabs now switch REAL feeds, not just a highlight.
   $$('.sat-tab').forEach((t) => t.addEventListener('click', () => {
     playSfx('click');
-    $$('.sat-tab').forEach((x) => x.classList.toggle('active', x === t));
+    $$('.sat-tab').forEach((x) => {
+      const on = x === t;
+      x.classList.toggle('active', on);
+      x.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    renderSatFeed(t.dataset.sat || 'today');
   }));
+  $('#satPanel')?.addEventListener('click', (e) => {
+    const a = e.target.closest('a[data-external]');
+    if (!a) return;
+    e.preventDefault();
+    const href = a.getAttribute('href');
+    if (href && /^https?:/i.test(href)) api.openExternal(href);
+  });
 
   // open town / chat shortcuts
   $('#openTownBtn')?.addEventListener('click', () => { playSfx('swoosh'); switchView('town'); });
@@ -3373,6 +3385,139 @@ function startTownPreview() {
   }
   scheduleViewFrame('assistant', loop);
   canvas.addEventListener('click', () => { playSfx('swoosh'); switchView('town'); });
+}
+
+// ---------------------------------------------------------------------------
+// S1 — SAT-LINK FEED, wired to real data.
+//
+// In 2.1 the four tabs (TODAY / RAP / SEARCH / ALERTS) were pure decoration:
+// clicking one only moved the .active class. Each now renders a live feed:
+//   TODAY   real headlines (the same feed as the headlines panel)
+//   RAP     real rain-radar imagery for the user's city (RainViewer, key-free)
+//   SEARCH  a working web-search box against /api/search
+//   ALERTS  weather advisories derived from the Open-Meteo forecast
+// Every one degrades to an honest message rather than fake content (U2).
+// ---------------------------------------------------------------------------
+let satTab = 'today';
+
+function satBusy(label) {
+  const el = $('#satPanel');
+  if (el) el.innerHTML = `<div class="empty">${escapeHtml(label)}</div>`;
+}
+
+async function renderSatFeed(tab) {
+  satTab = tab || satTab;
+  const panel = $('#satPanel');
+  if (!panel) return;
+  if (satTab === 'today') return renderSatToday();
+  if (satTab === 'rap') return renderSatRadar();
+  if (satTab === 'search') return renderSatSearch();
+  if (satTab === 'alerts') return renderSatAlerts();
+}
+
+async function renderSatToday() {
+  const panel = $('#satPanel');
+  satBusy('Fetching headlines…');
+  let items = worldHeadlines;
+  if (!items || !items.length) {
+    try { items = await api.getHeadlines(5, worldCategory); } catch (e) { items = []; }
+  }
+  if (!items || !items.length) {
+    panel.innerHTML = '<div class="empty">No headlines available right now.</div>';
+    return;
+  }
+  const simulated = items.some((i) => i.simulated);
+  panel.innerHTML =
+    (simulated ? '<div class="sat-badge sim">SIMULATED — live news feed unreachable</div>' : '<div class="sat-badge live">LIVE</div>') +
+    items.slice(0, 5).map((h) => `
+      <a class="sat-item" href="${escapeHtml(h.url || '#')}" data-external="1">
+        <span class="sat-dot"></span><span>${escapeHtml(h.title || '')}</span>
+      </a>`).join('');
+}
+
+/** Lat/lon → slippy-map tile indices at zoom z. */
+function lonLatToTile(lon, lat, z) {
+  const n = Math.pow(2, z);
+  const x = Math.floor((lon + 180) / 360 * n);
+  const latRad = lat * Math.PI / 180;
+  const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n);
+  return { x, y, z };
+}
+
+async function renderSatRadar() {
+  const panel = $('#satPanel');
+  satBusy('Locating radar…');
+  const city = profile.city || DEFAULTS.city;
+  try {
+    const w = await webGet('weather', { city });
+    if (!w || typeof w.latitude !== 'number') throw new Error('no-coords');
+    const maps = await fetch('https://api.rainviewer.com/public/weather-maps.json').then((r) => r.json());
+    const frames = (maps.radar && (maps.radar.past || [])) || [];
+    const frame = frames[frames.length - 1];
+    if (!frame) throw new Error('no-frame');
+    const { x, y, z } = lonLatToTile(w.longitude, w.latitude, 6);
+    const base = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+    const radar = `${maps.host}${frame.path}/256/${z}/${x}/${y}/4/1_1.png`;
+    const stamp = new Date(frame.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    panel.innerHTML = `
+      <div class="sat-badge live">LIVE RADAR — ${escapeHtml(w.city)} · ${escapeHtml(stamp)}</div>
+      <div class="sat-radar">
+        <img src="${base}" alt="Map of ${escapeHtml(w.city)}" loading="lazy" />
+        <img class="sat-radar-overlay" src="${radar}" alt="Rain radar overlay" loading="lazy" />
+      </div>
+      <div class="sat-note">${escapeHtml(w.condition || '')} · ${escapeHtml(String(w.temperature))}°C · wind ${escapeHtml(String(w.windspeed))} km/h</div>`;
+  } catch (e) {
+    panel.innerHTML = '<div class="empty">Radar imagery unavailable (offline or the radar service is down).</div>';
+  }
+}
+
+function renderSatSearch() {
+  const panel = $('#satPanel');
+  panel.innerHTML = `
+    <div class="sat-search">
+      <input type="text" id="satSearchInput" placeholder="Search the web…" aria-label="Search the web" />
+      <button class="mini-btn" id="satSearchGo" aria-label="Run search">→</button>
+    </div>
+    <div id="satSearchResults"><div class="empty">Type a query and press Enter.</div></div>`;
+  const run = async () => {
+    const q = ($('#satSearchInput')?.value || '').trim();
+    if (!q) return;
+    const out = $('#satSearchResults');
+    out.innerHTML = '<div class="empty">Searching…</div>';
+    const r = await webGet('search', { q });
+    if (!r || r.error) { out.innerHTML = '<div class="empty">Search unavailable right now.</div>'; return; }
+    const rows = [];
+    if (r.answer) rows.push(`<div class="sat-answer">${escapeHtml(r.answer)}${r.source ? ` <span class="dim">— ${escapeHtml(r.source)}</span>` : ''}</div>`);
+    for (const item of (r.results || []).slice(0, 4)) {
+      rows.push(`<a class="sat-item" href="${escapeHtml(item.url || '#')}" data-external="1"><span class="sat-dot"></span><span>${escapeHtml(item.title || '')}</span></a>`);
+    }
+    out.innerHTML = rows.length ? rows.join('') : '<div class="empty">No results.</div>';
+  };
+  $('#satSearchGo')?.addEventListener('click', run);
+  $('#satSearchInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+}
+
+async function renderSatAlerts() {
+  const panel = $('#satPanel');
+  satBusy('Checking advisories…');
+  const city = profile.city || DEFAULTS.city;
+  const r = await webGet('weather', { city, mode: 'alerts' });
+  if (!r || r.error || !Array.isArray(r.alerts)) {
+    panel.innerHTML = '<div class="empty">Weather advisories unavailable right now.</div>';
+    return;
+  }
+  if (!r.alerts.length) {
+    panel.innerHTML = `<div class="sat-badge live">ALL CLEAR — ${escapeHtml(r.city)}</div><div class="sat-note">No significant weather in the next 3 days.</div>`;
+    return;
+  }
+  panel.innerHTML =
+    `<div class="sat-badge ${r.alerts.some((a) => a.level === 'severe') ? 'sev' : 'warn'}">${r.alerts.length} ADVISORY(S) — ${escapeHtml(r.city)}</div>` +
+    r.alerts.slice(0, 4).map((a) => `
+      <div class="sat-item alert ${escapeHtml(a.level)}">
+        <span class="sat-dot"></span>
+        <span><b>${escapeHtml(a.title)}</b> <span class="dim">${escapeHtml(a.day || '')}</span><br><span class="dim">${escapeHtml(a.detail)}</span></span>
+      </div>`).join('') +
+    `<div class="sat-note dim">${escapeHtml(r.source || '')}</div>`;
 }
 
 // SAT-LINK FEED — tiny rotating satellite globe with hotspots
@@ -5252,6 +5397,7 @@ async function boot() {
   safe('globe', startGlobe);
   safe('commandMap', startCommandMap);
   safe('satLink', startSatLink);
+  safe('satFeed', () => renderSatFeed('today')); // S1: load the real TODAY feed
   safe('circuitWires', startCircuitWires);
   safe('townPreview', startTownPreview);
   safe('townChrome', initTownChrome);
