@@ -1380,6 +1380,27 @@ function updateLinkMode() {
   else if (hasKey) el.textContent = '— LINK ONLINE';
   else if (!isElectron) el.textContent = '— FREE CORE';
   else el.textContent = '— OFFLINE BRAIN';
+  updateMediaLink();
+}
+
+// LEFT column — MEDIA LINK panel (Stonic-style system status card)
+function updateMediaLink() {
+  const cfg = profile.ai || {};
+  const prov = detectProvider(cfg.baseURL);
+  const hasKey = !!(cfg.apiKey && cfg.baseURL);
+  const ai = $('#mlAi');
+  if (ai) {
+    const names = { gemini: 'GEMINI', chatgpt: 'CHATGPT', claude: 'CLAUDE', groq: 'GROQ', openrouter: 'OPENROUTER', local: 'LOCAL', custom: 'CUSTOM' };
+    let t = (hasKey && names[prov]) || (hasKey ? 'LINK' : (isElectron ? 'OFFLINE BRAIN' : 'FREE CORE'));
+    ai.textContent = t;
+    ai.classList.toggle('hot', t !== 'OFFLINE BRAIN');
+  }
+  const v = $('#mlVoice');
+  if (v) { v.textContent = isRunning ? (listening ? 'LISTENING' : 'ONLINE') : 'STANDBY'; v.classList.toggle('hot', !!isRunning); }
+  const s = $('#mlSfx');
+  if (s) { s.textContent = profile.sfx === false ? 'OFF' : 'ON'; s.classList.toggle('hot', profile.sfx !== false); }
+  const st = $('#mediaLinkState');
+  if (st) st.textContent = isRunning ? '— SYSTEM ONLINE' : '— STANDBY';
 }
 
 function buildSystemPrompt() {
@@ -1484,6 +1505,12 @@ function extractName(text) {
   return name.length > 40 ? name.slice(0, 40) : name;
 }
 
+// Stonic-style "THINKING" indicator above the orb
+function setThinking(on) {
+  const pill = $('#thinkingPill');
+  if (pill) pill.classList.toggle('on', !!on);
+}
+
 async function sendMessage(text) {
   text = (text || '').trim();
   if (!text) return;
@@ -1491,10 +1518,12 @@ async function sendMessage(text) {
   $('#chatInput').value = '';
   setCaption('user', text, { autoHide: 3200 });
   avatar({ thinking: true }); // Gem visibly starts reasoning
+  setThinking(true);
   try {
     return await handleMessage(text);
   } finally {
     avatar({ thinking: false });
+    setThinking(false);
   }
 }
 
@@ -2149,6 +2178,10 @@ function startAgentTown() {
     a.pos.y += (dy / d) * sp;
   }
 
+  // expose live agent state for the seat bar / status strip / mini preview
+  // (other code reads this; the town renderer stays the single writer)
+  window.__townAgents = agents;
+
   // legend
   const legend = $('#townLegend');
   legend.innerHTML = '';
@@ -2305,6 +2338,339 @@ function renderMissionLog() {
     log.appendChild(div);
   });
 }
+
+// ---------------------------------------------------------------------------
+// Stonic town chrome — seat status bar, bottom status strip, "Press E",
+// visual-hub cards, gesture list, and the mini town preview in the
+// assistant view. All read the live agent state exposed by startAgentTown
+// (window.__townAgents) so they never fight the town renderer.
+// ---------------------------------------------------------------------------
+const TOWN_DESKS = [{ x: 130, y: 70 }, { x: 620, y: 70 }, { x: 130, y: 300 }, { x: 620, y: 300 }];
+const TOWN_MINI_COLORS = { Alice: '#ff5d8f', Bob: '#5d9cff', Carol: '#4be3a1', Dave: '#c78bff' };
+
+function townAgents() {
+  if (Array.isArray(window.__townAgents)) return window.__townAgents;
+  return AGENTS.map((a, i) => ({ name: a.name, emoji: a.emoji, role: a.role, color: TOWN_MINI_COLORS[a.name], state: 'idle', task: '', pos: { x: TOWN_DESKS[i].x, y: TOWN_DESKS[i].y - 20 } }));
+}
+
+function renderTownChrome() {
+  const list = townAgents();
+  // seat status chips (full view + assistant preview)
+  [$('#townSeatBar'), $('#townSeatBarMini')].forEach((bar) => {
+    if (!bar) return;
+    const html = list.map((a) => {
+      const s = a.state || 'idle';
+      const cls = s === 'busy' ? 's-busy' : s === 'queued' ? 's-queued' : s === 'done' ? 's-done' : '';
+      return `<span class="seat-chip ${cls}" title="${escapeHtml(a.name)} — ${s}"><span class="seat-face">${a.emoji || '👤'}</span>${escapeHtml(a.name)}<span class="seat-dot"></span></span>`;
+    }).join('');
+    if (bar.dataset.html !== html) { bar.dataset.html = html; bar.innerHTML = html; }
+  });
+  // bottom status strip (full view + assistant preview)
+  const total = list.length;
+  const seated = list.filter((a) => (a.state || 'idle') !== 'idle').length;
+  const busy = list.filter((a) => a.state === 'busy' || a.state === 'queued').length;
+  const ctxPct = Math.min(100, Math.round((chatHistory.length / 16) * 100));
+  const cfg = profile.ai || {};
+  const prov = detectProvider(cfg.baseURL);
+  const provName = { gemini: 'GEMINI', chatgpt: 'GPT', claude: 'CLAUDE', groq: 'LLAMA', openrouter: 'OPENROUTER' }[prov];
+  const model = (cfg.baseURL && cfg.apiKey) ? (cfg.model || provName || 'MODEL') : (cfg.baseURL ? (cfg.model || 'LOCAL MODEL') : 'No model yet');
+  const set = (id, val) => { const el = $(id); if (el && el.textContent !== val) el.textContent = val; };
+  set('#townSeats', seated + '/' + total + ' seat');
+  set('#townBusy', busy + '/' + total + ' busy');
+  set('#townSeatsMini', seated + '/' + total + ' seat');
+  set('#townBusyMini', busy + '/' + total + ' busy');
+  set('#townModel', model);
+  set('#townModelMini', model);
+  [['#townCtx', ctxPct], ['#townCtxMini', ctxPct]].forEach(([id, pct]) => {
+    const el = $(id); if (el) el.style.width = pct + '%';
+  });
+}
+
+function renderVisualHub() {
+  const grid = $('#visualHubGrid');
+  if (!grid) return;
+  const list = townAgents();
+  grid.innerHTML = list.map((a) => {
+    const s = (a.state || 'idle').toUpperCase();
+    const cls = s === 'BUSY' ? 'busy' : s === 'QUEUED' ? 'queued' : s === 'DONE' ? 'done' : '';
+    return `<div class="vh-card">
+      <div class="vh-name"><span>${a.emoji || ''} ${escapeHtml(a.name)}</span><span class="vh-state ${cls}">${s}</span></div>
+      <div class="vh-role">${escapeHtml(a.role || 'Resident agent')}</div>
+      <div class="vh-task">${a.task ? escapeHtml(a.task) : '<span class="dim">— idle at desk —</span>'}</div>
+    </div>`;
+  }).join('');
+}
+
+function initTownChrome() {
+  // tabs: agents / visual hub / gesture
+  $$('.town-tab').forEach((t) => t.addEventListener('click', () => {
+    playSfx('click');
+    $$('.town-tab').forEach((x) => x.classList.toggle('active', x === t));
+    const pane = t.dataset.ttab;
+    $$('.town-tab-pane').forEach((p) => { p.hidden = p.dataset.tpane !== pane; });
+    const isAgents = pane === 'agents';
+    const layout = $('#view-town .town-layout');
+    if (layout) layout.style.display = isAgents ? '' : 'none';
+    const disp = $('#view-town .dispatch-panel');
+    if (disp) disp.style.display = isAgents ? '' : 'none';
+    if (pane === 'visualhub') renderVisualHub();
+  }));
+
+  // sat feed tabs (cosmetic, matches Stonic)
+  $$('.sat-tab').forEach((t) => t.addEventListener('click', () => {
+    playSfx('click');
+    $$('.sat-tab').forEach((x) => x.classList.toggle('active', x === t));
+  }));
+
+  // open town / chat shortcuts
+  $('#openTownBtn')?.addEventListener('click', () => { playSfx('swoosh'); switchView('town'); });
+  const focusChat = () => { switchView('assistant'); $('#chatInput').focus(); };
+  $('#townChatBtn')?.addEventListener('click', focusChat);
+  $('#townChatMini')?.addEventListener('click', focusChat);
+
+  // "Press E" — hover an agent in the full town, press E to hand over a task
+  const canvas = $('#townCanvas'), tag = $('#pressE');
+  let hovered = null;
+  if (canvas && tag) {
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+      const mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy;
+      hovered = null;
+      for (const a of townAgents()) {
+        if (a.pos && Math.hypot(mx - a.pos.x, my - a.pos.y) < 24) { hovered = a; break; }
+      }
+      if (hovered) {
+        tag.style.left = (hovered.pos.x / sx) + 'px';
+        tag.style.top = (hovered.pos.y / sy - 10) + 'px';
+        tag.classList.add('show');
+        canvas.style.cursor = 'pointer';
+      } else {
+        tag.classList.remove('show');
+        canvas.style.cursor = '';
+      }
+    });
+    canvas.addEventListener('mouseleave', () => { hovered = null; tag.classList.remove('show'); });
+  }
+  window.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() !== 'e' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const ae = document.activeElement;
+    if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
+    if (!hovered || !$('#view-town').classList.contains('active')) return;
+    window.__assignAgentTask?.(hovered.name, 'Awaiting your task…');
+    addActivity(hovered.name, 'received a task face-to-face (E)');
+    switchView('assistant');
+    $('#chatInput').value = '@' + hovered.name + ' ';
+    $('#chatInput').focus();
+  });
+
+  // live chrome refresh (seat dots, status strip, visual hub, notes, media link)
+  renderTownChrome();
+  setInterval(() => {
+    safe('townChromeTick', () => {
+      renderTownChrome();
+      if (!$('#view-town .town-tab-pane[data-tpane="visualhub"]').hidden) renderVisualHub();
+      updateMediaLink();
+      renderNotesMini();
+    });
+  }, 1500);
+}
+
+// Mini office preview inside the assistant view (reads live town state)
+function startTownPreview() {
+  const canvas = $('#townMiniCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const S = 0.44, OX = (W - 900 * S) / 2, OY = (H - 520 * S) / 2;
+  function loop() {
+    requestAnimationFrame(loop);
+    if (!canvas.offsetParent) return; // hidden view — skip work
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#070b14'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(255,255,255,0.045)'; ctx.lineWidth = 1;
+    for (let x = 0; x <= W; x += 32) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y <= H; y += 32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    // desks
+    TOWN_DESKS.forEach((d) => {
+      ctx.fillStyle = 'rgba(20,28,44,0.95)';
+      ctx.fillRect(OX + d.x * S - 18, OY + d.y * S, 36, 4);
+      ctx.fillRect(OX + d.x * S - 14, OY + d.y * S - 11, 28, 11);
+      ctx.fillStyle = 'rgba(10,15,26,0.9)';
+      ctx.fillRect(OX + d.x * S - 11, OY + d.y * S - 9, 22, 8);
+    });
+    // agents (live positions from the full town, idle desks as fallback)
+    const list = townAgents();
+    list.forEach((a, i) => {
+      const p = a.pos || TOWN_DESKS[i];
+      const x = OX + p.x * S, y = OY + p.y * S;
+      const s = a.state || 'idle';
+      const ring = s === 'busy' ? '#ffc24b' : s === 'queued' ? '#3bc9ff' : s === 'done' ? getAccent() : '#3dff9a';
+      ctx.fillStyle = a.color || '#5d9cff';
+      ctx.fillRect(x - 4, y - 5, 8, 8);
+      ctx.fillStyle = '#f0c9a8';
+      ctx.fillRect(x - 3, y - 10, 6, 5);
+      ctx.strokeStyle = ring; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#9fb2d0'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(a.name, x, y - 14);
+    });
+  }
+  loop();
+  canvas.addEventListener('click', () => { playSfx('swoosh'); switchView('town'); });
+}
+
+// SAT-LINK FEED — tiny rotating satellite globe with hotspots
+function startSatLink() {
+  const canvas = $('#satCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2 + 4, R = Math.min(W, H) / 2 - 14;
+  const hotspots = Array.from({ length: 14 }, () => ({
+    lat: (Math.random() - 0.5) * 1.9, lon: Math.random() * Math.PI * 2,
+    c: Math.random() < 0.45 ? '#ffc24b' : Math.random() < 0.5 ? '#ff5d5d' : '#3dff9a',
+    r: 1.4 + Math.random() * 1.8
+  }));
+  let rot = 0;
+  function loop() {
+    requestAnimationFrame(loop);
+    if (!canvas.offsetParent) return;
+    rot += 0.004;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#04070d'; ctx.fillRect(0, 0, W, H);
+    // stars
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    for (let i = 0; i < 26; i++) {
+      const sx = (i * 73 + 31) % W, sy = (i * 127 + 13) % H;
+      ctx.fillRect(sx, sy, 1, 1);
+    }
+    // globe body
+    const g = ctx.createRadialGradient(cx - R / 3, cy - R / 3, R / 4, cx, cy, R);
+    g.addColorStop(0, '#0d2036'); g.addColorStop(1, '#050b14');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(120,170,255,0.25)'; ctx.lineWidth = 1;
+    ctx.stroke();
+    // graticule (rotating meridians)
+    for (let i = 0; i < 3; i++) {
+      const k = Math.abs(Math.cos(rot * (i + 1) * 0.7 + i));
+      ctx.strokeStyle = 'rgba(120,170,255,0.14)';
+      ctx.beginPath(); ctx.ellipse(cx, cy, Math.max(2, R * k), R, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(120,170,255,0.14)';
+    for (let i = 1; i < 3; i++) {
+      const yy = cy - R + (2 * R / 3) * i;
+      const half = Math.sqrt(Math.max(0, R * R - (yy - cy) * (yy - cy)));
+      ctx.beginPath(); ctx.moveTo(cx - half, yy); ctx.lineTo(cx + half, yy); ctx.stroke();
+    }
+    // hotspots on the front hemisphere
+    for (const h of hotspots) {
+      const lon = h.lon + rot;
+      const depth = Math.cos(lon);
+      if (depth < 0.05) continue;
+      const x = cx + R * Math.sin(lon) * Math.cos(h.lat);
+      const y = cy - R * Math.sin(h.lat) * 0.82;
+      const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 400 + h.lon * 5);
+      ctx.globalAlpha = depth * pulse;
+      ctx.fillStyle = h.c;
+      ctx.beginPath(); ctx.arc(x, y, h.r, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = depth * pulse * 0.35;
+      ctx.beginPath(); ctx.arc(x, y, h.r * 2.6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  loop();
+}
+
+// Glowing data wires from the circuit cards into the orb
+function startCircuitWires() {
+  const canvas = $('#wireCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const colors = [null, '#ff9d3b', '#3dff9a', '#8a9bb2']; // memory uses theme accent
+  let dash = 0;
+  function loop(t) {
+    requestAnimationFrame(loop);
+    if (!canvas.offsetParent) return;
+    const accent = getAccent();
+    ctx.clearRect(0, 0, W, H);
+    const n = 4, midY = H / 2, endX = W - 4;
+    for (let i = 0; i < n; i++) {
+      const y0 = H * (i + 1) / (n + 1);
+      const c = colors[i] === null ? accent : colors[i];
+      const cpx = W * 0.55, cpy = y0 + (midY - y0) * 0.5;
+      ctx.strokeStyle = c;
+      ctx.globalAlpha = 0.85;
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([5, 7]);
+      ctx.lineDashOffset = -dash - i * 4;
+      ctx.shadowColor = c; ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.moveTo(2, y0);
+      ctx.bezierCurveTo(cpx, y0, cpx, cpy, endX, midY);
+      ctx.stroke();
+      // moving data pulse
+      const k = ((t / 1400) + i * 0.25) % 1;
+      const px = 2 + (endX - 2) * k;
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(px, midY + (y0 - midY) * Math.pow(1 - k, 2), 1.8, 0, Math.PI * 2);
+      ctx.fillStyle = c; ctx.fill();
+    }
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    dash += 0.6;
+  }
+  loop(0);
+}
+
+// ---------------------------------------------------------------------------
+// Expert panel (right column) — VOICE / AGENT / NOTES tabs + tool activity
+// ---------------------------------------------------------------------------
+function renderVoiceTab() {
+  const el = $('#voiceStatusList');
+  if (!el) return;
+  const v = profile.voice || {};
+  const rows = [
+    ['ENGINE', v.mode === 'system' ? 'SYSTEM · OFFLINE OS VOICE' : 'NEURAL · FREE ONLINE', v.mode !== 'system'],
+    ['VOICE GENDER', (profile.voiceGender || profile.avatarGender || 'female').toUpperCase(), true],
+    ['ACCENT', (v.neuralVoice || 'EN-US').toUpperCase(), true],
+    ['RATE', (v.rate ?? 1.0).toFixed(2), false],
+    ['PITCH', (v.pitch ?? 1.1).toFixed(2), false],
+    ['RECOGNITION', (v.sttLang || 'EN-US').toUpperCase(), true],
+    ['MIC', listening ? 'LISTENING…' : (isRunning ? 'ONLINE' : 'STANDBY'), !!isRunning || listening]
+  ];
+  el.innerHTML = rows.map((r) => `<div class="vs-row"><span>${r[0]}</span><b class="${r[2] ? 'hot' : ''}">${r[1]}</b></div>`).join('');
+}
+
+function renderNotesMini() {
+  const el = $('#notesMini');
+  if (!el) return;
+  const notes = (memory && memory.notes) || [];
+  if (!notes.length) { el.innerHTML = '<div class="empty">No notes yet — say “Write a note: …” in chat.</div>'; return; }
+  el.innerHTML = notes.slice(0, 12).map((n) => `<div class="note-item">📝 ${escapeHtml(n.text || n)}</div>`).join('');
+}
+
+// Stonic-style tool activity cards (INPUT / OUTPUT). Desktop tool execution
+// pushes here via window.__pushToolActivity; the empty state explains itself.
+function pushToolActivity(name, args, result, ms) {
+  const feed = $('#toolFeed');
+  if (!feed) return;
+  const empty = feed.querySelector('.empty');
+  if (empty) feed.innerHTML = '';
+  const str = (x) => (typeof x === 'string' ? x : JSON.stringify(x == null ? {} : x));
+  const div = document.createElement('div');
+  div.className = 'tool-card';
+  div.innerHTML = `
+    <div class="tool-head"><span class="tool-ico">⚙</span>${escapeHtml(name)}<span class="tool-dur dim">${ms != null ? ms.toFixed(1) + 's' : ''}</span></div>
+    <div class="tool-io"><span class="io-label">INPUT</span><pre>${escapeHtml(str(args).slice(0, 260))}</pre></div>
+    <div class="tool-io"><span class="io-label">OUTPUT</span><pre>${escapeHtml(str(result).slice(0, 260))}</pre></div>`;
+  feed.prepend(div);
+  while (feed.children.length > 12) feed.removeChild(feed.lastChild);
+  const pane = $('#etabAgent');
+  if (pane) pane.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+window.__pushToolActivity = pushToolActivity;
 
 // ---------------------------------------------------------------------------
 // Memory / Notes / Reminders rendering
@@ -2721,20 +3087,23 @@ function startCommandMap() {
 // Headlines
 // ---------------------------------------------------------------------------
 async function refreshHeadlines() {
-  const list = $('#newsList');
-  list.innerHTML = '<div class="empty">Fetching headlines…</div>';
+  const lists = [$('#newsList'), $('#newsListMini')].filter(Boolean);
+  lists.forEach((l) => { l.innerHTML = '<div class="empty">Fetching headlines…</div>'; });
   try {
     const items = await api.getHeadlines(14);
-    if (!items.length) { list.innerHTML = '<div class="empty">Could not reach the feed (offline).</div>'; return; }
-    list.innerHTML = '';
-    items.forEach((n) => {
-      const div = document.createElement('div');
-      div.className = 'news-item';
-      div.innerHTML = `<div class="n-title">${escapeHtml(n.title)}</div><div class="n-meta">▲ ${n.score} · ${escapeHtml(n.by)}</div>`;
-      div.addEventListener('click', () => api.openExternal(n.url));
-      list.appendChild(div);
-    });
-  } catch (e) { list.innerHTML = '<div class="empty">Could not reach the feed (offline).</div>'; }
+    if (!items.length) { lists.forEach((l) => { l.innerHTML = '<div class="empty">Could not reach the feed (offline).</div>'; }); return; }
+    const fill = (l) => {
+      l.innerHTML = '';
+      items.forEach((n) => {
+        const div = document.createElement('div');
+        div.className = 'news-item';
+        div.innerHTML = `<div class="n-title">${escapeHtml(n.title)}</div><div class="n-meta">▲ ${n.score} · ${escapeHtml(n.by)}</div>`;
+        div.addEventListener('click', () => api.openExternal(n.url));
+        l.appendChild(div);
+      });
+    };
+    lists.forEach(fill);
+  } catch (e) { lists.forEach((l) => { l.innerHTML = '<div class="empty">Could not reach the feed (offline).</div>'; }); }
 }
 
 // ---------------------------------------------------------------------------
@@ -2854,6 +3223,26 @@ function bindEvents() {
   // HUD Themes picker in Settings (generated from the string theme table)
   renderThemeGrid();
 
+  // Expert panel tabs (VOICE / AGENT / NOTES)
+  $$('.expert-tab').forEach((t) => t.addEventListener('click', () => {
+    playSfx('click');
+    $$('.expert-tab').forEach((x) => x.classList.toggle('active', x === t));
+    $$('.expert-pane').forEach((p) => p.classList.toggle('active', p.dataset.epane === t.dataset.etab));
+    if (t.dataset.etab === 'voice') renderVoiceTab();
+    if (t.dataset.etab === 'notes') renderNotesMini();
+  }));
+
+  // SETTING circuit card → open settings
+  $('#settingCircuitRow')?.addEventListener('click', () => { playSfx('click'); openSettings(); });
+
+  // Voice tab "tune in settings" + notes "open notebook"
+  $('#voiceSettingsBtn')?.addEventListener('click', () => { playSfx('click'); openSettings(); });
+  $('#openNotebookBtn')?.addEventListener('click', () => {
+    switchView('core');
+    const tab = $$('.core-tab').find((t) => t.dataset.tab === 'notes');
+    if (tab) tab.click();
+  });
+
   // SFX button toggle
   const sfxBtn = $('#sfxBtn');
   if (sfxBtn) {
@@ -2864,6 +3253,7 @@ function bindEvents() {
       $('#sfxText').textContent = profile.sfx !== false ? 'SFX ON' : 'SFX OFF';
       if (profile.sfx !== false) playSfx('click');
       persistProfile();
+      updateMediaLink();
     });
   }
 
@@ -3239,8 +3629,8 @@ function bindEvents() {
   // start AI loop
   $('#startBtn').addEventListener('click', () => {
     playSfx('activate');
-    if (isRunning) { isRunning = false; $('#startBtn').classList.remove('running'); $('#startLabel').textContent = 'START AI'; $('#orbStatus').textContent = 'STANDBY'; $('#orbStatus').classList.remove('active'); stopListening(); }
-    else { startAiLoop(); addMessage('system-msg', 'Listening. Speak naturally.'); speak('I am listening. How can I help?'); }
+    if (isRunning) { isRunning = false; $('#startBtn').classList.remove('running'); $('#startLabel').textContent = 'START AI'; $('#orbStatus').textContent = 'STANDBY'; $('#orbStatus').classList.remove('active'); stopListening(); updateMediaLink(); }
+    else { startAiLoop(); addMessage('system-msg', 'Listening. Speak naturally.'); speak('I am listening. How can I help?'); updateMediaLink(); }
   });
 
   $('#micBtn').addEventListener('click', () => {
@@ -3581,6 +3971,13 @@ async function boot() {
   safe('orb', startOrb);
   safe('globe', startGlobe);
   safe('commandMap', startCommandMap);
+  safe('satLink', startSatLink);
+  safe('circuitWires', startCircuitWires);
+  safe('townPreview', startTownPreview);
+  safe('townChrome', initTownChrome);
+  safe('mediaLink', updateMediaLink);
+  safe('voiceTab', renderVoiceTab);
+  safe('notesMini', renderNotesMini);
   safe('avatar', () => {
     if (window.gemAvatar) {
       window.gemAvatar.mount('#avatarCanvas');

@@ -104,37 +104,47 @@
 
       <!-- Main Content Area -->
       <main class="main">
-        <!-- ============ VOICE ASSISTANT ============ -->
+        <!-- ============ VOICE ASSISTANT (Stonic-style 3-column command center) ============ -->
         <section class="view active" id="view-assistant">
           <div class="assistant-grid">
-            <div class="orb-panel hud-panel">
-              <canvas id="orbCanvas" width="560" height="560"></canvas>
-              <canvas id="avatarCanvas" width="560" height="560" aria-hidden="true"></canvas>
 
-              <div class="gem-nameplate">
-                <span class="gem-name">GEM</span>
-                <span class="gem-role" id="gemRole">personal intelligence</span>
-                <button class="gender-toggle-btn" id="avatarGenderToggle" title="Switch Avatar Gender (Female / Male)">
-                  <span id="avatarGenderLabel">♀ FEMALE</span>
-                </button>
+            <!-- ================= LEFT COLUMN: media link · satellite · intel ================= -->
+            <div class="stx-left">
+              <div class="hud-panel media-link">
+                <h3 class="panel-title">MEDIA LINK <span class="dim" id="mediaLinkState">— SYSTEM OFFLINE</span></h3>
+                <div class="ml-body">
+                  <div class="ml-orbit" aria-hidden="true"><span></span><i></i></div>
+                  <div class="ml-line"><span>VOICE</span><b id="mlVoice">STANDBY</b></div>
+                  <div class="ml-line"><span>AI LINK</span><b id="mlAi">FREE CORE</b></div>
+                  <div class="ml-line"><span>SFX</span><b id="mlSfx">ON</b></div>
+                  <div class="ml-icons">
+                    <span class="ml-ico" title="Voice assistant online">◉</span>
+                    <span class="ml-ico" title="Chat channel">▣</span>
+                  </div>
+                </div>
               </div>
 
-              <div class="orb-center">
-                <button class="start-btn" id="startBtn">
-                  <span class="start-ring"></span>
-                  <span class="start-label" id="startLabel">START AI</span>
-                </button>
+              <div class="hud-panel satlink">
+                <h3 class="panel-title">SAT-LINK FEED <span class="dim">— SATELLITE STREAM</span></h3>
+                <div class="sat-stage">
+                  <canvas id="satCanvas" width="260" height="160"></canvas>
+                  <span class="sat-beta">BETA</span>
+                </div>
+                <div class="sat-tabs">
+                  <button class="sat-tab active">TODAY</button>
+                  <button class="sat-tab">RAP</button>
+                  <button class="sat-tab">SEARCH</button>
+                  <button class="sat-tab">ALERTS</button>
+                </div>
               </div>
 
-              <div class="caption-bar" id="captionBar" aria-live="polite">
-                <span class="caption-who" id="captionWho">GEM</span>
-                <p class="caption-text" id="captionText"></p>
+              <div class="hud-panel headlines-mini">
+                <h3 class="panel-title">TODAY HEADLINES</h3>
+                <div class="news-list mini" id="newsListMini">
+                  <div class="empty">Fetching headlines…</div>
+                </div>
               </div>
 
-              <div class="orb-status" id="orbStatus">STANDBY</div>
-            </div>
-
-            <div class="assistant-side">
               <div class="hud-panel briefing">
                 <div class="briefing-top">
                   <span class="briefing-greet" id="briefingGreet">Good Day</span>
@@ -147,57 +157,154 @@
                 </div>
                 <div class="briefing-quote" id="briefQuote">“The best way to predict the future is to create it.”</div>
               </div>
+            </div>
 
-              <div class="hud-panel circuits">
-                <h3 class="panel-title">CORE CIRCUITS</h3>
-                <div class="circuit-row" id="memCircuitRow" style="cursor:pointer;" title="Click to view memory details">
-                  <span class="circuit-name">MEMORY</span>
-                  <div class="circuit-bar"><i id="memCircuit" style="width:0%"></i></div>
-                  <span class="circuit-val" id="memCircuitVal">0%</span>
-                </div>
-                <div class="circuit-row" id="skillCircuitRow" style="cursor:pointer;" title="Click to view learned skills">
-                  <span class="circuit-name">SKILLS</span>
-                  <div class="circuit-bar"><i id="skillCircuit" style="width:0%"></i></div>
-                  <span class="circuit-val" id="skillCircuitVal">0%</span>
-                </div>
-                <div class="circuit-row" id="soulCircuitRow" style="cursor:pointer;" title="Click to tune personality">
-                  <span class="circuit-name">SOUL</span>
-                  <div class="circuit-bar"><i id="soulCircuit" style="width:0%"></i></div>
-                  <span class="circuit-val" id="soulCircuitVal">0%</span>
-                </div>
-              </div>
-
-              <div class="hud-panel chat-panel">
-                <h3 class="panel-title">
-                  LINK <span class="dim" id="linkMode">— OFFLINE BRAIN</span>
-                  <button class="refresh-btn" id="clearChatBtn" style="padding:3px 10px;font-size:10px;">Clear</button>
-                </h3>
-                <div class="chat-log" id="chatLog">
-                  <div class="msg system-msg">
-                    <p>Audio lip-sync &amp; spectrum engines ready.</p>
-                    <p class="sub">Speak naturally, or type below. Press <b>Ctrl+K</b> for instant command palette.</p>
+            <!-- ================= CENTER COLUMN: circuits → orb · agent town ================= -->
+            <div class="stx-center">
+              <div class="stx-core">
+                <div class="stx-circuits">
+                  <div class="stx-circuit" id="memCircuitRow" data-circ="memory" title="Click to view memory details">
+                    <span class="sc-ico">⬡</span>
+                    <span class="sc-name">MEMORY</span>
+                    <span class="circuit-bar"><i id="memCircuit" style="width:0%"></i></span>
+                    <span class="circuit-val" id="memCircuitVal">0%</span>
+                  </div>
+                  <div class="stx-circuit" id="skillCircuitRow" data-circ="skills" title="Click to view learned skills">
+                    <span class="sc-ico"></span>
+                    <span class="sc-name">SKILLS</span>
+                    <span class="circuit-bar"><i id="skillCircuit" style="width:0%"></i></span>
+                    <span class="circuit-val" id="skillCircuitVal">0%</span>
+                  </div>
+                  <div class="stx-circuit" id="soulCircuitRow" data-circ="soul" title="Click to tune personality">
+                    <span class="sc-ico">✧</span>
+                    <span class="sc-name">SOUL</span>
+                    <span class="circuit-bar"><i id="soulCircuit" style="width:0%"></i></span>
+                    <span class="circuit-val" id="soulCircuitVal">0%</span>
+                  </div>
+                  <div class="stx-circuit" id="settingCircuitRow" title="Open settings">
+                    <span class="sc-ico">⚙</span>
+                    <span class="sc-name">SETTING</span>
+                    <span class="circuit-bar"><i style="width:100%"></i></span>
+                    <span class="circuit-val dim">ON</span>
                   </div>
                 </div>
 
-                <div class="chat-input-row">
-                  <button class="mic-btn" id="micBtn" title="Talk to Gem (Speech Recognition)">
-                    <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M19 11a7 7 0 01-14 0M12 18v3"/></svg>
-                  </button>
-                  <input type="text" id="chatInput" placeholder="Ask Gem anything or type a command…" autocomplete="off" />
-                  <button class="send-btn" id="sendBtn" title="Send message">➤</button>
-                </div>
+                <canvas id="wireCanvas" width="120" height="420" aria-hidden="true"></canvas>
 
-                <div class="quick-commands" id="quickCommands">
-                  <button class="qc" data-cmd="What's the weather?">🌦 Weather</button>
-                  <button class="qc" data-cmd="Search the web for ">🔎 Search</button>
-                  <button class="qc" data-cmd="Open calculator">🚀 Calculator</button>
-                  <button class="qc" data-cmd="Remind me to ">⏰ Reminder</button>
-                  <button class="qc" data-cmd="Write a note: ">📝 Note</button>
-                  <button class="qc" data-cmd="Tell me a joke">😄 Joke</button>
-                  <button class="qc" data-cmd="Show system status">📊 Telemetry</button>
+                <div class="orb-panel hud-panel">
+                  <div class="thinking-pill" id="thinkingPill"><span>THINKING</span><i></i></div>
+
+                  <canvas id="orbCanvas" width="560" height="560"></canvas>
+                  <canvas id="avatarCanvas" width="560" height="560" aria-hidden="true"></canvas>
+
+                  <div class="gem-nameplate">
+                    <span class="gem-name">GEM</span>
+                    <span class="gem-role" id="gemRole">personal intelligence</span>
+                    <button class="gender-toggle-btn" id="avatarGenderToggle" title="Switch Avatar Gender (Female / Male)">
+                      <span id="avatarGenderLabel">♀ FEMALE</span>
+                    </button>
+                  </div>
+
+                  <div class="orb-center">
+                    <button class="start-btn" id="startBtn">
+                      <span class="start-ring"></span>
+                      <span class="start-label" id="startLabel">START AI</span>
+                    </button>
+                  </div>
+
+                  <div class="caption-bar" id="captionBar" aria-live="polite">
+                    <span class="caption-who" id="captionWho">GEM</span>
+                    <p class="caption-text" id="captionText"></p>
+                  </div>
+
+                  <div class="orb-status" id="orbStatus">STANDBY</div>
+                </div>
+              </div>
+
+              <!-- Agent Town preview (live state from the full town view) -->
+              <div class="hud-panel town-preview" id="townPreview">
+                <div class="tp-head">
+                  <h3 class="panel-title">AGENT TOWN <span class="tp-ready" id="townPreviewState">READY</span></h3>
+                  <button class="refresh-btn" id="openTownBtn" style="padding:4px 12px;font-size:10px;">OPEN TOWN →</button>
+                </div>
+                <div class="town-seatbar" id="townSeatBarMini"></div>
+                <div class="tp-stage">
+                  <canvas id="townMiniCanvas" width="560" height="240"></canvas>
+                </div>
+                <div class="town-statusbar">
+                  <span class="ts-item online" id="townOnlineMini"><i></i>Online</span>
+                  <span class="ts-item" id="townModelMini">No model yet</span>
+                  <span class="ts-item">CTX <span class="ctx-meter"><i id="townCtxMini"></i></span></span>
+                  <span class="ts-item" id="townSeatsMini">0/4 seat</span>
+                  <span class="ts-item" id="townBusyMini">0/4 busy</span>
+                  <button class="ts-chat" id="townChatMini">💬 CHAT</button>
                 </div>
               </div>
             </div>
+
+            <!-- ================= RIGHT COLUMN: expert panel (voice / agent / notes) ================= -->
+            <div class="stx-right">
+              <div class="hud-panel expert-panel">
+                <div class="expert-tabs">
+                  <button class="expert-tab" data-etab="voice">VOICE</button>
+                  <button class="expert-tab active" data-etab="agent">AGENT</button>
+                  <button class="expert-tab" data-etab="notes">NOTES</button>
+                  <span class="expert-plus">＋</span>
+                </div>
+
+                <div class="expert-pane" data-epane="voice" id="etabVoice">
+                  <div class="voice-status" id="voiceStatusList"></div>
+                  <button class="refresh-btn" id="voiceSettingsBtn" style="margin-top:12px;">⚙ TUNE VOICE IN SETTINGS</button>
+                </div>
+
+                <div class="expert-pane active" data-epane="agent" id="etabAgent">
+                  <div class="chat-panel" style="min-height:0;">
+                    <h3 class="panel-title">LINK <span class="dim" id="linkMode">— OFFLINE BRAIN</span>
+                      <button class="refresh-btn" id="clearChatBtn" style="padding:3px 10px;font-size:10px;">Clear</button>
+                    </h3>
+                    <div class="chat-log" id="chatLog">
+                      <div class="msg system-msg">
+                        <p>Audio lip-sync &amp; spectrum engines ready.</p>
+                        <p class="sub">Speak naturally, or type below. Press <b>Ctrl+K</b> for instant command palette.</p>
+                      </div>
+                    </div>
+
+                    <div class="tool-activity">
+                      <h4 class="tool-activity-title">STONIC AI <span class="dim">— TOOL ACTIVITY</span></h4>
+                      <div class="tool-feed" id="toolFeed">
+                        <div class="empty">No tool calls yet — when Gem acts (weather, search, files…), the calls show up here with their input &amp; output.</div>
+                      </div>
+                    </div>
+
+                    <div class="chat-input-row">
+                      <button class="mic-btn" id="micBtn" title="Talk to Gem (Speech Recognition)">
+                        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M19 11a7 7 0 01-14 0M12 18v3"/></svg>
+                      </button>
+                      <input type="text" id="chatInput" placeholder="Type instruction or / command…" autocomplete="off" />
+                      <button class="send-btn" id="sendBtn" title="Send message">➤</button>
+                    </div>
+
+                    <div class="quick-commands" id="quickCommands">
+                      <button class="qc" data-cmd="What's the weather?">🌦 Weather</button>
+                      <button class="qc" data-cmd="Search the web for ">🔎 Search</button>
+                      <button class="qc" data-cmd="Open calculator">🚀 Calculator</button>
+                      <button class="qc" data-cmd="Remind me to ">⏰ Reminder</button>
+                      <button class="qc" data-cmd="Write a note: ">📝 Note</button>
+                      <button class="qc" data-cmd="Tell me a joke">😄 Joke</button>
+                      <button class="qc" data-cmd="Show system status">📊 Telemetry</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="expert-pane" data-epane="notes" id="etabNotes">
+                  <div class="notes-mini" id="notesMini">
+                    <div class="empty">No notes yet — use “Write a note: …” in chat.</div>
+                  </div>
+                  <button class="refresh-btn" id="openNotebookBtn" style="margin-top:12px;">📝 OPEN NOTEBOOK</button>
+                </div>
+              </div>
+            </div>
+
           </div>
         </section>
 
@@ -450,8 +557,13 @@
         <!-- ============ AGENT TOWN ============ -->
         <section class="view" id="view-town">
           <div class="town-head">
-            <h2 class="view-title">AGENT TOWN <span class="dim">— RESIDENT AI OFFICE</span></h2>
-            <p class="view-sub">Alice, Bob, Carol, and Dave walk, work, and collaborate inside your virtual office. Click an agent to dispatch tasks or open direct 1-on-1 chat.</p>
+            <h2 class="view-title">AGENT TOWN <span class="tp-ready" id="townHeadState">READY</span></h2>
+            <div class="town-tabs">
+              <button class="town-tab active" data-ttab="agents">agents</button>
+              <button class="town-tab" data-ttab="visualhub">visual hub</button>
+              <button class="town-tab" data-ttab="gesture">gesture</button>
+            </div>
+            <p class="view-sub">Alice, Bob, Carol, and Dave walk, work, and collaborate inside your virtual office. Hover an agent and press <b>E</b> (or click) to hand over a task face-to-face.</p>
           </div>
           <div class="hud-panel dispatch-panel" style="margin-bottom:18px;">
             <h3 class="panel-title">MISSION DISPATCH <span class="dim">— ASSIGN TASK TO AGENTS</span></h3>
@@ -467,10 +579,42 @@
               <button class="primary-btn" id="dispatchTaskBtn">🚀 DISPATCH</button>
             </div>
           </div>
+
+          <div class="town-tab-pane" data-tpane="visualhub" hidden>
+            <div class="hud-panel">
+              <h3 class="panel-title">VISUAL HUB <span class="dim">— SEAT MANAGER</span></h3>
+              <div class="vh-grid" id="visualHubGrid"></div>
+            </div>
+          </div>
+          <div class="town-tab-pane" data-tpane="gesture" hidden>
+            <div class="hud-panel">
+              <h3 class="panel-title">GESTURE <span class="dim">— VOICE & QUICK COMMANDS</span></h3>
+              <div class="gesture-list">
+                <div class="g-row"><kbd>E</kbd><span>Hover an agent + press E — hand a task face-to-face</span></div>
+                <div class="g-row"><kbd>@</kbd><span>Chat prefix: <b>@Alice organize my reports</b> routes to that agent's brain</span></div>
+                <div class="g-row"><kbd>🎙</kbd><span>"Dispatch a task to Bob" — spoken commands reach the same dispatch queue</span></div>
+                <div class="g-row"><kbd>⌘K</kbd><span>Command palette — jump to any view, memory or action</span></div>
+                <div class="g-row"><kbd>⌘L</kbd><span>Focus the chat input from anywhere</span></div>
+              </div>
+            </div>
+          </div>
+
           <div class="town-layout">
             <div class="hud-panel town-canvas-panel">
-              <canvas id="townCanvas" width="900" height="520"></canvas>
-              <div class="town-legend" id="townLegend"></div>
+              <div class="town-seatbar" id="townSeatBar"></div>
+              <div class="town-stage">
+                <canvas id="townCanvas" width="900" height="520"></canvas>
+                <div class="press-e" id="pressE">Press <b>E</b></div>
+                <div class="town-legend" id="townLegend"></div>
+              </div>
+              <div class="town-statusbar">
+                <span class="ts-item online" id="townOnline"><i></i>Online</span>
+                <span class="ts-item" id="townModel">No model yet</span>
+                <span class="ts-item">CTX <span class="ctx-meter"><i id="townCtx"></i></span></span>
+                <span class="ts-item" id="townSeats">0/4 seat</span>
+                <span class="ts-item" id="townBusy">0/4 busy</span>
+                <button class="ts-chat" id="townChatBtn">💬 CHAT</button>
+              </div>
             </div>
 
             <div class="town-side">
