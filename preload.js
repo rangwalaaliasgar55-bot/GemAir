@@ -60,5 +60,7 @@ contextBridge.exposeInMainWorld('gemair', {
 
   // events (main -> renderer)
   onReminder: (cb) => ipcRenderer.on('reminder:due', (_e, reminder) => cb(reminder)),
-  onWakeToggle: (cb) => ipcRenderer.on('wake:toggle', (_e, on) => cb(on))
+  onWakeToggle: (cb) => ipcRenderer.on('wake:toggle', (_e, on) => cb(on)),
+  onActivity: (cb) => ipcRenderer.on('ai:activity', (_e, data) => cb(data)),
+  onHudPanel: (cb) => ipcRenderer.on('hud:panel', (_e, data) => cb(data))
 });

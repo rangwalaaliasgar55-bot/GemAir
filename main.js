@@ -335,12 +335,14 @@ function cpuUsage() {
 async function getSystemInfo() {
   const cpu = await cpuUsage();
   const total = os.totalmem(), free = os.freemem();
+  const [battery, disk] = [await getBattery(), await getDisk()];
   return {
     platform: os.platform(), release: os.release(), hostname: os.hostname(),
     arch: os.arch(), cpus: os.cpus().length, cpuLoad: cpu,
     memTotal: total, memFree: free, memUsed: total - free,
     memPercent: Math.round(((total - free) / total) * 100),
-    uptime: os.uptime(), loadavg: os.loadavg()
+    uptime: os.uptime(), loadavg: os.loadavg(),
+    battery, disk
   };
 }
 
@@ -438,7 +440,9 @@ const TOOLS = [
   { type: 'function', function: { name: 'provide_support', description: 'Give compassionate, non-judgmental emotional support when the user is feeling low, guilty, anxious, angry or distressed.', parameters: { type: 'object', properties: { text: { type: 'string', description: "What the user said, to understand their emotional state" } }, required: ['text'] } } },
   { type: 'function', function: { name: 'get_quote', description: 'Get an inspiring quote.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'breathing_exercise', description: 'Give a guided calming breathing exercise (great for anxiety or stress).', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'generate_report', description: 'Generate the user\'s weekly life report from their mood, goals, tasks and memory.', parameters: { type: 'object', properties: {} } } }
+  { type: 'function', function: { name: 'generate_report', description: 'Generate the user\'s weekly life report from their mood, goals, tasks and memory.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'show_panel', description: 'Open a contextual HUD panel on the user screen so they can see live info alongside your reply. Panels: weather (pass city), clock (world/local time), focus (pomodoro timer), breathing (calming exercise), system (live telemetry), news (headlines), report (weekly life report).', parameters: { type: 'object', properties: { panel: { type: 'string', enum: ['weather', 'clock', 'focus', 'breathing', 'system', 'news', 'report'] }, city: { type: 'string', description: 'City name, used by the weather panel' } }, required: ['panel'] } } },
+  { type: 'function', function: { name: 'hide_panel', description: 'Close the floating HUD panel on the user screen.', parameters: { type: 'object', properties: {} } } }
 ];
 
 function safeEval(expr) {
@@ -1038,8 +1042,71 @@ function getStorage() {
   return { ramTotal: total, ramUsed: total - free, ramPercent: Math.round(((total - free) / total) * 100) };
 }
 
-function getBattery() {
-  return null; // no reliable cross-platform battery without native modules
+function execOut(cmd, timeout = 6000) {
+  return new Promise((resolve) => {
+    exec(cmd, { timeout }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
+  });
+}
+
+// Battery without native modules — best effort per OS, null when unknown.
+// Cached for 60s: pollSystem() runs every few seconds and shelling out that
+// often would be wasteful.
+let _batteryCache = { at: 0, value: null };
+async function getBattery() {
+  if (Date.now() - _batteryCache.at < 60000) return _batteryCache.value;
+  let value = null;
+  try {
+    const p = process.platform;
+    if (p === 'win32') {
+      const out = await execOut('wmic path Win32_Battery get EstimatedChargeRemaining,BatteryStatus /format:list');
+      const pct = out.match(/EstimatedChargeRemaining=(\d+)/i);
+      const status = out.match(/BatteryStatus=(\d+)/i);
+      if (pct) value = { percent: parseInt(pct[1], 10), charging: status ? status[1] === '2' : false };
+    } else if (p === 'darwin') {
+      const out = await execOut('pmset -g batt');
+      const pct = out.match(/(\d+)%/);
+      if (pct) value = { percent: parseInt(pct[1], 10), charging: /AC Power/i.test(out) };
+    } else {
+      // Linux: first BAT* device in sysfs
+      const base = '/sys/class/power_supply';
+      for (const d of fs.readdirSync(base)) {
+        if (!/^BAT/i.test(d)) continue;
+        const cap = parseInt(fs.readFileSync(path.join(base, d, 'capacity'), 'utf8').trim(), 10);
+        if (!isNaN(cap)) {
+          let charging = false;
+          try { charging = /Charging|Full/i.test(fs.readFileSync(path.join(base, d, 'status'), 'utf8')); } catch {}
+          value = { percent: cap, charging };
+          break;
+        }
+      }
+    }
+  } catch { value = null; }
+  _batteryCache = { at: Date.now(), value };
+  return value;
+}
+
+// Primary-disk usage, best effort per OS (also cached — same reason as battery).
+let _diskCache = { at: 0, value: null };
+async function getDisk() {
+  if (Date.now() - _diskCache.at < 60000) return _diskCache.value;
+  let value = null;
+  try {
+    const p = process.platform;
+    if (p === 'win32') {
+      const out = await execOut('wmic logicaldisk where "DeviceId=\'C:\'" get Size,FreeSpace /format:list');
+      const free = parseInt((out.match(/FreeSpace=(\d+)/i) || [])[1], 10);
+      const total = parseInt((out.match(/Size=(\d+)/i) || [])[1], 10);
+      if (free > 0 && total > 0) value = { totalGB: Math.round(total / 1e9), freeGB: Math.round(free / 1e9), percent: Math.round(((total - free) / total) * 100) };
+    } else {
+      const out = await execOut('df -k /');
+      const cols = (out.split('\n')[1] || '').trim().split(/\s+/);
+      // df -k /: Filesystem 1024-blocks Used Available Capacity ...
+      const totalKB = parseInt(cols[1], 10), usedKB = parseInt(cols[2], 10);
+      if (totalKB > 0 && !isNaN(usedKB)) value = { totalGB: Math.round(totalKB / 1048576), freeGB: Math.round((totalKB - usedKB) / 1048576), percent: Math.round((usedKB / totalKB) * 100) };
+    }
+  } catch { value = null; }
+  _diskCache = { at: Date.now(), value };
+  return value;
 }
 
 async function systemScan() {
@@ -1047,6 +1114,15 @@ async function systemScan() {
   const storage = getStorage();
   const cpu = await cpuUsage();
   const up = os.uptime();
+  const battery = await getBattery();
+  const disk = await getDisk();
+  const advice = [];
+  if (cpu > 80) advice.push('CPU is very high — a runaway process may be active.');
+  else if (cpu > 50) advice.push('CPU is moderately busy.');
+  else advice.push('CPU is healthy.');
+  if (storage.ramPercent > 85) advice.push('RAM is nearly full — close unused apps.');
+  if (disk && disk.percent > 90) advice.push(`Disk is ${disk.percent}% full — free up space soon.`);
+  if (battery && !battery.charging && battery.percent < 20) advice.push('Battery below 20% — plug in soon.');
   return {
     cpuPercent: cpu,
     ramPercent: storage.ramPercent,
@@ -1054,8 +1130,9 @@ async function systemScan() {
     ramTotalGB: Math.round(storage.ramTotal / 1e9),
     uptime: Math.floor(up / 3600) + 'h ' + Math.floor((up % 3600) / 60) + 'm',
     topProcesses: procs,
-    advice: cpu > 80 ? 'CPU is very high — a runaway process may be active.' : cpu > 50 ? 'CPU is moderately busy.' : 'CPU is healthy.',
-    battery: getBattery()
+    advice: advice.join(' '),
+    battery,
+    disk
   };
 }
 
@@ -1185,7 +1262,8 @@ const TOOL_RISK = {
   list_instructions: 'safe', get_mood_history: 'safe', get_affirmation: 'safe',
   get_wellness_tip: 'safe', get_quote: 'safe', get_system_status: 'safe', calculate: 'safe',
   run_command: 'sensitive', write_file: 'sensitive', control_system: 'sensitive',
-  organize_folder: 'sensitive', archive_old_files: 'sensitive', send_email: 'sensitive'
+  organize_folder: 'sensitive', archive_old_files: 'sensitive', send_email: 'sensitive',
+  show_panel: 'safe', hide_panel: 'safe'
 };
 
 async function executeTool(name, args) {
@@ -1310,6 +1388,10 @@ async function executeTool(name, args) {
         return breathingExercise();
       case 'generate_report':
         return generateReport();
+      case 'show_panel':
+        return showHudPanel(args.panel, args);
+      case 'hide_panel':
+        return hideHudPanel();
       case 'calculate':
         return { result: safeEval(args.expression) };
       case 'set_reminder': {
@@ -1502,7 +1584,7 @@ async function streamRequest(base, key, model, messages, onDelta) {
   return { content, toolCalls: toolCalls.filter(Boolean) };
 }
 
-async function aiChatStream(config, messages, onDelta) {
+async function aiChatStream(config, messages, onDelta, onTool) {
   const base = normalizeBaseURL(config.baseURL);
   const key = (config.apiKey || '').trim();
   const model = (config.model || 'llama-3.3-70b-versatile').trim();
@@ -1517,12 +1599,19 @@ async function aiChatStream(config, messages, onDelta) {
     const { content, toolCalls } = await streamRequest(base, key, model, msgs, onDelta);
     if (toolCalls.length) {
       // A tool call was requested mid-stream; execute and continue.
+      // Every step is reported through onTool so the renderer can show a
+      // live "visible reasoning" strip of what Gem is doing right now.
       const assistantMsg = { role: 'assistant', content: content || null, tool_calls: toolCalls.map((tc) => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.args || '{}' } })) };
       msgs.push(assistantMsg);
       for (const tc of toolCalls) {
         let args = {};
         try { args = JSON.parse(tc.args || '{}'); } catch {}
+        if (onTool) { try { onTool({ name: tc.name, state: 'start', args }); } catch {} }
         const result = await executeTool(tc.name, args);
+        if (onTool) {
+          const failed = result && typeof result === 'object' && result.error;
+          try { onTool({ name: tc.name, state: failed ? 'error' : 'done' }); } catch {}
+        }
         msgs.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
       }
       final = ''; // the real answer comes after tools
@@ -1695,6 +1784,29 @@ async function getHeadlines(limit = 12) {
 // ---------------------------------------------------------------------------
 // Reminder scheduler
 // ---------------------------------------------------------------------------
+function sendToRenderer(channel, payload) {
+  try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload); } catch {}
+}
+
+// Dynamic HUD panels — the AI can open/close contextual info panels on the
+// user's screen (weather, clock, focus timer, telemetry, news, report).
+const HUD_PANELS = ['weather', 'clock', 'focus', 'breathing', 'system', 'news', 'report'];
+
+function showHudPanel(panel, args) {
+  const p = String(panel || '').toLowerCase().trim();
+  if (!HUD_PANELS.includes(p)) return { error: 'Unknown panel: ' + panel + '. Available: ' + HUD_PANELS.join(', ') };
+  sendToRenderer('hud:panel', { action: 'open', panel: p, city: args && args.city });
+  logAction('show_panel', 'Opened HUD panel: ' + p + (args && args.city ? ' (' + args.city + ')' : ''));
+  return { ok: true, panel: p };
+}
+
+function hideHudPanel() {
+  sendToRenderer('hud:panel', { action: 'close' });
+  logAction('hide_panel', 'Closed the HUD panel');
+  return { ok: true };
+}
+
+
 function startReminderScheduler() {
   setInterval(() => {
     const m = readMemory();
@@ -1751,7 +1863,10 @@ ipcMain.handle('ai:chat', async (_e, config, messages) => {
 ipcMain.handle('ai:chatStream', async (e, reqId, config, messages) => {
   const wc = e.sender;
   try {
-    const reply = await aiChatStream(config, messages, (delta) => wc.send('ai:chunk', { reqId, delta }));
+    const reply = await aiChatStream(config, messages,
+      (delta) => wc.send('ai:chunk', { reqId, delta }),
+      (info) => { try { wc.send('ai:activity', { reqId, ...info }); } catch {} }
+    );
     wc.send('ai:streamEnd', { reqId, reply });
     return { ok: true, reqId, reply };
   } catch (err) {

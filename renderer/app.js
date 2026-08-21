@@ -35,7 +35,8 @@ const api = {
     return {
       platform: 'browser-preview', release: 'n/a', hostname: 'gemair.local', arch: 'x64', cpus: 8,
       cpuLoad: Math.round(10 + Math.random() * 40), memTotal: total, memFree: total - used, memUsed: used,
-      memPercent: Math.round((used / total) * 100), uptime: 3600 * 14, loadavg: [0.8, 1.1, 1.3]
+      memPercent: Math.round((used / total) * 100), uptime: 3600 * 14, loadavg: [0.8, 1.1, 1.3],
+      battery: { percent: 82, charging: true }, disk: { totalGB: 512, freeGB: 187, percent: 63 }
     };
   },
   async getProfile() { if (window.gemair) return window.gemair.getProfile(); return window.webStore ? window.webStore.getProfile() : {}; },
@@ -114,6 +115,8 @@ const api = {
   async version() { return window.gemair ? window.gemair.version() : '1.0.0'; },
   onReminder(cb) { if (window.gemair) window.gemair.onReminder(cb); },
   onWakeToggle(cb) { if (window.gemair) window.gemair.onWakeToggle(cb); },
+  onActivity(cb) { if (window.gemair && window.gemair.onActivity) window.gemair.onActivity(cb); },
+  onHudPanel(cb) { if (window.gemair && window.gemair.onHudPanel) window.gemair.onHudPanel(cb); },
 
   // report & backup
   async generateReport() {
@@ -934,6 +937,16 @@ async function pollSystem() {
     $('#tUptime').textContent = fmtUptime(i.uptime);
     $('#tMemUsed').textContent = fmtBytes(i.memUsed) + ' / ' + fmtBytes(i.memTotal);
     $('#tLoad').textContent = (i.loadavg || []).map((n) => n.toFixed(1)).join(' · ');
+    const bat = $('#tBattery');
+    if (bat) {
+      if (i.battery && typeof i.battery.percent === 'number') bat.textContent = i.battery.percent + '%' + (i.battery.charging ? ' ⚡ charging' : '');
+      else bat.textContent = 'AC power / none';
+    }
+    const disk = $('#tDisk');
+    if (disk) {
+      if (i.disk && i.disk.totalGB) disk.textContent = i.disk.freeGB + ' GB free of ' + i.disk.totalGB + ' GB (' + (100 - i.disk.percent) + '%)';
+      else disk.textContent = '—';
+    }
   } catch (e) { /* ignore */ }
 }
 
@@ -1246,6 +1259,34 @@ function typewrite(el, text, speed = 14) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Visible reasoning — live tool-activity chips ("web_search ✓") rendered
+// inside the message Gem is currently composing, so the user can follow
+// exactly how an answer was reached.
+// ---------------------------------------------------------------------------
+let activeTypingEl = null;
+function toolChipUpdate({ name, state }) {
+  if (!activeTypingEl || !activeTypingEl.isConnected) return;
+  let strip = activeTypingEl.querySelector('.tool-strip');
+  if (!strip) {
+    strip = document.createElement('div');
+    strip.className = 'tool-strip';
+    const p = activeTypingEl.querySelector('p');
+    activeTypingEl.insertBefore(strip, p || activeTypingEl.firstChild);
+  }
+  const label = String(name || '').replace(/_/g, ' ');
+  let chip = strip.querySelector(`[data-tool="${label}"]`);
+  if (!chip) {
+    chip = document.createElement('span');
+    chip.dataset.tool = label;
+    strip.appendChild(chip);
+  }
+  chip.className = 'tool-chip ' + (state === 'done' ? 'done' : state === 'error' ? 'error' : 'running');
+  chip.innerHTML = `<span class="tc-dot"></span>${escapeHtml(label)}${state === 'done' ? ' ✓' : state === 'error' ? ' ✗' : ' …'}`;
+  const orb = $('#orbStatus');
+  if (orb && state === 'start') { orb.textContent = 'EXECUTING · ' + label.toUpperCase(); }
+}
+
 function renderReply(p, text) {
   if (String(text).includes('```')) {
     renderRich(p, text); // code blocks render instantly (preserve formatting)
@@ -1444,6 +1485,7 @@ async function handleMessage(text) {
   if (needsSupport && !hasToolIntent(text)) {
     const support = supportGuidance(emo.emotion, crisis);
     const typing = addMessage('ai', '', { typing: true });
+    activeTypingEl = typing;
     const replyEl = typing.querySelector('p');
     typewriterToken++;
     await renderReply(replyEl, support);
@@ -1464,6 +1506,7 @@ async function handleMessage(text) {
   // @Agent routing — hand the task to that agent's own brain (Stonic-style)
   const agentMatch = text.match(/^@(Alice|Bob|Carol|Dave)\s+(.*)$/i);
   const typing = addMessage('ai', '', { typing: true });
+  activeTypingEl = typing;
 
   let reply;
   if (agentMatch) {
@@ -1549,6 +1592,7 @@ async function handleMessage(text) {
 
   maybeConsolidateMemory();
 
+  activeTypingEl = null; // reply finished — stop attaching tool chips
   speak(reply);
 }
 
@@ -1785,6 +1829,31 @@ function startAgentTown() {
 
   const waypoints = [...desks.map((d) => ({ x: d.x, y: d.y - 24 })), { x: whiteboard.x - 30, y: whiteboard.y + 60 }, { x: server.x + 40, y: server.y - 30 }, { x: coffee.x, y: coffee.y + 40 }];
 
+  // Ambient office chatter — agents small-talk between jobs so the town feels
+  // inhabited, not like four mannequins waiting for orders.
+  const CHATTER = [
+    'Coffee break, then back to it.',
+    'Whiteboard is up to date.',
+    'Servers humming nicely today.',
+    'Task queue looks clear.',
+    'Syncing my notes real quick.',
+    'That last run went smooth.',
+    'Anyone else hear that fan spin up?',
+    'Backups verified — all good.',
+    'Nice weather for a compile.',
+    'Meeting at the whiteboard later?'
+  ];
+  let townFrame = 0;
+  function maybeChatter() {
+    townFrame++;
+    if (townFrame % 480 !== 0) return; // roughly every 8 seconds of frames
+    const idle = agents.filter((a) => a.state === 'idle' && !a.chatter);
+    if (!idle.length) return;
+    const a = idle[Math.floor(Math.random() * idle.length)];
+    a.chatter = { text: CHATTER[Math.floor(Math.random() * CHATTER.length)], until: townFrame + 260 };
+    addActivity(a.name, a.chatter.text);
+  }
+
   // click -> assign task (routes to the agent's own brain)
   canvas.addEventListener('click', (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -1805,10 +1874,20 @@ function startAgentTown() {
   function assignTask(name, task) {
     const a = agents.find((x) => x.name === name);
     if (!a) return;
-    a.state = 'busy'; a.task = task || 'Working…'; a.timer = 0;
-    addActivity(name, 'started: ' + a.task);
+    a.state = 'queued'; a.task = task || 'Working…'; a.timer = 0;
+    addActivity(name, 'task queued: ' + a.task);
   }
   window.__assignAgentTask = assignTask;
+
+  // Chat can push a speech bubble onto any agent (e.g. when @Alice answers).
+  // Sticky bubbles survive while the agent is busy; ambient chatter does not.
+  window.__agentBubble = (name, text) => {
+    const clean = String(name || '').trim().toLowerCase().replace(/^@/, '');
+    const a = agents.find((x) => x.name.toLowerCase() === clean);
+    if (!a || !text) return false;
+    a.chatter = { text: String(text).slice(0, 120), until: townFrame + 300, sticky: true };
+    return true;
+  };
 
   function drawFloor() {
     ctx.fillStyle = '#070b14';
@@ -1896,7 +1975,7 @@ function startAgentTown() {
     ctx.fillRect(x - 2, y - 5, 2, 2);
     ctx.fillRect(x + 2, y - 5, 2, 2);
     // status ring
-    const ringColor = a.state === 'busy' ? '#ffc24b' : a.state === 'done' ? accent() : '#3dff9a';
+    const ringColor = a.state === 'queued' ? '#8ab4ff' : a.state === 'busy' ? '#ffc24b' : a.state === 'done' ? accent() : '#3dff9a';
     ctx.strokeStyle = ringColor;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -1911,12 +1990,13 @@ function startAgentTown() {
 
   function drawBubble(a) {
     if (a.state === 'idle') return;
+    const tag = a.state === 'queued' ? '◌ QUEUED' : a.state === 'busy' ? '▶ RUNNING' : '✓ DONE';
     const lines = wrapText(a.task, 18);
     const bw = Math.min(150, Math.max(60, ...lines.map((l) => l.length)) * 6 + 12);
-    const bh = lines.length * 9 + 10;
+    const bh = lines.length * 9 + 20;
     const bx = a.pos.x - bw / 2, by = a.pos.y - 34 - bh;
     ctx.fillStyle = 'rgba(6,10,18,0.92)';
-    ctx.strokeStyle = a.state === 'done' ? accent() : '#ffc24b';
+    ctx.strokeStyle = a.state === 'done' ? accent() : a.state === 'queued' ? '#8ab4ff' : '#ffc24b';
     ctx.lineWidth = 1;
     roundRect(ctx, bx, by, bw, bh, 6);
     ctx.fill(); ctx.stroke();
@@ -1926,7 +2006,34 @@ function startAgentTown() {
     ctx.fillStyle = '#dfe8ff';
     ctx.font = '8px monospace';
     ctx.textAlign = 'center';
-    lines.forEach((l, i) => ctx.fillText(l, a.pos.x, by + 12 + i * 9));
+    lines.forEach((l, i) => ctx.fillText(l, a.pos.x, by + 13 + i * 9));
+    // live status label
+    ctx.font = '7px monospace';
+    ctx.fillStyle = a.state === 'done' ? accent() : a.state === 'queued' ? '#8ab4ff' : '#ffc24b';
+    ctx.fillText(tag, a.pos.x, by + bh - 5);
+  }
+
+  // Small ambient speech bubble while idle ("small-talk between jobs")
+  function drawChatter(a) {
+    if (!a.chatter) return;
+    if (townFrame > a.chatter.until || (a.state !== 'idle' && !a.chatter.sticky)) { a.chatter = null; return; }
+    const lines = wrapText(a.chatter.text, 16);
+    const bw = Math.max(60, ...lines.map((l) => l.length)) * 5.4 + 10;
+    const bh = lines.length * 8 + 8;
+    const bx = a.pos.x - bw / 2, by = a.pos.y - 30 - bh;
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = 'rgba(10,15,26,0.9)';
+    ctx.strokeStyle = 'rgba(140,160,200,0.35)';
+    ctx.lineWidth = 1;
+    roundRect(ctx, bx, by, bw, bh, 5);
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(a.pos.x - 3, by + bh); ctx.lineTo(a.pos.x, a.pos.y - 22); ctx.lineTo(a.pos.x + 3, by + bh); ctx.closePath();
+    ctx.fillStyle = 'rgba(10,15,26,0.9)'; ctx.fill();
+    ctx.fillStyle = '#b9c8e2';
+    ctx.font = '7px monospace';
+    ctx.textAlign = 'center';
+    lines.forEach((l, i) => ctx.fillText(l, a.pos.x, by + 11 + i * 8));
+    ctx.globalAlpha = 1;
   }
 
   function roundRect(c, x, y, w, h, r) {
@@ -1948,12 +2055,19 @@ function startAgentTown() {
 
   function updateAgent(a) {
     a.timer++;
-    if (a.state === 'busy') {
-      // walk home, work, then done
+    if (a.state === 'queued') {
+      // acknowledge the task, walk to the desk, then start running
       moveToward(a, a.home);
-      if (Math.hypot(a.pos.x - a.home.x, a.pos.y - a.home.y) < 4) {
-        if (a.timer > 160) { a.state = 'done'; a.timer = 0; addActivity(a.name, 'completed: ' + a.task); }
+      if (Math.hypot(a.pos.x - a.home.x, a.pos.y - a.home.y) < 4 && a.timer > 50) {
+        a.state = 'busy'; a.timer = 0;
+        addActivity(a.name, 'started: ' + a.task);
       }
+      return;
+    }
+    if (a.state === 'busy') {
+      // work at the desk, then report done
+      moveToward(a, a.home);
+      if (a.timer > 160) { a.state = 'done'; a.timer = 0; addActivity(a.name, 'completed: ' + a.task); }
       return;
     }
     if (a.state === 'done') {
@@ -1993,8 +2107,10 @@ function startAgentTown() {
     drawWhiteboard(); drawServer(); drawCoffee();
     agents.forEach((a, i) => { drawDesk(desks[i], a); });
     agents.forEach((a) => updateAgent(a));
+    maybeChatter();
     agents.forEach((a) => drawAgent(a, t));
     agents.forEach((a) => drawBubble(a));
+    agents.forEach((a) => drawChatter(a));
     // update legend dots
     agents.forEach((a) => {
       const dot = document.getElementById('lg-' + a.name);
@@ -2015,6 +2131,105 @@ function addActivity(who, text) {
   div.innerHTML = `<span class="who">${escapeHtml(who)}</span> ${escapeHtml(text)}<span class="when">${t}</span>`;
   feed.prepend(div);
   while (feed.children.length > 30) feed.removeChild(feed.lastChild);
+}
+
+// ---------------------------------------------------------------------------
+// Radar sweep monitor — decorative live widget on the System Core panel.
+// The sweep spins continuously; blips pulse in sync with real CPU load, so a
+// busy machine visibly "lights up" more contacts.
+// ---------------------------------------------------------------------------
+function startRadar() {
+  const canvas = $('#radarCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 - 10;
+
+  let sys = { cpu: 12, mem: 40 };
+  let blips = [];
+  setInterval(async () => {
+    try {
+      const i = await api.getSystemInfo();
+      sys = { cpu: i.cpuLoad || 0, mem: i.memPercent || 0 };
+      const count = 3 + Math.round(sys.cpu / 16);
+      blips = Array.from({ length: count }, () => ({
+        a: Math.random() * Math.PI * 2,
+        r: R * (0.25 + Math.random() * 0.68),
+        glow: 0 // set to 1 when the sweep passes over it
+      }));
+    } catch {}
+  }, 4000);
+
+  function loop(t) {
+    requestAnimationFrame(loop);
+    // skip painting while the System Core view is hidden
+    const view = document.getElementById('view-core');
+    if (view && !view.classList.contains('active')) return;
+
+    ctx.clearRect(0, 0, W, H);
+    const accent = getAccent();
+
+    // rings + crosshair
+    ctx.strokeStyle = 'rgba(140,160,200,0.18)';
+    ctx.lineWidth = 1;
+    for (const rr of [0.33, 0.66, 1]) {
+      ctx.beginPath(); ctx.arc(cx, cy, R * rr, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
+    ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
+    ctx.stroke();
+
+    // degree ticks
+    for (let d = 0; d < 360; d += 30) {
+      const rad = (d * Math.PI) / 180;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(rad) * (R - 4), cy + Math.sin(rad) * (R - 4));
+      ctx.lineTo(cx + Math.cos(rad) * R, cy + Math.sin(rad) * R);
+      ctx.stroke();
+    }
+
+    // rotating sweep wedge (fading trail)
+    const ang = (t * 0.0012) % (Math.PI * 2);
+    for (let i = 0; i < 24; i++) {
+      const a = ang - i * 0.03;
+      ctx.strokeStyle = accent;
+      ctx.globalAlpha = 0.35 * (1 - i / 24);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // contacts: brighten when the sweep passes their angle
+    for (const b of blips) {
+      let diff = Math.abs(((b.a - ang) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2));
+      if (diff > Math.PI) diff = Math.PI * 2 - diff;
+      if (diff < 0.06) b.glow = 1;
+      b.glow = Math.max(0.15, (b.glow || 0) * 0.985);
+      ctx.fillStyle = accent;
+      ctx.globalAlpha = b.glow;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(b.a) * b.r, cy + Math.sin(b.a) * b.r, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = b.glow * 0.25;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(b.a) * b.r, cy + Math.sin(b.a) * b.r, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // center dot + readout
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(200,215,240,0.75)';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`CPU ${sys.cpu}%`, cx, H - 14);
+  }
+  requestAnimationFrame(loop);
 }
 
 function renderMissionLog() {
@@ -2544,6 +2759,10 @@ function applyPreset(p) {
   const map = {
     groq: { baseURL: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
     openai: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+    gemini: { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
+    claude: { baseURL: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-5' },
+    deepseek: { baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+    mistral: { baseURL: 'https://api.mistral.ai/v1', model: 'mistral-large-latest' },
     openrouter: { baseURL: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
     ollama: { baseURL: 'http://localhost:11434/v1', model: 'llama3', apiKey: '' },
     offline: { baseURL: '', apiKey: '', model: '' }
@@ -2794,9 +3013,11 @@ function bindEvents() {
   $('#avatarGenderToggle')?.addEventListener('click', () => {
     playSfx('click');
     const nextG = (profile.avatarGender === 'male') ? 'female' : 'male';
+    // one-tap switcher: avatar AND spoken voice change together
+    profile.voiceGender = nextG;
     applyAvatarGender(nextG);
     persistProfile();
-    toast('AVATAR', `Switched to ${nextG.toUpperCase()} avatar`, '👤');
+    toast('VOICE & AVATAR', `Switched to ${nextG.toUpperCase()} — avatar and voice updated`, '🎙');
   });
 
   $('#settingsBtn').addEventListener('click', openSettings);
@@ -2866,6 +3087,11 @@ function bindEvents() {
       { name: 'Settings', type: 'ACTION', action: () => openSettings() },
       { name: 'Guided Breathing', type: 'ACTION', action: () => $('#breatheModal').classList.add('open') },
       { name: 'Weekly Report', type: 'ACTION', action: () => $('#weeklyReportBtn').click() },
+      { name: 'Weather Panel', type: 'PANEL', action: () => openHudDock('weather') },
+      { name: 'World Clock Panel', type: 'PANEL', action: () => openHudDock('clock') },
+      { name: 'Focus Timer Panel', type: 'PANEL', action: () => openHudDock('focus') },
+      { name: 'Live Telemetry Panel', type: 'PANEL', action: () => openHudDock('system') },
+      { name: 'Headlines Panel', type: 'PANEL', action: () => openHudDock('news') },
       { name: 'Crimson Theme', type: 'THEME', action: () => applyTheme('crimson') },
       { name: 'Emerald Theme', type: 'THEME', action: () => applyTheme('emerald') },
       { name: 'Cyan Theme', type: 'THEME', action: () => applyTheme('cyan') },
@@ -2966,6 +3192,24 @@ function bindEvents() {
     speak('Reminder: ' + r.text);
   });
 
+  // visible reasoning: live tool-activity chips (single global listener)
+  if (api.onActivity) api.onActivity(toolChipUpdate);
+
+  // dynamic HUD dock panels
+  setupHudDock();
+
+  // first-run theme picker swatches
+  $$('#themeSwatches .swatch').forEach((b) => b.addEventListener('click', () => {
+    playSfx('activate');
+    profile.theme = b.dataset.theme;
+    applyTheme(profile.theme);
+    persistProfile();
+    $('#themeModal').classList.remove('open');
+    toast('THEME', `${b.textContent.trim()} HUD applied across the whole command center.`, '🎨');
+  }));
+  $('#themeSkipBtn')?.addEventListener('click', () => { $('#themeModal').classList.remove('open'); });
+  $('#themeModalClose')?.addEventListener('click', () => { $('#themeModal').classList.remove('open'); });
+
   // tray "start listening"
   api.onWakeToggle((on) => { if (on) startAiLoop(); });
 
@@ -3057,6 +3301,157 @@ function stopBreathing() {
   if (count) count.textContent = '';
 }
 
+// ---------------------------------------------------------------------------
+// Dynamic HUD dock — contextual floating panels the AI can open/close via
+// the show_panel / hide_panel tools (weather, clock, focus, breathing,
+// system telemetry, news, weekly report). Also usable from the palette.
+// ---------------------------------------------------------------------------
+let hudClockTimer = null;
+let hudFocusTimer = null;
+
+function setupHudDock() {
+  $('#hudDockClose')?.addEventListener('click', closeHudDock);
+  if (api.onHudPanel) api.onHudPanel(({ action, panel, city }) => {
+    if (action === 'close') closeHudDock();
+    else openHudDock(panel, city);
+  });
+}
+
+function closeHudDock() {
+  $('#hudDock')?.classList.remove('open');
+  if (hudClockTimer) { clearInterval(hudClockTimer); hudClockTimer = null; }
+  if (hudFocusTimer) { clearInterval(hudFocusTimer); hudFocusTimer = null; }
+}
+
+function openHudDock(panel, arg) {
+  const dock = $('#hudDock'), body = $('#hudDockBody'), title = $('#hudDockTitle');
+  if (!dock || !body || !title) return;
+  playSfx('swoosh');
+  dock.classList.add('open');
+  const R = {
+    weather: renderWeatherPane,
+    clock: renderClockPane,
+    focus: renderFocusPane,
+    breathing: renderBreathingPane,
+    system: renderSystemPane,
+    news: renderNewsPane,
+    report: renderReportPane
+  }[String(panel || '').toLowerCase()];
+  if (!R) { body.innerHTML = '<div class="empty">Unknown panel.</div>'; return; }
+  Promise.resolve(R(body, title, arg)).catch(() => {});
+}
+
+async function renderWeatherPane(body, title, arg) {
+  title.textContent = 'WEATHER';
+  const city = arg || profile.city || 'Dubai';
+  body.innerHTML = '<div class="empty">Scanning atmosphere…</div>';
+  const w = await webGet('weather', { city });
+  if (w.error) { body.innerHTML = `<div class="empty">${escapeHtml(w.error)}</div>`; return; }
+  body.innerHTML =
+    `<div class="dock-big">${Math.round(w.temperature)}°C</div>
+     <div class="dock-line"><span>LOCATION</span><b>${escapeHtml(w.city)}</b></div>
+     <div class="dock-line"><span>CONDITION</span><b>${escapeHtml(w.condition)}</b></div>
+     <div class="dock-line"><span>WIND</span><b>${escapeHtml(String(w.windspeed))} km/h</b></div>`;
+}
+
+function renderClockPane(body, title) {
+  title.textContent = 'WORLD CLOCK';
+  const tick = () => {
+    const now = new Date();
+    body.innerHTML =
+      `<div class="dock-big">${now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })}</div>
+       <div class="dock-line"><span>LOCAL DATE</span><b>${now.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}</b></div>
+       <div class="dock-line"><span>UTC</span><b>${now.toUTCString().slice(17, 25)}</b></div>`;
+  };
+  tick();
+  if (hudClockTimer) clearInterval(hudClockTimer);
+  hudClockTimer = setInterval(tick, 1000);
+}
+
+function renderFocusPane(body, title) {
+  title.textContent = 'FOCUS TIMER';
+  let remaining = 25 * 60, running = false;
+  const fmt = (s) => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  body.innerHTML =
+    `<div class="dock-big">25:00</div>
+     <div style="display:flex;gap:8px;margin-top:10px;">
+       <button class="primary-btn" style="flex:1">▶ START</button>
+       <button class="ghost-btn">RESET</button>
+     </div>`;
+  const timeEl = body.querySelector('.dock-big');
+  const toggleBtn = body.querySelector('.primary-btn');
+  const resetBtn = body.querySelector('.ghost-btn');
+  const paint = () => { if (timeEl && timeEl.isConnected) timeEl.textContent = fmt(remaining); };
+  toggleBtn.addEventListener('click', () => {
+    playSfx('click');
+    running = !running;
+    toggleBtn.textContent = running ? '⏸ PAUSE' : '▶ START';
+    if (hudFocusTimer) { clearInterval(hudFocusTimer); hudFocusTimer = null; }
+    if (running) {
+      hudFocusTimer = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+          remaining = 0; running = false;
+          if (hudFocusTimer) { clearInterval(hudFocusTimer); hudFocusTimer = null; }
+          if (toggleBtn.isConnected) toggleBtn.textContent = '▶ START';
+          toast('FOCUS', 'Session complete — take a break!', '🍅');
+          speak('Focus session complete.');
+        }
+        paint();
+      }, 1000);
+    }
+  });
+  resetBtn.addEventListener('click', () => {
+    playSfx('click');
+    remaining = 25 * 60; running = false;
+    if (hudFocusTimer) { clearInterval(hudFocusTimer); hudFocusTimer = null; }
+    toggleBtn.textContent = '▶ START';
+    paint();
+  });
+}
+
+function renderBreathingPane(body, title) {
+  title.textContent = 'BREATHING';
+  body.innerHTML =
+    `<p class="dim" style="font-size:12.5px;line-height:1.6;margin-bottom:10px;">4-7-8 calming breath — inhale 4s, hold 7s, exhale 8s, four cycles. Lowers your heart rate in about a minute.</p>
+     <button class="primary-btn" style="width:100%">🌬 OPEN GUIDED SESSION</button>`;
+  body.querySelector('.primary-btn').addEventListener('click', () => {
+    playSfx('activate');
+    closeHudDock();
+    $('#breatheModal').classList.add('open');
+  });
+}
+
+async function renderSystemPane(body, title) {
+  title.textContent = 'LIVE TELEMETRY';
+  body.innerHTML = '<div class="empty">Reading sensors…</div>';
+  const i = await api.getSystemInfo();
+  const batRow = i.battery ? `<div class="dock-line"><span>BATTERY</span><b>${i.battery.percent}%${i.battery.charging ? ' ⚡' : ''}</b></div>` : '';
+  const diskRow = i.disk ? `<div class="dock-line"><span>DISK FREE</span><b>${i.disk.freeGB} GB / ${i.disk.totalGB} GB (${100 - i.disk.percent}%)</b></div>` : '';
+  body.innerHTML =
+    `<div class="dock-big">${i.cpuLoad}% <span style="font-size:14px;color:var(--text-dim)">CPU</span></div>
+     <div class="dock-line"><span>MEMORY</span><b>${i.memPercent}% used</b></div>
+     ${batRow}${diskRow}
+     <div class="dock-line"><span>UPTIME</span><b>${Math.floor(i.uptime / 3600)}h ${Math.floor((i.uptime % 3600) / 60)}m</b></div>`;
+}
+
+async function renderNewsPane(body, title) {
+  title.textContent = 'HEADLINES';
+  body.innerHTML = '<div class="empty">Fetching intelligence feed…</div>';
+  const items = await api.getHeadlines(8);
+  if (!items.length) { body.innerHTML = '<div class="empty">Feed unavailable right now.</div>'; return; }
+  body.innerHTML = items.slice(0, 7).map((n) =>
+    `<a class="news-mini" href="${escapeHtml(n.url)}" target="_blank" rel="noopener">${escapeHtml(n.title)} <span class="score">▲ ${n.score}</span></a>`
+  ).join('');
+}
+
+async function renderReportPane(body, title) {
+  title.textContent = 'WEEKLY REPORT';
+  body.innerHTML = '<div class="empty">Compiling your week…</div>';
+  const res = await api.generateReport();
+  body.innerHTML = `<pre style="white-space:pre-wrap;font-family:var(--font-mono);font-size:11px;line-height:1.6;margin:0;">${escapeHtml(res.report)}</pre>`;
+}
+
 function parseLocalWhen(text) {
   const rel = text.match(/in\s+(\d+)\s*(second|sec|s|minute|min|m|hour|hr|h|day|d)/i);
   if (rel) {
@@ -3128,6 +3523,7 @@ async function boot() {
     }
   });
   safe('agentTown', startAgentTown);
+  safe('radar', startRadar);
   safe('renderMemory', renderAllMemory);
   safe('circuits', animateCircuits);
   safe('moodIndicator', () => updateMoodIndicator(currentEmotion));
@@ -3141,13 +3537,15 @@ async function boot() {
     : `${greetByTime()}. I'm Gem, the intelligence inside GemAir.`;
 
   // First run: introduce Gem, then ask what to call the user. The next thing
-  // they type is captured as their name (see handleMessage).
+  // they type is captured as their name (see handleMessage). Also let them
+  // pick the HUD theme so the very first impression is theirs.
   if (!knowsUser && !last.length) {
     addMessage('ai', greeting);
     const ask = 'Before we begin — what should I call you?';
     addMessage('ai', ask);
     awaitingName = true;
     setTimeout(() => speak(greeting + ' ' + ask), 700);
+    setTimeout(() => { $('#themeModal')?.classList.add('open'); }, 1600);
   } else if (last.length) {
     addMessage('system-msg', `↻ Restored ${last.length} past messages from persistent memory.`);
     last.forEach((m) => { if (m.role === 'user') addMessage('user', m.content); else if (m.role === 'assistant') addMessage('ai', m.content); });

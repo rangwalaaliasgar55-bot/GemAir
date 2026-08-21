@@ -223,6 +223,13 @@
                 <div class="tele-row"><span>UPTIME</span><b id="tUptime">0h 0m</b></div>
                 <div class="tele-row"><span>MEMORY USED</span><b id="tMemUsed">3.2 GB / 16 GB</b></div>
                 <div class="tele-row"><span>LOAD AVG</span><b id="tLoad">0.42</b></div>
+                <div class="tele-row"><span>BATTERY</span><b id="tBattery">—</b></div>
+                <div class="tele-row"><span>DISK (SYSTEM)</span><b id="tDisk">—</b></div>
+              </div>
+
+              <div class="radar-wrap">
+                <canvas id="radarCanvas" width="300" height="300" aria-hidden="true"></canvas>
+                <div class="globe-caption">RADAR · LIVE SWEEP MONITOR</div>
               </div>
 
               <div class="skills-grid" style="margin-top:16px">
@@ -516,6 +523,41 @@
     </footer>
   </div>
 
+  <!-- FLOATING HUD DOCK — contextual panels the AI (or palette) can open -->
+  <div class="hud-dock" id="hudDock" aria-live="polite">
+    <div class="hud-dock-head">
+      <span class="hud-dock-title" id="hudDockTitle">PANEL</span>
+      <button class="icon-btn" id="hudDockClose" title="Close panel">✕</button>
+    </div>
+    <div class="hud-dock-body" id="hudDockBody"></div>
+  </div>
+
+  <!-- FIRST-RUN THEME PICKER -->
+  <div class="modal-backdrop" id="themeModal">
+    <div class="modal theme-modal">
+      <div class="modal-head">
+        <h2>PICK YOUR HUD THEME</h2>
+        <button class="icon-btn" id="themeModalClose" title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="dim" style="font-size:12.5px;line-height:1.6;margin-bottom:14px;">
+          One tap re-skins the entire command center — every panel, glow and gauge. You can switch anytime from the top bar.
+        </p>
+        <div class="theme-swatch-grid" id="themeSwatches">
+          <button class="swatch" data-theme="crimson"><i style="--sw:#ff3b3b"></i><span>Crimson</span></button>
+          <button class="swatch" data-theme="emerald"><i style="--sw:#25d38a"></i><span>Emerald</span></button>
+          <button class="swatch" data-theme="cyan"><i style="--sw:#2fc6ff"></i><span>Cyan</span></button>
+          <button class="swatch" data-theme="violet"><i style="--sw:#a86bff"></i><span>Violet</span></button>
+          <button class="swatch" data-theme="amber"><i style="--sw:#ffb02e"></i><span>Amber</span></button>
+          <button class="swatch" data-theme="rgb"><i class="rgb-sw"></i><span>Rainbow RGB</span></button>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="ghost-btn" id="themeSkipBtn">KEEP DEFAULT</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===================== SETTINGS MODAL ===================== -->
   <div class="modal-backdrop" id="settingsModal">
     <div class="modal">
@@ -549,6 +591,10 @@
           <div class="quick-presets" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
             <button class="preset mini-btn" data-preset="groq">Groq</button>
             <button class="preset mini-btn" data-preset="openai">OpenAI</button>
+            <button class="preset mini-btn" data-preset="gemini">Gemini</button>
+            <button class="preset mini-btn" data-preset="claude">Claude</button>
+            <button class="preset mini-btn" data-preset="deepseek">DeepSeek</button>
+            <button class="preset mini-btn" data-preset="mistral">Mistral</button>
             <button class="preset mini-btn" data-preset="openrouter">OpenRouter</button>
             <button class="preset mini-btn" data-preset="ollama">Ollama</button>
             <button class="preset mini-btn" data-preset="offline">Offline</button>
