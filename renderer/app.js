@@ -107,9 +107,9 @@ const api = {
     downloadText(content, name || 'gemair-output.txt');
     return { ok: true, path: name || 'gemair-output.txt' };
   },
-  async getHeadlines(limit) {
-    if (window.gemair) return window.gemair.getHeadlines(limit);
-    try { const r = await fetch('/api/headlines?limit=' + (limit || 14)); return await r.json(); } catch { return []; }
+  async getHeadlines(limit, category) {
+    if (window.gemair) return window.gemair.getHeadlines(limit, category);
+    try { const r = await fetch('/api/headlines?limit=' + (limit || 14) + '&category=' + encodeURIComponent(category || 'tech')); return await r.json(); } catch { return []; }
   },
   openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
   async version() { return window.gemair ? window.gemair.version() : '1.0.0'; },
@@ -375,6 +375,8 @@ let profile = {
 let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
 let currentLang = 'en';
+let worldHeadlines = [];
+let worldCategory = 'tech';
 let awaitingName = false;   // first-run: Gem is waiting to be told the user's name
 
 let listening = false, recognition = null, isRunning = false;
@@ -981,7 +983,10 @@ setInterval(() => {
   const now = new Date();
   $('#liveClock').textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
   $('#liveDate').textContent = now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
-  const utc = $('#utcTime'); if (utc) utc.textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'UTC' });
+  const clockAt = (timeZone) => now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false, timeZone });
+  const utc = $('#utcTime'); if (utc) utc.textContent = clockAt('UTC');
+  const strip = $('#worldUtcStrip');
+  if (strip) strip.textContent = `UTC ${clockAt('UTC')} · LON ${clockAt('Europe/London')} · NYC ${clockAt('America/New_York')} · TYO ${clockAt('Asia/Tokyo')}`;
 }, 1000);
 
 // ---------------------------------------------------------------------------
@@ -1212,52 +1217,93 @@ function startOrb() {
 function startGlobe() {
   const canvas = $('#globeCanvas'); if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  let accent = getAccent();
-  let w, h, dpr;
-  function resize() {
-    dpr = window.devicePixelRatio || 1;
-    w = canvas.clientWidth; h = canvas.clientHeight;
-    canvas.width = w * dpr; canvas.height = h * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-  resize(); window.addEventListener('resize', resize);
+  let w, h, dpr, visibleMarkers = [];
   const hotspots = [
     { lat: 40.7, lon: -74, label: 'NYC' }, { lat: 51.5, lon: -0.1, label: 'LON' },
     { lat: 35.7, lon: 139.7, label: 'TYO' }, { lat: -33.9, lon: 151.2, label: 'SYD' },
-    { lat: 24.8, lon: 67, label: 'KHI' }, { lat: 31.5, lon: 74.3, label: 'LHE' },
-    { lat: 37.8, lon: -122.4, label: 'SFO' }, { lat: -22.9, lon: -43.2, label: 'RIO' }
+    { lat: 24.8, lon: 67, label: 'KHI' }, { lat: 28.6, lon: 77.2, label: 'DEL' },
+    { lat: 37.8, lon: -122.4, label: 'SFO' }, { lat: -22.9, lon: -43.2, label: 'RIO' },
+    { lat: 25.2, lon: 55.3, label: 'DXB' }, { lat: 1.35, lon: 103.8, label: 'SIN' }
   ];
-  function project(lat, lon, rot) {
-    const φ = lat * Math.PI / 180, λ = (lon + rot) * Math.PI / 180;
-    const R = Math.min(w, h) * 0.36;
-    return { x: R * Math.cos(φ) * Math.sin(λ), y: -R * Math.sin(φ), z: R * Math.cos(φ) * Math.cos(λ) };
+  // Tiny geographic mask: enough to suggest recognizable dotted land masses,
+  // without shipping a map asset or adding a heavy globe dependency.
+  const landMasses = [
+    { lat: 45, lon: -105, rx: 32, ry: 26 }, { lat: 15, lon: -80, rx: 16, ry: 18 },
+    { lat: -15, lon: -60, rx: 18, ry: 34 }, { lat: 50, lon: 20, rx: 28, ry: 17 },
+    { lat: 12, lon: 20, rx: 22, ry: 34 }, { lat: 43, lon: 80, rx: 52, ry: 25 },
+    { lat: 10, lon: 105, rx: 24, ry: 17 }, { lat: -25, lon: 135, rx: 22, ry: 16 }
+  ];
+  const earthDots = [];
+  for (let lat = -72; lat <= 72; lat += 5) for (let lon = -180; lon < 180; lon += 6) {
+    if (landMasses.some((mass) => Math.pow((lat - mass.lat) / mass.ry, 2) + Math.pow((((lon - mass.lon + 540) % 360) - 180) / mass.rx, 2) < 1)) earthDots.push({ lat, lon });
   }
-  function draw(t) {
-    accent = getAccent();
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    w = canvas.clientWidth; h = canvas.clientHeight;
+    canvas.width = Math.max(1, Math.round(w * dpr)); canvas.height = Math.max(1, Math.round(h * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function project(lat, lon, rot) {
+    const phi = lat * Math.PI / 180, lambda = (lon + rot) * Math.PI / 180;
+    const radius = Math.min(w, h) * 0.36;
+    return { x: radius * Math.cos(phi) * Math.sin(lambda), y: -radius * Math.sin(phi), z: radius * Math.cos(phi) * Math.cos(lambda) };
+  }
+  function selectHotspot(marker) {
+    if (!marker || !marker.headline) return;
+    const panel = $('#hotspotHeadline');
+    panel.textContent = `${marker.label} · ${marker.headline.title}`;
+    panel.classList.add('active');
+    panel.onclick = () => api.openExternal(marker.headline.url);
+    $$('#newsList .news-item').forEach((item) => item.classList.toggle('selected', item.dataset.newsId === String(marker.headline.id)));
+  }
+  canvas.addEventListener('pointermove', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left) * (w / rect.width), y = (event.clientY - rect.top) * (h / rect.height);
+    canvas.style.cursor = visibleMarkers.some((marker) => Math.hypot(marker.x - x, marker.y - y) < 15) ? 'pointer' : 'crosshair';
+  });
+  canvas.addEventListener('click', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left) * (w / rect.width), y = (event.clientY - rect.top) * (h / rect.height);
+    const marker = visibleMarkers.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+    if (marker && Math.hypot(marker.x - x, marker.y - y) < 18) selectHotspot(marker);
+  });
+  resize(); window.addEventListener('resize', resize);
+
+  function draw(time) {
+    const accent = getAccent();
     ctx.clearRect(0, 0, w, h);
-    const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.36, rot = t * 0.012;
+    const cx = w / 2, cy = h / 2, radius = Math.min(w, h) * 0.36, rot = time * 0.012;
     ctx.strokeStyle = accent; ctx.lineWidth = 0.8;
     for (let lat = -75; lat <= 75; lat += 15) {
       ctx.globalAlpha = 0.1; ctx.beginPath();
-      for (let lon = -180; lon <= 180; lon += 4) { const p = project(lat, lon, rot); if (lon === -180) ctx.moveTo(cx + p.x, cy + p.y); else ctx.lineTo(cx + p.x, cy + p.y); }
+      for (let lon = -180; lon <= 180; lon += 4) { const point = project(lat, lon, rot); if (lon === -180) ctx.moveTo(cx + point.x, cy + point.y); else ctx.lineTo(cx + point.x, cy + point.y); }
       ctx.stroke();
     }
     for (let lon = -180; lon < 180; lon += 30) {
       ctx.globalAlpha = 0.1; ctx.beginPath();
-      for (let lat = -90; lat <= 90; lat += 4) { const p = project(lat, lon, rot); if (lat === -90) ctx.moveTo(cx + p.x, cy + p.y); else ctx.lineTo(cx + p.x, cy + p.y); }
+      for (let lat = -90; lat <= 90; lat += 4) { const point = project(lat, lon, rot); if (lat === -90) ctx.moveTo(cx + point.x, cy + point.y); else ctx.lineTo(cx + point.x, cy + point.y); }
       ctx.stroke();
     }
-    ctx.globalAlpha = 0.5; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
-    ctx.globalAlpha = 0.15; ctx.fillStyle = accent; ctx.fill();
-    for (const h of hotspots) {
-      const p = project(h.lat, h.lon, rot);
-      if (p.z > 0) {
-        const sx = cx + p.x, sy = cy + p.y, pulse = 0.5 + 0.5 * Math.sin(t * 0.005 + h.lon);
-        ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.9; ctx.arc(sx, sy, 2.4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.fillStyle = accent; ctx.globalAlpha = 0.35; ctx.arc(sx, sy, 5 + pulse * 6, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 0.8; ctx.font = '9px monospace'; ctx.fillText(h.label, sx + 6, sy - 4);
-      }
+    ctx.globalAlpha = 0.5; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 0.1; ctx.fillStyle = accent; ctx.fill();
+    ctx.fillStyle = accent;
+    for (const dot of earthDots) {
+      const point = project(dot.lat, dot.lon, rot);
+      if (point.z <= 0) continue;
+      ctx.globalAlpha = 0.16 + 0.32 * (point.z / radius);
+      ctx.beginPath(); ctx.arc(cx + point.x, cy + point.y, 1.15, 0, Math.PI * 2); ctx.fill();
     }
+    visibleMarkers = [];
+    hotspots.forEach((hotspot, index) => {
+      const point = project(hotspot.lat, hotspot.lon, rot);
+      if (point.z <= 0) return;
+      const x = cx + point.x, y = cy + point.y, pulse = 0.5 + 0.5 * Math.sin(time * 0.005 + hotspot.lon);
+      const headline = worldHeadlines[index % Math.max(1, worldHeadlines.length)];
+      ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.95; ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.fillStyle = accent; ctx.globalAlpha = 0.34; ctx.arc(x, y, 5 + pulse * 7, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.85; ctx.font = '9px monospace'; ctx.fillText(hotspot.label, x + 7, y - 5);
+      visibleMarkers.push({ x, y, label: hotspot.label, headline });
+    });
     ctx.globalAlpha = 1;
     requestAnimationFrame(draw);
   }
@@ -3356,24 +3402,30 @@ function startCommandMap() {
 // ---------------------------------------------------------------------------
 // Headlines
 // ---------------------------------------------------------------------------
-async function refreshHeadlines() {
+async function refreshHeadlines(category = worldCategory) {
+  worldCategory = ['tech', 'world', 'business'].includes(category) ? category : 'tech';
+  $$('.news-filter').forEach((button) => button.classList.toggle('active', button.dataset.newsCategory === worldCategory));
   const lists = [$('#newsList'), $('#newsListMini')].filter(Boolean);
-  lists.forEach((l) => { l.innerHTML = '<div class="empty">Fetching headlines…</div>'; });
+  lists.forEach((list) => { list.innerHTML = `<div class="empty">Fetching ${worldCategory} headlines…</div>`; });
   try {
-    const items = await api.getHeadlines(14);
-    if (!items.length) { lists.forEach((l) => { l.innerHTML = '<div class="empty">Could not reach the feed (offline).</div>'; }); return; }
-    const fill = (l) => {
-      l.innerHTML = '';
-      items.forEach((n) => {
+    const items = await api.getHeadlines(14, worldCategory);
+    worldHeadlines = items.length ? items : mockHeadlines.map((item, index) => ({ ...item, id: 'mock-' + index, category: worldCategory }));
+    const fill = (list) => {
+      list.innerHTML = '';
+      worldHeadlines.forEach((headline) => {
         const div = document.createElement('div');
         div.className = 'news-item';
-        div.innerHTML = `<div class="n-title">${escapeHtml(n.title)}</div><div class="n-meta">▲ ${n.score} · ${escapeHtml(n.by)}</div>`;
-        div.addEventListener('click', () => api.openExternal(n.url));
-        l.appendChild(div);
+        div.dataset.newsId = String(headline.id);
+        const meta = [String(headline.category || worldCategory).toUpperCase(), headline.by, headline.score ? '▲ ' + headline.score : 'LIVE'].filter(Boolean).join(' · ');
+        div.innerHTML = `<div class="n-title">${escapeHtml(headline.title)}</div><div class="n-meta">${escapeHtml(meta)}</div>`;
+        div.addEventListener('click', () => api.openExternal(headline.url));
+        list.appendChild(div);
       });
     };
     lists.forEach(fill);
-  } catch (e) { lists.forEach((l) => { l.innerHTML = '<div class="empty">Could not reach the feed (offline).</div>'; }); }
+  } catch (e) {
+    lists.forEach((list) => { list.innerHTML = '<div class="empty">Could not reach the feed (offline).</div>'; });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3962,7 +4014,13 @@ function bindEvents() {
     else { listening = true; avatar({ listening: true }); $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); try { recognition.start(); } catch (e) {} }
   });
 
-  $('#refreshNews').addEventListener('click', refreshHeadlines);
+  $('#refreshNews').addEventListener('click', () => refreshHeadlines(worldCategory));
+  $$('.news-filter').forEach((button) => button.addEventListener('click', () => refreshHeadlines(button.dataset.newsCategory)));
+  $$('.world-mode').forEach((button) => button.addEventListener('click', () => {
+    $$('.world-mode').forEach((item) => item.classList.toggle('active', item === button));
+    $('#worldGrid').dataset.mode = button.dataset.worldMode;
+    playSfx('swoosh');
+  }));
 
   // reminders from main process
   api.onReminder((r) => {

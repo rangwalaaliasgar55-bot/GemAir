@@ -1830,16 +1830,27 @@ async function offlineBrain(text) {
 // ---------------------------------------------------------------------------
 // Headlines feed (free, keyless) — Hacker News
 // ---------------------------------------------------------------------------
-async function getHeadlines(limit = 12) {
+async function getHeadlines(limit = 12, category = 'tech') {
+  const topics = { tech: 'TECHNOLOGY', world: 'WORLD', business: 'BUSINESS' };
+  const safeCategory = topics[category] ? category : 'tech';
+  const decodeXml = (value) => String(value || '').replace(/<!\[CDATA\[|\]\]>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  try {
+    const topic = topics[safeCategory];
+    const rss = await fetch(`https://news.google.com/rss/headlines/section/topic/${topic}?hl=en-US&gl=US&ceid=US:en`, { headers: { 'User-Agent': 'GemAir/2.0' } }).then((r) => r.text());
+    const blocks = rss.match(/<item>[\s\S]*?<\/item>/g) || [];
+    const out = blocks.slice(0, limit).map((block, index) => {
+      const field = (name) => { const match = block.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`, 'i')); return decodeXml(match && match[1]); };
+      return { id: `${safeCategory}-${index}-${Date.now()}`, title: field('title'), url: field('link'), score: 0, by: field('source') || 'Google News', published: field('pubDate'), category: safeCategory };
+    }).filter((item) => item.title && item.url);
+    if (out.length) return out;
+  } catch {}
+
+  // Resilient fallback for offline/RSS-blocked environments.
   try {
     const top = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json').then((r) => r.json());
     const ids = (Array.isArray(top) ? top : []).slice(0, limit);
-    const items = await Promise.all(ids.map((id) =>
-      fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).then((r) => r.json()).catch(() => null)
-    ));
-    return items.filter(Boolean).filter((i) => i.title).map((i) => ({
-      id: i.id, title: i.title, url: i.url || `https://news.ycombinator.com/item?id=${i.id}`, score: i.score || 0, by: i.by || ''
-    }));
+    const items = await Promise.all(ids.map((id) => fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).then((r) => r.json()).catch(() => null)));
+    return items.filter(Boolean).filter((item) => item.title).map((item) => ({ id: item.id, title: item.title, url: item.url || `https://news.ycombinator.com/item?id=${item.id}`, score: item.score || 0, by: item.by || '', category: safeCategory }));
   } catch { return []; }
 }
 
@@ -2110,7 +2121,7 @@ ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
   catch (err) { return { ok: false, error: err.message }; }
 });
 
-ipcMain.handle('news:get', (_e, limit) => getHeadlines(limit || 12));
+ipcMain.handle('news:get', (_e, limit, category) => getHeadlines(limit || 12, category || 'tech'));
 ipcMain.handle('app:openExternal', (_e, url) => { if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url); });
 ipcMain.handle('report:generate', () => generateReport());
 ipcMain.handle('report:needsCheckIn', () => moodNeedsCheckIn());

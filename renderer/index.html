@@ -640,21 +640,37 @@
 
         <!-- ============ GLOBAL INTEL ============ -->
         <section class="view" id="view-world">
-          <div class="world-grid">
+          <div class="world-toolbar">
+            <div class="world-modes" role="group" aria-label="World monitor mode">
+              <button class="world-mode active" data-world-mode="split">DUAL</button>
+              <button class="world-mode" data-world-mode="globe">GLOBE</button>
+              <button class="world-mode" data-world-mode="map">2D COMMAND MAP</button>
+            </div>
+            <div class="utc-strip" id="worldUtcStrip">UTC --:-- · LON --:-- · NYC --:-- · TYO --:--</div>
+          </div>
+          <div class="world-grid" id="worldGrid" data-mode="split">
             <div class="hud-panel globe-panel">
               <h3 class="panel-title">WORLD MONITOR <span class="dim">— UTC <span id="utcTime">--:--:--</span></span></h3>
-              <canvas id="globeCanvas" width="640" height="640"></canvas>
-              <div class="globe-caption">3D GLOBE · LIVE SATELLITE MONITOR</div>
+              <canvas id="globeCanvas" width="640" height="640" aria-label="Interactive rotating news globe"></canvas>
+              <div class="hotspot-headline" id="hotspotHeadline">Select a pulsing marker to inspect its headline.</div>
+              <div class="globe-caption">DOTTED WIREFRAME EARTH · CLICKABLE NEWS HOTSPOTS</div>
             </div>
 
             <div class="hud-panel map-panel">
-              <h3 class="panel-title">COMMAND MAP <span class="dim">— 2D GRID</span></h3>
+              <h3 class="panel-title">COMMAND MAP <span class="dim">— LIVE 2D GRID</span></h3>
               <canvas id="mapCanvas" width="560" height="360"></canvas>
-              <div class="globe-caption">FLIP MAP · GLOBAL SITES</div>
+              <div class="globe-caption">2D COMMAND MODE · GLOBAL SITES · LIVE UTC</div>
             </div>
 
-            <div class="hud-panel news-panel" style="grid-column: span 2;">
-              <h3 class="panel-title">GLOBAL HEADLINES <span class="dim">— LIVE INTELLIGENCE FEED</span></h3>
+            <div class="hud-panel news-panel">
+              <div class="news-head">
+                <h3 class="panel-title">GLOBAL HEADLINES <span class="dim">— LIVE INTELLIGENCE FEED</span></h3>
+                <div class="news-filters" id="newsFilters" role="group" aria-label="Headline category">
+                  <button class="news-filter active" data-news-category="tech">TECH</button>
+                  <button class="news-filter" data-news-category="world">WORLD</button>
+                  <button class="news-filter" data-news-category="business">BUSINESS</button>
+                </div>
+              </div>
               <div class="news-list" id="newsList">
                 <div class="empty">Fetching headlines…</div>
               </div>

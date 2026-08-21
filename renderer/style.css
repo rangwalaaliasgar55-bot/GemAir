@@ -602,7 +602,25 @@ body {
 .activity-feed, .mission-log { display: flex; flex-direction: column; gap: 10px; max-height: 240px; overflow-y: auto; font-size: 12.5px; }
 
 /* ============ GLOBAL INTEL VIEW ============ */
+.world-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 14px; padding: 9px 12px; border: 1px solid var(--panel-border); border-radius: 10px; background: rgba(0,0,0,.25); }
+.world-modes, .news-filters { display: flex; gap: 6px; }
+.world-mode, .news-filter { border: 1px solid var(--panel-border); background: rgba(0,0,0,.3); color: var(--text-dim); border-radius: 7px; padding: 6px 10px; cursor: pointer; font: 600 9px var(--font-mono); letter-spacing: .12em; }
+.world-mode.active, .news-filter.active { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-dim); box-shadow: 0 0 10px var(--accent-dim); }
+.utc-strip { color: var(--accent); font: 600 10px var(--font-mono); letter-spacing: .12em; white-space: nowrap; }
 .world-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.world-grid .news-panel { grid-column: span 2; }
+.world-grid[data-mode='globe'] { grid-template-columns: 1fr; }
+.world-grid[data-mode='globe'] .map-panel { display: none; }
+.world-grid[data-mode='globe'] .news-panel { grid-column: 1; }
+.world-grid[data-mode='map'] { grid-template-columns: 1fr; }
+.world-grid[data-mode='map'] .globe-panel { display: none; }
+.world-grid[data-mode='map'] .news-panel { grid-column: 1; }
+.news-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.hotspot-headline { min-height: 44px; margin: 8px 0; padding: 9px 11px; border-left: 2px solid var(--accent); background: var(--accent-dim); color: var(--text-dim); font-size: 11px; line-height: 1.45; }
+.hotspot-headline.active { color: var(--text); }
+#globeCanvas { cursor: crosshair; }
+.news-item.selected { border-color: var(--accent); background: var(--accent-dim); }
+@media (max-width: 760px) { .world-toolbar, .news-head { align-items: stretch; flex-direction: column; } .utc-strip { overflow-x: auto; } }
 #globeCanvas, #mapCanvas { width: 100%; height: auto; aspect-ratio: 1; border-radius: 12px; background: rgba(0,0,0,0.4); border: 1px solid var(--panel-border); }
 #mapCanvas { aspect-ratio: 1.6; }
 .globe-caption { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; color: var(--text-dim); text-align: center; margin-top: 10px; }
