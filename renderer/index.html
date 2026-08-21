@@ -850,11 +850,15 @@
           </label>
           <label>Voice engine
             <select id="setVoiceMode">
-              <option value="neural">Neural (Smooth — free, internet required)</option>
+              <option value="edge" selected>Edge neural — Microsoft voices (free, internet)</option>
+              <option value="neural">Neural (Google — free, internet required)</option>
               <option value="system">System (Offline OS voice)</option>
             </select>
           </label>
-          <label>Neural accent
+          <label>Edge neural voice
+            <select id="setEdgeVoice"></select>
+          </label>
+          <label>Neural accent (Google)
             <select id="setNeuralVoice"></select>
             <button class="preview-btn" id="previewVoice" type="button">▶ Preview</button>
           </label>
@@ -867,7 +871,8 @@
               <option value="en-GB">English (UK)</option>
               <option value="en-IN">English (India)</option>
               <option value="hi-IN">Hindi</option>
-              <option value="ur-PK">Urdu</option>
+              <option value="ur-PK">Urdu (Pakistan)</option>
+              <option value="ur-IN">Urdu (India)</option>
               <option value="es-ES">Spanish</option>
               <option value="fr-FR">French</option>
             </select>
@@ -1020,6 +1025,7 @@
   <script src="store.js"></script>
   <script src="ai-client.js"></script>
   <script src="tts-engine.js"></script>
+  <script src="edge-tts.js"></script>
   <script src="avatar.js"></script>
   <script src="app.js"></script>
 </body>

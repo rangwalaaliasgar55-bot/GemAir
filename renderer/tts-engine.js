@@ -85,12 +85,28 @@
 
       const gender = opts.gender || this.gender || 'female';
       const engine = opts.engine || this.engine || 'neural';
-      const emotionMod = opts.emotionMod || { rate: 0, pitch: 0 };
+      const emotionMod = opts.emotionMod || { rate: 0, pitch: 0, volume: 0, pause: 0 };
 
-      const finalRate = Math.max(0.6, Math.min(1.4, Number(opts.rate || this.rate) + emotionMod.rate));
-      const finalPitch = Math.max(0.7, Math.min(1.5, Number(opts.pitch || this.pitch) + emotionMod.pitch));
+      // base rate/pitch plus emotion delta (emotional voice intelligence v2)
+      const finalRate = Math.max(0.5, Math.min(1.5, Number(opts.rate || this.rate) + (emotionMod.rate || 0)));
+      const finalPitch = Math.max(0.5, Math.min(1.5, Number(opts.pitch || this.pitch) + (emotionMod.pitch || 0)));
+      const finalVolume = Math.max(0.5, Math.min(1.2, Number(opts.volume || 1) + (emotionMod.volume || 0)));
+      const pauseMs = Math.max(0, Math.min(1500, Math.round((emotionMod.pause || 0) * 400)));
 
-      if (engine === 'neural') {
+      // Section IIa: Microsoft Edge neural voices are the PRIMARY engine.
+      if (engine === 'edge' || engine === 'neural') {
+        if (engine === 'edge') {
+          const edge = window.edgeTts;
+          if (edge && edge.isAvailable()) {
+            try {
+              const r = await this.speakEdge(cleanText, opts, finalRate, finalPitch, finalVolume, pauseMs, gender);
+              if (r) return true;
+            } catch (e) {
+              // fall through to Google neural, then system
+            }
+          }
+        }
+        // Google neural fallback (existing free engine)
         try {
           return await this.speakNeural(cleanText, gender, opts.gen, opts.neuralVoice, finalRate);
         } catch (e) {
@@ -99,6 +115,57 @@
       }
 
       return this.speakSystem(cleanText, gender, finalRate, finalPitch, opts.onBoundary);
+    },
+
+    /** Edge neural synthesis (Section IIa/IId/IIe). Returns true on success. */
+    async speakEdge(text, opts, rate, pitch, volume, pauseMs, gender) {
+      const edge = window.edgeTts;
+      if (!edge || !edge.isAvailable()) return false;
+      // Prefer an explicitly chosen Edge voice; else map preset/STT language.
+      let voice = opts.edgeVoice;
+      if (!voice) {
+        const preset = (opts.preset && opts.presetVoice) || null;
+        voice = preset || edge.voiceForLang(opts.edgeLang || opts.neuralVoice || 'en-US');
+      }
+      const r = await edge.synth(text.slice(0, 500), { voice, rate, pitch, volume, pauseMs });
+      if (!r.ok || !r.url) return false;
+      const audio = new Audio();
+      audio.src = r.url;
+      audio.preload = 'auto';
+      audio.crossOrigin = 'anonymous';
+
+      let settled = false;
+      const done = (ok) => {
+        if (!settled) {
+          settled = true;
+          try { audio.pause(); } catch (e) {}
+          if (currentAudio === audio) currentAudio = null;
+          if (ok) {
+            try { URL.revokeObjectURL(r.url); } catch (e) {}
+            resolve(true);
+          } else reject(new Error('Edge audio failed'));
+        }
+      };
+      let resolve, reject;
+      const p = new Promise((res, rej) => { resolve = res; reject = rej; });
+      audio.onended = () => done(true);
+      audio.onerror = () => done(false);
+
+      try {
+        const ctx = getAudioContext();
+        const analyser = getAnalyser();
+        if (ctx && analyser) {
+          const source = ctx.createMediaElementSource(audio);
+          source.connect(analyser);
+          analyser.connect(ctx.destination);
+          if (window.gemAvatar) window.gemAvatar.setAudioAnalyser(analyser);
+        }
+      } catch (e) {}
+
+      currentAudio = audio;
+      audio.play().then(() => {}).catch(() => done(false));
+      setTimeout(() => done(false), 30000); // safety
+      return p;
     },
 
     speakNeural(text, gender, gen, neuralVoice, rate) {

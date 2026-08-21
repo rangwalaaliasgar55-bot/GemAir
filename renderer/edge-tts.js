@@ -1,0 +1,175 @@
+/* ============================================================
+   GemAir — Microsoft Edge neural voices (free TTS endpoint)
+   Section II: Stonic-grade voice at $0.
+
+   Uses Microsoft Edge's "Read Aloud" neural synthesis WebSocket
+   (speech.platform.bing.com) — the same free endpoint Edge uses in
+   the browser. No key, no account, no cost.
+
+   This file is OPTIONAL and fully guarded: if the WebSocket is
+   unavailable, times out, or any step fails, the caller (tts-engine.js)
+   falls back to the Google neural engine, then the offline system voice.
+   ============================================================ */
+'use strict';
+
+(function () {
+  const TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
+  const WS_BASE = 'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1';
+
+  function uuid() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+  }
+
+  // Real Microsoft Edge neural voice names (Section IIa / IId).
+  const VOICES = [
+    { name: 'en-US-AriaNeural', lang: 'en-US', gender: 'Female', label: 'Aria (US) · warm female' },
+    { name: 'en-US-JennyNeural', lang: 'en-US', gender: 'Female', label: 'Jenny (US) · bright female' },
+    { name: 'en-US-EmmaNeural', lang: 'en-US', gender: 'Female', label: 'Emma (US) · soft female' },
+    { name: 'en-US-GuyNeural', lang: 'en-US', gender: 'Male', label: 'Guy (US) · male' },
+    { name: 'en-US-ChristopherNeural', lang: 'en-US', gender: 'Male', label: 'Christopher (US) · deep male' },
+    { name: 'en-US-EricNeural', lang: 'en-US', gender: 'Male', label: 'Eric (US) · male' },
+    { name: 'en-GB-SoniaNeural', lang: 'en-GB', gender: 'Female', label: 'Sonia (UK) · warm female' },
+    { name: 'en-GB-LibbyNeural', lang: 'en-GB', gender: 'Female', label: 'Libby (UK) · female' },
+    { name: 'en-GB-RyanNeural', lang: 'en-GB', gender: 'Male', label: 'Ryan (UK) · male' },
+    { name: 'en-IN-NeerjaNeural', lang: 'en-IN', gender: 'Female', label: 'Neerja (India) · female' },
+    { name: 'en-IN-PrabhatNeural', lang: 'en-IN', gender: 'Male', label: 'Prabhat (India) · male' },
+    { name: 'hi-IN-SwaraNeural', lang: 'hi-IN', gender: 'Female', label: 'Swara (हिन्दी) · female' },
+    { name: 'hi-IN-MadhurNeural', lang: 'hi-IN', gender: 'Male', label: 'Madhur (हिन्दी) · male' },
+    { name: 'ur-PK-UzmaNeural', lang: 'ur-PK', gender: 'Female', label: 'Uzma (اردو) · female' },
+    { name: 'ur-PK-AsadNeural', lang: 'ur-PK', gender: 'Male', label: 'Asad (اردو) · male' },
+    { name: 'ur-IN-GulNeural', lang: 'ur-IN', gender: 'Female', label: 'Gul (Urdu IN) · female' },
+    { name: 'ur-IN-SalmanNeural', lang: 'ur-IN', gender: 'Male', label: 'Salman (Urdu IN) · male' }
+  ];
+
+  // Which Edge voice best matches an STT language code (Section IId).
+  function voiceForLang(lang) {
+    const L = String(lang || '').toLowerCase();
+    const preferred = {
+      'hi': 'hi-IN-SwaraNeural',
+      'ur': 'ur-PK-UzmaNeural',
+      'en-gb': 'en-GB-SoniaNeural',
+      'en-in': 'en-IN-NeerjaNeural'
+    };
+    for (const [prefix, voice] of Object.entries(preferred)) {
+      if (L === prefix || L.startsWith(prefix)) return voice;
+    }
+    return 'en-US-AriaNeural';
+  }
+
+  function isAvailable() {
+    return typeof WebSocket !== 'undefined';
+  }
+
+  /**
+   * Synthesize one chunk of text with a real Edge neural voice.
+   * Returns { ok, url, voice } where url is an object URL to an mp3 blob.
+   */
+  function synth(text, opts = {}) {
+    return new Promise((resolve) => {
+      if (!isAvailable()) return resolve({ ok: false, error: 'no-websocket' });
+      const voice = opts.voice || 'en-US-AriaNeural';
+      const rate = clamp(opts.rate, 0.5, 1.5);
+      const pitch = clamp(opts.pitch, 0.5, 1.5);
+      const volume = clamp(opts.volume, 0.5, 1.2);
+      const pauseMs = clamp(opts.pauseMs || 0, 0, 2000);
+
+      const connId = uuid();
+      const reqId = uuid();
+      let ws;
+      let audioParts = [];
+      let settled = false;
+      let settleTimer = null;
+      const done = (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(settleTimer);
+        try { if (ws) ws.close(); } catch (e) {}
+        resolve(result);
+      };
+
+      try {
+        ws = new WebSocket(`${WS_BASE}?TrustedClientToken=${TOKEN}&ConnectionId=${connId}`);
+      } catch (e) {
+        return resolve({ ok: false, error: 'ws-construct' });
+      }
+
+      const lang = (VOICES.find((v) => v.name === voice) || {}).lang || 'en-US';
+      const breakTag = pauseMs > 0 ? `<break time="${Math.round(pauseMs)}ms"/>` : '';
+      const escaped = String(text || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+
+      const ssml =
+        `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${lang}'>` +
+        `<voice name='${voice}'><prosody rate='${rate.toFixed(2)}' pitch='${pitch.toFixed(2)}' volume='${volume.toFixed(2)}'>` +
+        breakTag + escaped +
+        `</prosody></voice></speak>`;
+
+      ws.onopen = () => {
+        try {
+          ws.send(
+            `X-Timestamp:${new Date().toISOString()}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n` +
+            `{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`
+          );
+          ws.send(
+            `X-RequestId:${reqId}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${new Date().toISOString()}\r\nPath:ssml\r\n\r\n` + ssml
+          );
+        } catch (e) { done({ ok: false, error: 'send' }); }
+      };
+
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === 'string') {
+          // metadata / turn.start / turn.end messages — ignore
+          if (/turn\.end/.test(ev.data)) { /* wait for trailing audio */ }
+          return;
+        }
+        // binary message: 4-byte header length, header, \r\n\r\n, audio bytes
+        try {
+          const buf = ev.data;
+          const data = buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(buf.buffer || buf);
+          if (data.length < 4) return;
+          const headerLen = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
+          let offset = 4 + headerLen + 2; // + the \r\n\r\n after the header
+          // some messages carry a 4-byte length before audio as well
+          if (offset + 4 <= data.length) {
+            const audioLen = (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
+            if (audioLen > 0 && audioLen <= data.length - offset - 4) offset += 4;
+          }
+          const audio = data.slice(offset);
+          if (audio.length) audioParts.push(new Uint8Array(audio));
+        } catch (e) { /* skip malformed frame */ }
+      };
+
+      ws.onerror = () => { done({ ok: false, error: 'ws-error' }); };
+      ws.onclose = () => {
+        if (audioParts.length) {
+          try {
+            const len = audioParts.reduce((n, a) => n + a.length, 0);
+            const merged = new Uint8Array(len);
+            let at = 0;
+            for (const a of audioParts) { merged.set(a, at); at += a.length; }
+            const blob = new Blob([merged.buffer], { type: 'audio/mpeg' });
+            const url = URL.createObjectURL(blob);
+            return done({ ok: true, url, voice });
+          } catch (e) { return done({ ok: false, error: 'blob' }); }
+        }
+        done({ ok: false, error: 'no-audio' });
+      };
+
+      settleTimer = setTimeout(() => done({ ok: false, error: 'timeout', parts: audioParts.length }), 15000);
+    });
+  }
+
+  function clamp(v, min, max) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return min;
+    return Math.max(min, Math.min(max, n));
+  }
+
+  const edgeTts = { VOICES, isAvailable, synth, voiceForLang };
+  window.edgeTts = edgeTts;
+})();

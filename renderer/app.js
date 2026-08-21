@@ -377,7 +377,7 @@ function supportGuidance(emotion, crisis) {
 let profile = {
   name: 'Commander', theme: 'crimson',
   ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' },
-  voice: { preset: 'gem', rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' },
+  voice: { preset: 'gem', rate: 1.0, pitch: 1.1, mode: 'edge', neuralVoice: 'en', edgeVoice: 'en-US-AriaNeural', name: '' },
   memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false, screenAwareness: false
 };
 let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
@@ -469,13 +469,20 @@ const AGENTS = [
   { name: 'Dave', emoji: '🧑‍💼', role: 'Comms · email / WhatsApp', talk: 'Preparing a draft for your approval.' }
 ];
 
-// Neural voice accents (free Google TTS — smooth natural female, no key needed)
+// Voice presets — bound to specific Microsoft Edge neural voices with tuned
+// rate/pitch (Section IIe). Fallbacks remain for the Google accent engine.
 const VOICE_PRESETS = {
-  gem: { label: 'Gem', gender: 'female', rate: 1.0, pitch: 1.1, neuralVoice: 'en' },
-  jarvis: { label: 'JARVIS', gender: 'male', rate: 0.86, pitch: 0.78, neuralVoice: 'en-GB' },
-  nova: { label: 'Nova', gender: 'female', rate: 1.08, pitch: 1.22, neuralVoice: 'en' }
+  gem: { label: 'Gem', gender: 'female', rate: 1.0, pitch: 1.0, edgeVoice: 'en-US-AriaNeural', neuralVoice: 'en' },
+  jarvis: { label: 'JARVIS', gender: 'male', rate: 0.86, pitch: 0.82, edgeVoice: 'en-GB-RyanNeural', neuralVoice: 'en-GB' },
+  nova: { label: 'Nova', gender: 'female', rate: 1.08, pitch: 1.05, edgeVoice: 'en-US-JennyNeural', neuralVoice: 'en' }
 };
-const STT_LANGUAGES = ['en-US', 'en-GB', 'en-IN', 'hi-IN', 'ur-PK'];
+const STT_LANGUAGES = ['en-US', 'en-GB', 'en-IN', 'hi-IN', 'ur-PK', 'ur-IN'];
+
+// Map an STT language to a matching Edge neural voice (Section IId).
+function edgeVoiceForSttLang(lang) {
+  if (window.edgeTts && window.edgeTts.voiceForLang) return window.edgeTts.voiceForLang(lang);
+  return 'en-US-AriaNeural';
+}
 
 const NEURAL_VOICES = [
   { id: 'en', label: 'English (US) — smooth female' },
@@ -2010,15 +2017,24 @@ async function handleMessage(text) {
     typewriterToken++;
     let acc = '';
     let streamed = false;
+    // Section IIc: stream speech sentence-by-sentence as tokens arrive (only
+    // for online neural/Edge voices; the offline system voice waits for the end).
+    const streamVoiceMode = profile.voice?.mode || 'edge';
+    const streamingVoice = (streamVoiceMode === 'edge' || streamVoiceMode === 'neural') && !!window.ttsEngine;
+    if (streamingVoice) resetStreamSpeech();
     const res = await api.aiChatStream(cfg, [sys, ...chatHistory.slice(-16)], (delta) => {
       if (!streamed) { replyEl.innerHTML = ''; streamed = true; }
       acc += delta;
       replyEl.textContent = acc;
       $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
+      if (streamingVoice && !String(acc).includes('```')) {
+        try { streamSpeak(acc); } catch (e) {}
+      }
     });
     if (res.ok) {
       reply = res.reply || acc;
       if (!streamed) { renderReply(replyEl, reply); } // fallback render
+      else if (streamingVoice) { try { skipFinalSpeak = flushStreamSpeech(reply); } catch (e) {} }
       chatHistory.push({ role: 'assistant', content: reply });
       if (profile.memoryOn) {
         api.memoryExtract(cfg, text, reply).then(async (n) => {
@@ -2061,7 +2077,7 @@ async function handleMessage(text) {
 
   activeTypingEl = null; // reply finished — stop attaching tool chips
   updateContextMeter();
-  speak(reply);
+  if (!skipFinalSpeak) speak(reply);
 }
 
 // Periodically summarize older transcript into durable long-term memory
@@ -2102,12 +2118,17 @@ function speak(text) {
 
   if (window.ttsEngine) {
     const mod = emotionVoiceMod();
+    const preset = VOICE_PRESETS[profile.voice?.preset] || VOICE_PRESETS.gem;
     window.ttsEngine.speak(clean, {
       gender: profile.voiceGender || profile.avatarGender || 'female',
       engine: mode,
       rate: profile.voice?.rate ?? 1.0,
       pitch: profile.voice?.pitch ?? 1.1,
+      volume: 1.0,
       neuralVoice: profile.voice?.neuralVoice || 'en',
+      edgeVoice: profile.voice?.edgeVoice || preset.edgeVoice || 'en-US-AriaNeural',
+      edgeLang: profile.voice?.sttLang || 'en-US',
+      presetVoice: preset.edgeVoice,
       preset: profile.voice?.preset || 'gem',
       emotionMod: mod,
       gen
@@ -2143,6 +2164,75 @@ function speak(text) {
 }
 
 /**
+ * Streaming speech (Section IIc): synthesize sentence-by-sentence as the
+ * reply streams in, so the first audio starts while Gem is still generating.
+ * Segments are queued so sentence 2 only begins after sentence 1 — and the
+ * emotion pause between sentences is honoured via the emotion mapping.
+ */
+let streamSpeechState = null;
+function speakSegment(seg, opts = {}) {
+  if (!window.ttsEngine) return Promise.resolve();
+  const mod = emotionVoiceMod();
+  const preset = VOICE_PRESETS[profile.voice?.preset] || VOICE_PRESETS.gem;
+  return window.ttsEngine.speak(seg, {
+    gender: profile.voiceGender || profile.avatarGender || 'female',
+    engine: profile.voice?.mode || 'edge',
+    rate: profile.voice?.rate ?? 1.0,
+    pitch: profile.voice?.pitch ?? 1.1,
+    volume: 1.0,
+    neuralVoice: profile.voice?.neuralVoice || 'en',
+    edgeVoice: profile.voice?.edgeVoice || preset.edgeVoice || 'en-US-AriaNeural',
+    edgeLang: profile.voice?.sttLang || 'en-US',
+    presetVoice: preset.edgeVoice,
+    preset: profile.voice?.preset || 'gem',
+    emotionMod: mod,
+    gen: ++speechGen
+  }).then(() => {
+    if (streamSpeechState && streamSpeechState.pending > 0) streamSpeechState.pending--;
+    return true;
+  }).catch(() => { if (streamSpeechState && streamSpeechState.pending > 0) streamSpeechState.pending--; return false; });
+}
+
+function resetStreamSpeech() { streamSpeechState = { spoken: 0, queue: Promise.resolve(), pending: 0 }; }
+
+// Speak whatever remains unspoken (the trailing partial sentence). Returns true
+// if anything was queued so the caller can skip a duplicate full speak().
+function flushStreamSpeech(fullText) {
+  const clean = String(fullText || '').replace(/```[\s\S]*?```/g, '(code).').replace(/[#*_`]/g, '').replace(/\s+/g, ' ').trim();
+  if (!streamSpeechState) return false;
+  const s = streamSpeechState;
+  if (clean.length > s.spoken) {
+    const tail = clean.slice(s.spoken).trim();
+    if (tail) {
+      s.pending++;
+      s.spoken = clean.length;
+      s.queue = s.queue.then(() => speakSegment(tail)).catch(() => {});
+      return true;
+    }
+  }
+  return s.pending > 0;
+}
+
+function streamSpeak(fullText) {
+  const clean = String(fullText || '').replace(/```[\s\S]*?```/g, '(code).').replace(/[#*_`]/g, '').replace(/\s+/g, ' ').trim();
+  if (!streamSpeechState) resetStreamSpeech();
+  const s = streamSpeechState;
+  if (clean.length <= s.spoken) return;
+  const newPart = clean.slice(s.spoken);
+  // take completed sentences (ending in . ! ?) from the head of the buffer
+  const m = newPart.match(/^(?:[^.!?\n]*[.!?]["')\]]?)+/);
+  if (!m) return; // no completed sentence yet — wait for more tokens
+  const sentences = m[0].match(/[^.!?\n]*[.!?]["')\]]?/g) || [];
+  for (const sentence of sentences) {
+    const seg = sentence.trim();
+    if (!seg) continue;
+    s.spoken = s.spoken + sentence.length;
+    s.pending++;
+    s.queue = s.queue.then(() => speakSegment(seg)).catch(() => {});
+  }
+}
+
+/**
  * Push state to Gem's avatar. Every call is optional and guarded, so the app
  * keeps working if avatar.js fails to load.
  */
@@ -2153,16 +2243,31 @@ function avatarEmotion(e) {
   try { if (window.gemAvatar) window.gemAvatar.setEmotion(e); } catch (err) {}
 }
 
-// Adjust speaking style to the current emotion (emotional voice intelligence)
+// Emotional voice intelligence v2 — the detected emotion drives rate, pitch
+// AND volume, plus a sentence-level pause. Every mapping is distinct so the
+// 12 core emotional deliveries genuinely sound different (Section IIb).
+const EMOTION_SPEECH = {
+  joy:          { rate: 0.08, pitch: 0.06, volume: 0.00, pause: 0.6, label: 'Bright · quick · lifted' },
+  excitement:   { rate: 0.15, pitch: 0.10, volume: 0.06, pause: 0.4, label: 'Fast · high · energetic' },
+  love:         { rate: -0.08, pitch: 0.04, volume: -0.03, pause: 1.3, label: 'Slow · warm · soft' },
+  gratitude:    { rate: -0.05, pitch: 0.03, volume: 0.00, pause: 1.0, label: 'Warm · measured' },
+  confident:    { rate: 0.00, pitch: -0.03, volume: 0.02, pause: 0.9, label: 'Steady · grounded' },
+  hope:         { rate: 0.00, pitch: 0.05, volume: -0.02, pause: 1.1, label: 'Lifting · gentle' },
+  relief:       { rate: -0.07, pitch: 0.00, volume: -0.03, pause: 1.5, label: 'Slow · exhaled' },
+  curiosity:    { rate: -0.02, pitch: 0.02, volume: -0.03, pause: 1.0, label: 'Questioning · light' },
+  boredom:      { rate: -0.15, pitch: -0.10, volume: -0.10, pause: 1.6, label: 'Slow · flat · drooping' },
+  tired:        { rate: -0.18, pitch: -0.12, volume: -0.12, pause: 1.8, label: 'Slowed · low · heavy' },
+  anxiety:      { rate: 0.10, pitch: 0.05, volume: 0.00, pause: 0.5, label: 'Rushed · tight' },
+  sadness:      { rate: -0.15, pitch: -0.10, volume: -0.10, pause: 1.9, label: 'Slow · low · quiet' },
+  fear:         { rate: 0.10, pitch: 0.06, volume: 0.02, pause: 0.5, label: 'Quick · high · shaky' },
+  anger:        { rate: 0.08, pitch: 0.04, volume: 0.12, pause: 0.3, label: 'Fast · forceful · loud' },
+  guilt:        { rate: -0.12, pitch: -0.08, volume: -0.08, pause: 1.6, label: 'Slowed · downcast' },
+  embarrassment:{ rate: -0.10, pitch: 0.00, volume: -0.06, pause: 1.4, label: 'Tentative · quiet' },
+  neutral:      { rate: 0.00, pitch: 0.00, volume: 0.00, pause: 0.8, label: 'Balanced' }
+};
 function emotionVoiceMod() {
   const e = currentEmotion && currentEmotion.emotion;
-  switch (e) {
-    case 'sadness': case 'tired': case 'guilt': return { rate: -0.08, pitch: -0.1 };
-    case 'excitement': case 'joy': case 'hope': return { rate: 0.06, pitch: 0.06 };
-    case 'anger': case 'fear': case 'anxiety': return { rate: 0.02, pitch: 0.0 };
-    case 'love': case 'gratitude': case 'relief': return { rate: -0.04, pitch: 0.02 };
-    default: return { rate: 0, pitch: 0 };
-  }
+  return EMOTION_SPEECH[e] || EMOTION_SPEECH.neutral;
 }
 
 function speakSystem(text) {
@@ -3190,9 +3295,11 @@ function renderVoiceTab() {
   const el = $('#voiceStatusList');
   if (!el) return;
   const v = profile.voice || {};
+  const engineLabel = v.mode === 'edge' ? 'EDGE NEURAL · MS VOICES' : v.mode === 'system' ? 'SYSTEM · OFFLINE OS VOICE' : 'NEURAL · FREE ONLINE';
   const rows = [
-    ['ENGINE', v.mode === 'system' ? 'SYSTEM · OFFLINE OS VOICE' : 'NEURAL · FREE ONLINE', v.mode !== 'system'],
-    ['VOICE GENDER', (profile.voiceGender || profile.avatarGender || 'female').toUpperCase(), true],
+    ['ENGINE', engineLabel, v.mode !== 'system'],
+    ['VOICE', v.mode === 'edge' ? (v.edgeVoice || 'en-US-AriaNeural').split('-Neural')[0] + ' Neural' : (profile.voiceGender || profile.avatarGender || 'female').toUpperCase(), true],
+    ['GENDER', (profile.voiceGender || profile.avatarGender || 'female').toUpperCase(), true],
     ['ACCENT', (v.neuralVoice || 'EN-US').toUpperCase(), true],
     ['RATE', (v.rate ?? 1.0).toFixed(2), false],
     ['PITCH', (v.pitch ?? 1.1).toFixed(2), false],
@@ -3836,6 +3943,8 @@ function applyVoicePresetToControls(presetId) {
   $('#setRate').value = preset.rate; $('#rateVal').textContent = preset.rate.toFixed(2);
   $('#setPitch').value = preset.pitch; $('#pitchVal').textContent = preset.pitch.toFixed(2);
   $('#setNeuralVoice').value = preset.neuralVoice;
+  const ev = $('#setEdgeVoice');
+  if (ev) ev.value = preset.edgeVoice || 'en-US-AriaNeural';
   syncVoicePresetUi(presetId);
 }
 
@@ -3873,7 +3982,7 @@ function openSettings() {
   $('#setPitch').value = profile.voice?.pitch ?? 1.1;
   $('#rateVal').textContent = $('#setRate').value;
   $('#pitchVal').textContent = $('#setPitch').value;
-  $('#setVoiceMode').value = profile.voice?.mode || 'neural';
+  $('#setVoiceMode').value = profile.voice?.mode || 'edge';
   $('#setNeuralVoice').value = profile.voice?.neuralVoice || 'en';
   $('#setSttLang').value = profile.voice?.sttLang || 'en-US';
   $('#setMemoryOn').checked = profile.memoryOn !== false;
@@ -3881,7 +3990,7 @@ function openSettings() {
   $('#setAmbientScore').checked = !!profile.ambientScore;
   $('#setScreenAwareness').checked = !!profile.screenAwareness;
   $('#setWakeWord').checked = !!profile.wakeWord;
-  populateVoices(); populateNeuralVoices(); updateAiHint();
+  populateVoices(); populateNeuralVoices(); populateEdgeVoices(); updateAiHint();
   syncVoicePresetUi(profile.voice?.preset || 'gem');
   renderCostPanel();
   $('#settingsModal').classList.add('open');
@@ -3909,6 +4018,33 @@ function populateNeuralVoices() {
     sel.appendChild(opt);
   });
 }
+// Section IIa/IId: the voice picker lists real Microsoft Edge neural voice names.
+function populateEdgeVoices() {
+  const sel = $('#setEdgeVoice');
+  if (!sel) return;
+  const list = (window.edgeTts && window.edgeTts.VOICES) || DEFAULT_EDGE_VOICES;
+  sel.innerHTML = '';
+  list.forEach((v) => {
+    const opt = document.createElement('option');
+    opt.value = v.name;
+    opt.textContent = v.label + ' — ' + v.lang + ' · ' + v.gender;
+    if ((profile.voice?.edgeVoice || 'en-US-AriaNeural') === v.name) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+// Fallback list in case edge-tts.js didn't load (kept in sync with it).
+const DEFAULT_EDGE_VOICES = [
+  { name: 'en-US-AriaNeural', lang: 'en-US', gender: 'Female', label: 'Aria (US) · warm female' },
+  { name: 'en-US-JennyNeural', lang: 'en-US', gender: 'Female', label: 'Jenny (US) · bright female' },
+  { name: 'en-GB-SoniaNeural', lang: 'en-GB', gender: 'Female', label: 'Sonia (UK) · warm female' },
+  { name: 'en-GB-RyanNeural', lang: 'en-GB', gender: 'Male', label: 'Ryan (UK) · male' },
+  { name: 'en-IN-NeerjaNeural', lang: 'en-IN', gender: 'Female', label: 'Neerja (India) · female' },
+  { name: 'hi-IN-SwaraNeural', lang: 'hi-IN', gender: 'Female', label: 'Swara (हिन्दी) · female' },
+  { name: 'ur-PK-UzmaNeural', lang: 'ur-PK', gender: 'Female', label: 'Uzma (اردو) · female' },
+  { name: 'ur-PK-AsadNeural', lang: 'ur-PK', gender: 'Male', label: 'Asad (اردو) · male' },
+  { name: 'ur-IN-GulNeural', lang: 'ur-IN', gender: 'Female', label: 'Gul (Urdu IN) · female' },
+  { name: 'ur-IN-SalmanNeural', lang: 'ur-IN', gender: 'Male', label: 'Salman (Urdu IN) · male' }
+];
 function updateAiHint() {
   const base = $('#setBaseURL').value.trim(), key = $('#setApiKey').value.trim();
   const el = $('#aiStatusHint');
@@ -4255,6 +4391,7 @@ function bindEvents() {
     profile.voice.pitch = Number($('#setPitch').value);
     profile.voice.mode = $('#setVoiceMode').value;
     profile.voice.neuralVoice = $('#setNeuralVoice').value;
+    profile.voice.edgeVoice = $('#setEdgeVoice')?.value || profile.voice.edgeVoice || 'en-US-AriaNeural';
     profile.voice.name = $('#setVoice').value;
     profile.voice.sttLang = $('#setSttLang').value;
     profile.memoryOn = $('#setMemoryOn').checked;
@@ -4439,6 +4576,10 @@ function bindEvents() {
     const current = STT_LANGUAGES.indexOf(profile.voice.sttLang || 'en-US');
     profile.voice.sttLang = STT_LANGUAGES[(current + 1) % STT_LANGUAGES.length];
     $('#setSttLang').value = profile.voice.sttLang;
+    // Section IId: switching STT to Hindi/Urdu also selects a matching Edge voice.
+    const matched = edgeVoiceForSttLang(profile.voice.sttLang);
+    if (/^(hi|ur)/i.test(profile.voice.sttLang) && matched) profile.voice.edgeVoice = matched;
+    const evSel = $('#setEdgeVoice'); if (evSel && profile.voice.edgeVoice) evSel.value = profile.voice.edgeVoice;
     updateSttLanguageUi(); persistProfile(); playSfx('click');
     toast('VOICE LANGUAGE', profile.voice.sttLang, '🎙');
   });
@@ -4447,6 +4588,7 @@ function bindEvents() {
     const previousGender = profile.voiceGender;
     profile.voice.mode = $('#setVoiceMode').value;
     profile.voice.neuralVoice = $('#setNeuralVoice').value;
+    profile.voice.edgeVoice = $('#setEdgeVoice')?.value || profile.voice.edgeVoice || 'en-US-AriaNeural';
     profile.voice.name = $('#setVoice').value;
     profile.voice.rate = Number($('#setRate').value);
     profile.voice.pitch = Number($('#setPitch').value);
@@ -4457,8 +4599,9 @@ function bindEvents() {
   $('#setRate').addEventListener('input', () => { $('#rateVal').textContent = $('#setRate').value; });
   $('#setPitch').addEventListener('input', () => { $('#pitchVal').textContent = $('#setPitch').value; });
   $('#setVoiceMode').addEventListener('change', () => {
-    const neural = $('#setVoiceMode').value === 'neural';
-    $('#setNeuralVoice').disabled = !neural;
+    const mode = $('#setVoiceMode').value;
+    $('#setNeuralVoice').disabled = mode !== 'neural';
+    $('#setEdgeVoice').disabled = mode !== 'edge';
     $('#previewVoice').disabled = false;
   });
 
