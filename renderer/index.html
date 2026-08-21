@@ -14,7 +14,6 @@
   <div class="scanlines" aria-hidden="true"></div>
   <div class="vignette" aria-hidden="true"></div>
 
-  <!-- Cinematic boot: BIOS trace → logo ignition → HUD sweep (always skippable) -->
   <div class="boot-overlay" id="bootOverlay" role="dialog" aria-label="GemAir startup sequence" aria-live="polite">
     <div class="boot-scan" aria-hidden="true"></div>
     <div class="boot-bios" id="bootBios"></div>
@@ -28,29 +27,33 @@
     <div class="boot-skip">PRESS ANY KEY OR TAP TO SKIP</div>
   </div>
 
-  <!-- 3D dynamic background scene -->
   <canvas id="bgCanvas" aria-hidden="true"></canvas>
-
-  <!-- Toast notification system -->
   <div class="toasts" id="toasts"></div>
 
   <div class="app">
-    <!-- ===================== TOP BAR ===================== -->
     <header class="topbar">
       <div class="brand">
         <div class="brand-orb"><span></span></div>
         <div class="brand-text">
           <h1>GEM<span class="dim">AIR</span></h1>
-          <p>MISSION CONTROL <span class="ver" id="verTag">v2.1.0</span></p>
+          <p>MISSION CONTROL <span class="ver" id="verTag">v2.4.0</span></p>
         </div>
       </div>
 
       <div class="topbar-center">
         <div class="live-clock" id="liveClock">--:--:--</div>
         <div class="live-date" id="liveDate">—</div>
+        <div class="topbar-mode-chips" id="topbarModeChips" aria-label="Quick mode switch">
+          <button class="mode-chip" data-mode="WORK" title="Work mode">💼 WORK</button>
+          <button class="mode-chip" data-mode="GAMING" title="Gaming mode">🎮 GAMING</button>
+          <button class="mode-chip" data-mode="CHILL" title="Chill mode">🌙 CHILL</button>
+          <button class="mode-chip" data-mode="STUDY" title="Study mode">📚 STUDY</button>
+        </div>
       </div>
 
       <div class="topbar-right">
+        <span class="current-mode-chip" id="currentModeChip" title="Current desktop mode">◍ NO MODE</span>
+        <span class="active-brain-chip" id="activeBrainChip" title="Active AI brain"><span class="dot" id="activeBrainDot"></span><span id="activeBrainName">FREE CORE</span></span>
         <button class="stt-lang-chip" id="sttLangChip" title="Quick-switch speech recognition language">🎙 EN-US</button>
         <div class="context-chip" id="contextChip" title="Estimated working context tokens">
           <span>CTX <b id="contextValue">0</b></span><i><em id="contextBar"></em></i>
@@ -59,11 +62,9 @@
           <span class="dot" id="sysDot"></span>
           <span id="sysChipText" data-i18n="status.nominal">SYSTEMS NOMINAL</span>
         </div>
-
         <button class="sfx-btn active" id="sfxBtn" title="Toggle interface sound effects">
           <span id="sfxIcon">🔊</span> <span id="sfxText">SFX ON</span>
         </button>
-
         <span class="theme-name-tag" id="themeNameTag" title="Active HUD theme — click swatches to recolour the entire interface">CRIMSON</span>
         <div class="theme-switcher" id="themeSwitcher">
           <button class="theme-btn active" data-theme="crimson" title="Crimson Jarvis theme"><i></i></button>
@@ -73,21 +74,17 @@
           <button class="theme-btn" data-theme="amber" title="Amber Core theme"><i></i></button>
           <button class="theme-btn rgb" data-theme="rgb" title="Rainbow Dynamic RGB theme"><i></i></button>
         </div>
-
         <button class="download-btn" id="downloadBtn" title="Download the desktop app">
           <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v11m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
           <span>Get App</span>
         </button>
-
         <button class="icon-btn" id="settingsBtn" title="Settings">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.03 1.56V21a2 2 0 11-4 0v-.09A1.7 1.7 0 008.98 19.4a1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.56-1.03H3a2 2 0 110-4h.09A1.7 1.7 0 004.6 8.98a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001.03-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.03 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9a1.7 1.7 0 001.56 1.03H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.56 1.03z"/></svg>
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.03 1.56V21a2 2 0 11-4 0v-.09A1.7 1.7 0 008.98 19.4a1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.56-1.03H3a2 2 0 110-4h.09A1.7 1.7 0 004.6 8.98a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001.03-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.03 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9a1.7 1.7 0 001.56 1.03H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.56 1.03z"/></svg>
         </button>
       </div>
     </header>
 
-    <!-- ===================== BODY LAYOUT ===================== -->
     <div class="layout">
-      <!-- Side nav -->
       <nav class="sidenav">
         <button class="nav-btn active" data-view="assistant">
           <span class="nav-ico">◉</span>
@@ -111,20 +108,28 @@
         </button>
       </nav>
 
-      <!-- Main Content Area -->
       <main class="main">
-        <!-- ============ VOICE ASSISTANT (Stonic-style 3-column command center) ============ -->
         <section class="view active" id="view-assistant">
           <div class="assistant-grid">
-
-            <!-- ================= LEFT COLUMN: media link · satellite · intel ================= -->
             <div class="stx-left">
+              <!-- U2 Dashboard NOW card -->
+              <div class="hud-panel now-card" id="nowCard">
+                <h3 class="panel-title">NOW <span class="dim">— DASHBOARD</span></h3>
+                <div class="now-grid">
+                  <div class="now-line"><span>MODE</span><b id="nowMode">NO MODE</b></div>
+                  <div class="now-line"><span>BRAIN</span><b id="nowBrain">FREE CORE</b></div>
+                  <div class="now-line"><span>NEXT</span><b id="nowReminder">No reminders</b></div>
+                  <div class="now-line"><span>BATTERY</span><b id="nowBattery">—</b></div>
+                </div>
+              </div>
+
               <div class="hud-panel media-link">
                 <h3 class="panel-title">MEDIA LINK <span class="dim" id="mediaLinkState">— SYSTEM OFFLINE</span></h3>
                 <div class="ml-body">
                   <div class="ml-orbit" aria-hidden="true"><span></span><i></i></div>
                   <div class="ml-line"><span>VOICE</span><b id="mlVoice">STANDBY</b></div>
                   <div class="ml-line"><span>AI LINK</span><b id="mlAi">FREE CORE</b></div>
+                  <div class="ml-line"><span>BRAIN</span><b id="mlActiveBrain">FREE CORE</b></div>
                   <div class="ml-line"><span>SFX</span><b id="mlSfx">ON</b></div>
                   <div class="ml-icons">
                     <span class="ml-ico" title="Voice assistant online">◉</span>
@@ -139,10 +144,9 @@
                   <canvas id="satCanvas" width="260" height="160"></canvas>
                   <span class="sat-beta">BETA</span>
                 </div>
-                <!-- S1: these tabs were cosmetic in 2.1. Each now drives a real feed. -->
                 <div class="sat-tabs" role="tablist" aria-label="Satellite feed">
                   <button class="sat-tab active" data-sat="today" role="tab" aria-selected="true" aria-controls="satPanel">TODAY</button>
-                  <button class="sat-tab" data-sat="rap" role="tab" aria-selected="false" aria-controls="satPanel" title="Radar &amp; Precipitation">RAP</button>
+                  <button class="sat-tab" data-sat="rap" role="tab" aria-selected="false" aria-controls="satPanel" title="Radar & Precipitation">RAP</button>
                   <button class="sat-tab" data-sat="search" role="tab" aria-selected="false" aria-controls="satPanel">SEARCH</button>
                   <button class="sat-tab" data-sat="alerts" role="tab" aria-selected="false" aria-controls="satPanel">ALERTS</button>
                 </div>
@@ -172,7 +176,6 @@
               </div>
             </div>
 
-            <!-- ================= CENTER COLUMN: circuits → orb · agent town ================= -->
             <div class="stx-center">
               <div class="stx-core">
                 <div class="stx-circuits">
@@ -206,11 +209,9 @@
 
                 <div class="orb-panel hud-panel">
                   <div class="thinking-pill" id="thinkingPill"><span>THINKING</span><i></i></div>
-
                   <canvas id="orbCanvas" width="560" height="560"></canvas>
                   <canvas id="avatarCanvas" width="560" height="560" aria-hidden="true"></canvas>
                   <canvas id="micVuCanvas" width="180" height="34" aria-label="Microphone input level"></canvas>
-
                   <div class="gem-nameplate">
                     <span class="gem-name">GEM</span>
                     <span class="gem-role" id="gemRole">personal intelligence</span>
@@ -218,24 +219,20 @@
                       <span id="avatarGenderLabel">♀ FEMALE</span>
                     </button>
                   </div>
-
                   <div class="orb-center">
                     <button class="start-btn" id="startBtn">
                       <span class="start-ring"></span>
                       <span class="start-label" id="startLabel">START AI</span>
                     </button>
                   </div>
-
                   <div class="caption-bar" id="captionBar" aria-live="polite">
                     <span class="caption-who" id="captionWho">GEM</span>
                     <p class="caption-text" id="captionText"></p>
                   </div>
-
                   <div class="orb-status" id="orbStatus">STANDBY</div>
                 </div>
               </div>
 
-              <!-- Agent Town preview (live state from the full town view) -->
               <div class="hud-panel town-preview" id="townPreview">
                 <div class="tp-head">
                   <h3 class="panel-title">AGENT TOWN <span class="tp-ready" id="townPreviewState">READY</span></h3>
@@ -254,15 +251,28 @@
                   <button class="ts-chat" id="townChatMini">💬 CHAT</button>
                 </div>
               </div>
+
+              <!-- A1 Plan-Act live progress -->
+              <div class="hud-panel plan-act-panel" id="planActPanel" hidden>
+                <h3 class="panel-title">PLAN-ACT <span class="dim" id="planActState">— IDLE</span>
+                  <span class="dry-run-chip" id="dryRunChip">
+                    <button class="mini-btn" id="showPlanBtn">SHOW PLAN</button>
+                    <button class="primary-btn" id="runPlanBtn">RUN</button>
+                  </span>
+                </h3>
+                <div class="plan-act-body" id="planActBody">
+                  <div class="empty">No active mission</div>
+                </div>
+              </div>
             </div>
 
-            <!-- ================= RIGHT COLUMN: expert panel (voice / agent / notes) ================= -->
             <div class="stx-right">
               <div class="hud-panel expert-panel">
                 <div class="expert-tabs">
                   <button class="expert-tab" data-etab="voice">VOICE</button>
                   <button class="expert-tab active" data-etab="agent">AGENT</button>
                   <button class="expert-tab" data-etab="notes">NOTES</button>
+                  <button class="expert-tab" data-etab="desktop">DESKTOP</button>
                   <span class="expert-plus">＋</span>
                 </div>
 
@@ -273,7 +283,7 @@
 
                 <div class="expert-pane active" data-epane="agent" id="etabAgent">
                   <div class="chat-panel" style="min-height:0;">
-                    <h3 class="panel-title">LINK <span class="dim" id="linkMode">— OFFLINE BRAIN</span>
+                    <h3 class="panel-title">LINK <span class="dim" id="linkMode">— FREE CORE</span>
                       <button class="refresh-btn" id="clearChatBtn" style="padding:3px 10px;font-size:10px;">Clear</button>
                     </h3>
                     <div class="chat-log" id="chatLog">
@@ -282,14 +292,12 @@
                         <p class="sub">Speak naturally, or type below. Press <b>Ctrl+K</b> for instant command palette.</p>
                       </div>
                     </div>
-
                     <div class="tool-activity">
                       <h4 class="tool-activity-title">STONIC AI <span class="dim">— TOOL ACTIVITY</span></h4>
                       <div class="tool-feed" id="toolFeed">
                         <div class="empty">No tool calls yet — when Gem acts (weather, search, files…), the calls show up here with their input &amp; output.</div>
                       </div>
                     </div>
-
                     <div class="chat-input-row">
                       <button class="mic-btn" id="micBtn" title="Talk to Gem (Speech Recognition)">
                         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M19 11a7 7 0 01-14 0M12 18v3"/></svg>
@@ -297,7 +305,6 @@
                       <input type="text" id="chatInput" placeholder="Type instruction or / command…" autocomplete="off" />
                       <button class="send-btn" id="sendBtn" title="Send message">➤</button>
                     </div>
-
                     <div class="quick-commands" id="quickCommands">
                       <button class="qc" data-cmd="What's the weather?">🌦 Weather</button>
                       <button class="qc" data-cmd="Search the web for ">🔎 Search</button>
@@ -306,6 +313,9 @@
                       <button class="qc" data-cmd="Write a note: ">📝 Note</button>
                       <button class="qc" data-cmd="Tell me a joke">😄 Joke</button>
                       <button class="qc" data-cmd="Show system status">📊 Telemetry</button>
+                      <button class="qc" data-cmd="chill mode">🌙 Chill</button>
+                      <button class="qc" data-cmd="gaming setup">🎮 Gaming</button>
+                      <button class="qc" data-cmd="list windows">🖥 Windows</button>
                     </div>
                   </div>
                 </div>
@@ -316,13 +326,24 @@
                   </div>
                   <button class="refresh-btn" id="openNotebookBtn" style="margin-top:12px;">📝 OPEN NOTEBOOK</button>
                 </div>
+
+                <div class="expert-pane" data-epane="desktop" id="etabDesktop">
+                  <h3 class="panel-title">DESKTOP STATE <span class="dim" id="desktopStateTitle">— LIVE</span>
+                    <button class="refresh-btn" id="refreshDesktopBtn" style="padding:3px 10px;font-size:10px;">⟳ Refresh</button>
+                  </h3>
+                  <div class="desktop-context">
+                    <div class="dc-line"><span>FOCUSED</span><b id="focusedApp">—</b></div>
+                    <div class="dc-line"><span>TITLE</span><b id="focusedTitle">—</b></div>
+                  </div>
+                  <div class="memory-list" id="desktopWindowsList">
+                    <div class="empty">Click refresh to see open windows</div>
+                  </div>
+                </div>
               </div>
             </div>
-
           </div>
         </section>
 
-        <!-- ============ SYSTEM CORE ============ -->
         <section class="view" id="view-core">
           <div class="core-grid">
             <div class="hud-panel gauges">
@@ -337,7 +358,6 @@
                   <div class="gauge-label">MEMORY <b id="memVal">0%</b></div>
                 </div>
               </div>
-
               <div class="telemetry" id="telemetry">
                 <div class="tele-row"><span>HOSTNAME</span><b id="tHost">LOCAL-HOST</b></div>
                 <div class="tele-row"><span>PLATFORM</span><b id="tPlatform">WEB-SYSTEM</b></div>
@@ -348,12 +368,10 @@
                 <div class="tele-row"><span>BATTERY</span><b id="tBattery">—</b></div>
                 <div class="tele-row"><span>DISK (SYSTEM)</span><b id="tDisk">—</b></div>
               </div>
-
               <div class="radar-wrap">
                 <canvas id="radarCanvas" width="300" height="300" aria-hidden="true"></canvas>
                 <div class="globe-caption">RADAR · LIVE SWEEP MONITOR</div>
               </div>
-
               <div class="skills-grid" style="margin-top:16px">
                 <span class="skill-chip">🎙 Audio Lip-Sync Engine</span>
                 <span class="skill-chip">🖥 Real-Time Telemetry</span>
@@ -365,6 +383,8 @@
                 <span class="skill-chip">🚀 System Quick Launch</span>
                 <span class="skill-chip">🔊 Audio SFX Feedback</span>
                 <span class="skill-chip">📸 Screenshot Capture</span>
+                <span class="skill-chip">🖥 Window Management</span>
+                <span class="skill-chip">🌙 Modes</span>
               </div>
             </div>
 
@@ -380,6 +400,7 @@
                 <button class="core-tab" data-tab="instructions">RULES</button>
                 <button class="core-tab" data-tab="audit">AUDIT</button>
                 <button class="core-tab" data-tab="soul">SOUL</button>
+                <button class="core-tab" data-tab="modes">MODES</button>
               </div>
 
               <div class="hud-panel core-pane active" data-pane="memory">
@@ -432,7 +453,6 @@
                 </div>
               </div>
 
-              <!-- S3: Tasks — the missing UI behind memory.todos and the weekly tasks sparkline -->
               <div class="hud-panel core-pane" data-pane="tasks">
                 <h3 class="panel-title"><span data-i18n="tasks.title">TASKS</span> <span class="dim" id="todoCount"></span></h3>
                 <div class="inline-add">
@@ -517,11 +537,17 @@
                   <button class="link-btn" id="clearTranscript">clear transcript</button>
                 </div>
               </div>
+
+              <div class="hud-panel core-pane" data-pane="modes">
+                <h3 class="panel-title">DESKTOP MODES <span class="dim">— ONE SENTENCE ARRANGES EVERYTHING</span></h3>
+                <div class="modes-list" id="modesList">
+                  <div class="empty">Loading modes…</div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <!-- ============ COMPANION ============ -->
         <section class="view" id="view-companion">
           <div class="companion-grid">
             <div class="hud-panel mood-panel">
@@ -613,7 +639,6 @@
           </div>
         </section>
 
-        <!-- ============ AGENT TOWN ============ -->
         <section class="view" id="view-town">
           <div class="town-head">
             <h2 class="view-title">AGENT TOWN <span class="tp-ready" id="townHeadState">READY</span></h2>
@@ -677,8 +702,6 @@
             </div>
 
             <div class="town-side">
-              <!-- S7: the 12 workflow recipes were reachable only by typing in the
-                   command palette. This renders them as one-click cards. -->
               <div class="hud-panel workflow-gallery">
                 <h3 class="panel-title">WORKFLOW GALLERY <span class="dim">— ONE-CLICK RECIPES</span></h3>
                 <div class="wf-grid" id="workflowGallery"></div>
@@ -699,7 +722,6 @@
           </div>
         </section>
 
-        <!-- ============ GLOBAL INTEL ============ -->
         <section class="view" id="view-world">
           <div class="world-toolbar">
             <div class="world-modes" role="group" aria-label="World monitor mode">
@@ -742,14 +764,12 @@
       </main>
     </div>
 
-    <!-- ===================== FOOTER ===================== -->
     <footer class="footer">
       <span id="footerLeft">GEMAIR · FREE &amp; OPEN-SOURCE · RUNS LOCALLY</span>
       <span id="footerRight">ALL SYSTEMS NOMINAL</span>
     </footer>
   </div>
 
-  <!-- FLOATING HUD DOCK — contextual panels the AI (or palette) can open -->
   <div class="hud-dock" id="hudDock" aria-live="polite">
     <div class="hud-dock-head">
       <span class="hud-dock-title" id="hudDockTitle">PANEL</span>
@@ -758,7 +778,6 @@
     <div class="hud-dock-body" id="hudDockBody"></div>
   </div>
 
-  <!-- FIRST-RUN THEME PICKER -->
   <div class="modal-backdrop" id="themeModal" role="dialog" aria-modal="true" aria-labelledby="themeModalTitle">
     <div class="modal theme-modal">
       <div class="modal-head">
@@ -769,10 +788,6 @@
         <p class="dim" style="font-size:12.5px;line-height:1.6;margin-bottom:14px;">
           One tap re-skins the entire command center — every panel, glow and gauge. You can switch anytime from the top bar.
         </p>
-        <!-- Swatches are generated at boot from the string theme engine
-             (renderer/themes.js) — the single source of truth for every
-             theme token, so the modal, top bar, settings grid and palette
-             can never drift apart. -->
         <div class="theme-swatch-grid" id="themeSwatches"></div>
       </div>
       <div class="modal-foot">
@@ -781,225 +796,408 @@
     </div>
   </div>
 
-  <!-- ===================== SETTINGS MODAL ===================== -->
-  <div class="modal-backdrop" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+  <!-- Experimental warning modal (C4) -->
+  <div class="modal-backdrop" id="experimentalWarningModal" role="dialog" aria-modal="true" aria-labelledby="expWarnTitle">
     <div class="modal">
       <div class="modal-head">
-        <h2 id="settingsModalTitle">SETTINGS</h2>
-        <button class="icon-btn" id="settingsClose">✕</button>
+        <h2 id="expWarnTitle">⚠️ EXPERIMENTAL CONNECTION</h2>
+        <button class="icon-btn" id="expWarnClose">✕</button>
       </div>
       <div class="modal-body">
-        <fieldset>
-          <legend>IDENTITY</legend>
-          <label>Your name (stored in memory)
-            <input type="text" id="setUserName" placeholder="e.g. Commander" />
-          </label>
-        </fieldset>
+        <p style="font-size:13px;line-height:1.6;">
+          You're about to connect your ChatGPT/Gemini account via an <b>unofficial method</b>.<br><br>
+          • It uses your real chatgpt.com / gemini.google.com login — no API key copy-paste<br>
+          • Session is captured locally and encrypted with Electron safeStorage<br>
+          • This may break if OpenAI/Google changes their site, and carries a <b>small account risk</b><br>
+          • You can disconnect anytime and it clears encrypted storage<br><br>
+          <span class="dim">This is a one-time warning. By continuing, you accept this experimental method.</span>
+        </p>
+      </div>
+      <div class="modal-foot">
+        <button class="ghost-btn" id="expWarnCancel">Cancel</button>
+        <button class="primary-btn" id="expWarnContinue">I Understand — Connect</button>
+      </div>
+    </div>
+  </div>
 
-        <fieldset>
-          <legend>AI BRAIN</legend>
-          <div class="groq-callout free-core-badge" style="font-size:12px;line-height:1.5;margin-bottom:8px;">
-            <b>✔ FREE CORE CONNECTED</b> — GemAir is live right now with free AI responses.
-            No API key, no credit card, no sign-in. Everything works out of the box.
-          </div>
-          <label class="check-label" style="margin-bottom:6px">
-            <input type="checkbox" id="setMemoryOn" checked /> Auto memory — remember facts across conversations
-          </label>
-          <details class="power-user">
-            <summary>⚙ Power user — optional: connect your own AI provider</summary>
-            <div class="power-user-body">
-              <div class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
-                This is optional. Unless you add a key here, GemAir keeps using the free core — the app never needs this.
+  <!-- Reconnect dialog (C4) -->
+  <div class="modal-backdrop" id="reconnectModal" role="dialog" aria-modal="true" aria-labelledby="reconnectTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="reconnectTitle">🔌 CONNECTION LOST</h2>
+        <button class="icon-btn" id="reconnectClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="reconnectBody" style="font-size:13px;line-height:1.6;">Your connected session expired or hit a bot-check. Reconnect to restore.</p>
+        <div style="display:flex;gap:10px;margin-top:12px;">
+          <button class="primary-btn" id="reconnectChatGPTBtn">Reconnect ChatGPT</button>
+          <button class="primary-btn" id="reconnectGeminiBtn">Reconnect Gemini</button>
+        </div>
+        <p class="dim" style="font-size:11px;margin-top:10px;">Falling back to FREE CORE so chat never goes dead.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="ghost-btn" id="reconnectDismiss">Dismiss — Use Free Core</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mode transition sweep overlay (M4) -->
+  <div class="mode-sweep" id="modeSweep" aria-hidden="true"></div>
+
+  <div class="modal-backdrop" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+    <div class="modal" style="width:min(860px,96vw);">
+      <div class="modal-head">
+        <h2 id="settingsModalTitle">SETTINGS</h2>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <input type="text" id="settingsSearch" placeholder="Search settings… (connections, brain, voice, desktop, appearance)" style="width:260px;" />
+          <button class="icon-btn" id="settingsClose">✕</button>
+        </div>
+      </div>
+      <div class="modal-body" id="settingsBody">
+        <!-- U3: Settings reorganization -->
+        <div class="settings-nav">
+          <button class="settings-nav-btn active" data-ssection="connections">CONNECTIONS</button>
+          <button class="settings-nav-btn" data-ssection="brain">BRAIN</button>
+          <button class="settings-nav-btn" data-ssection="voice">VOICE</button>
+          <button class="settings-nav-btn" data-ssection="desktop">DESKTOP & MODES</button>
+          <button class="settings-nav-btn" data-ssection="appearance">APPEARANCE</button>
+        </div>
+
+        <!-- CONNECTIONS SECTION (C, D, H) -->
+        <div class="settings-section active" data-section="connections">
+          <fieldset id="connectionHubCard">
+            <legend>CONNECTION HUB — ACCOUNTS → FREE CORE → OFFLINE</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
+              True account connect like Stonic — no API keys ever. Connect your ChatGPT/Gemini accounts via real login, encrypted locally with safeStorage. Chain: accounts → free core → offline brain.
+            </p>
+            <div class="connection-rows">
+              <!-- CHATGPT ROW -->
+              <div class="conn-row" id="connChatGPTRow">
+                <span class="conn-dot" id="chatgptStatusDot" title="ChatGPT status">●</span>
+                <span class="conn-name">CHATGPT</span>
+                <span class="conn-email" id="chatgptEmail">Not connected</span>
+                <span class="conn-badge" id="chatgptPlanBadge">—</span>
+                <span class="conn-usage" id="chatgptUsage">0 today</span>
+                <button class="primary-btn" id="connectChatGPTBtn" style="padding:6px 14px;font-size:11px;">CONNECT CHATGPT</button>
+                <button class="ghost-btn" id="disconnectChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Disconnect</button>
+                <button class="ghost-btn" id="captureChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Capture Session</button>
               </div>
-              <label>Custom API Key (Optional)
-                <input type="password" id="setApiKey" placeholder="gsk_…" />
-                <span class="hint" style="font-size:11px;color:var(--text-dim)">Only for your own personal provider. Stored on your disk only.</span>
-              </label>
-              <label>Custom Base URL (Optional)
-                <input type="text" id="setBaseURL" placeholder="https://api.groq.com/openai/v1" />
-              </label>
-              <label>Model
-                <input type="text" id="setModel" placeholder="llama-3.3-70b-versatile" />
-              </label>
-              <div class="quick-presets" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
-                <button class="preset mini-btn" data-preset="groq" title="Groq — fast Llama (free tier)">Groq</button>
-                <button class="preset mini-btn" data-preset="openai" title="ChatGPT / OpenAI — use your OpenAI API key (platform.openai.com)">ChatGPT</button>
-                <button class="preset mini-btn" data-preset="gemini" title="Google Gemini — use your Google AI Studio key (aistudio.google.com)">Gemini</button>
-                <button class="preset mini-btn" data-preset="claude" title="Anthropic Claude — use your Anthropic key (console.anthropic.com)">Claude</button>
-                <button class="preset mini-btn" data-preset="deepseek" title="DeepSeek — use your DeepSeek key (platform.deepseek.com)">DeepSeek</button>
-                <button class="preset mini-btn" data-preset="mistral" title="Mistral — use your Mistral key (console.mistral.ai)">Mistral</button>
-                <button class="preset mini-btn" data-preset="openrouter">OpenRouter</button>
-                <button class="preset mini-btn" data-preset="ollama">Ollama</button>
-                <button class="preset mini-btn" data-preset="offline">Offline</button>
+              <!-- GEMINI ROW -->
+              <div class="conn-row" id="connGeminiRow">
+                <span class="conn-dot" id="geminiStatusDot" title="Gemini status">●</span>
+                <span class="conn-name">GEMINI</span>
+                <span class="conn-email" id="geminiEmail">Not connected</span>
+                <span class="conn-badge" id="geminiPlanBadge">—</span>
+                <span class="conn-usage" id="geminiUsage">0 today</span>
+                <button class="primary-btn" id="connectGeminiBtn" style="padding:6px 14px;font-size:11px;">CONNECT GEMINI</button>
+                <button class="ghost-btn" id="disconnectGeminiBtn" style="padding:6px 10px;font-size:10px;" hidden>Disconnect</button>
+                <button class="ghost-btn" id="captureGeminiBtn" style="padding:6px 10px;font-size:10px;" hidden>Capture Session</button>
               </div>
-              <div class="hint" id="aiStatusHint" style="font-size:11px;margin-top:6px;">✨ Free AI Core connected — 100% free out of the box.</div>
-              <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
-                <button class="test-btn" id="testConn" type="button">🔌 TEST CONNECTION</button>
-                <span class="test-result" id="testResult"></span>
+              <!-- FREE CORE ROW -->
+              <div class="conn-row" id="connFreeRow">
+                <span class="conn-dot fallback" id="freeCoreDot" title="Free core status">●</span>
+                <span class="conn-name">FREE CORE</span>
+                <span class="conn-email">Serverless /api/chat — always available</span>
+                <span class="conn-badge" style="background:var(--accent-dim);">FALLBACK</span>
+                <span class="conn-usage" id="freeCoreUsage">∞</span>
+                <span class="conn-status">READY</span>
               </div>
             </div>
-          </details>
-        </fieldset>
 
-        <!-- T1: real account sign-in alongside the anonymous identity -->
-        <fieldset>
-          <legend>ACCOUNT</legend>
-          <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
-            GemAir works fully signed-out — memory is local-first and always yours. Signing in with Google gives you a
-            <b>stable identity</b>, so your memory follows you across devices and the free-core fair-use budget is bound to you
-            rather than to a browser.
-          </p>
-          <div class="account-row">
-            <span class="account-state" id="accountState">Anonymous — this device only</span>
-            <button class="mini-btn" id="signInGoogleBtn" type="button">Sign in with Google</button>
-            <button class="mini-btn" id="signOutBtn" type="button" hidden>Sign out</button>
-          </div>
-        </fieldset>
+            <div class="priority-row" style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+              <span class="dim" style="font:600 10px var(--font-mono);">PRIORITY PICKER — which brain answers first:</span>
+              <select id="brainPriorityPicker" aria-label="Brain priority">
+                <option value="chatgpt">ChatGPT → Gemini → Free Core → Offline</option>
+                <option value="gemini">Gemini → ChatGPT → Free Core → Offline</option>
+                <option value="free">Free Core → ChatGPT → Gemini → Offline</option>
+              </select>
+              <button class="ghost-btn" id="clearAllConnectionsBtn" style="padding:5px 10px;font-size:10px;">Clear Encrypted Storage</button>
+            </div>
 
-        <!-- T3: in-app rating prompt history -->
-        <fieldset>
-          <legend>RATE GEMAIR</legend>
-          <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
-            Ratings are stored locally and never uploaded. Export them any time.
-          </p>
-          <div class="rating-row">
-            <div class="star-row" id="settingsStars" role="radiogroup" aria-label="Rate GemAir"></div>
-            <span class="dim" id="ratingSummary">No ratings yet.</span>
-            <button class="mini-btn" id="exportRatingsBtn" type="button">Export</button>
-          </div>
-        </fieldset>
+            <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="ghost-btn" id="openAIStudioBtn" style="padding:6px 12px;font-size:11px;">Fallback: Open AI Studio (Gemini)</button>
+              <span class="hint" style="font-size:10px;color:var(--text-dim);">If Gemini session capture is unstable, this opens AI Studio — sign in with Google, app reads credential locally, still zero key copy-paste.</span>
+            </div>
+          </fieldset>
+        </div>
 
-        <!-- S4: interface language + RTL -->
-        <fieldset>
-          <legend>LANGUAGE</legend>
-          <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
-            Switches every <b>data-i18n</b> label in the interface. Urdu also flips the layout to right-to-left.
-          </p>
-          <label><span data-i18n="settings.language">Interface language</span>
-            <select id="setLanguage" aria-label="Interface language"></select>
-          </label>
-        </fieldset>
+        <!-- BRAIN SECTION -->
+        <div class="settings-section" data-section="brain">
+          <fieldset>
+            <legend>IDENTITY</legend>
+            <label>Your name (stored in memory)
+              <input type="text" id="setUserName" placeholder="e.g. Commander" />
+            </label>
+          </fieldset>
+          <fieldset>
+            <legend>AI BRAIN — FREE CORE + OPTIONAL OWN PROVIDER</legend>
+            <div class="groq-callout free-core-badge" style="font-size:12px;line-height:1.5;margin-bottom:8px;">
+              <b>✔ FREE CORE CONNECTED</b> — GemAir is live right now with free AI responses. No API key, no credit card, no sign-in. Everything works out of the box.
+            </div>
+            <label class="check-label" style="margin-bottom:6px">
+              <input type="checkbox" id="setMemoryOn" checked /> Auto memory — remember facts across conversations
+            </label>
+            <details class="power-user">
+              <summary>⚙ Power user — optional: connect your own AI provider</summary>
+              <div class="power-user-body">
+                <div class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+                  This is optional. Unless you add a key here, GemAir keeps using the free core — the app never needs this.
+                </div>
+                <label>Custom API Key (Optional)
+                  <input type="password" id="setApiKey" placeholder="gsk_…" />
+                  <span class="hint" style="font-size:11px;color:var(--text-dim)">Only for your own personal provider. Stored on your disk only.</span>
+                </label>
+                <label>Custom Base URL (Optional)
+                  <input type="text" id="setBaseURL" placeholder="https://api.groq.com/openai/v1" />
+                </label>
+                <label>Model
+                  <input type="text" id="setModel" placeholder="llama-3.3-70b-versatile" />
+                </label>
+                <div class="quick-presets" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+                  <button class="preset mini-btn" data-preset="groq" title="Groq — fast Llama (free tier)">Groq</button>
+                  <button class="preset mini-btn" data-preset="openai" title="ChatGPT / OpenAI — use your OpenAI API key (platform.openai.com)">ChatGPT</button>
+                  <button class="preset mini-btn" data-preset="gemini" title="Google Gemini — use your Google AI Studio key (aistudio.google.com)">Gemini</button>
+                  <button class="preset mini-btn" data-preset="claude" title="Anthropic Claude — use your Anthropic key (console.anthropic.com)">Claude</button>
+                  <button class="preset mini-btn" data-preset="deepseek" title="DeepSeek — use your DeepSeek key (platform.deepseek.com)">DeepSeek</button>
+                  <button class="preset mini-btn" data-preset="mistral" title="Mistral — use your Mistral key (console.mistral.ai)">Mistral</button>
+                  <button class="preset mini-btn" data-preset="openrouter">OpenRouter</button>
+                  <button class="preset mini-btn" data-preset="ollama">Ollama</button>
+                  <button class="preset mini-btn" data-preset="offline">Offline</button>
+                </div>
+                <div class="hint" id="aiStatusHint" style="font-size:11px;margin-top:6px;">✨ Free AI Core connected — 100% free out of the box.</div>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+                  <button class="test-btn" id="testConn" type="button">🔌 TEST CONNECTION</button>
+                  <span class="test-result" id="testResult"></span>
+                </div>
+              </div>
+            </details>
+          </fieldset>
+          <fieldset>
+            <legend>ACCOUNT</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
+              GemAir works fully signed-out — memory is local-first and always yours. Signing in with Google gives you a stable identity, so your memory follows you across devices.
+            </p>
+            <div class="account-row">
+              <span class="account-state" id="accountState">Anonymous — this device only</span>
+              <button class="mini-btn" id="signInGoogleBtn" type="button">Sign in with Google</button>
+              <button class="mini-btn" id="signOutBtn" type="button" hidden>Sign out</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>RATE GEMAIR</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
+              Ratings are stored locally and never uploaded. Export them any time.
+            </p>
+            <div class="rating-row">
+              <div class="star-row" id="settingsStars" role="radiogroup" aria-label="Rate GemAir"></div>
+              <span class="dim" id="ratingSummary">No ratings yet.</span>
+              <button class="mini-btn" id="exportRatingsBtn" type="button">Export</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>LANGUAGE</legend>
+            <label><span data-i18n="settings.language">Interface language</span>
+              <select id="setLanguage" aria-label="Interface language"></select>
+            </label>
+          </fieldset>
+        </div>
 
-        <fieldset>
-          <legend>HUD THEMES</legend>
-          <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">
-            Recolour the entire interface — orb, panels, canvases and glows. Defined as string tokens in <b>themes.js</b>; your choice is saved and applies everywhere.
-          </p>
-          <div class="theme-grid" id="themeGrid"></div>
-        </fieldset>
+        <!-- VOICE SECTION -->
+        <div class="settings-section" data-section="voice">
+          <fieldset>
+            <legend>AVATAR & VOICE</legend>
+            <label>Avatar Gender
+              <select id="setAvatarGender">
+                <option value="female">Female (Gem)</option>
+                <option value="male">Male (Gem)</option>
+              </select>
+            </label>
+            <label class="check-label" style="margin-bottom:12px">
+              <input type="checkbox" id="setWakeWord" /> Wake word loop — listen for “Hey Gem”
+            </label>
+            <div class="voice-presets" id="voicePresets" role="group" aria-label="Voice preset">
+              <button type="button" class="voice-preset active" data-voice-preset="gem"><b>GEM</b><span>warm · balanced</span></button>
+              <button type="button" class="voice-preset" data-voice-preset="jarvis"><b>JARVIS</b><span>deep · measured</span></button>
+              <button type="button" class="voice-preset" data-voice-preset="nova"><b>NOVA</b><span>bright · quick</span></button>
+            </div>
+            <label>Voice Gender
+              <select id="setVoiceGender">
+                <option value="female">Female (Warm & Natural)</option>
+                <option value="male">Male (Deep & Natural)</option>
+              </select>
+            </label>
+            <label>Voice engine
+              <select id="setVoiceMode">
+                <option value="edge" selected>Edge neural — Microsoft voices (free, internet)</option>
+                <option value="neural">Neural (Google — free, internet required)</option>
+                <option value="system">System (Offline OS voice)</option>
+              </select>
+            </label>
+            <label>Edge neural voice
+              <select id="setEdgeVoice"></select>
+            </label>
+            <label>Neural accent (Google)
+              <select id="setNeuralVoice"></select>
+              <button class="preview-btn" id="previewVoice" type="button">▶ Preview</button>
+            </label>
+            <label>System voice
+              <select id="setVoice"></select>
+            </label>
+            <label>Speech recognition language
+              <select id="setSttLang">
+                <option value="en-US">English (US)</option>
+                <option value="en-GB">English (UK)</option>
+                <option value="en-IN">English (India)</option>
+                <option value="hi-IN">Hindi</option>
+                <option value="ur-PK">Urdu (Pakistan)</option>
+                <option value="ur-IN">Urdu (India)</option>
+                <option value="es-ES">Spanish</option>
+                <option value="fr-FR">French</option>
+              </select>
+            </label>
+            <div class="soul-slider" style="display:flex;align-items:center;gap:12px;">
+              <span>RATE</span><input type="range" id="setRate" min="0.6" max="1.4" step="0.05" value="1.0" /><b id="rateVal">1.0</b>
+            </div>
+            <div class="soul-slider" style="display:flex;align-items:center;gap:12px;">
+              <span>PITCH</span><input type="range" id="setPitch" min="0.7" max="1.5" step="0.05" value="1.1" /><b id="pitchVal">1.1</b>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>AMBIENCE</legend>
+            <label class="check-label">
+              <input type="checkbox" id="setAmbientScore" /> Ambient command-center score (default off)
+            </label>
+            <label>Ambient track
+              <select id="setAmbientTrack" aria-label="Ambient track">
+                <option value="deep">DEEP FIELD — low drone + slow pulse</option>
+                <option value="reactor">REACTOR — warm hum + soft ticks</option>
+              </select>
+            </label>
+            <div class="soul-slider" style="display:flex;align-items:center;gap:12px;">
+              <span>VOLUME</span>
+              <input type="range" id="setAmbientVolume" min="0" max="1" step="0.05" value="0.35" aria-label="Ambient volume" />
+              <b id="ambientVolVal">35%</b>
+            </div>
+          </fieldset>
+        </div>
 
-        <fieldset>
-          <legend>AVATAR & VOICE</legend>
-          <label>Avatar Gender
-            <select id="setAvatarGender">
-              <option value="female">Female (Gem)</option>
-              <option value="male">Male (Gem)</option>
-            </select>
-          </label>
-          <label class="check-label" style="margin-bottom:12px">
-            <input type="checkbox" id="setWakeWord" /> Wake word loop — listen for “Hey Gem”
-          </label>
-          <div class="voice-presets" id="voicePresets" role="group" aria-label="Voice preset">
-            <button type="button" class="voice-preset active" data-voice-preset="gem"><b>GEM</b><span>warm · balanced</span></button>
-            <button type="button" class="voice-preset" data-voice-preset="jarvis"><b>JARVIS</b><span>deep · measured</span></button>
-            <button type="button" class="voice-preset" data-voice-preset="nova"><b>NOVA</b><span>bright · quick</span></button>
-          </div>
-          <label>Voice Gender
-            <select id="setVoiceGender">
-              <option value="female">Female (Warm & Natural)</option>
-              <option value="male">Male (Deep & Natural)</option>
-            </select>
-          </label>
-          <label>Voice engine
-            <select id="setVoiceMode">
-              <option value="edge" selected>Edge neural — Microsoft voices (free, internet)</option>
-              <option value="neural">Neural (Google — free, internet required)</option>
-              <option value="system">System (Offline OS voice)</option>
-            </select>
-          </label>
-          <label>Edge neural voice
-            <select id="setEdgeVoice"></select>
-          </label>
-          <label>Neural accent (Google)
-            <select id="setNeuralVoice"></select>
-            <button class="preview-btn" id="previewVoice" type="button">▶ Preview</button>
-          </label>
-          <label>System voice
-            <select id="setVoice"></select>
-          </label>
-          <label>Speech recognition language
-            <select id="setSttLang">
-              <option value="en-US">English (US)</option>
-              <option value="en-GB">English (UK)</option>
-              <option value="en-IN">English (India)</option>
-              <option value="hi-IN">Hindi</option>
-              <option value="ur-PK">Urdu (Pakistan)</option>
-              <option value="ur-IN">Urdu (India)</option>
-              <option value="es-ES">Spanish</option>
-              <option value="fr-FR">French</option>
-            </select>
-          </label>
-          <div class="soul-slider" style="display:flex;align-items:center;gap:12px;">
-            <span>RATE</span><input type="range" id="setRate" min="0.6" max="1.4" step="0.05" value="1.0" /><b id="rateVal">1.0</b>
-          </div>
-          <div class="soul-slider" style="display:flex;align-items:center;gap:12px;">
-            <span>PITCH</span><input type="range" id="setPitch" min="0.7" max="1.5" step="0.05" value="1.1" /><b id="pitchVal">1.1</b>
-          </div>
-        </fieldset>
+        <!-- DESKTOP & MODES SECTION (A, M) -->
+        <div class="settings-section" data-section="desktop">
+          <fieldset>
+            <legend>DESKTOP MANAGEMENT — WINDOW TOOLS</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+              Agentic desktop management like a coding-agent CLI, but for Windows. Tools: launch_app, focus_app, snap_window, minimize_all, next_virtual_desktop, open_site, list_windows. Cross-platform where possible.
+            </p>
+            <div class="desktop-tools-grid" style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="qc" id="testLaunchAppBtn">🚀 Launch Calculator</button>
+              <button class="qc" id="testListWindowsBtn">🖥 List Windows</button>
+              <button class="qc" id="testMinimizeAllBtn">⬇ Minimize All</button>
+              <button class="qc" id="testSnapLeftBtn">◧ Snap Left</button>
+              <button class="qc" id="testSnapRightBtn">◨ Snap Right</button>
+              <button class="qc" id="testNextDesktopBtn">🗔 Next Desktop</button>
+            </div>
+            <div class="memory-list" id="desktopTestOutput" style="margin-top:10px;max-height:120px;"><div class="empty">Test output appears here</div></div>
+            <label class="check-label" style="margin-top:12px">
+              <input type="checkbox" id="setScreenAwareness" /> Optional screen awareness during active voice sessions
+            </label>
+            <label class="check-label">
+              <input type="checkbox" id="setAllowShell" /> Allow shell command execution (confirms each command)
+            </label>
+            <label class="check-label">
+              <input type="checkbox" id="setLocalBrain" /> Offline brain tier — run a small model in your browser (WebGPU)
+            </label>
+            <span class="hint" id="localBrainHint">Optional. Downloads roughly 800 MB first time, then answers offline.</span>
+          </fieldset>
 
-        <fieldset>
-          <legend>AMBIENCE & ADVANCED</legend>
-          <label class="check-label">
-            <input type="checkbox" id="setAmbientScore" /> Ambient command-center score (default off)
-          </label>
-          <span class="hint">A quiet, locally synthesized sci-fi soundscape. No audio is downloaded or recorded.</span>
-          <!-- T5: the score had no volume control and only one texture -->
-          <label>Ambient track
-            <select id="setAmbientTrack" aria-label="Ambient track">
-              <option value="deep">DEEP FIELD — low drone + slow pulse</option>
-              <option value="reactor">REACTOR — warm hum + soft ticks</option>
-            </select>
-          </label>
-          <div class="soul-slider" style="display:flex;align-items:center;gap:12px;">
-            <span>VOLUME</span>
-            <input type="range" id="setAmbientVolume" min="0" max="1" step="0.05" value="0.35" aria-label="Ambient volume" />
-            <b id="ambientVolVal">35%</b>
-          </div>
-          <label class="check-label">
-            <input type="checkbox" id="setScreenAwareness" /> Optional screen awareness during active voice sessions
-          </label>
-          <span class="hint">Periodically compares a low-resolution screen fingerprint and reports meaningful changes. Default off.</span>
-          <label class="check-label">
-            <input type="checkbox" id="setAllowShell" /> Allow shell command execution (confirms each command)
-          </label>
-          <!-- S8: Layer B — opt-in in-browser model -->
-          <label class="check-label">
-            <input type="checkbox" id="setLocalBrain" /> Offline brain tier — run a small model in your browser (WebGPU)
-          </label>
-          <span class="hint" id="localBrainHint">
-            Optional. Downloads roughly 800&nbsp;MB of model weights the first time, then answers with no network and no key
-            whenever the free core is unreachable. Requires a WebGPU-capable browser. Off by default — nothing downloads until you enable it.
-          </span>
-        </fieldset>
+          <fieldset id="modeDesignerCard">
+            <legend>MODE DESIGNER — CREATE CUSTOM MODES</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+              Mode = bundle of apps, websites (+browser), volume, HUD theme, DND, playlist. Built-ins: WORK, GAMING, CHILL, STUDY. One sentence arranges everything.
+            </p>
+            <div class="mode-designer">
+              <div class="inline-add">
+                <input type="text" id="modeNameInput" placeholder="Mode name e.g. CHILL" style="width:160px;" />
+                <input type="text" id="modeLabelInput" placeholder="Label e.g. Chill Evening" />
+                <select id="modeIconInput" style="width:80px;">
+                  <option value="💼">💼</option>
+                  <option value="🎮">🎮</option>
+                  <option value="🌙" selected>🌙</option>
+                  <option value="📚">📚</option>
+                  <option value="🎵">🎵</option>
+                  <option value="🚀">🚀</option>
+                  <option value="🌟">🌟</option>
+                </select>
+              </div>
+              <label>Apps to launch (comma separated)
+                <input type="text" id="modeAppsInput" placeholder="e.g. spotify, chrome, vscode" />
+              </label>
+              <div class="mode-sites-designer">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <span class="dim" style="font:600 10px var(--font-mono);">WEBSITES (+browser per site)</span>
+                  <button class="mini-btn" id="addModeSiteBtn" style="padding:4px 10px;font-size:10px;">+ Add Site</button>
+                </div>
+                <div id="modeSitesList" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+                  <div class="empty">No sites — add one</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;">
+                <label style="flex:1">Volume <input type="range" id="modeVolumeInput" min="0" max="100" value="50" /> <b id="modeVolumeVal">50</b></label>
+                <label style="flex:1">HUD Theme
+                  <select id="modeThemeInput">
+                    <option value="crimson">Crimson</option>
+                    <option value="emerald">Emerald</option>
+                    <option value="cyan">Cyan</option>
+                    <option value="violet" selected>Violet</option>
+                    <option value="amber">Amber</option>
+                    <option value="rgb">RGB</option>
+                  </select>
+                </label>
+              </div>
+              <label>Playlist URL (optional)
+                <input type="text" id="modePlaylistInput" placeholder="https://youtube.com/watch?v=... lofi" />
+              </label>
+              <label class="check-label"><input type="checkbox" id="modeDndInput" /> Do Not Disturb</label>
+              <label class="check-label"><input type="checkbox" id="modeGamingOptInput" /> Optimize for gaming</label>
+              <div style="display:flex;gap:10px;margin-top:12px;">
+                <button class="primary-btn" id="saveModeBtn">💾 Save Mode</button>
+                <button class="ghost-btn" id="previewModeBtn">👁 Preview Sweep</button>
+                <button class="ghost-btn" id="applyModeBtn">▶ Apply Mode</button>
+              </div>
+            </div>
+          </fieldset>
 
-        <fieldset>
-          <legend>COST — FREE FOREVER AUDIT</legend>
-          <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">
-            Every feature runs on a free, keyless service. Nothing here costs money — ever.
-          </p>
-          <div class="cost-grid" id="costGrid"></div>
-          <div class="cost-total">
-            <span class="ct-label">TOTAL RUNNING COST</span>
-            <span class="ct-badge">$0.00 FOREVER</span>
-          </div>
-          <div class="cost-note">
-            AI core = Vercel serverless · TTS = Microsoft Edge neural voices · STT = Web Speech API ·
-            images = pollinations.ai · search = DuckDuckGo Lite + Wikipedia · weather = Open-Meteo ·
-            news = Google News RSS · crypto = CoinGecko · currency = Frankfurter (free FX) ·
-            translation = MyMemory · dictionary = Free Dictionary API. If a feature ever needs a paid key,
-            GemAir swaps it for a free path automatically.
-          </div>
-        </fieldset>
+          <fieldset>
+            <legend>CURRENT MODES</legend>
+            <div class="modes-list" id="settingsModesList">
+              <div class="empty">Loading modes…</div>
+            </div>
+          </fieldset>
+        </div>
+
+        <!-- APPEARANCE SECTION -->
+        <div class="settings-section" data-section="appearance">
+          <fieldset>
+            <legend>HUD THEMES</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">
+              Recolour the entire interface — orb, panels, canvases and glows. Defined as string tokens in <b>themes.js</b>; your choice is saved and applies everywhere.
+            </p>
+            <div class="theme-grid" id="themeGrid"></div>
+          </fieldset>
+          <fieldset>
+            <legend>COST — FREE FOREVER AUDIT</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">
+              Every feature runs on a free, keyless service. Nothing here costs money — ever.
+            </p>
+            <div class="cost-grid" id="costGrid"></div>
+            <div class="cost-total">
+              <span class="ct-label">TOTAL RUNNING COST</span>
+              <span class="ct-badge">$0.00 FOREVER</span>
+            </div>
+            <div class="cost-note">
+              AI core = Vercel serverless · TTS = Microsoft Edge neural voices · STT = Web Speech API · images = pollinations.ai · search = DuckDuckGo Lite + Wikipedia · weather = Open-Meteo · news = Google News RSS · crypto = CoinGecko · currency = Frankfurter (free FX) · translation = MyMemory · dictionary = Free Dictionary API. If a feature ever needs a paid key, GemAir swaps it for a free path automatically.
+            </div>
+          </fieldset>
+        </div>
       </div>
 
       <div class="modal-foot">
@@ -1012,7 +1210,6 @@
     </div>
   </div>
 
-  <!-- DOWNLOAD MODAL -->
   <div class="modal-backdrop" id="downloadModal" role="dialog" aria-modal="true" aria-labelledby="downloadModalTitle">
     <div class="modal download-modal">
       <div class="modal-head">
@@ -1052,7 +1249,6 @@
     </div>
   </div>
 
-  <!-- GUIDED BREATHING MODAL -->
   <div class="modal-backdrop" id="breatheModal" role="dialog" aria-modal="true" aria-labelledby="breatheModalTitle">
     <div class="modal breathe-modal">
       <div class="modal-head">
@@ -1070,7 +1266,6 @@
     </div>
   </div>
 
-  <!-- WEEKLY REPORT MODAL -->
   <div class="modal-backdrop" id="reportModal" role="dialog" aria-modal="true" aria-labelledby="reportModalTitle">
     <div class="modal">
       <div class="modal-head">
@@ -1092,11 +1287,16 @@
     </div>
   </div>
 
-  <!-- COMMAND PALETTE -->
   <div class="palette-backdrop" id="palette">
     <div class="palette">
       <input type="text" id="paletteInput" data-i18n-placeholder="palette.placeholder" placeholder="Type a command, search memory, or ask a question…" autocomplete="off" />
+      <div class="connections-status-row" id="connectionsStatusRow" style="display:flex;gap:8px;padding:8px 0;font:600 9px var(--font-mono);"></div>
       <div class="palette-results" id="paletteResults"></div>
+      <div class="palette-modes" id="paletteModes" style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0;"></div>
+      <div class="palette-missions" id="paletteMissions" style="margin-top:8px;">
+        <div class="palette-section">RECENT MISSIONS</div>
+        <div id="recentMissionsList"><div class="empty">No missions yet</div></div>
+      </div>
       <div class="palette-hint">⏎ ask AI · esc close · quick: <span class="accent-link" data-pal="assistant">assistant</span> · <span class="accent-link" data-pal="core">system</span> · <span class="accent-link" data-pal="companion">companion</span> · <span class="accent-link" data-pal="town">town</span> · <span class="accent-link" data-pal="world">world</span></div>
     </div>
   </div>

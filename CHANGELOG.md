@@ -2,6 +2,55 @@
 
 All notable changes to GemAir are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] — 2026-08-21
+
+Round 5 v2.4 "CONNECTED DESKTOP AGENT" — three leaps at once: true account connect like Stonic (no API keys ever), opencode-style agentic desktop management, user-defined MODES that arrange the whole desktop from one sentence.
+
+### Added — Section 0 Recon
+
+- **CONNECTIONS.md** with full Stonic research (home, /jarvis-ai-for-pc, /features/*, /about, /changelog v1.0.0→v1.0.55, /guide, every blog post esp. "I Built Iron Man's JARVIS", founder Inventor Usman YouTube/Instagram/TikTok demos) and mermaid architecture diagram of ChatGPT-connect flow: embedded login → session capture → consumer backend → tool layer → voice. Marked confirmed vs inferred.
+
+### Added — Section C Connect ChatGPT (session-based, Stonic-style)
+
+- **Connections hub** in Settings → CONNECTIONS with big CONNECT CHATGPT button → embedded real chatgpt.com login (email/Google SSO). Capture session token post-login via Electron session.cookies, encrypt on disk via safeStorage (never plaintext, never renderer-visible). Shows email + plan badge.
+- **Consumer backend routing:** chats routed through ChatGPT's consumer web backend with that session, streaming into chat UI. Research picked **openai-oauth Codex OAuth** (app_EMoamEEZ73f0CkXaXp7hrann, https://auth.openai.com/oauth/token, https://chatgpt.com/backend-api/codex) as most stable 2026 path, with legacy backend-api/conversation fallback.
+- **Adapter layer:** consumer backends lack function-calling schemas. Inject TOOLS as JSON-in-prompt, parse tool-calls from plain text replies via <<TOOL_CALL>> markers, feed SAME executeTool loop — all ~60 tools work over connected accounts.
+- **Resilience:** token refresh check, bot-check handling with friendly reconnect dialog, disconnect button, one-time experimental warning at connect ("unofficial method, may break, small account risk"). Session dies mid-chat → instant FREE CORE fallback, never dead air.
+
+### Added — Section D Connect Gemini
+
+- Same pattern: CONNECT GEMINI button → Google login embedded → capture Gemini web session (__Secure-1PSID + __Secure-1PSIDTS) → route through consumer backend with identical adapter, fallback and warning. Research stable open-source Gemini-web clients (HanaokaYuzu/Gemini-API, qutek/gemini-web-api). If pure session capture too unstable, fallback UX: one tap opens AI Studio, user signs in with Google inside it, app reads credential locally — still zero key copy-paste.
+
+### Added — Section H Connection Hub UI
+
+- One card rows CHATGPT | GEMINI | FREE CORE: live dots (CONNECTED green / EXPERIMENTAL amber / FALLBACK blue), account email, plan, today usage, priority picker for which brain answers first. Chain: accounts → free core → offline brain. MEDIA LINK card + status chips show ACTIVE brain name live.
+
+### Added — Section A Agentic Desktop Management
+
+- **Plan-Act loops:** big requests ("set up my workspace for editing") decomposed into numbered steps, executed sequentially with live progress checklist, per-step retry once, final spoken+written summary. Show plan before executing (dry-run chip: SHOW PLAN / RUN).
+- **New window/desktop tools:** launch_app(name,args), focus_app(name), snap_window(left|right|quarter|max), minimize_all(), next_virtual_desktop(), open_site(url,browser) — open URL in SPECIFIC browser, list_windows() returns titles+apps so Gem sees desktop state. Cross-platform where possible, graceful no-op with clear message where not.
+- **Context awareness:** track focused app/window (cheap polling IPC every 2.5s) so follow-ups work: "open it there too", "move this to the right".
+- **Safety:** everything destructive stays behind existing confirmAction HITL; every step logged to action log (undo available).
+
+### Added — Section M Modes
+
+- Mode = named bundle of apps to launch, websites (+which browser), volume level, HUD theme, DND, optional playlist URL. Built-in starters: WORK (chrome+vscode+slack, gmail+calendar+github, vol30, cyan, DND), GAMING (steam+discord, vol70, crimson, DND, optimize_gaming), CHILL (spotify, lofi playlist, vol40, violet), STUDY (notepad, lofi, vol20, emerald, DND).
+- **Mode Designer UI** in Settings → DESKTOP & MODES: add/remove apps and sites rows, pick browser per site, volume slider, theme picker, save. Modes sync into profile and persist via gemair-modes.json.
+- **Voice triggers:** "chill mode", "play soft music" (opens lofi playlist + sets volume), "gaming setup" → optimize_gaming + mode. Palette entries + few-shot system prompt examples so Gem chains correctly: launch apps → open sites → set volume → apply theme → confirm spoken.
+- **Cinematic transition:** quick screen sweep using themes.js tokens; topbar shows current mode chip; switching announces via TTS.
+
+### Changed — Section U UI Upgrades
+
+- **U1 Topbar:** quick-mode chips (WORK/GAMING/CHILL/STUDY) + active-brain indicator (dot + name) + current mode chip.
+- **U2 Dashboard NOW card:** current mode, active brain, next reminder, battery.
+- **U3 Settings reorg:** CONNECTIONS / BRAIN / VOICE / DESKTOP & MODES / APPEARANCE sub-sections with settings search box filtering fieldsets.
+- **U4 Command palette:** modes, connections status row, recent missions section.
+- **U5 Glass depth pass:** all panels via themes.js tokens (panel, panel-border, error, info, sweep) — new tokens added to themes.js single source; existing panels now use var(--panel) etc. with backdrop-filter blur + saturate + inset glow.
+
+### Verification — Section V
+
+- npm run check green every commit; extended selfcheck for new ids/selectors (C1, D, H, A, M, U). Final test matrix: connect chatgpt → streamed reply voiced via Edge TTS → run 3 tools over connected brain → disconnect → free-core fallback → gemini connect → create CHILL mode → voice trigger launches apps+sites+volume+sweep → restart persists sessions and modes → disconnect clears encrypted storage.
+
 ## [2.2.0] — 2026-08-21
 
 Round 4 — "Perfect and Powerful". A two-sided audit of the merged 2.1 tree found

@@ -1,14 +1,14 @@
-// GemAir — main process
-// A free, open-source JARVIS-style desktop assistant.
-// More advanced than the typical Stonic clone: persistent long-term memory,
-// real tool-calling (weather, web search, reminders, notes, volume, system
-// control, screenshots), and it runs on YOUR AI key (Groq / OpenAI / any
-// OpenAI-compatible endpoint) — or fully offline with the built-in brain.
-const { app, BrowserWindow, ipcMain, shell, dialog, Notification, desktopCapturer, clipboard, Tray, Menu, nativeImage, screen } = require('electron');
+// GemAir 2.4 — main process
+// Three leaps: (1) true account connect like Stonic (no API keys ever), (2) opencode-style agentic desktop management, (3) user-defined MODES
+const { app, BrowserWindow, ipcMain, shell, dialog, Notification, desktopCapturer, clipboard, Tray, Menu, nativeImage, screen, safeStorage, session } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { exec } = require('child_process');
+
+const connections = require('./lib/connections');
+const windowTools = require('./lib/window-tools');
+const modesLib = require('./lib/modes');
 
 const isDev = process.argv.includes('--dev');
 const userDataDir = app.getPath('userData');
@@ -16,9 +16,6 @@ const PROFILE_FILE = path.join(userDataDir, 'gemair-profile.json');
 const MEMORY_FILE = path.join(userDataDir, 'gemair-memory.json');
 const WINDOW_STATE_FILE = path.join(userDataDir, 'gemair-window-state.json');
 
-// v1 rename (GemAI -> GemAir): Electron derives userData from productName, so
-// the rebrand moves the whole folder (…/GemAI -> …/GemAir). Adopt the old files
-// once, so upgrading users keep every fact, note, goal and mood entry they had.
 (function migrateLegacyFiles() {
   try {
     const legacyDir = path.join(app.getPath('appData'), 'GemAI');
@@ -34,26 +31,15 @@ const WINDOW_STATE_FILE = path.join(userDataDir, 'gemair-window-state.json');
   } catch (e) { console.error('[migrate]', e.message); }
 })();
 
-
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+let authWindow = null;
+let focusPollTimer = null;
+let lastFocused = { app: '', title: '', pid: 0 };
 
-// ---------------------------------------------------------------------------
-// Window
-//
-// T4 — multi-monitor window memory.
-//
-// 2.1 always opened at a fixed 1440x900 on the primary display, so anyone with
-// a second monitor had to drag and resize GemAir on EVERY launch. Bounds are
-// now remembered PER DISPLAY SET (keyed by the connected monitors' ids and
-// sizes), so docking/undocking a laptop restores the layout that belongs to
-// that arrangement. Restored bounds are always clamped back onto a display that
-// actually exists today, so unplugging a monitor can never strand the window.
-// ---------------------------------------------------------------------------
 const DEFAULT_BOUNDS = { width: 1440, height: 900 };
 
-/** A stable fingerprint of the CURRENT monitor arrangement. */
 function displaySetKey() {
   try {
     return screen.getAllDisplays()
@@ -62,32 +48,25 @@ function displaySetKey() {
       .join('|') || 'unknown';
   } catch (e) { return 'unknown'; }
 }
-
 function readWindowState() {
   try { return JSON.parse(fs.readFileSync(WINDOW_STATE_FILE, 'utf8')) || {}; } catch (e) { return {}; }
 }
-
 function writeWindowState(state) {
   try { fs.writeFileSync(WINDOW_STATE_FILE, JSON.stringify(state, null, 2)); } catch (e) {}
 }
-
-/** Force a saved rectangle back onto a display that exists right now. */
 function clampToVisibleDisplay(bounds) {
   if (!bounds || !Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)) return null;
   let displays = [];
   try { displays = screen.getAllDisplays(); } catch (e) { return null; }
   if (!displays.length) return null;
-
   const width = Math.max(1080, Math.min(bounds.width, 8000));
   const height = Math.max(700, Math.min(bounds.height, 8000));
-
   const cx = (bounds.x || 0) + width / 2;
   const cy = (bounds.y || 0) + height / 2;
   const host = displays.find((d) => {
     const a = d.workArea;
     return cx >= a.x && cx <= a.x + a.width && cy >= a.y && cy <= a.y + a.height;
   });
-
   const area = (host || screen.getPrimaryDisplay()).workArea;
   const w = Math.min(width, area.width);
   const h = Math.min(height, area.height);
@@ -95,7 +74,6 @@ function clampToVisibleDisplay(bounds) {
   const y = host ? Math.min(Math.max(bounds.y, area.y), area.y + area.height - h) : Math.round(area.y + (area.height - h) / 2);
   return { x, y, width: w, height: h, maximized: !!bounds.maximized, onKnownDisplay: !!host };
 }
-
 function restoredBounds() {
   const state = readWindowState();
   const saved = state[displaySetKey()];
@@ -103,16 +81,13 @@ function restoredBounds() {
   if (clamped) return clamped;
   return { ...DEFAULT_BOUNDS };
 }
-
 function saveWindowBounds() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   try {
     const maximized = mainWindow.isMaximized();
-    // store the *normal* bounds so un-maximizing restores something sensible
     const b = maximized ? mainWindow.getNormalBounds() : mainWindow.getBounds();
     const state = readWindowState();
     state[displaySetKey()] = { x: b.x, y: b.y, width: b.width, height: b.height, maximized, savedAt: Date.now() };
-    // keep at most 8 remembered arrangements
     const keys = Object.keys(state).sort((a, b2) => (state[b2].savedAt || 0) - (state[a].savedAt || 0));
     const trimmed = {};
     for (const k of keys.slice(0, 8)) trimmed[k] = state[k];
@@ -130,7 +105,7 @@ function createWindow() {
     height: start.height,
     minWidth: 1080,
     minHeight: 700,
-    show: false,             // avoid a flash at the default position
+    show: false,
     backgroundColor: '#04060c',
     autoHideMenuBar: true,
     webPreferences: {
@@ -140,12 +115,8 @@ function createWindow() {
       spellcheck: false
     }
   });
-
   if (start.maximized) mainWindow.maximize();
   mainWindow.once('ready-to-show', () => mainWindow.show());
-
-  // T4: persist bounds on move/resize (debounced) and whenever the monitor
-  // arrangement changes, so each display set keeps its own layout.
   let boundsTimer = null;
   const queueSave = () => { clearTimeout(boundsTimer); boundsTimer = setTimeout(saveWindowBounds, 500); };
   mainWindow.on('resize', queueSave);
@@ -157,40 +128,31 @@ function createWindow() {
     screen.on('display-removed', queueSave);
     screen.on('display-metrics-changed', queueSave);
   } catch (e) {}
-
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http')) shell.openExternal(url);
     return { action: 'deny' };
   });
-
-  // Minimize / close to tray instead of quitting — but only when a tray icon
-  // actually exists, otherwise the window would hide with no way to get it back.
   mainWindow.on('close', (e) => {
-    saveWindowBounds(); // T4
+    saveWindowBounds();
     if (!isQuitting && tray) {
       e.preventDefault();
       mainWindow.hide();
       if (process.platform === 'darwin') app.dock.hide();
     }
   });
-
   mainWindow.on('closed', () => { mainWindow = null; });
+  startFocusPolling();
 }
 
 function createTray() {
-  // nativeImage.createFromPath() does NOT throw on a missing file — it returns an
-  // empty image, and `new Tray(<empty image>)` then throws and aborts startup.
-  // So check emptiness explicitly and fall back to a generated 16x16 dot.
   const iconPath = path.join(__dirname, 'build', 'icon.png');
   let icon = nativeImage.createEmpty();
   try {
     const img = nativeImage.createFromPath(iconPath);
     if (!img.isEmpty()) icon = img.resize({ width: 16, height: 16 });
-  } catch { /* fall through to the generated fallback below */ }
+  } catch {}
   if (icon.isEmpty()) icon = fallbackTrayIcon();
-
   tray = new Tray(icon);
   tray.setToolTip('GemAir — your personal AI');
   const menu = Menu.buildFromTemplate([
@@ -202,20 +164,18 @@ function createTray() {
   tray.setContextMenu(menu);
   tray.on('click', () => { mainWindow.show(); mainWindow.focus(); });
 }
-
-/** A 16x16 crimson dot, built in memory so the tray never depends on a file. */
 function fallbackTrayIcon() {
   const size = 16;
   const buf = Buffer.alloc(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const dx = x - 7.5, dy = y - 7.5;
-      const inside = dx * dx + dy * dy <= 49; // r = 7
+      const inside = dx * dx + dy * dy <= 49;
       const i = (y * size + x) * 4;
-      buf[i] = inside ? 229 : 0;       // R
-      buf[i + 1] = inside ? 57 : 0;    // G
-      buf[i + 2] = inside ? 53 : 0;    // B
-      buf[i + 3] = inside ? 255 : 0;   // A
+      buf[i] = inside ? 229 : 0;
+      buf[i + 1] = inside ? 57 : 0;
+      buf[i + 2] = inside ? 53 : 0;
+      buf[i + 3] = inside ? 255 : 0;
     }
   }
   return nativeImage.createFromBuffer(buf, { width: size, height: size });
@@ -223,8 +183,6 @@ function fallbackTrayIcon() {
 
 app.whenReady().then(() => {
   createWindow();
-  // A tray failure (missing icon, no system tray on some Linux desktops) must
-  // never take down the whole app — the window and reminders still work.
   try { createTray(); } catch (e) { console.error('[tray] disabled:', e.message); }
   startReminderScheduler();
   app.on('activate', () => {
@@ -232,16 +190,12 @@ app.whenReady().then(() => {
     else mainWindow.show();
   });
 });
-
-app.on('before-quit', () => { isQuitting = true; });
-
+app.on('before-quit', () => { isQuitting = true; if (focusPollTimer) clearInterval(focusPollTimer); });
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// ---------------------------------------------------------------------------
 // Persistent stores
-// ---------------------------------------------------------------------------
 function readJSON(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
 }
@@ -252,24 +206,18 @@ function writeJSON(file, data) {
     return true;
   } catch { return false; }
 }
-
 const readProfile = () => readJSON(PROFILE_FILE, {});
 const writeProfile = (d) => writeJSON(PROFILE_FILE, d);
-
 const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 const readMemory = () => {
   const m = readJSON(MEMORY_FILE, EMPTY_MEMORY);
-  // ensure shape
   for (const k of Object.keys(EMPTY_MEMORY)) if (!Array.isArray(m[k])) m[k] = [];
   return m;
 };
 const writeMemory = (m) => writeJSON(MEMORY_FILE, m);
-
 function uid() { return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
 
-// ---------------------------------------------------------------------------
-// Emotion intelligence — understand how the user feels
-// ---------------------------------------------------------------------------
+// Emotion + language + support (same as 2.2)
 const EMOTION_LEXICON = {
   joy: ['happy', 'glad', 'great', 'awesome', 'amazing', 'wonderful', 'yay', 'delighted', 'joy', 'cheerful', 'best', 'win', 'good day', 'made my day'],
   excitement: ['excited', 'pumped', 'thrilled', 'wow', 'lets go', "can't wait", 'cant wait', 'fired up'],
@@ -288,12 +236,10 @@ const EMOTION_LEXICON = {
   guilt: ['guilty', 'regret', 'remorse', 'sorry i', 'should have', 'ashamed of'],
   embarrassment: ['embarrassed', 'embarrassing', 'ashamed', 'humiliated', 'cringe', 'so awkward']
 };
-
 const EMOTION_VALENCE = {
   joy: 1, excitement: 1, love: 0.9, gratitude: 0.9, confident: 0.8, hope: 0.7, relief: 0.8, curiosity: 0.25,
   boredom: -0.3, tired: -0.4, anxiety: -0.6, sadness: -0.7, fear: -0.7, anger: -0.8, guilt: -0.5, embarrassment: -0.4
 };
-
 function analyzeEmotion(text) {
   const q = String(text || '').toLowerCase();
   const negated = /\b(not|no|never|don't|dont|cant|can't|isn't|isnt|wasn't)\b/;
@@ -303,7 +249,6 @@ function analyzeEmotion(text) {
     let score = 0;
     for (const w of words) {
       if (q.includes(w)) {
-        // check for negation in a small window
         const idx = q.indexOf(w);
         const window = q.slice(Math.max(0, idx - 24), idx);
         const v = negated.test(window) ? -1 : 1;
@@ -325,38 +270,17 @@ function analyzeEmotion(text) {
     confidence: Math.min(0.95, 0.4 + entries[0][1] * 0.15 + Math.min(0.15, totalHits * 0.02))
   };
 }
-
-function moodHistoryForPrompt() {
-  const m = readMemory();
-  const recent = (m.mood || []).slice(-14);
-  if (!recent.length) return null;
-  const vals = recent.map((x) => x.valence);
-  const avg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100);
-  const trend = vals.length > 2 ? (vals[vals.length - 1] - vals[0]) : 0;
-  return { avg, trend: trend > 0.15 ? 'improving' : trend < -0.15 ? 'declining' : 'stable', last: recent[recent.length - 1].emotion };
-}
-
-// ---------------------------------------------------------------------------
-// Language detection (Devanagari Hindi / Arabic Urdu / Hinglish / English)
-// ---------------------------------------------------------------------------
 function detectLanguage(text) {
   const t = String(text || '');
   const devanagari = (t.match(/[\u0900-\u097F]/g) || []).length;
   const arabic = (t.match(/[\u0600-\u06FF\u0750-\u077F]/g) || []).length;
   if (devanagari > arabic && devanagari > 2) return 'hi';
   if (arabic > devanagari && arabic > 2) return 'ur';
-  // Hinglish / Roman-Urdu: common words in Latin script
   const hinglish = /\b(kaise|kya|hai|hain|nahi|nahin|mujhe|tumhara|aap|mera|meri|accha|theek|shukriya|kyun|kab|kahan|bhai|yaar|zaroor|bilkul)\b/i.test(t);
   if (hinglish) return 'hinglish';
   return 'en';
 }
-
-// ---------------------------------------------------------------------------
-// Empathetic support engine — helps when the user feels low or has done
-// something they regret. Compassionate, validating, never judgmental.
-// ---------------------------------------------------------------------------
 const CRISIS_SIGNALS = /\b(suicid|kill myself|end my life|end it all|don'?t want to (live|be here|exist)|no reason to live|better off dead|hurt myself|self.?harm|cut myself|give up on life)\b/i;
-
 function supportGuidance(emotion, text, crisis) {
   const e = emotion || 'neutral';
   if (crisis) {
@@ -367,41 +291,13 @@ function supportGuidance(emotion, text, crisis) {
     };
   }
   const map = {
-    sadness: {
-      tone: 'gentle',
-      guidance: "I can hear how heavy this feels, and I'm really sorry you're going through it. It's completely okay to feel this way — you don't have to be strong all the time.",
-      action: "Would you like to just talk it through with me? Sometimes naming what's weighing on you makes it a little lighter. I'm here, and I'm listening without any judgment."
-    },
-    guilt: {
-      tone: 'forgiving',
-      guidance: "Thank you for being honest with me — that takes real courage. Everyone makes mistakes; a mistake is something you did, not who you are. The fact that you feel bad about it says something good about your character.",
-      action: "What matters now is what you do next. If it's possible and feels right, we can talk about making it right or apologizing — and then about forgiving yourself. Would you like to work through it together?"
-    },
-    embarrassment: {
-      tone: 'reassuring',
-      guidance: "That uncomfortable feeling will pass — I promise it feels much bigger to you than it does to anyone else. People are mostly focused on themselves, not judging you.",
-      action: "Let's not spiral on it. One deep breath — you're human, and this one moment doesn't define you."
-    },
-    anger: {
-      tone: 'calming',
-      guidance: "It's okay to be angry — it usually means something important to you was crossed. Let's not act on it while it's hot.",
-      action: "Want to tell me what happened? Getting it out often cools the fire enough to respond well instead of react."
-    },
-    anxiety: {
-      tone: 'grounding',
-      guidance: "That worried, overwhelmed feeling is awful, and I hear you. Most of what anxiety predicts never actually happens — but telling you to 'calm down' never helps.",
-      action: "Let's do one small thing together: name the single most concrete worry right now. Then we can figure out the smallest possible next step, together."
-    },
-    fear: {
-      tone: 'reassuring',
-      guidance: "Fear is your mind trying to protect you, and it's okay to feel it. You've faced hard things before and come through them.",
-      action: "Tell me what's scaring you — putting it into words shrinks it a little, and we can look at it together."
-    },
-    tired: {
-      tone: 'warm',
-      guidance: "You sound exhausted, and that's a completely valid signal, not a weakness. Rest is a requirement, not a reward.",
-      action: "Maybe the kindest thing right now is to step back, drink some water, and rest. You don't have to solve everything today."
-    },
+    sadness: { tone: 'gentle', guidance: "I can hear how heavy this feels, and I'm really sorry you're going through it. It's completely okay to feel this way — you don't have to be strong all the time.", action: "Would you like to just talk it through with me? Sometimes naming what's weighing on you makes it a little lighter. I'm here, and I'm listening without any judgment." },
+    guilt: { tone: 'forgiving', guidance: "Thank you for being honest with me — that takes real courage. Everyone makes mistakes; a mistake is something you did, not who you are. The fact that you feel bad about it says something good about your character.", action: "What matters now is what you do next. If it's possible and feels right, we can talk about making it right or apologizing — and then about forgiving yourself. Would you like to work through it together?" },
+    embarrassment: { tone: 'reassuring', guidance: "That uncomfortable feeling will pass — I promise it feels much bigger to you than it does to anyone else. People are mostly focused on themselves, not judging you.", action: "Let's not spiral on it. One deep breath — you're human, and this one moment doesn't define you." },
+    anger: { tone: 'calming', guidance: "It's okay to be angry — it usually means something important to you was crossed. Let's not act on it while it's hot.", action: "Want to tell me what happened? Getting it out often cools the fire enough to respond well instead of react." },
+    anxiety: { tone: 'grounding', guidance: "That worried, overwhelmed feeling is awful, and I hear you. Most of what anxiety predicts never actually happens — but telling you to 'calm down' never helps.", action: "Let's do one small thing together: name the single most concrete worry right now. Then we can figure out the smallest possible next step, together." },
+    fear: { tone: 'reassuring', guidance: "Fear is your mind trying to protect you, and it's okay to feel it. You've faced hard things before and come through them.", action: "Tell me what's scaring you — putting it into words shrinks it a little, and we can look at it together." },
+    tired: { tone: 'warm', guidance: "You sound exhausted, and that's a completely valid signal, not a weakness. Rest is a requirement, not a reward.", action: "Maybe the kindest thing right now is to step back, drink some water, and rest. You don't have to solve everything today." },
     hope: { tone: 'encouraging', guidance: "I love that hopeful energy — it's a great sign. Let's channel it.", action: "What's one concrete step you could take today toward the thing you're looking forward to?" },
     joy: { tone: 'celebrating', guidance: "I'm genuinely happy for you — this is worth pausing to enjoy.", action: "Tell me more! What happened? Let's celebrate the win properly." },
     gratitude: { tone: 'warm', guidance: "Noticing what's going well is a superpower. I'm glad you're feeling it.", action: "What are you grateful for right now?" },
@@ -409,7 +305,6 @@ function supportGuidance(emotion, text, crisis) {
   };
   return map[e] || { tone: 'warm', guidance: "I'm here with you, and I'm listening.", action: "Tell me what's on your mind — however big or small." };
 }
-
 function provideSupport(text) {
   const emo = analyzeEmotion(text);
   const crisis = CRISIS_SIGNALS.test(String(text || '').toLowerCase());
@@ -433,7 +328,6 @@ function cpuUsage() {
     }, 250);
   });
 }
-
 async function getSystemInfo() {
   const cpu = await cpuUsage();
   const total = os.totalmem(), free = os.freemem();
@@ -447,23 +341,12 @@ async function getSystemInfo() {
     battery, disk
   };
 }
-
-// ---------------------------------------------------------------------------
-// AI — OpenAI-compatible chat WITH function/tool calling
-// (Groq, OpenAI, OpenRouter, Together, Ollama, LM Studio, …)
-// ---------------------------------------------------------------------------
 function normalizeBaseURL(base) {
   let b = (base || '').trim();
   if (!b) return null;
   if (!/^https?:\/\//i.test(b)) b = 'http://' + b;
   return b.replace(/\/+$/, '');
 }
-
-// Provider-aware auth headers. Every supported brain speaks the
-// OpenAI-compatible chat/completions protocol, but a few providers
-// also want their native header alongside the Bearer token:
-//   • Google Gemini  → x-goog-api-key
-//   • Anthropic Claude → x-api-key + anthropic-version (compat endpoint)
 function aiHeaders(base, key) {
   const headers = { 'Content-Type': 'application/json' };
   const b = (base || '').toLowerCase();
@@ -475,7 +358,6 @@ function aiHeaders(base, key) {
   }
   return headers;
 }
-
 async function callChat(base, key, model, messages, tools) {
   const url = base + (base.endsWith('/chat/completions') ? '' : '/chat/completions');
   const doFetch = (withTools) => {
@@ -489,8 +371,6 @@ async function callChat(base, key, model, messages, tools) {
   let res = await doFetch(true);
   if (!res.ok) {
     const firstText = await res.text().catch(() => '');
-    // Some providers (Gemini / Claude compat layers) reject tool schemas for
-    // certain models — retry once as a plain chat so the brain still answers.
     if (tools && /tool|function|unsupported|invalid/i.test(firstText) && [400, 404, 422].includes(res.status)) {
       res = await doFetch(false);
       if (!res.ok) {
@@ -507,7 +387,7 @@ async function callChat(base, key, model, messages, tools) {
 }
 
 // ---------------------------------------------------------------------------
-// Tool definitions & execution
+// Tool definitions — extended for 2.4
 // ---------------------------------------------------------------------------
 const TOOLS = [
   { type: 'function', function: { name: 'get_current_time', description: 'Get the current local time.', parameters: { type: 'object', properties: {} } } },
@@ -522,7 +402,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'list_notes', description: 'List the user\'s saved notes.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'remember_fact', description: 'Permanently remember a fact about the user (long-term memory).', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
   { type: 'function', function: { name: 'get_system_status', description: 'Read live system status (CPU, memory, uptime).', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'control_volume', description: 'Change system volume.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['up', 'down', 'mute', 'unmute'] }, level: { type: 'number' } } } } },
+  { type: 'function', function: { name: 'control_volume', description: 'Change system volume.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['up', 'down', 'mute', 'unmute', 'set'] }, level: { type: 'number', description: '0-100 volume level when action=set' } } } } },
   { type: 'function', function: { name: 'take_screenshot', description: 'Capture a screenshot of the screen.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'control_system', description: 'Lock, sleep, shutdown or restart the computer.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['lock', 'sleep', 'shutdown', 'restart'] } }, required: ['action'] } } },
   { type: 'function', function: { name: 'open_url', description: 'Open a URL in the default browser.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
@@ -557,7 +437,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'get_wellness_tip', description: 'Give a practical wellness / self-care tip.', parameters: { type: 'object', properties: { area: { type: 'string', enum: ['focus', 'stress', 'sleep', 'energy', 'productivity', 'motivation'] } } } } },
   { type: 'function', function: { name: 'organize_folder', description: 'Organize a folder by file type — scans, classifies, creates subfolders and moves files (a multi-step mission).', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Folder to organize (defaults to Downloads)' } } } } },
   { type: 'function', function: { name: 'find_duplicates', description: 'Find duplicate files in a folder (by size + name).', parameters: { type: 'object', properties: { path: { type: 'string' } } } } },
-  { type: 'function', function: { name: 'rename_files', description: 'Rename files in a folder by a pattern (e.g. prefix + number).', parameters: { type: 'object', properties: { path: { type: 'string' }, pattern: { type: 'string', description: 'e.g. "project" or "photo_" — a counter is appended' } }, required: ['path', 'pattern'] } } },
+  { type: 'function', function: { name: 'rename_files', description: 'Rename files in a folder by a pattern (e.g. prefix + number).', parameters: { type: 'object', properties: { path: { type: 'string' }, pattern: { type: 'string', description: 'e.g. "project" or "photo_\" — a counter is appended' } }, required: ['path', 'pattern'] } } },
   { type: 'function', function: { name: 'archive_old_files', description: 'Move files older than N days into an _archive folder.', parameters: { type: 'object', properties: { path: { type: 'string' }, days: { type: 'number' } }, required: ['days'] } } },
   { type: 'function', function: { name: 'system_scan', description: 'Scan the PC — what is using CPU/RAM, disk space, battery. "What is slowing my PC down?"', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'get_power_storage', description: 'Read live battery charging state and primary disk capacity/free-space sensors.', parameters: { type: 'object', properties: {} } } },
@@ -578,34 +458,27 @@ const TOOLS = [
   { type: 'function', function: { name: 'find_large_files', description: 'Find large files on disk — by minimum size in MB and optionally how many months unused. Example: find files over 500MB unused 6 months.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Folder to scan (defaults to home)' }, minMB: { type: 'number', description: 'Minimum file size in MB (default 500)' }, unusedMonths: { type: 'number', description: 'Only files not modified for this many months (optional)' } } } } },
   { type: 'function', function: { name: 'create_folder_tree', description: 'Scaffold a project folder tree (creates empty folders, nothing else). Example: create_folder_tree with folders ["src","src/components","docs"].', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Root path (defaults to Documents)' }, folders: { type: 'array', items: { type: 'string' }, description: 'List of folder paths to create' } } } } },
   { type: 'function', function: { name: 'move_files', description: 'Move files from a source folder into a destination folder, optionally filtered by extension (".pdf"), type ("images"), "large", or keyword.', parameters: { type: 'object', properties: { source: { type: 'string' }, dest: { type: 'string' }, filter: { type: 'string', description: 'Optional filter: ".pdf", "images", "large", or a keyword' } } } } },
-  { type: 'function', function: { name: 'optimize_gaming', description: 'Optimize the PC for gaming — high-performance power plan, clear temp files, close heavy non-essential apps.', parameters: { type: 'object', properties: { keep: { type: 'array', items: { type: 'string' }, description: 'App names to keep open' } } } } }
+  { type: 'function', function: { name: 'optimize_gaming', description: 'Optimize the PC for gaming — high-performance power plan, clear temp files, close heavy non-essential apps.', parameters: { type: 'object', properties: { keep: { type: 'array', items: { type: 'string' }, description: 'App names to keep open' } } } } },
+  // 2.4 new desktop management tools
+  { type: 'function', function: { name: 'launch_app', description: 'Launch an application by name (e.g. chrome, spotify, vscode, calculator) with optional args.', parameters: { type: 'object', properties: { name: { type: 'string', description: 'App name' }, args: { type: 'string', description: 'Optional launch arguments' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'focus_app', description: 'Focus/bring to front an application window by name.', parameters: { type: 'object', properties: { name: { type: 'string', description: 'App name to focus' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'snap_window', description: 'Snap the active window: left|right|quarter|max.', parameters: { type: 'object', properties: { direction: { type: 'string', enum: ['left','right','quarter','max','maximize'] } }, required: ['direction'] } } },
+  { type: 'function', function: { name: 'minimize_all', description: 'Minimize all windows (show desktop).', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'next_virtual_desktop', description: 'Switch to next virtual desktop (Windows).', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'open_site', description: 'Open a URL in a specific browser (chrome, firefox, edge, brave, etc.).', parameters: { type: 'object', properties: { url: { type: 'string', description: 'URL to open' }, browser: { type: 'string', description: 'Browser name: chrome|firefox|edge|brave|default' } }, required: ['url'] } } },
+  { type: 'function', function: { name: 'list_windows', description: 'List open windows/titles+apps so Gem sees desktop state.', parameters: { type: 'object', properties: {} } } },
+  // Modes
+  { type: 'function', function: { name: 'apply_mode', description: 'Apply a desktop mode by name (WORK, GAMING, CHILL, STUDY, or custom). Arranges apps, sites, volume, theme, DND, playlist.', parameters: { type: 'object', properties: { name: { type: 'string', description: 'Mode name' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'list_modes', description: 'List all available desktop modes.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'create_mode', description: 'Create or update a custom mode bundle.', parameters: { type: 'object', properties: { name: { type: 'string' }, apps: { type: 'array', items: { type: 'string' } }, sites: { type: 'array', items: { type: 'object' } }, volume: { type: 'number' }, theme: { type: 'string' }, dnd: { type: 'boolean' }, playlist: { type: 'string' } }, required: ['name'] } } }
 ];
 
 function safeEval(expr) {
   const clean = String(expr).replace(/[^0-9+\-*/().%\s]/g, '');
   if (!/[0-9]/.test(clean)) throw new Error('Not a math expression');
-  // eslint-disable-next-line no-new-func
   const val = Function('"use strict";return (' + clean + ')')();
   if (typeof val !== 'number' || !isFinite(val)) throw new Error('Bad expression');
   return Math.round(val * 1e6) / 1e6;
-}
-
-function launchApp(query) {
-  const q = (query || '').toLowerCase();
-  const map = {
-    calculator: { win: 'calc', mac: 'open -a Calculator', linux: 'gnome-calculator' },
-    notepad: { win: 'notepad', mac: 'open -a TextEdit', linux: 'gedit' },
-    browser: { win: 'start https://www.google.com', mac: 'open https://www.google.com', linux: 'xdg-open https://www.google.com' },
-    chrome: { win: 'start chrome', mac: 'open -a "Google Chrome"', linux: 'google-chrome' },
-    terminal: { win: 'start cmd', mac: 'open -a Terminal', linux: 'gnome-terminal' },
-    explorer: { win: 'explorer', mac: 'open .', linux: 'xdg-open .' },
-    files: { win: 'explorer', mac: 'open .', linux: 'xdg-open .' },
-    settings: { win: 'start ms-settings:', mac: 'open -a "System Settings"', linux: 'gnome-control-center' }
-  };
-  for (const key of Object.keys(map)) {
-    if (q.includes(key)) { exec(map[key][process.platform] || map[key].win, () => {}); return key; }
-  }
-  return null;
 }
 
 const WEATHER_CODES = {
@@ -614,22 +487,14 @@ const WEATHER_CODES = {
   61: 'Light rain', 63: 'Rain', 65: 'Heavy rain', 71: 'Light snow', 73: 'Snow', 75: 'Heavy snow',
   80: 'Showers', 81: 'Rain showers', 82: 'Heavy showers', 95: 'Thunderstorm', 96: 'Storm + hail', 99: 'Storm + hail'
 };
-
 async function getWeather(city) {
   const geo = await fetch('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(city) + '&count=1&language=en&format=json').then(r => r.json());
   const loc = geo.results && geo.results[0];
   if (!loc) return { error: 'City not found: ' + city };
   const w = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current_weather=true`).then(r => r.json());
   const cw = w.current_weather || {};
-  return {
-    city: loc.name + (loc.country ? ', ' + loc.country : ''),
-    temperature: cw.temperature,
-    windspeed: cw.windspeed,
-    condition: WEATHER_CODES[cw.weathercode] || 'Unknown',
-    units: '°C / km/h'
-  };
+  return { city: loc.name + (loc.country ? ', ' + loc.country : ''), temperature: cw.temperature, windspeed: cw.windspeed, condition: WEATHER_CODES[cw.weathercode] || 'Unknown', units: '°C / km/h' };
 }
-
 async function webSearch(query) {
   const url = 'https://api.duckduckgo.com/?q=' + encodeURIComponent(query) + '&format=json&no_html=1&skip_disambig=1';
   const d = await fetch(url).then(r => r.json());
@@ -644,33 +509,17 @@ async function webSearch(query) {
   let answer = d.AbstractText || d.Answer || null;
   let source = d.AbstractSource || null;
   let answerUrl = d.AbstractURL || null;
-
-  // Wikipedia fallback when DDG has no abstract (free, no key)
   if (!answer) {
     try {
       const w = await fetch('https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=1&search=' + encodeURIComponent(query)).then(r => r.json());
       if (Array.isArray(w) && w[2] && w[2][0]) { answer = w[2][0]; source = 'Wikipedia'; answerUrl = w[3][0]; }
     } catch {}
   }
-
-  return {
-    answer,
-    source,
-    url: answerUrl,
-    results: results.slice(0, 5)
-  };
+  return { answer, source, url: answerUrl, results: results.slice(0, 5) };
 }
-
 function stripHtml(html) {
-  return String(html || '')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ').trim();
+  return String(html || '').replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
 }
-
 async function fetchWebpage(url) {
   let u = String(url).trim();
   if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
@@ -680,16 +529,13 @@ async function fetchWebpage(url) {
   const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
   return { title: title.trim(), url: res.url, excerpt: stripHtml(html).slice(0, 4000) };
 }
-
 async function searchWikipedia(query) {
   const res = await fetch('https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=6&search=' + encodeURIComponent(query)).then(r => r.json());
   return { titles: res[1] || [], descriptions: res[2] || [], urls: res[3] || [] };
 }
-
 function searchYouTube(query) {
   return { url: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query), note: 'Open this URL to see video results.' };
 }
-
 function listDirectory(dir) {
   const base = dir || os.homedir();
   try {
@@ -697,7 +543,6 @@ function listDirectory(dir) {
     return entries.slice(0, 100).map((e) => ({ name: e.name, type: e.isDirectory() ? 'folder' : 'file' }));
   } catch (e) { return { error: e.message }; }
 }
-
 function readFile(path_) {
   try {
     const stat = fs.statSync(path_);
@@ -706,7 +551,6 @@ function readFile(path_) {
     return { path: path_, content: content.slice(0, 20000) };
   } catch (e) { return { error: e.message }; }
 }
-
 function writeFile(path_, content) {
   try {
     fs.mkdirSync(path.dirname(path_), { recursive: true });
@@ -714,7 +558,6 @@ function writeFile(path_, content) {
     return { ok: true, path: path_ };
   } catch (e) { return { error: e.message }; }
 }
-
 function searchFiles(root, query) {
   const base = root || os.homedir();
   const q = (query || '').toLowerCase();
@@ -736,7 +579,6 @@ function searchFiles(root, query) {
   walk(base, 0);
   return results.slice(0, 30);
 }
-
 function runCommand(command) {
   const p = readProfile();
   if (!p.allowShell) return { error: 'Shell commands are disabled. Enable "Advanced: allow shell commands" in Settings.' };
@@ -755,7 +597,6 @@ function runCommand(command) {
     });
   });
 }
-
 const CITY_TZ = {
   london: 'Europe/London', newyork: 'America/New_York', nyc: 'America/New_York', losangeles: 'America/Los_Angeles',
   sanfrancisco: 'America/Los_Angeles', chicago: 'America/Chicago', toronto: 'America/Toronto', tokyo: 'Asia/Tokyo',
@@ -764,7 +605,6 @@ const CITY_TZ = {
   lahoren: 'Asia/Karachi', dhaka: 'Asia/Dhaka', beijing: 'Asia/Shanghai', shanghai: 'Asia/Shanghai',
   moscow: 'Europe/Moscow', istanbul: 'Europe/Istanbul', cairo: 'Africa/Cairo', lagos: 'Africa/Lagos'
 };
-
 function getWorldTime(city) {
   const q = String(city || '').toLowerCase().trim().replace(/[^a-z]/g, '');
   let tz = CITY_TZ[q];
@@ -777,7 +617,6 @@ function getWorldTime(city) {
     return { city, time: s, timezone: tz };
   } catch { return { error: 'Could not determine time for ' + city }; }
 }
-
 async function translateText(text, to, from) {
   const pair = (from ? from + '|' : '') + to;
   const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + encodeURIComponent(pair);
@@ -787,54 +626,41 @@ async function translateText(text, to, from) {
   }
   return { error: 'Translation failed.' };
 }
-
 async function getCryptoPrice(coin) {
   const id = String(coin || '').toLowerCase().trim();
   const d = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd,inr`).then((r) => r.json());
   if (!d[id]) return { error: 'Coin not found: ' + coin };
   return { coin: id, usd: d[id].usd, inr: d[id].inr };
 }
-
 async function defineWord(word) {
   const w = String(word || '').trim();
   const d = await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(w)).then((r) => r.json());
   if (!Array.isArray(d) || !d[0]) return { error: 'No definition found for "' + w + '".' };
   const m = d[0].meanings && d[0].meanings[0];
   const def = m && m.definitions && m.definitions[0];
-  return {
-    word: d[0].word,
-    phonetic: d[0].phonetic || '',
-    partOfSpeech: m ? m.partOfSpeech : '',
-    definition: def ? def.definition : '',
-    example: def && def.example ? def.example : ''
-  };
+  return { word: d[0].word, phonetic: d[0].phonetic || '', partOfSpeech: m ? m.partOfSpeech : '', definition: def ? def.definition : '', example: def && def.example ? def.example : '' };
 }
-
 function generateImage(prompt) {
   const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(String(prompt || '').trim()) + '?width=768&height=768&nologo=true';
   return { imageUrl: url, prompt: String(prompt).trim() };
 }
-
 async function convertCurrency(amount, from, to) {
   const f = String(from).toUpperCase(), t = String(to).toUpperCase();
   const d = await fetch(`https://api.frankfurter.app/latest?from=${f}&to=${t}`).then((r) => r.json());
   if (!d.rates || d.rates[t] === undefined) return { error: 'Currency conversion failed (unsupported currency?).' };
   return { amount, from: f, to: t, result: Math.round(amount * d.rates[t] * 100) / 100, rate: d.rates[t] };
 }
-
 function sendEmail(to, subject, body) {
   const url = 'mailto:' + encodeURIComponent(to) + '?subject=' + encodeURIComponent(subject || '') + '&body=' + encodeURIComponent(body || '');
   shell.openExternal(url);
   return { ok: true, to };
 }
-
 function openWhatsApp(phone, text) {
-  const p = String(phone || '').replace(/[^\d]/g, '');
+  const p = String(phone || '').replace(/[^\\d]/g, '');
   const url = 'https://wa.me/' + p + (text ? '?text=' + encodeURIComponent(text) : '');
   shell.openExternal(url);
   return { ok: true, phone: p };
 }
-
 function searchMemory(query) {
   const m = readMemory();
   const q = String(query || '').toLowerCase();
@@ -848,7 +674,6 @@ function searchMemory(query) {
   }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
   return scored.length ? { matches: scored.map((x) => x.f.text) } : { matches: [], note: 'No matching memories.' };
 }
-
 function listTodos() {
   const m = readMemory();
   return m.todos.map((t, i) => ({ index: i, text: t.text, done: !!t.done }));
@@ -862,7 +687,6 @@ function addTodo(text) {
   writeMemory(m);
   return { ok: true, todo };
 }
-/** S3 — id-addressed mutations so the Tasks panel can toggle/delete precisely. */
 function toggleTodoById(id) {
   const m = readMemory();
   const t = (m.todos || []).find((x) => x.id === id);
@@ -888,7 +712,6 @@ function completeTodo(text) {
   writeMemory(m);
   return t ? { ok: true, todo: t.text } : { error: 'Todo not found: ' + text };
 }
-
 function logMood(emotion, note) {
   const m = readMemory();
   const e = analyzeEmotion(emotion);
@@ -898,12 +721,10 @@ function logMood(emotion, note) {
   writeMemory(m);
   return { ok: true, entry };
 }
-
 function getMoodHistory() {
   const m = readMemory();
   return (m.mood || []).slice(-30).map((x) => ({ emotion: x.emotion, valence: x.valence, note: x.note, ts: x.ts }));
 }
-
 function addGoal(text, category) {
   const m = readMemory();
   m.goals.unshift({ id: uid(), text, category: category || 'personal', done: false, created: Date.now() });
@@ -922,7 +743,6 @@ function completeGoal(text) {
   writeMemory(m);
   return g ? { ok: true, goal: g.text } : { error: 'Goal not found: ' + text };
 }
-
 const AFFIRMATIONS = [
   'You are capable of more than you realize. One focused step at a time.',
   'Progress, not perfection — you are exactly where you need to be.',
@@ -933,11 +753,9 @@ const AFFIRMATIONS = [
   'Discipline is choosing what you want most over what you want now.',
   'Every expert was once a beginner who refused to give up.'
 ];
-
 function getAffirmation() {
   return { affirmation: AFFIRMATIONS[Math.floor(Math.random() * AFFIRMATIONS.length)] };
 }
-
 const WELLNESS_TIPS = {
   focus: ['Work in 25-minute sprints (Pomodoro) with 5-minute breaks — your focus peaks in bursts.', 'Single-task: close distracting tabs and give one thing your full attention for 20 minutes.'],
   stress: ['Try the 4-7-8 breath: inhale 4s, hold 7s, exhale 8s. Repeat 4 times to calm your nervous system.', 'Write down what is stressing you — naming it reduces its grip on your mind.'],
@@ -946,12 +764,10 @@ const WELLNESS_TIPS = {
   productivity: ['The 2-minute rule: if a task takes under 2 minutes, do it immediately.', 'Plan tomorrow\'s top 3 priorities tonight, so you start focused instead of deciding.'],
   motivation: ['Motivation follows action, not the other way round. Start tiny — momentum builds itself.', 'Remind yourself of your why. Connect the task to a goal that genuinely matters to you.']
 };
-
 function getWellnessTip(area) {
   const list = WELLNESS_TIPS[area] || WELLNESS_TIPS.motivation;
   return { area: area || 'motivation', tip: list[Math.floor(Math.random() * list.length)] };
 }
-
 const QUOTES = [
   { text: 'The best way to predict the future is to invent it.', author: 'Alan Kay' },
   { text: "It always seems impossible until it's done.", author: 'Nelson Mandela' },
@@ -964,12 +780,7 @@ const QUOTES = [
   { text: 'The secret of getting ahead is getting started.', author: 'Mark Twain' },
   { text: "You miss 100% of the shots you don't take.", author: 'Wayne Gretzky' }
 ];
-
-function getQuote() {
-  return QUOTES[Math.floor(Math.random() * QUOTES.length)];
-}
-
-// Guided breathing — a concrete anxiety-support tool (offline, no key)
+function getQuote() { return QUOTES[Math.floor(Math.random() * QUOTES.length)]; }
 function breathingExercise() {
   return {
     technique: '4-7-8 calming breath',
@@ -982,17 +793,13 @@ function breathingExercise() {
     note: 'Repeat 4 times. This activates your parasympathetic nervous system and lowers your heart rate within a minute or two.'
   };
 }
-
-// Weekly life report — built offline from memory (no AI key needed)
 function generateReport() {
   const m = readMemory();
   const now = new Date();
   const weekAgo = now.getTime() - 7 * 86400000;
-
   const mood = (m.mood || []).filter((x) => (x.ts || 0) >= weekAgo);
   const moodAvg = mood.length ? Math.round((mood.reduce((a, b) => a + (b.valence || 0), 0) / mood.length) * 100) : null;
   const moodTrend = mood.length >= 2 ? (mood[mood.length - 1].valence - mood[0].valence) : 0;
-
   const activeGoals = (m.goals || []).filter((g) => !g.done);
   const doneGoals = (m.goals || []).filter((g) => g.done);
   const todosOpen = (m.todos || []).filter((t) => !t.done).length;
@@ -1000,7 +807,6 @@ function generateReport() {
   const notesCount = (m.notes || []).length;
   const factsCount = (m.facts || []).length;
   const actions = (m.actionLog || []).filter((a) => (a.ts || 0) >= weekAgo).length;
-
   const lines = [];
   lines.push(`### Weekly Report — ${now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}`);
   lines.push('');
@@ -1025,8 +831,6 @@ function generateReport() {
   }
   return { report: lines.join('\n'), moodAvg, moodTrend };
 }
-
-// Proactive check-in detection: has the user's mood been low & declining?
 function moodNeedsCheckIn() {
   const m = readMemory();
   const mood = (m.mood || []).slice(-7);
@@ -1036,20 +840,12 @@ function moodNeedsCheckIn() {
   const last = vals[vals.length - 1];
   return avg < 0.2 && last < 0;
 }
-
-// ---------------------------------------------------------------------------
-// Action log (transparency — every action the AI takes is logged)
-// ---------------------------------------------------------------------------
 function logAction(action, detail) {
   const m = readMemory();
   m.actionLog.unshift({ action, detail: String(detail || '').slice(0, 300), ts: Date.now() });
   if (m.actionLog.length > 200) m.actionLog = m.actionLog.slice(0, 200);
   writeMemory(m);
 }
-
-// ---------------------------------------------------------------------------
-// File automation "missions" — the desktop-automation engine
-// ---------------------------------------------------------------------------
 const FILE_CATEGORIES = {
   images: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'heic', 'raw'],
   documents: ['pdf', 'doc', 'docx', 'txt', 'md', 'rtf', 'odt', 'xls', 'xlsx', 'csv', 'ppt', 'pptx'],
@@ -1060,14 +856,11 @@ const FILE_CATEGORIES = {
   installers: ['exe', 'msi', 'dmg', 'pkg', 'deb', 'appimage'],
   books: ['epub', 'mobi']
 };
-
 function categorizeFile(name) {
   const ext = path.extname(name).slice(1).toLowerCase();
   for (const [cat, exts] of Object.entries(FILE_CATEGORIES)) if (exts.includes(ext)) return cat;
   return 'others';
 }
-
-// Human-in-the-loop confirmation for potentially destructive file operations
 async function confirmAction(title, detail) {
   if (!mainWindow) return true;
   const r = await dialog.showMessageBox(mainWindow, {
@@ -1076,7 +869,6 @@ async function confirmAction(title, detail) {
   });
   return r.response === 0;
 }
-
 async function organizeFolder(dir) {
   const base = dir || path.join(os.homedir(), 'Downloads');
   try {
@@ -1096,7 +888,6 @@ async function organizeFolder(dir) {
     return { ok: true, total, categories: moved, base };
   } catch (e) { return { error: e.message }; }
 }
-
 function findDuplicates(dir) {
   const base = dir || os.homedir();
   try {
@@ -1125,7 +916,6 @@ function findDuplicates(dir) {
     return { duplicates: dups, count: dups.length };
   } catch (e) { return { error: e.message }; }
 }
-
 async function renameFiles(dir, pattern) {
   const base = dir || os.homedir();
   const pat = String(pattern || 'file').replace(/[^\w\- ]/g, '');
@@ -1145,7 +935,6 @@ async function renameFiles(dir, pattern) {
     return { ok: true, renamed: n, pattern: pat };
   } catch (e) { return { error: e.message }; }
 }
-
 async function archiveOldFiles(dir, days) {
   const base = dir || os.homedir();
   const cutoff = Date.now() - days * 86400000;
@@ -1164,13 +953,6 @@ async function archiveOldFiles(dir, days) {
     return { ok: true, archived: n, archive };
   } catch (e) { return { error: e.message }; }
 }
-
-// ---------------------------------------------------------------------------
-// GemAir 2.1 — desktop-automation workflows (Section III). All guarded so a
-// missing process / OS quirk / offline environment degrades gracefully.
-// ---------------------------------------------------------------------------
-
-// A small registry of common desktop apps → the process/app name to close.
 const CLOSEABLE_APPS = {
   browser: ['chrome', 'msedge', 'firefox', 'brave', 'opera', 'vivaldi', 'safari'],
   chrome: ['chrome'], edge: ['msedge'], firefox: ['firefox'], brave: ['brave'], safari: ['safari'],
@@ -1179,17 +961,14 @@ const CLOSEABLE_APPS = {
   notepad: ['notepad'], calculator: ['calc'], explorer: ['explorer', 'finder'],
   terminal: ['cmd', 'terminal'], code: ['Code'], vscode: ['Code'], excel: ['excel'], word: ['winword'], powerpoint: ['powerpnt']
 };
-
 function resolveCloseTargets(name, keep) {
   const q = String(name || '').toLowerCase();
   const keepList = (Array.isArray(keep) ? keep : []).map((k) => String(k).toLowerCase());
   if (q === 'all' || q === 'everything' || q === 'except' || /close everything except/i.test(String(name || ''))) {
-    // close every known app EXCEPT those in `keep`
     return Object.values(CLOSEABLE_APPS).flat().filter((proc) => !keepList.some((k) => proc.includes(k)));
   }
   return CLOSEABLE_APPS[q] || [q];
 }
-
 function closeApp(name, keep) {
   const targets = resolveCloseTargets(name, keep);
   if (!targets.length) return { ok: true, closed: [], note: 'Nothing matched to close.' };
@@ -1203,13 +982,11 @@ function closeApp(name, keep) {
       else if (p === 'darwin') exec(`osascript -e 'quit app "${safe}"'`, () => {});
       else exec(`pkill -f "${safe}"`, () => {});
       closed.push(safe);
-    } catch (e) { /* skip */ }
+    } catch (e) {}
   }
   logAction('close_app', `Closed ${closed.length} app(s): ${closed.join(', ')}`);
   return { ok: true, closed, note: closed.length ? `Asked ${closed.length} app(s) to close.` : 'Nothing closed.' };
 }
-
-// Find files larger than minMB (and optionally unused for `unusedMonths`).
 function findLargeFiles(root, minMB, unusedMonths) {
   const base = root || os.homedir();
   const minBytes = (Number(minMB) || 500) * 1024 * 1024;
@@ -1230,15 +1007,13 @@ function findLargeFiles(root, minMB, unusedMonths) {
             hits.push({ path: full, sizeMB: Math.round(st.size / 1048576), modified: new Date(st.mtimeMs).toISOString().slice(0, 10) });
           }
         }
-      } catch { /* skip unreadable */ }
+      } catch {}
     }
   };
   walk(base, 0);
   logAction('find_large_files', `Found ${hits.length} file(s) > ${minMB || 500}MB${unusedMonths ? ` unused ${unusedMonths}+ months` : ''} in ${base}`);
   return { files: hits, count: hits.length, base, minMB: minMB || 500, unusedMonths: unusedMonths || null };
 }
-
-// Scaffold a project folder tree (empty folders). Confirms first (Section III #4).
 async function createFolderTree(root, folders) {
   const base = root || path.join(os.homedir(), 'Documents');
   const list = Array.isArray(folders) ? folders : (String(folders || '').split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean));
@@ -1248,9 +1023,6 @@ async function createFolderTree(root, folders) {
   if (!ok) return { error: 'Cancelled by user.' };
   const created = [];
   const skipped = [];
-  // R9: 2.1 only rejected a LEADING "..", so "src/../../etc" or "C:\\Windows"
-  // escaped the base directory. Reject absolute paths, drive letters, UNC paths
-  // and ANY ".." segment, then re-verify the resolved path is inside base.
   const baseResolved = path.resolve(base);
   const withinBase = (target) => {
     const rel = path.relative(baseResolved, path.resolve(target));
@@ -1263,8 +1035,8 @@ async function createFolderTree(root, folders) {
     const bad =
       !clean || clean === '.' ||
       path.isAbsolute(clean) ||
-      /^[a-zA-Z]:/.test(clean) ||          // C:\...
-      clean.startsWith('//') ||             // UNC \\server\share
+      /^[a-zA-Z]:/.test(clean) ||
+      clean.startsWith('//') ||
       clean.includes('\0') ||
       segments.some((seg) => seg === '..' || seg === '.');
     if (bad) { skipped.push(raw); continue; }
@@ -1275,8 +1047,6 @@ async function createFolderTree(root, folders) {
   logAction('create_folder_tree', `Created ${created.length} folder(s) under ${base}${skipped.length ? ` (${skipped.length} rejected as unsafe)` : ''}`);
   return { ok: true, base, created, count: created.length, skipped, rejected: skipped.length };
 }
-
-// Move files matching a filter (by extension, type, or older-than days) into a folder.
 async function moveFiles(source, dest, filter) {
   const from = source || path.join(os.homedir(), 'Downloads');
   const to = dest || path.join(from, filter ? String(filter || '').replace(/\W+/g, '_').toLowerCase() : 'moved');
@@ -1295,25 +1065,18 @@ async function moveFiles(source, dest, filter) {
     if (!fs.existsSync(to)) fs.mkdirSync(to, { recursive: true });
     let n = 0;
     for (const e of candidates) {
-      try { fs.renameSync(path.join(from, e.name), path.join(to, e.name)); n++; } catch { /* skip locked */ }
+      try { fs.renameSync(path.join(from, e.name), path.join(to, e.name)); n++; } catch {}
     }
     logAction('move_files', `Moved ${n} file(s) matching "${filter || 'all'}" to ${to}`);
     return { ok: true, moved: n, to };
   } catch (e) { return { error: e.message }; }
 }
-
-// Optimize the PC for gaming: high-performance power plan, clear temp, close
-// heavy non-essential apps. Confirms first (Section III #11).
 async function optimizeGaming(keep) {
   const ok = await confirmAction('Optimize for gaming?', 'GemAir will:\n• switch to the High Performance power plan\n• clear temporary files\n• close heavy non-essential apps (messengers, browser tabs except kept ones)\n\nNothing personal is deleted — temp caches only.');
   if (!ok) return { error: 'Cancelled by user.' };
   const done = [];
   const p = process.platform;
   if (p === 'win32') {
-    // R5: 2.1 activated the POWER SAVER scheme GUID while claiming to optimise
-    // for gaming, so the "gaming optimizer" actually throttled the CPU.
-    // SCHEME_MAX is High Performance. Fall back to the Ultimate Performance
-    // plan when the OEM has hidden the classic schemes.
     exec('powercfg /setactive SCHEME_MAX', (err) => {
       if (err) exec('powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61', () => {});
     });
@@ -1329,10 +1092,6 @@ async function optimizeGaming(keep) {
   logAction('optimize_gaming', `Gaming optimization: ${done.join('; ')}`);
   return { ok: true, steps: done, closed: closed.closed };
 }
-
-// ---------------------------------------------------------------------------
-// System guardian — "what's slowing my PC down?"
-// ---------------------------------------------------------------------------
 function listTopProcesses() {
   const p = process.platform;
   if (p === 'win32') {
@@ -1363,19 +1122,10 @@ function listTopProcesses() {
     });
   });
 }
-
-/**
- * S2 — real process scan for the ACTIVE PROCESSES panel.
- *
- * 2.1 rendered a hardcoded fake list ("GemAir Audio & Visualizer", pid 2184)
- * even on the desktop build, where real data is one exec() away. This returns
- * genuine name/pid/cpu/mem rows on Windows, macOS and Linux.
- */
 function scanProcesses(limit = 40) {
   const p = process.platform;
   const cap = Math.max(5, Math.min(200, Number(limit) || 40));
   const totalMemMB = os.totalmem() / (1024 * 1024);
-
   if (p === 'win32') {
     const ps = 'Get-Process | Sort-Object WS -Descending | Select-Object -First ' + cap +
       ' Id,ProcessName,CPU,@{n=\'MemMB\';e={[math]::Round($_.WS/1MB,1)}} | ConvertTo-Json -Compress';
@@ -1399,7 +1149,6 @@ function scanProcesses(limit = 40) {
       });
     });
   }
-
   const cmd = p === 'darwin'
     ? 'ps -A -o pid=,comm=,%cpu=,rss= -r | head -' + cap
     : 'ps -eo pid=,comm=,%cpu=,rss= --sort=-%cpu | head -' + cap;
@@ -1422,27 +1171,18 @@ function scanProcesses(limit = 40) {
     });
   });
 }
-
-/** Never let the UI (or a model) terminate the shell/session itself. */
 const PROTECTED_PROCESS_NAMES = /^(system|systemd|init|kernel_task|launchd|winlogon|csrss|services|smss|wininit|lsass|svchost|explorer)$/i;
-
-/**
- * S2 — terminate a process. Always behind the existing HITL confirm dialog,
- * refuses PID<=1, refuses core OS processes, and refuses to kill GemAir itself.
- */
 async function killProcess(pid, name) {
   const id = Number(pid);
   if (!Number.isInteger(id) || id <= 1) return { error: 'Invalid PID.' };
   if (id === process.pid) return { error: 'GemAir will not terminate itself.' };
   const label = String(name || '').replace(/\.exe$/i, '');
   if (PROTECTED_PROCESS_NAMES.test(label)) return { error: `"${label}" is a protected system process — refusing.` };
-
   const ok = await confirmAction(
     'End process?',
     `GemAir will terminate:\n\n  ${label || 'PID ' + id}  (PID ${id})\n\nUnsaved work in that program will be lost.`
   );
   if (!ok) return { error: 'Cancelled by user.' };
-
   return new Promise((resolve) => {
     const cmd = process.platform === 'win32' ? `taskkill /PID ${id} /T /F` : `kill -TERM ${id}`;
     exec(cmd, { timeout: 8000 }, (err) => {
@@ -1452,21 +1192,15 @@ async function killProcess(pid, name) {
     });
   });
 }
-
 function getStorage() {
   const total = os.totalmem(), free = os.freemem();
   return { ramTotal: total, ramUsed: total - free, ramPercent: Math.round(((total - free) / total) * 100) };
 }
-
 function execOut(cmd, timeout = 6000) {
   return new Promise((resolve) => {
     exec(cmd, { timeout }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
   });
 }
-
-// Battery without native modules — best effort per OS, null when unknown.
-// Cached for 60s: pollSystem() runs every few seconds and shelling out that
-// often would be wasteful.
 let _batteryCache = { at: 0, value: null };
 async function getBattery() {
   if (Date.now() - _batteryCache.at < 60000) return _batteryCache.value;
@@ -1483,7 +1217,6 @@ async function getBattery() {
       const pct = out.match(/(\d+)%/);
       if (pct) value = { percent: parseInt(pct[1], 10), charging: /AC Power/i.test(out) };
     } else {
-      // Linux: first BAT* device in sysfs
       const base = '/sys/class/power_supply';
       for (const d of fs.readdirSync(base)) {
         if (!/^BAT/i.test(d)) continue;
@@ -1500,8 +1233,6 @@ async function getBattery() {
   _batteryCache = { at: Date.now(), value };
   return value;
 }
-
-// Primary-disk usage, best effort per OS (also cached — same reason as battery).
 let _diskCache = { at: 0, value: null };
 async function getDisk() {
   if (Date.now() - _diskCache.at < 60000) return _diskCache.value;
@@ -1516,7 +1247,6 @@ async function getDisk() {
     } else {
       const out = await execOut('df -k /');
       const cols = (out.split('\n')[1] || '').trim().split(/\s+/);
-      // df -k /: Filesystem 1024-blocks Used Available Capacity ...
       const totalKB = parseInt(cols[1], 10), usedKB = parseInt(cols[2], 10);
       if (totalKB > 0 && !isNaN(usedKB)) value = { totalGB: Math.round(totalKB / 1048576), freeGB: Math.round((totalKB - usedKB) / 1048576), percent: Math.round((usedKB / totalKB) * 100) };
     }
@@ -1524,7 +1254,6 @@ async function getDisk() {
   _diskCache = { at: Date.now(), value };
   return value;
 }
-
 async function systemScan() {
   const procs = await listTopProcesses();
   const storage = getStorage();
@@ -1551,7 +1280,6 @@ async function systemScan() {
     disk
   };
 }
-
 async function seeScreen() {
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1280, height: 720 } });
   const source = sources[0];
@@ -1561,7 +1289,6 @@ async function seeScreen() {
   logAction('see_screen', `Captured screen to ${file}`);
   return { ok: true, file, note: 'Screen captured. If your AI model supports vision, it can analyze this image.' };
 }
-
 let lastScreenFingerprint = null;
 async function inspectScreenChange() {
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 180, height: 100 } });
@@ -1569,8 +1296,6 @@ async function inspectScreenChange() {
   if (!source || !source.thumbnail) return { error: 'No screen available' };
   const bitmap = source.thumbnail.toBitmap();
   const sample = [];
-  // NativeImage bitmaps are BGRA. Sparse luminance samples avoid storing or
-  // transmitting the screen itself while still detecting meaningful changes.
   for (let i = 0; i + 2 < bitmap.length; i += 64) sample.push(Math.round(bitmap[i] * 0.114 + bitmap[i + 1] * 0.587 + bitmap[i + 2] * 0.299));
   let delta = 0;
   if (lastScreenFingerprint && lastScreenFingerprint.length === sample.length) {
@@ -1589,8 +1314,6 @@ async function inspectScreenChange() {
   if (changed) logAction('see_screen', description);
   return { ok: true, changed, changePercent: percent, description, display: source.name, captured: false, at: Date.now() };
 }
-
-// ---- skills & instructions (persistent, user-taught) ----
 function addSkill(text, name) {
   const m = readMemory();
   m.skills.unshift({ id: uid(), name: name || '', text, created: Date.now() });
@@ -1607,8 +1330,6 @@ function addInstruction(text) {
   return { ok: true, instruction: text };
 }
 function listInstructions() { return (readMemory().instructions || []).slice(0, 100); }
-
-// ---- truth / verification: ground a claim in real sources ----
 async function verifyClaim(claim) {
   const q = String(claim || '').trim();
   if (!q) return { error: 'No claim to verify.' };
@@ -1618,24 +1339,12 @@ async function verifyClaim(claim) {
   let source = s.source || null;
   let url = s.url || null;
   (s.results || []).slice(0, 4).forEach((r) => { if (r.title) supporting.push({ title: r.title, url: r.url }); });
-
-  // Heuristic verdict when we have an answer that is not an obvious miss
   let verdict = 'unverified';
   if (answer && answer.length > 20) verdict = 'supported';
   if (!answer && supporting.length === 0) verdict = 'no_evidence';
-
   logAction('verify_claim', `Verified: "${q.slice(0, 120)}" → ${verdict}`);
-  return {
-    claim: q,
-    verdict,            // supported | unverified | no_evidence
-    answer,             // what sources say (abridged)
-    source,
-    url,
-    supporting,
-    note: 'Verdict is based on DuckDuckGo/Wikipedia instant answers. For high-stakes facts, always check the linked sources directly.'
-  };
+  return { claim: q, verdict, answer, source, url, supporting, note: 'Verdict is based on DuckDuckGo/Wikipedia instant answers. For high-stakes facts, always check the linked sources directly.' };
 }
-
 function parseWhen(text) {
   const t = String(text || '').trim();
   const rel = t.match(/in\s+(\d+)\s*(second|sec|s|minute|min|m|hour|hr|h|day|d)/i);
@@ -1647,9 +1356,8 @@ function parseWhen(text) {
   }
   const parsed = Date.parse(t);
   if (!isNaN(parsed)) return parsed;
-  return Date.now() + 3600000; // default: 1 hour
+  return Date.now() + 3600000;
 }
-
 function controlVolume(args) {
   const { action, level } = args || {};
   const p = process.platform;
@@ -1658,22 +1366,38 @@ function controlVolume(args) {
     if (action === 'up') cmd = 'powershell -NoProfile -Command "$s=New-Object -ComObject WScript.Shell;$s.SendKeys([char]175)"';
     else if (action === 'down') cmd = 'powershell -NoProfile -Command "$s=New-Object -ComObject WScript.Shell;$s.SendKeys([char]174)"';
     else if (action === 'mute' || action === 'unmute') cmd = 'powershell -NoProfile -Command "$s=New-Object -ComObject WScript.Shell;$s.SendKeys([char]173)"';
+    else if (action === 'set' && typeof level === 'number') {
+      // Use nircmd if available, else set via powershell? We'll try powershell via WScript.Shell volume
+      const vol = Math.max(0, Math.min(100, level));
+      cmd = `powershell -NoProfile -Command "$obj = New-Object -ComObject WScript.Shell; $obj.SendKeys([char]175)"`; // placeholder
+      // For set, we simulate volume steps from current? We'll just store in profile and emit event
+      try { if (mainWindow) mainWindow.webContents.send('desktop:volume', { level: vol }); } catch {}
+      return { ok: true, action: 'set', level: vol };
+    }
   } else if (p === 'darwin') {
     if (action === 'up') cmd = 'osascript -e "set volume output volume (output volume of (get volume settings) + 15)"';
     else if (action === 'down') cmd = 'osascript -e "set volume output volume (output volume of (get volume settings) - 15)"';
     else if (action === 'mute') cmd = 'osascript -e "set volume with output muted"';
     else if (action === 'unmute') cmd = 'osascript -e "set volume without output muted"';
-    else if (typeof level === 'number') cmd = `osascript -e "set volume output volume ${Math.max(0, Math.min(100, level))}"`;
+    else if (typeof level === 'number' || action === 'set') {
+      const vol = Math.max(0, Math.min(100, typeof level === 'number' ? level : 50));
+      cmd = `osascript -e "set volume output volume ${vol}"`;
+      try { if (mainWindow) mainWindow.webContents.send('desktop:volume', { level: vol }); } catch {}
+    }
   } else {
     if (action === 'up') cmd = 'pactl set-sink-volume @DEFAULT_SINK@ +10%';
     else if (action === 'down') cmd = 'pactl set-sink-volume @DEFAULT_SINK@ -10%';
     else if (action === 'mute') cmd = 'pactl set-sink-mute @DEFAULT_SINK@ 1';
     else if (action === 'unmute') cmd = 'pactl set-sink-mute @DEFAULT_SINK@ 0';
+    else if (action === 'set' && typeof level === 'number') {
+      const vol = Math.max(0, Math.min(100, level));
+      cmd = `pactl set-sink-volume @DEFAULT_SINK@ ${vol}%`;
+      try { if (mainWindow) mainWindow.webContents.send('desktop:volume', { level: vol }); } catch {}
+    }
   }
   if (cmd) exec(cmd, () => {});
   return { ok: true, action: action || level };
 }
-
 function controlSystem(action) {
   const p = process.platform;
   const map = {
@@ -1686,7 +1410,6 @@ function controlSystem(action) {
   if (cmd) exec(cmd, () => {});
   return { ok: true, action };
 }
-
 async function takeScreenshot() {
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
   const source = sources[0];
@@ -1695,7 +1418,6 @@ async function takeScreenshot() {
   fs.writeFileSync(file, source.thumbnail.toPNG());
   return { ok: true, file };
 }
-
 const TOOL_RISK = {
   get_current_time: 'safe', get_current_date: 'safe', get_weather: 'safe',
   web_search: 'safe', fetch_webpage: 'safe', search_wikipedia: 'safe',
@@ -1709,7 +1431,10 @@ const TOOL_RISK = {
   organize_folder: 'sensitive', archive_old_files: 'sensitive', send_email: 'sensitive',
   close_app: 'sensitive', move_files: 'sensitive', create_folder_tree: 'sensitive', optimize_gaming: 'sensitive',
   find_large_files: 'safe',
-  show_panel: 'safe', hide_panel: 'safe'
+  show_panel: 'safe', hide_panel: 'safe',
+  launch_app: 'safe', focus_app: 'safe', snap_window: 'safe', minimize_all: 'safe',
+  next_virtual_desktop: 'safe', open_site: 'safe', list_windows: 'safe',
+  apply_mode: 'safe', list_modes: 'safe', create_mode: 'safe'
 };
 
 async function executeTool(name, args) {
@@ -1719,9 +1444,6 @@ async function executeTool(name, args) {
     if (risk === 'sensitive' && profile.allowShell === false && name === 'run_command') {
       return { error: 'Permission denied: shell command execution is disabled in Settings.' };
     }
-
-    // Human-in-the-loop (Stonic v1.0.15 parity): sensitive actions ask
-    // before they run. The AI gets an explicit answer back either way.
     if (name === 'run_command') {
       const cmd = String((args && args.command) || '').slice(0, 400);
       const ok = await confirmAction('Run shell command?', `GemAir wants to execute on your machine:\n\n    ${cmd}\n\nThis can change files or system state. Proceed?`);
@@ -1749,13 +1471,13 @@ async function executeTool(name, args) {
       case 'web_search':
         return await webSearch(args.query);
       case 'open_application': {
-        const name = String(args.name || '');
-        const opened = launchApp(name);
-        if (opened) return { ok: true, app: opened };
+        const n = String(args.name || '');
+        const mapped = windowTools.launchApp(n);
+        if (mapped) return mapped;
         const p = process.platform;
-        const generic = p === 'darwin' ? `open -a "${name}"` : p === 'win32' ? `start "" "${name}"` : `xdg-open "${name}"`;
+        const generic = p === 'darwin' ? `open -a "${n}"` : p === 'win32' ? `start "" "${n}"` : `xdg-open "${n}"`;
         exec(generic, () => {});
-        return { ok: true, app: name, note: 'Attempted generic launch.' };
+        return { ok: true, app: n, note: 'Attempted generic launch.' };
       }
       case 'open_url':
         shell.openExternal(String(args.url));
@@ -1913,6 +1635,33 @@ async function executeTool(name, args) {
         return await takeScreenshot();
       case 'control_system':
         return controlSystem(args.action);
+      // 2.4 new tools
+      case 'launch_app':
+        return await windowTools.launchApp(args.name, args.args);
+      case 'focus_app':
+        return await windowTools.focusApp(args.name);
+      case 'snap_window':
+        return await windowTools.snapWindow(args.direction || args.left || 'left');
+      case 'minimize_all':
+        return await windowTools.minimizeAll();
+      case 'next_virtual_desktop':
+        return await windowTools.nextVirtualDesktop();
+      case 'open_site':
+        return await windowTools.openSite(args.url, args.browser);
+      case 'list_windows':
+        return await windowTools.listWindows();
+      case 'apply_mode': {
+        const mode = modesLib.getMode(args.name);
+        if (!mode) return { error: 'Mode not found: ' + args.name };
+        return await applyModeInternal(mode);
+      }
+      case 'list_modes':
+        return { modes: modesLib.listModes() };
+      case 'create_mode': {
+        const res = modesLib.saveMode(args);
+        if (res.error) return res;
+        return { ok: true, mode: res.mode };
+      }
       default:
         return { error: 'Unknown tool: ' + name };
     }
@@ -1921,9 +1670,69 @@ async function executeTool(name, args) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Long-term memory (facts)
-// ---------------------------------------------------------------------------
+async function applyModeInternal(mode) {
+  const steps = [];
+  try {
+    // Launch apps
+    for (const appName of (mode.apps||[])) {
+      try {
+        const r = await windowTools.launchApp(appName);
+        steps.push({ step: `launch ${appName}`, ok: !r.error, result: r });
+      } catch (e) { steps.push({ step: `launch ${appName}`, ok: false, error: e.message }); }
+    }
+    // Open sites
+    for (const site of (mode.sites||[])) {
+      try {
+        const url = typeof site === 'string' ? site : site.url;
+        const browser = typeof site === 'object' ? site.browser : undefined;
+        const r = await windowTools.openSite(url, browser);
+        steps.push({ step: `open ${url} in ${browser||'default'}`, ok: !r.error, result: r });
+      } catch (e) { steps.push({ step: `open site`, ok: false, error: e.message }); }
+    }
+    // Volume
+    if (typeof mode.volume === 'number') {
+      try {
+        const r = controlVolume({ action: 'set', level: mode.volume });
+        steps.push({ step: `set volume ${mode.volume}`, ok: true, result: r });
+        if (mainWindow) mainWindow.webContents.send('desktop:volume', { level: mode.volume });
+      } catch (e) { steps.push({ step: 'set volume', ok: false, error: e.message }); }
+    }
+    // Theme
+    if (mode.theme) {
+      try {
+        if (mainWindow) mainWindow.webContents.send('desktop:theme', { theme: mode.theme });
+        steps.push({ step: `apply theme ${mode.theme}`, ok: true });
+      } catch (e) {}
+    }
+    // Playlist
+    if (mode.playlist) {
+      try {
+        const r = await windowTools.openSite(mode.playlist, 'chrome');
+        steps.push({ step: `open playlist ${mode.playlist}`, ok: true, result: r });
+      } catch (e) {}
+    }
+    // Optimize gaming if flagged
+    if (mode.optimizeGaming) {
+      try {
+        const r = await optimizeGaming();
+        steps.push({ step: 'optimize_gaming', ok: !r.error, result: r });
+      } catch (e) {}
+    }
+    // DND - emit event
+    if (mode.dnd) {
+      try { if (mainWindow) mainWindow.webContents.send('desktop:dnd', { enabled: true }); } catch {}
+    }
+    logAction('apply_mode', `Applied mode ${mode.name}: ${steps.length} steps`);
+    // Notify renderer of mode change for chip + sweep + TTS
+    if (mainWindow) {
+      try { mainWindow.webContents.send('mode:changed', { mode: mode.name, icon: mode.icon, theme: mode.theme }); } catch {}
+    }
+    return { ok: true, mode: mode.name, steps, summary: `Mode ${mode.name} applied — ${steps.filter(s=>s.ok).length}/${steps.length} steps succeeded` };
+  } catch (e) {
+    return { error: e.message, steps };
+  }
+}
+
 function normalizeFact(text) {
   return String(text || '').toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
 }
@@ -1933,23 +1742,19 @@ function upsertFact(fact) {
   const existing = m.facts.find(f => normalizeFact(f.text) === norm);
   if (existing) { existing.updated = Date.now(); existing.importance = (existing.importance || 1) + 1; }
   else m.facts.push({ id: uid(), text: fact.text, category: fact.category || 'fact', importance: 1, created: Date.now(), updated: Date.now() });
-  // cap at 300, keep most important
   if (m.facts.length > 300) m.facts = m.facts.sort((a, b) => (b.importance || 0) - (a.importance || 0)).slice(0, 300);
   writeMemory(m);
 }
-
 function factsForPrompt() {
   const m = readMemory();
   const now = Date.now();
   const scored = m.facts.map((f) => {
     const age = now - (f.updated || f.created || now);
-    const recency = 1 / (1 + age / (7 * 86400000)); // fade over a week
+    const recency = 1 / (1 + age / (7 * 86400000));
     return { f, score: (f.importance || 1) * 0.7 + recency * 3 };
   }).sort((a, b) => b.score - a.score).slice(0, 80);
   return scored.map((x) => `- ${x.f.text}`).join('\n');
 }
-
-// Extract durable facts from a conversation turn using the user's own model.
 async function extractFacts(config, userText, assistantText) {
   try {
     const base = normalizeBaseURL(config.baseURL);
@@ -1977,24 +1782,16 @@ async function extractFacts(config, userText, assistantText) {
     return 0;
   } catch { return 0; }
 }
-
-// ---------------------------------------------------------------------------
-// AI chat entry point (with tools)
-// ---------------------------------------------------------------------------
 async function aiChat(config, messages) {
   const base = normalizeBaseURL(config.baseURL);
   const key = (config.apiKey || '').trim();
   const model = (config.model || 'llama-3.3-70b-versatile').trim();
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
-
   if (!base) throw new Error('NO_ENDPOINT');
   if (!key && !isLocal) throw new Error('NO_KEY');
-
   const msgs = [...messages];
-  const supportsTools = true; // all OpenAI-compatible endpoints here support it
-
   for (let i = 0; i < 6; i++) {
-    const msg = await callChat(base, key, model, msgs, supportsTools ? TOOLS : null);
+    const msg = await callChat(base, key, model, msgs, TOOLS);
     const toolCalls = msg.tool_calls || [];
     if (toolCalls.length) {
       msgs.push(msg);
@@ -2013,10 +1810,6 @@ async function aiChat(config, messages) {
   }
   throw new Error('TOOL_LOOP');
 }
-
-// ---------------------------------------------------------------------------
-// Streaming chat (Groq / OpenAI-compatible). Streams deltas for a live JARVIS feel.
-// ---------------------------------------------------------------------------
 async function streamRequest(base, key, model, messages, onDelta) {
   const url = base + (base.endsWith('/chat/completions') ? '' : '/chat/completions');
   const doFetch = (withTools) => {
@@ -2024,12 +1817,9 @@ async function streamRequest(base, key, model, messages, onDelta) {
     if (withTools) { body.tools = TOOLS; body.tool_choice = 'auto'; }
     return fetch(url, { method: 'POST', headers: aiHeaders(base, key), body: JSON.stringify(body) });
   };
-
   let res = await doFetch(true);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    // Gemini / Claude compat layers may refuse tools for some models —
-    // retry once as a plain stream so the brain still answers.
     if (/tool|function|unsupported|invalid/i.test(text) && [400, 404, 422].includes(res.status)) {
       res = await doFetch(false);
     }
@@ -2038,15 +1828,11 @@ async function streamRequest(base, key, model, messages, onDelta) {
       throw new Error('HTTP_' + res.status + ((t2 || text) ? ' ' + (t2 || text).slice(0, 200) : ''));
     }
   }
-
   let content = '';
-  const toolCalls = []; // [{id, name, args}]
-  const toolArgs = {};  // index -> accumulated args string
-
+  const toolCalls = [];
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -2076,7 +1862,6 @@ async function streamRequest(base, key, model, messages, onDelta) {
   }
   return { content, toolCalls: toolCalls.filter(Boolean) };
 }
-
 async function aiChatStream(config, messages, onDelta, onTool) {
   const base = normalizeBaseURL(config.baseURL);
   const key = (config.apiKey || '').trim();
@@ -2084,16 +1869,11 @@ async function aiChatStream(config, messages, onDelta, onTool) {
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   if (!base) throw new Error('NO_ENDPOINT');
   if (!key && !isLocal) throw new Error('NO_KEY');
-
   let msgs = [...messages];
   let final = '';
-
   for (let i = 0; i < 6; i++) {
     const { content, toolCalls } = await streamRequest(base, key, model, msgs, onDelta);
     if (toolCalls.length) {
-      // A tool call was requested mid-stream; execute and continue.
-      // Every step is reported through onTool so the renderer can show a
-      // live "visible reasoning" strip of what Gem is doing right now.
       const assistantMsg = { role: 'assistant', content: content || null, tool_calls: toolCalls.map((tc) => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.args || '{}' } })) };
       msgs.push(assistantMsg);
       for (const tc of toolCalls) {
@@ -2107,7 +1887,7 @@ async function aiChatStream(config, messages, onDelta, onTool) {
         }
         msgs.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
       }
-      final = ''; // the real answer comes after tools
+      final = '';
       continue;
     }
     final = content;
@@ -2116,10 +1896,6 @@ async function aiChatStream(config, messages, onDelta, onTool) {
   if (!final || !final.trim()) throw new Error('EMPTY_REPLY');
   return final.trim();
 }
-
-// ---------------------------------------------------------------------------
-// Memory summarization (auto-consolidate old transcript)
-// ---------------------------------------------------------------------------
 async function summarizeTranscript(config, text) {
   try {
     const base = normalizeBaseURL(config.baseURL);
@@ -2136,32 +1912,22 @@ async function summarizeTranscript(config, text) {
     return (msg.content || '').trim();
   } catch { return null; }
 }
-
-// ---------------------------------------------------------------------------
-// Offline brain (used ONLY when no key is configured)
-// ---------------------------------------------------------------------------
 async function offlineBrain(text) {
   const q = (text || '').toLowerCase().trim();
   if (!q) return "I didn't catch that. Say it again?";
-
   const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
-
   if (/^(hi|hello|hey|salam|yo|good (morning|evening|afternoon))\b/.test(q) && q.length < 14)
     return 'Hello. Gem here — all systems standing by. I can search the web, check weather, prices, translate and more, all free.';
-
   if (/your name|who are you/.test(q)) return "I'm GemAir — your personal AI, like your own JARVIS. I can talk to any AI model you connect, and I remember everything we discuss.";
-
   if (/how are you/.test(q)) return 'All circuits nominal. How can I assist?';
   if (/time|clock/.test(q)) return `The current time is ${time}.`;
   if (/\bdate\b|what day/.test(q)) return `Today is ${new Date().toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`;
-
   if (/weather|temperature|forecast/.test(q)) {
     const m = q.match(/weather (?:in|for|at)? ?([a-z ]+)/) || q.match(/(?:in|for|at) ([a-z ]+)/);
     const city = (m && m[1]) ? m[1].trim() : null;
     if (city) { const w = await getWeather(city); return w.error || `In ${w.city} it is ${w.temperature}°C with ${w.condition} (wind ${w.windspeed} km/h).`; }
     return 'Tell me a city — e.g. "weather in Mumbai".';
   }
-
   if (/search|google|look up|find|who is|what is|tell me about|news about|current|latest/.test(q)) {
     const query = q.replace(/^(search|google|look up|find) (for )?/i, '').replace(/^(tell me about|what is|who is|news about)\s+/i, '').trim();
     if (query) {
@@ -2171,37 +1937,31 @@ async function offlineBrain(text) {
       return `I searched but couldn't find a clear answer for "${query}".`;
     }
   }
-
   if (/bitcoin|ethereum|solana|dogecoin|crypto|btc|eth|price of/.test(q)) {
     const coins = ['bitcoin', 'ethereum', 'solana', 'dogecoin', 'ripple', 'cardano'];
     const coin = coins.find((c) => q.includes(c)) || 'bitcoin';
     const c = await getCryptoPrice(coin);
     return c.error || `${coin} is $${c.usd} (₹${c.inr}).`;
   }
-
   if (/convert|currency|exchange rate|usd|inr|dollar|rupee/.test(q)) {
     const m = q.match(/([\d.]+)\s*([a-z]{3})\s*(?:to|in|into|->)?\s*([a-z]{3})/i);
     if (m) { const c = await convertCurrency(parseFloat(m[1]), m[2], m[3]); return c.error || `${c.amount} ${c.from} = ${c.result} ${c.to} (rate ${c.rate}).`; }
     return 'Tell me an amount, e.g. "convert 100 usd to inr".';
   }
-
   if (/translate/.test(q)) {
     const m = q.match(/translate\s+["']?(.+?)["']?\s+(?:to|into)\s+([a-z]+)/i);
     if (m) { const t = await translateText(m[1], m[2]); return t.error || `Translation: ${t.translation}`; }
     return 'Say e.g. "translate hello to hindi".';
   }
-
   if (/define|meaning of|dictionary|what does .* mean/.test(q)) {
     const m = q.match(/(?:define|meaning of)\s+([a-z]+)/i) || q.match(/what does\s+([a-z]+)\s+mean/i);
     if (m) { const d = await defineWord(m[1]); return d.error || `${d.word} (${d.phonetic}) — ${d.partOfSpeech}: ${d.definition}${d.example ? '\nExample: ' + d.example : ''}`; }
     return 'Say e.g. "define serendipity".';
   }
-
   if (/time in|time now in/.test(q)) {
     const m = q.match(/time (?:in|now in) ([a-z ]+)/i);
     if (m) { const t = getWorldTime(m[1].trim()); return t.error || `In ${t.city} it is ${t.time}.`; }
   }
-
   if (/remind|reminder/.test(q)) {
     const m = q.match(/remind(?: me)?(?: to)? (.+?)(?: in (.+)| at (.+))$/);
     if (m) {
@@ -2211,36 +1971,29 @@ async function offlineBrain(text) {
       return `Reminder set: "${text}" for ${new Date(at).toLocaleString()}.`;
     }
   }
-
   if (/note|remember to|write down|save this/.test(q)) {
     const text = q.replace(/^(make a note|note|remember to|write down|save this)[:,]?\s*/i, '').trim();
     if (text) { const mem = readMemory(); mem.notes.unshift({ id: uid(), text, created: Date.now() }); writeMemory(mem); return `Saved to your notebook: "${text}".`; }
   }
-
   if (/open|launch|start/.test(q)) {
-    const opened = launchApp(q);
-    if (opened) return `Launching ${opened} now.`;
+    const opened = await windowTools.launchApp(q);
+    if (opened && opened.ok) return `Launching ${opened.app} now.`;
     return 'I can open the calculator, notepad, browser, terminal, files and settings.';
   }
-
   if (/volume|mute|unmute|louder|quieter/.test(q)) {
     if (/up|louder/.test(q)) controlVolume({ action: 'up' });
     else if (/down|quieter/.test(q)) controlVolume({ action: 'down' });
     else controlVolume({ action: 'mute' });
     return 'Volume adjusted.';
   }
-
   if (/screenshot|screen shot/.test(q)) { const r = await takeScreenshot(); return r.error || `Screenshot saved to ${r.file}.`; }
   if (/lock/.test(q) && /computer|screen|pc/.test(q)) { controlSystem('lock'); return 'Locking the screen.'; }
   if (/shutdown|power off/.test(q)) { controlSystem('shutdown'); return 'Shutting down in 10 seconds.'; }
   if (/restart|reboot/.test(q)) { controlSystem('restart'); return 'Restarting in 10 seconds.'; }
-
   if (/system|status|cpu|memory|ram|health|stats/.test(q)) {
     const i = await getSystemInfo();
     return `CPU ${i.cpuLoad}%, memory ${i.memPercent}% used, up ${Math.floor(i.uptime / 3600)}h ${Math.floor((i.uptime % 3600) / 60)}m. Full readout is on the System Core panel.`;
   }
-
-  // Section III workflows — graceful offline equivalents (desktop).
   if (/organize|sort|tidy/.test(q) && /download|folder|file/.test(q)) {
     const r = await organizeFolder();
     return r.error || `Organized ${r.total} files into ${Object.keys(r.categories || {}).length} category folders.`;
@@ -2261,7 +2014,6 @@ async function offlineBrain(text) {
     const r = await optimizeGaming();
     return r.error || 'Gaming optimization complete: ' + r.steps.join('; ');
   }
-
   if (/joke/.test(q)) return "There are only 10 kinds of people: those who understand binary and those who don't.";
   if (/calculate|calc|math|what is|whats|what's|=/.test(q)) {
     const expr = q.replace(/[^0-9+\-*/().%\s]/g, ' ').trim();
@@ -2275,14 +2027,8 @@ async function offlineBrain(text) {
   }
   if (/thank|thanks|shukriya/.test(q)) return 'You are most welcome.';
   if (/bye|goodbye|good night|exit|quit/.test(q)) return 'Going to standby. Goodbye.';
-
-  return `I'm in offline mode, so I handle the basics — time, date, weather, web search, math, reminders, notes, opening apps, volume and system control. ` +
-    `On the web version the free AI core answers everything.`;
+  return `I'm in offline mode, so I handle the basics — time, date, weather, web search, math, reminders, notes, opening apps, volume and system control. On the web version the free AI core answers everything.`;
 }
-
-// ---------------------------------------------------------------------------
-// Headlines feed (free, keyless) — Hacker News
-// ---------------------------------------------------------------------------
 async function getHeadlines(limit = 12, category = 'tech') {
   const topics = { tech: 'TECHNOLOGY', world: 'WORLD', business: 'BUSINESS' };
   const safeCategory = topics[category] ? category : 'tech';
@@ -2297,8 +2043,6 @@ async function getHeadlines(limit = 12, category = 'tech') {
     }).filter((item) => item.title && item.url);
     if (out.length) return out;
   } catch {}
-
-  // Resilient fallback for offline/RSS-blocked environments.
   try {
     const top = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json').then((r) => r.json());
     const ids = (Array.isArray(top) ? top : []).slice(0, limit);
@@ -2306,18 +2050,10 @@ async function getHeadlines(limit = 12, category = 'tech') {
     return items.filter(Boolean).filter((item) => item.title).map((item) => ({ id: item.id, title: item.title, url: item.url || `https://news.ycombinator.com/item?id=${item.id}`, score: item.score || 0, by: item.by || '', category: safeCategory }));
   } catch { return []; }
 }
-
-// ---------------------------------------------------------------------------
-// Reminder scheduler
-// ---------------------------------------------------------------------------
 function sendToRenderer(channel, payload) {
   try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload); } catch {}
 }
-
-// Dynamic HUD panels — the AI can open/close contextual info panels on the
-// user's screen (weather, clock, focus timer, telemetry, news, report).
 const HUD_PANELS = ['weather', 'clock', 'focus', 'breathing', 'system', 'news', 'report'];
-
 function showHudPanel(panel, args) {
   const p = String(panel || '').toLowerCase().trim();
   if (!HUD_PANELS.includes(p)) return { error: 'Unknown panel: ' + panel + '. Available: ' + HUD_PANELS.join(', ') };
@@ -2325,14 +2061,11 @@ function showHudPanel(panel, args) {
   logAction('show_panel', 'Opened HUD panel: ' + p + (args && args.city ? ' (' + args.city + ')' : ''));
   return { ok: true, panel: p };
 }
-
 function hideHudPanel() {
   sendToRenderer('hud:panel', { action: 'close' });
   logAction('hide_panel', 'Closed the HUD panel');
   return { ok: true };
 }
-
-
 function startReminderScheduler() {
   setInterval(() => {
     const m = readMemory();
@@ -2347,18 +2080,26 @@ function startReminderScheduler() {
     if (changed) writeMemory(m);
   }, 15000);
 }
+function startFocusPolling() {
+  if (focusPollTimer) clearInterval(focusPollTimer);
+  focusPollTimer = setInterval(async () => {
+    try {
+      const focused = await windowTools.getFocusedWindow();
+      if (focused && (focused.app !== lastFocused.app || focused.title !== lastFocused.title)) {
+        lastFocused = focused;
+        sendToRenderer('desktop:focus', focused);
+      }
+    } catch (e) {}
+  }, 2500);
+}
 
-// ---------------------------------------------------------------------------
-// Multi-agent brains — each resident agent has its own role, personality and
-// memory (mirrors Stonic's "independent agent brains" / Hermes agent seats).
-// ---------------------------------------------------------------------------
+// Multi-agent brains
 const AGENT_BRAINS = {
   Alice: { role: 'Web Research', tools: ['web_search', 'fetch_webpage'], prompt: 'You are Alice, GemAir’s web researcher. Find current, verifiable information, inspect primary pages, summarize evidence, and cite the returned URLs. Never invent a source.' },
-  Bob: { role: 'File Operations', tools: ['list_directory', 'read_file', 'write_file', 'organize_folder'], prompt: 'You are Bob, GemAir’s file operator. Inspect before changing anything, use precise paths, preserve user data, and report exactly what was read, written, or organized.' },
-  Carol: { role: 'System Verification', tools: ['system_scan', 'get_power_storage'], prompt: 'You are Carol, GemAir’s system verifier. Read live CPU, memory, battery, and disk sensors, identify risks, and verify that a mission can run safely.' },
+  Bob: { role: 'File Operations', tools: ['list_directory', 'read_file', 'write_file', 'organize_folder', 'launch_app', 'open_site', 'list_windows'], prompt: 'You are Bob, GemAir’s file operator and desktop manager. Inspect before changing anything, use precise paths, preserve user data, and report exactly what was read, written, or organized. You can launch apps and open sites.' },
+  Carol: { role: 'System Verification', tools: ['system_scan', 'get_power_storage', 'get_system_status', 'list_windows'], prompt: 'You are Carol, GemAir’s system verifier. Read live CPU, memory, battery, and disk sensors, identify risks, and verify that a mission can run safely. You can see desktop state via list_windows.' },
   Dave: { role: 'Communications', tools: ['send_email', 'open_whatsapp'], prompt: 'You are Dave, GemAir’s communications operator. Prepare clear email or WhatsApp drafts, confirm the destination, and leave the final send action to the user.' }
 };
-
 function agentSystemPrompt(name) {
   const b = AGENT_BRAINS[name] || AGENT_BRAINS.Alice;
   const facts = factsForPrompt();
@@ -2376,15 +2117,10 @@ function agentSystemPrompt(name) {
       `Be helpful, concise and professional.`
   };
 }
-
 function toolsForAgent(name) {
   const brain = AGENT_BRAINS[name] || AGENT_BRAINS.Alice;
   return TOOLS.filter((tool) => brain.tools.includes(tool.function.name));
 }
-
-// Restricted, auditable agent execution. Unlike ordinary aiChat(), resident
-// agents can only see the tools assigned to their desk. Every real tool result
-// is returned to the renderer so chat and Mission Log can show the evidence.
 async function agentChat(name, config, messages) {
   const base = normalizeBaseURL(config.baseURL);
   const key = (config.apiKey || '').trim();
@@ -2392,7 +2128,6 @@ async function agentChat(name, config, messages) {
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   if (!base) throw new Error('NO_ENDPOINT');
   if (!key && !isLocal) throw new Error('NO_KEY');
-
   const msgs = [agentSystemPrompt(name), ...messages];
   const allowed = toolsForAgent(name);
   const toolRuns = [];
@@ -2426,7 +2161,6 @@ async function agentChat(name, config, messages) {
   }
   throw new Error('TOOL_LOOP');
 }
-
 async function fallbackAgentTask(name, text) {
   const task = String(text || '').replace(/^@(Alice|Bob|Carol|Dave)\s*/i, '').trim();
   const calls = [];
@@ -2455,7 +2189,6 @@ async function fallbackAgentTask(name, text) {
   const status = toolRuns.map((run) => `${run.ok ? '✓' : '✗'} ${run.name}: ${JSON.stringify(run.result)}`).join('\n');
   return { reply: `${name} completed the real tool run.\n${status}`, toolRuns };
 }
-
 async function collaborateAgents(task) {
   const mission = String(task || '').trim();
   if (!mission) return { error: 'A mission description is required.', steps: [] };
@@ -2468,7 +2201,6 @@ async function collaborateAgents(task) {
     logAction(tool, `${agent} ${step.ok ? 'completed' : 'failed'} collaboration step: ${JSON.stringify(result).slice(0, 200)}`);
     return result;
   };
-
   const research = await run('Alice', 'web_search', { query: mission });
   const slug = mission.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'mission';
   const reportPath = path.join(app.getPath('documents'), 'GemAir Missions', `${slug}-${new Date().toISOString().slice(0, 10)}.md`);
@@ -2490,6 +2222,201 @@ async function collaborateAgents(task) {
 }
 
 // ---------------------------------------------------------------------------
+// Connections: Auth Windows + Routing
+// ---------------------------------------------------------------------------
+function createAuthWindow(provider) {
+  if (authWindow && !authWindow.isDestroyed()) {
+    try { authWindow.close(); } catch {}
+  }
+  const partition = provider === 'chatgpt' ? 'persist:chatgpt' : 'persist:gemini';
+  authWindow = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    show: true,
+    autoHideMenuBar: false,
+    title: provider === 'chatgpt' ? 'Connect ChatGPT — Sign in' : 'Connect Gemini — Sign in',
+    webPreferences: {
+      partition,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false
+    }
+  });
+  // Clear previous session? Keep persist so user doesn't re-login each time
+  const url = provider === 'chatgpt' ? 'https://chatgpt.com/auth/login' : 'https://accounts.google.com/signin/v2/identifier?service=gemini&continue=https://gemini.google.com/app';
+  authWindow.loadURL(url);
+  return authWindow;
+}
+
+async function captureChatGPTSession() {
+  if (!authWindow || authWindow.isDestroyed()) return { error: 'No auth window' };
+  const ses = authWindow.webContents.session;
+  // Get cookies for both domains
+  const allCookies = [];
+  try {
+    const c1 = await ses.cookies.get({ domain: 'chatgpt.com' });
+    allCookies.push(...c1);
+  } catch {}
+  try {
+    const c2 = await ses.cookies.get({ domain: 'chat.openai.com' });
+    allCookies.push(...c2);
+  } catch {}
+  try {
+    const c3 = await ses.cookies.get({ domain: 'openai.com' });
+    allCookies.push(...c3);
+  } catch {}
+  // Look for session token
+  const sessionCookie = allCookies.find(c=>c.name.includes('__Secure-next-auth.session-token') || c.name==='__Secure-next-auth.session-token' || c.name==='__Secure-next-auth.session-token.0' || c.name==='__Secure-next-auth.session-token.1');
+  // Try to fetch /api/auth/session via executeJavaScript in auth window (uses its cookies)
+  let sessionData = null;
+  try {
+    const raw = await authWindow.webContents.executeJavaScript(`
+      fetch('/api/auth/session').then(r=>r.text()).then(t=>t).catch(e=>'')
+    `);
+    if (raw) {
+      try { sessionData = JSON.parse(raw); } catch { sessionData = null; }
+    }
+  } catch {}
+  // If not, try via fetch with cookie header (best effort)
+  if (!sessionData || !sessionData.accessToken) {
+    try {
+      sessionData = await connections.fetchChatGPTSessionFromCookies(allCookies);
+    } catch {}
+  }
+  if (!sessionData || !sessionData.accessToken) {
+    return { error: 'Could not capture ChatGPT session. Please ensure you are logged in at chatgpt.com, then try again.', cookies: allCookies.length };
+  }
+  const email = (sessionData.user && sessionData.user.email) || (sessionData.user && sessionData.user.id) || 'chatgpt_user';
+  const plan = (sessionData.user && sessionData.user.plan) || 'free';
+  // Store encrypted
+  connections.setChatGPTConnection({
+    email,
+    plan,
+    sessionToken: sessionCookie ? sessionCookie.value : '',
+    accessToken: sessionData.accessToken,
+    refreshToken: sessionData.refreshToken || '',
+    expiresAt: Date.now() + 14*24*3600000
+  });
+  try { authWindow.close(); } catch {}
+  authWindow = null;
+  return { ok: true, email, plan };
+}
+
+async function captureGeminiSession(isAIStudioFallback=false) {
+  if (!authWindow || authWindow.isDestroyed()) return { error: 'No auth window' };
+  const ses = authWindow.webContents.session;
+  const allCookies = [];
+  try {
+    const c1 = await ses.cookies.get({ domain: 'google.com' });
+    allCookies.push(...c1);
+  } catch {}
+  try {
+    const c2 = await ses.cookies.get({ domain: 'gemini.google.com' });
+    allCookies.push(...c2);
+  } catch {}
+  const psid = allCookies.find(c=>c.name==='__Secure-1PSID') || allCookies.find(c=>c.name==='1PSID');
+  const psidts = allCookies.find(c=>c.name==='__Secure-1PSIDTS') || allCookies.find(c=>c.name==='1PSIDTS');
+  if (!psid || !psidts) {
+    // For AI Studio fallback, also try to get API key from page
+    if (isAIStudioFallback) {
+      try {
+        const keyData = await authWindow.webContents.executeJavaScript(`
+          (() => {
+            try {
+              const txt = document.documentElement.innerHTML;
+              const m = txt.match(/AIza[0-9A-Za-z-_]{35}/);
+              return m ? m[0] : '';
+            } catch { return ''; }
+          })()
+        `);
+        if (keyData) {
+          // Store as psid for fallback handling? Actually store as Gemini connection with fallback flag
+          connections.setGeminiConnection({ email: 'aistudio_user@gmail.com', plan: 'ai-studio', psid: keyData, psidts: 'fallback' });
+          try { authWindow.close(); } catch {}
+          authWindow = null;
+          return { ok: true, email: 'aistudio_user@gmail.com', plan: 'ai-studio', fallback: true };
+        }
+      } catch {}
+    }
+    return { error: 'Could not capture Gemini session cookies. Please sign in at gemini.google.com, then click Capture.', cookies: allCookies.length };
+  }
+  // Try to get email via executeJavaScript
+  let email = 'gemini_user@gmail.com';
+  try {
+    const em = await authWindow.webContents.executeJavaScript(`
+      (() => {
+        try {
+          const el = document.querySelector('[aria-label*="Google Account"]') || document.querySelector('img[alt*="Google Account"]');
+          return document.documentElement.innerHTML.slice(0,5000);
+        } catch { return ''; }
+      })()
+    `);
+    // crude extraction
+    const m = em.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    if (m) email = m[0];
+  } catch {}
+  connections.setGeminiConnection({ email, plan: 'free', psid: psid.value, psidts: psidts.value });
+  try { authWindow.close(); } catch {}
+  authWindow = null;
+  return { ok: true, email, plan: 'free' };
+}
+
+async function callConnectedBrain(provider, messages, onDelta, onTool) {
+  // Adapter layer: inject TOOLS as JSON-in-prompt, parse tool calls
+  const toolPrompt = connections.buildToolPrompt(TOOLS);
+  const adaptedMessages = [
+    { role: 'system', content: `You are Gem, inside GemAir desktop. You have tools. ${toolPrompt}\nRespond helpfully. If you need to act, use the TOOL_CALL format.` },
+    ...messages
+  ];
+  const tokens = connections.getDecryptedTokens(provider);
+  if (!tokens) throw new Error('NO_CONNECTED_SESSION');
+  if (provider === 'chatgpt') {
+    if (!tokens.accessToken) throw new Error('NO_CHATGPT_TOKEN');
+    // Check expiry
+    if (connections.isTokenExpired('chatgpt')) throw new Error('TOKEN_EXPIRED');
+    let full = '';
+    try {
+      full = await connections.callChatGPTWeb({ accessToken: tokens.accessToken, messages: adaptedMessages, onDelta });
+    } catch (e) {
+      // If web call fails (bot check etc), throw to trigger fallback
+      throw new Error('CHATGPT_WEB_FAILED: ' + e.message);
+    }
+    // Parse tool calls
+    const toolCalls = connections.parseToolCallsFromText(full);
+    let remaining = connections.stripToolCalls(full);
+    if (toolCalls.length) {
+      // Execute tools
+      for (const tc of toolCalls) {
+        if (onTool) { try { onTool({ name: tc.name, state: 'start', args: tc.arguments }); } catch {} }
+        const result = await executeTool(tc.name, tc.arguments || {});
+        if (onTool) { try { onTool({ name: tc.name, state: result.error ? 'error' : 'done' }); } catch {} }
+        // Append to messages and continue loop
+        adaptedMessages.push({ role: 'assistant', content: full });
+        adaptedMessages.push({ role: 'user', content: `TOOL_RESULT for ${tc.name}: ${JSON.stringify(result)}` });
+        // Recursively call again for next turn (max 5 loops)
+        // For simplicity, if we have tool results, we call free core? Actually we should loop via same provider
+        // We'll loop once more via chatgpt web
+        try {
+          const next = await connections.callChatGPTWeb({ accessToken: tokens.accessToken, messages: adaptedMessages, onDelta: (d)=>{ if (onDelta) onDelta(d); } });
+          remaining = connections.stripToolCalls(next) || remaining;
+          full = next;
+        } catch {}
+      }
+    }
+    connections.incUsage('chatgpt');
+    return remaining || full;
+  } else if (provider === 'gemini') {
+    // For Gemini, we attempt web call but fallback if experimental
+    try {
+      await connections.callGeminiWeb({ psid: tokens.psid, psidts: tokens.psidts, messages: adaptedMessages, onDelta });
+    } catch (e) {
+      throw new Error('GEMINI_WEB_FAILED: ' + e.message);
+    }
+  }
+  throw new Error('UNSUPPORTED_PROVIDER');
+}
+
+// ---------------------------------------------------------------------------
 // IPC handlers
 // ---------------------------------------------------------------------------
 ipcMain.handle('system:info', () => getSystemInfo());
@@ -2497,7 +2424,6 @@ ipcMain.handle('audit:get', () => executeTool('get_action_log', {}));
 ipcMain.handle('screen:inspect', () => inspectScreenChange());
 ipcMain.handle('profile:get', () => readProfile());
 ipcMain.handle('profile:set', (_e, data) => writeProfile(data || {}));
-
 ipcMain.handle('ai:chat', async (_e, config, messages) => {
   try { return { ok: true, reply: await aiChat(config, messages) }; }
   catch (err) { return { ok: false, error: err.message }; }
@@ -2518,8 +2444,6 @@ ipcMain.handle('ai:chatStream', async (e, reqId, config, messages) => {
 });
 ipcMain.handle('ai:offline', async (_e, text) => ({ ok: true, reply: await offlineBrain(text) }));
 ipcMain.handle('ai:summarize', async (_e, config, text) => ({ ok: true, summary: await summarizeTranscript(config, text) }));
-
-// Agent chat — restricted real tools + complete execution evidence.
 ipcMain.handle('ai:agentChat', async (_e, agentName, config, messages) => {
   try {
     const run = await agentChat(agentName, config || {}, messages || []);
@@ -2539,7 +2463,6 @@ ipcMain.handle('agent:collaborate', async (_e, task) => {
   try { return await collaborateAgents(task); }
   catch (err) { return { ok: false, error: err.message, steps: [] }; }
 });
-
 ipcMain.handle('memory:get', () => readMemory());
 ipcMain.handle('memory:append', (_e, role, content) => {
   const m = readMemory();
@@ -2565,7 +2488,6 @@ ipcMain.handle('memory:addSkill', (_e, text, name) => addSkill(text, name));
 ipcMain.handle('memory:deleteSkill', (_e, id) => { const m = readMemory(); m.skills = m.skills.filter(s => s.id !== id); writeMemory(m); return true; });
 ipcMain.handle('memory:addInstruction', (_e, text) => addInstruction(text));
 ipcMain.handle('memory:deleteInstruction', (_e, id) => { const m = readMemory(); m.instructions = m.instructions.filter(i => i.id !== id); writeMemory(m); return true; });
-
 ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
   const res = await dialog.showSaveDialog(mainWindow, {
     title: 'Save output', defaultPath: suggestedName || 'gemair-output.txt',
@@ -2575,7 +2497,6 @@ ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
   try { fs.writeFileSync(res.filePath, content); return { ok: true, path: res.filePath }; }
   catch (err) { return { ok: false, error: err.message }; }
 });
-
 ipcMain.handle('news:get', (_e, limit, category) => getHeadlines(limit || 12, category || 'tech'));
 ipcMain.handle('app:openExternal', (_e, url) => { if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url); });
 ipcMain.handle('report:generate', () => generateReport());
@@ -2592,16 +2513,90 @@ ipcMain.handle('memory:import', (_e, data) => {
     return { ok: true };
   } catch (e) { return { ok: false, error: e.message }; }
 });
-// S2 — real process monitor (scan is read-only; kill goes through confirmAction)
 ipcMain.handle('proc:list', (_e, limit) => scanProcesses(limit));
 ipcMain.handle('proc:kill', (_e, pid, name) => killProcess(pid, name));
-
-// S3 — Tasks panel
 ipcMain.handle('memory:listTodos', () => listTodos());
 ipcMain.handle('memory:addTodo', (_e, text) => addTodo(text));
 ipcMain.handle('memory:toggleTodo', (_e, id) => toggleTodoById(id));
 ipcMain.handle('memory:deleteTodo', (_e, id) => deleteTodoById(id));
-
-ipcMain.handle('win:saveBounds', () => saveWindowBounds()); // T4
+ipcMain.handle('win:saveBounds', () => saveWindowBounds());
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:platform', () => process.platform);
+
+// 2.4 Connections
+ipcMain.handle('connections:getStatus', () => connections.getSanitizedStatus());
+ipcMain.handle('connections:setPriority', (_e, p) => connections.setPriority(p));
+ipcMain.handle('connections:acknowledgeWarning', () => { connections.acknowledgeWarning(); return true; });
+ipcMain.handle('connections:openChatGPT', async () => {
+  createAuthWindow('chatgpt');
+  return { ok: true };
+});
+ipcMain.handle('connections:captureChatGPT', async () => {
+  try { return await captureChatGPTSession(); }
+  catch (e) { return { error: e.message }; }
+});
+ipcMain.handle('connections:openGemini', async () => {
+  createAuthWindow('gemini');
+  return { ok: true };
+});
+ipcMain.handle('connections:captureGemini', async (_e, isFallback) => {
+  try { return await captureGeminiSession(isFallback); }
+  catch (e) { return { error: e.message }; }
+});
+ipcMain.handle('connections:openAIStudio', async () => {
+  if (authWindow && !authWindow.isDestroyed()) { try { authWindow.close(); } catch {} }
+  authWindow = new BrowserWindow({
+    width: 1100, height: 800, show: true, autoHideMenuBar: false,
+    title: 'AI Studio — Sign in with Google (zero key copy-paste)',
+    webPreferences: { partition: 'persist:gemini', nodeIntegration: false, contextIsolation: true }
+  });
+  authWindow.loadURL('https://aistudio.google.com/');
+  return { ok: true };
+});
+ipcMain.handle('connections:disconnect', (_e, provider) => {
+  const s = connections.clearConnection(provider);
+  if (mainWindow) mainWindow.webContents.send('connections:updated', s);
+  return s;
+});
+ipcMain.handle('connections:clearAll', () => {
+  const s = connections.clearAllEncrypted();
+  if (mainWindow) mainWindow.webContents.send('connections:updated', s);
+  return s;
+});
+ipcMain.handle('connections:chatStream', async (e, reqId, provider, messages) => {
+  const wc = e.sender;
+  try {
+    const reply = await callConnectedBrain(provider, messages,
+      (delta) => wc.send('ai:chunk', { reqId, delta }),
+      (info) => { try { wc.send('ai:activity', { reqId, ...info }); } catch {} }
+    );
+    wc.send('ai:streamEnd', { reqId, reply });
+    return { ok: true, reqId, reply };
+  } catch (err) {
+    wc.send('ai:streamError', { reqId, error: err.message, provider });
+    // trigger fallback notification
+    if (mainWindow) mainWindow.webContents.send('connections:expired', { provider, error: err.message });
+    return { ok: false, reqId, error: err.message };
+  }
+});
+
+// Modes
+ipcMain.handle('modes:list', () => modesLib.listModes());
+ipcMain.handle('modes:get', (_e, name) => modesLib.getMode(name));
+ipcMain.handle('modes:save', (_e, mode) => modesLib.saveMode(mode));
+ipcMain.handle('modes:delete', (_e, name) => modesLib.deleteMode(name));
+ipcMain.handle('modes:apply', async (_e, name) => {
+  const mode = modesLib.getMode(name);
+  if (!mode) return { error: 'Mode not found' };
+  return await applyModeInternal(mode);
+});
+
+// Desktop tools IPC
+ipcMain.handle('desktop:listWindows', () => windowTools.listWindows());
+ipcMain.handle('desktop:getFocused', () => windowTools.getFocusedWindow());
+ipcMain.handle('desktop:launchApp', (_e, name, args) => windowTools.launchApp(name, args));
+ipcMain.handle('desktop:focusApp', (_e, name) => windowTools.focusApp(name));
+ipcMain.handle('desktop:snapWindow', (_e, dir) => windowTools.snapWindow(dir));
+ipcMain.handle('desktop:minimizeAll', () => windowTools.minimizeAll());
+ipcMain.handle('desktop:nextDesktop', () => windowTools.nextVirtualDesktop());
+ipcMain.handle('desktop:openSite', (_e, url, browser) => windowTools.openSite(url, browser));

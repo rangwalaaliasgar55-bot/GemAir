@@ -197,10 +197,15 @@ function callCore(core, body, headers = {}) {
     'wf-whatsapp': ['open_whatsapp']
   };
   const NEW_TOOLS = ['close_app', 'find_large_files', 'create_folder_tree', 'move_files', 'optimize_gaming'];
+  const NEW_24_TOOLS = ['launch_app', 'focus_app', 'snap_window', 'minimize_all', 'next_virtual_desktop', 'open_site', 'list_windows', 'apply_mode', 'list_modes', 'create_mode'];
   for (const t of NEW_TOOLS) {
     if (!toolNames.has(t)) fail(`Section III tool not registered in TOOLS: ${t}`);
   }
   if (NEW_TOOLS.every((t) => toolNames.has(t))) ok('All 5 new Section III tools registered in TOOLS');
+  for (const t of NEW_24_TOOLS) {
+    if (!toolNames.has(t)) fail(`2.4 tool not registered in TOOLS: ${t}`);
+  }
+  if (NEW_24_TOOLS.every((t) => toolNames.has(t))) ok('All 10 new 2.4 tools registered in TOOLS');
 
   let workflowCount = 0;
   for (const [wf, tools] of Object.entries(WORKFLOW_TOOLS)) {
@@ -215,6 +220,9 @@ function callCore(core, body, headers = {}) {
   const missingCases = NEW_TOOLS.filter((t) => !execCases.includes(t));
   if (missingCases.length) fail(`executeTool missing case(s): ${missingCases.join(', ')}`);
   else ok('executeTool has a case for every new Section III tool');
+  const missing24 = NEW_24_TOOLS.filter((t) => !execCases.includes(t));
+  if (missing24.length) fail(`executeTool missing 2.4 case(s): ${missing24.join(', ')}`);
+  else ok('executeTool has a case for every new 2.4 tool');
 
   // -------------------------------------------------------------------------
   // 5. Few-shot recipes for all 12 workflows are present in the system prompt.
@@ -246,14 +254,17 @@ function callCore(core, body, headers = {}) {
     ['open_url for each site', 'wf-multi-tabs'],
     ['get_system_status', 'wf-ram-check'],
     ['optimize_gaming', 'wf-gaming'],
-    ['open_whatsapp', 'wf-whatsapp']
+    ['open_whatsapp', 'wf-whatsapp'],
+    ['launch_app', '2.4 launch_app'],
+    ['apply_mode', '2.4 apply_mode'],
+    ['chill mode', '2.4 chill mode']
   ];
   let recipes = 0;
   for (const [hint, wf] of recipeHints) {
     if (promptSrc.includes(hint)) recipes++;
     else fail(`System prompt missing few-shot recipe for ${wf}`);
   }
-  if (recipes === 12) ok('System prompt carries few-shot recipes for all 12 workflows');
+  if (recipes >= 12) ok(`System prompt carries few-shot recipes for ${recipes} workflows (including 2.4 modes)`);
 
   // -------------------------------------------------------------------------
   // 6. Section R regression guards — the exact bugs 2.2 fixed must stay fixed.

@@ -34,7 +34,10 @@
       accent: '#ff3b3b', hue: 0,
       bg: '#04060c', bg2: '#070b15',
       text: '#e7f0ff', dim: '#8a9bb2',
-      good: '#3dff9a', warn: '#ffc24b'
+      good: '#3dff9a', warn: '#ffc24b',
+      error: '#ff6b6b', info: '#3bc9ff',
+      panel: 'rgba(12, 18, 32, 0.76)', panelBorder: 'rgba(120, 140, 180, 0.18)',
+      sweep: 'rgba(255, 59, 59, 0.32)'
     },
     emerald: {
       label: 'Emerald',
@@ -42,7 +45,10 @@
       accent: '#35ffb0', hue: 152,
       bg: '#040a08', bg2: '#071310',
       text: '#e9fff5', dim: '#7fae9c',
-      good: '#3dff9a', warn: '#ffc24b'
+      good: '#3dff9a', warn: '#ffc24b',
+      error: '#ff6b6b', info: '#3bc9ff',
+      panel: 'rgba(12, 22, 20, 0.76)', panelBorder: 'rgba(100, 180, 150, 0.18)',
+      sweep: 'rgba(53, 255, 176, 0.32)'
     },
     cyan: {
       label: 'Cyan',
@@ -50,7 +56,10 @@
       accent: '#3bc9ff', hue: 198,
       bg: '#04080d', bg2: '#071019',
       text: '#e6f6ff', dim: '#7fa3b8',
-      good: '#3dff9a', warn: '#ffc24b'
+      good: '#3dff9a', warn: '#ffc24b',
+      error: '#ff6b6b', info: '#3bc9ff',
+      panel: 'rgba(10, 18, 32, 0.76)', panelBorder: 'rgba(90, 160, 200, 0.18)',
+      sweep: 'rgba(59, 201, 255, 0.32)'
     },
     violet: {
       label: 'Violet',
@@ -58,7 +67,10 @@
       accent: '#b05cff', hue: 275,
       bg: '#06040d', bg2: '#0b0716',
       text: '#f0e9ff', dim: '#a08bb8',
-      good: '#3dff9a', warn: '#ffc24b'
+      good: '#3dff9a', warn: '#ffc24b',
+      error: '#ff6b6b', info: '#3bc9ff',
+      panel: 'rgba(16, 12, 32, 0.76)', panelBorder: 'rgba(140, 120, 200, 0.18)',
+      sweep: 'rgba(176, 92, 255, 0.32)'
     },
     amber: {
       label: 'Amber',
@@ -66,16 +78,22 @@
       accent: '#ffb73b', hue: 38,
       bg: '#0a0604', bg2: '#120b06',
       text: '#fff3e2', dim: '#b39a7c',
-      good: '#3dff9a', warn: '#ffc24b'
+      good: '#3dff9a', warn: '#ffc24b',
+      error: '#ff6b6b', info: '#3bc9ff',
+      panel: 'rgba(24, 18, 12, 0.76)', panelBorder: 'rgba(200, 160, 100, 0.18)',
+      sweep: 'rgba(255, 183, 59, 0.32)'
     },
     rgb: {
       label: 'RGB',
       tagline: 'Rainbow cycle — full spectrum',
       accent: '#ff3bff', hue: 300,
-      dynamic: true, // accent hue animates continuously
+      dynamic: true,
       bg: '#04060c', bg2: '#070b15',
       text: '#e7f0ff', dim: '#8a9bb2',
-      good: '#3dff9a', warn: '#ffc24b'
+      good: '#3dff9a', warn: '#ffc24b',
+      error: '#ff6b6b', info: '#3bc9ff',
+      panel: 'rgba(12, 18, 32, 0.76)', panelBorder: 'rgba(120, 140, 180, 0.18)',
+      sweep: 'rgba(255, 59, 255, 0.32)'
     }
   };
 
@@ -91,6 +109,7 @@
   }
 
   // Derive the full CSS custom-property set from a theme's string tokens.
+  // U5: glass depth strictly via tokens — panel, border, error, info, sweep all via themes.js
   function derive(theme) {
     const a = theme.accent;
     return {
@@ -103,7 +122,12 @@
       text: theme.text,
       'text-dim': theme.dim,
       good: theme.good,
-      warn: theme.warn
+      warn: theme.warn,
+      error: theme.error || '#ff6b6b',
+      info: theme.info || '#3bc9ff',
+      panel: theme.panel || 'rgba(12, 18, 32, 0.76)',
+      'panel-border': theme.panelBorder || 'rgba(120, 140, 180, 0.18)',
+      sweep: theme.sweep || rgba(a, 0.32)
     };
   }
 

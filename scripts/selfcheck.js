@@ -63,14 +63,19 @@ ok('JSON files parse');
 try {
   const pkg = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
-  if (pkg.version !== '2.2.0') fail(`package version must be 2.2.0 (found ${pkg.version})`);
+  if (pkg.version !== '2.4.0') fail(`package version must be 2.4.0 (found ${pkg.version})`);
   if (lock.version !== pkg.version || (lock.packages && lock.packages[''] && lock.packages[''].version !== pkg.version)) fail('package-lock version does not match package.json');
   for (const asset of ['build/icon.png', 'build/icon.ico', 'build/icons/16x16.png', 'build/icons/256x256.png', 'build/icons/512x512.png', 'build/icons/1024x1024.png']) {
     const full = path.join(ROOT, asset);
     if (!fs.existsSync(full) || fs.statSync(full).size < 100) fail(`missing/empty release icon: ${asset}`);
   }
-  if (!fs.existsSync(path.join(ROOT, 'CHANGELOG.md')) || !read('CHANGELOG.md').includes('## [2.2.0]')) fail('CHANGELOG.md must document 2.2.0');
-  else ok('2.2.0 release metadata and platform icons present');
+  if (!fs.existsSync(path.join(ROOT, 'CHANGELOG.md')) || !read('CHANGELOG.md').includes('## [2.4.0]')) fail('CHANGELOG.md must document 2.4.0');
+  else ok('2.4.0 release metadata and platform icons present');
+  // 2.4 new lib files must exist
+  for (const f of ['lib/connections.js', 'lib/modes.js', 'lib/window-tools.js', 'CONNECTIONS.md']) {
+    if (!fs.existsSync(path.join(ROOT, f))) fail(`missing 2.4 file: ${f}`);
+  }
+  ok('2.4 lib + CONNECTIONS.md present');
 } catch (e) { fail('release metadata check failed: ' + e.message); }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +129,10 @@ const RUNTIME_IDS = new Set([
   // S10 — quick-command editor renders into the expert panel
   'qcEditorInput', 'qcEditorSave', 'qcEditorCancel',
   // T2 — reasoning strip is created per reply
-  'reasonStrip'
+  'reasonStrip',
+  // 2.4 — mode sites designer rows, plan-act steps, recent missions, desktop test output
+  'modeSiteRow', 'planStepRow', 'recentMissionItem', 'desktopTestOutput',
+  'mcHead', 'mcIcon', 'mcDesc', 'mcMeta'
 ]);
 
 const refs = [...new Set([...appJs.matchAll(/\$\(\s*['"]#([A-Za-z0-9_-]+)['"]\s*\)/g)].map((m) => m[1]))];
@@ -151,6 +159,7 @@ else ok('all $$() selectors match something');
 // V2 — 2.2 surface checks. Every feature added this round has at least one
 // static assertion here, so a future refactor that drops the markup or the
 // handler fails CI instead of shipping a dead control.
+// V4 — 2.4 surfaces
 // ---------------------------------------------------------------------------
 const REQUIRED_IDS = {
   'S1 SAT-LINK feed panel': ['satPanel'],
@@ -161,7 +170,15 @@ const REQUIRED_IDS = {
   'S8 offline brain toggle': ['setLocalBrain', 'localBrainHint'],
   'T1 account controls': ['accountState', 'signInGoogleBtn', 'signOutBtn'],
   'T3 rating controls': ['settingsStars', 'ratingSummary', 'exportRatingsBtn'],
-  'T5 ambient controls': ['setAmbientTrack', 'setAmbientVolume', 'ambientVolVal']
+  'T5 ambient controls': ['setAmbientTrack', 'setAmbientVolume', 'ambientVolVal'],
+  'C1 Connection Hub': ['connectionHubCard', 'connectChatGPTBtn', 'chatgptStatusDot', 'chatgptEmail', 'chatgptPlanBadge', 'chatgptUsage', 'disconnectChatGPTBtn', 'captureChatGPTBtn'],
+  'D Gemini Connect': ['connectGeminiBtn', 'geminiStatusDot', 'geminiEmail', 'geminiPlanBadge', 'geminiUsage', 'disconnectGeminiBtn', 'captureGeminiBtn', 'openAIStudioBtn'],
+  'H Hub UI': ['freeCoreDot', 'brainPriorityPicker', 'clearAllConnectionsBtn', 'activeBrainChip', 'activeBrainName', 'activeBrainDot', 'mlActiveBrain', 'connectionsStatusRow'],
+  'A Window Tools': ['etabDesktop', 'desktopWindowsList', 'focusedApp', 'focusedTitle', 'refreshDesktopBtn'],
+  'A1 Plan-Act': ['planActPanel', 'planActBody', 'planActState', 'showPlanBtn', 'runPlanBtn'],
+  'M Modes': ['nowCard', 'nowMode', 'nowBrain', 'nowReminder', 'nowBattery', 'currentModeChip', 'topbarModeChips', 'modesList', 'modeDesignerCard', 'modeNameInput', 'modeAppsInput', 'modeSitesList', 'modeVolumeInput', 'modeThemeInput', 'saveModeBtn', 'applyModeBtn'],
+  'U Settings Reorg': ['settingsSearch', 'settingsBody'],
+  'U Experimental Modals': ['experimentalWarningModal', 'reconnectModal', 'modeSweep']
 };
 const missingFeatureIds = [];
 for (const [feature, list] of Object.entries(REQUIRED_IDS)) {
@@ -393,36 +410,46 @@ for (const f of ['renderer/store.js', 'renderer/avatar.js', 'renderer/app.js']) 
 })();
 
 /**
- * V3 — the manual test matrix.
- *
- * Static checks cannot prove that audio is audible, that a barge-in really cuts
- * a voice mid-word, or that a theme switch repaints a canvas. This prints the
- * short list of things a human must confirm on a real machine before release.
+ * V4 — 2.4 manual test matrix (extends V3)
  */
 function printManualMatrix() {
   const rows = [
-    ['1', 'Boot', 'Launch GemAir. Boot sequence completes; SYS chip reads SYSTEMS NOMINAL (or names the degraded subsystem — never a false NOMINAL).'],
-    ['2', 'Free reply', 'With NO API key configured, send "hello". A real reply streams in. Settings → TEST CONNECTION reports "free core (no key configured)".'],
-    ['3', 'Bad key is honest', 'Paste a bogus key + Groq preset, TEST CONNECTION. It must FAIL visibly and say the free core was NOT used.'],
-    ['4', 'EDGE voice audible', 'Settings → Voice engine = Edge neural. Send a message. Gem speaks with a real Microsoft neural voice (not the robotic OS voice).'],
-    ['5', 'Streaming speech', 'Ask for a 3-sentence answer. Speech starts on sentence 1 while the rest is still generating, with no duplicate final read-through.'],
-    ['6', 'Barge-in cuts audio', 'While Gem is mid-sentence, press the mic and speak. Audio stops INSTANTLY (not just the mouth animation) and no queued sentence resumes.'],
-    ['7', 'START off silences', 'Start the AI loop, let Gem talk, click STOP. Speech stops immediately.'],
-    ['8', 'Visemes + aura', 'During speech the mouth tracks words; while listening the avatar aura reacts to real mic level.'],
-    ['9', '12 workflows dry-run', 'Agent Town → Workflow Gallery: click each of the 12 cards. Each opens a HITL confirm (or a real result) — none silently no-ops.'],
-    ['10', 'HITL still guards', 'Run "Optimize for gaming" and CANCEL. Nothing changes. Run it again and accept on Windows: powercfg reports High Performance, not Power Saver.'],
-    ['11', 'Process monitor', 'System Core → PROCESSES: real names/PIDs from your machine. Filter works. "End" prompts for confirmation and refuses protected processes.'],
-    ['12', 'Tasks', 'System Core → TASKS: add / complete / delete. The weekly report tasks-per-day sparkline now moves.'],
-    ['13', 'SAT-LINK feeds', 'Click TODAY / RAP / SEARCH / ALERTS. Headlines load, radar image renders for your city, search returns results, advisories list or say ALL CLEAR.'],
-    ['14', 'Theme switch incl. RGB', 'Cycle every theme, including RGB. Weekly sparklines, mood chart and command map keep rendering (no blank canvases, no console errors).'],
-    ['15', 'Settings persist', 'Change voice engine, theme, language, ambient track and volume. Save, quit, relaunch. Every choice is restored.'],
-    ['16', 'Ambient preview', 'Toggle the ambient score in Settings — audio starts immediately. Switch track and move the volume slider: both change what you hear live.'],
-    ['17', 'Language + RTL', 'Settings → Language → اردو. Labels translate and the layout mirrors to right-to-left. Switch back to English.'],
-    ['18', 'Accessibility', 'Open each modal (settings, theme, download, breathe, report). Tab stays trapped inside; Escape closes every one; icon buttons announce a name.'],
-    ['19', 'Layout', 'Resize to 950px wide and to a 700px-tall window. The topbar wraps instead of overflowing; nothing is clipped or unreachable.'],
-    ['20', 'Reasoning strip', 'Send a multi-step request. The REASONING strip appears above the reply, expands, and narrates real tool calls.'],
-    ['21', 'Window memory', 'Move/resize the window, quit, relaunch — it returns to the same place. Unplug a second monitor and relaunch: the window is clamped back on-screen.'],
-    ['22', 'Rating prompt', 'After 8 successful missions, the star prompt appears once. Rate it; Settings shows the average and Export downloads the JSON.']
+    ['1', 'Boot', 'Launch GemAir. Boot sequence completes; SYS chip reads SYSTEMS NOMINAL (or names degraded). Version tag v2.4.0'],
+    ['2', 'Free reply', 'With NO API key, send "hello". Real reply streams in. TEST CONNECTION reports free core'],
+    ['3', 'Bad key honest', 'Paste bogus key + Groq preset, TEST CONNECTION must FAIL visibly, says free core NOT used'],
+    ['4', 'EDGE voice', 'Voice engine = Edge neural. Send message. Gem speaks with Microsoft neural voice'],
+    ['5', 'Streaming speech', 'Ask 3-sentence answer. Speech starts on sentence 1 while rest generating, no duplicate final read'],
+    ['6', 'Barge-in', 'While Gem mid-sentence, press mic and speak. Audio stops INSTANTLY, no queued resume'],
+    ['7', 'START off', 'Start AI loop, let Gem talk, click STOP. Speech stops immediately'],
+    ['8', 'Visemes', 'Mouth tracks words; aura reacts to mic level'],
+    ['9', 'Workflows', 'Agent Town → Workflow Gallery: click each 12 cards. Each opens HITL confirm or real result'],
+    ['10', 'HITL', 'Optimize for gaming CANCEL does nothing; accept switches to High Performance not Power Saver'],
+    ['11', 'Process monitor', 'System Core → PROCESSES: real names/PIDs, filter works, End prompts confirm and refuses protected'],
+    ['12', 'Tasks', 'System Core → TASKS add/complete/delete, weekly sparklines move'],
+    ['13', 'SAT-LINK', 'TODAY/RAP/SEARCH/ALERTS all load real data or honest empty'],
+    ['14', 'Themes', 'Cycle every theme incl RGB, sparklines/mood/map keep rendering'],
+    ['15', 'Settings persist', 'Change voice, theme, language, ambient track+volume, save, quit, relaunch restored'],
+    ['16', 'Ambient preview', 'Toggle ambient score — audio starts immediately, track+volume change live'],
+    ['17', 'Language RTL', 'Language → اردو translates and mirrors RTL'],
+    ['18', 'Accessibility', 'Open each modal (settings, theme, download, breathe, report, experimental, reconnect). Tab trapped, Escape closes all'],
+    ['19', 'Layout', 'Resize to 950px wide and 700px tall — topbar wraps, nothing clipped'],
+    ['20', 'Reasoning', 'Multi-step request shows REASONING strip narrating real tool calls'],
+    ['21', 'Window memory', 'Move/resize, quit, relaunch returns same place; unplug monitor clamped on-screen'],
+    ['22', 'Rating', 'After 8 missions star prompt appears once, average shown, export JSON'],
+    ['23', 'Connect ChatGPT', 'Settings → CONNECTIONS → CONNECT CHATGPT → embedded real chatgpt.com login (email/Google SSO) → Capture → shows email + plan badge, dot green/amber, encrypted via safeStorage (never renderer-visible)'],
+    ['24', 'Streamed via ChatGPT', 'With ChatGPT connected, chat streams reply voiced via Edge TTS, MEDIA LINK shows ACTIVE brain CHATGPT live'],
+    ['25', 'Tools over connected', 'Over connected ChatGPT brain, run 3 tools: get_weather, web_search, list_windows — adapter injects TOOLS as JSON-in-prompt, parses tool-calls from plain text, feeds SAME executeTool loop'],
+    ['26', 'Disconnect fallback', 'Disconnect ChatGPT → dot gray, free-core fallback instant, never dead air, toast shows fallback'],
+    ['27', 'Gemini connect', 'CONNECT GEMINI → Google login embedded → capture Gemini web session (PSID) → route through consumer backend with identical adapter, fallback and warning'],
+    ['28', 'AI Studio fallback', 'If Gemini capture unstable, one tap opens AI Studio, user signs in with Google inside it, app reads credential locally — still zero key copy-paste'],
+    ['29', 'Connection Hub UI', 'One card rows CHATGPT|GEMINI|FREE CORE: live dots (CONNECTED green/EXPERIMENTAL amber/FALLBACK blue), account email, plan, today usage, priority picker. MEDIA LINK + status chips show ACTIVE brain live'],
+    ['30', 'Create CHILL mode', 'Settings → Desktop & Modes → Mode Designer: add apps and sites rows, pick browser per site, volume slider, save — creates CHILL mode, syncs into profile'],
+    ['31', 'Voice trigger modes', 'Say "chill mode" → cinematic sweep using themes.js tokens, launches apps+sites+volume+sweep, topbar shows current mode chip, announces via TTS'],
+    ['32', 'Plan-Act loops', 'Big request "set up my workspace for editing" → decomposed into numbered steps, live progress checklist, per-step retry once, final spoken+written summary, dry-run chip SHOW PLAN / RUN'],
+    ['33', 'Window tools', 'Test launch_app, focus_app, snap_window left|right|max, minimize_all, next_virtual_desktop, open_site url+ browser, list_windows returns titles+apps'],
+    ['34', 'Context awareness', 'Track focused app/window (polling IPC) so follow-ups work: "open it there too", "move this to the right"'],
+    ['35', 'Restart persists', 'Restart app — sessions and modes persist (encrypted storage + modes file)'],
+    ['36', 'Clear storage', 'Disconnect clears encrypted storage — gemair-connections.enc deleted, dots gray']
   ];
   const line = (n, area, what) => console.log('  ' + n.padStart(2, ' ') + '  ' + area.padEnd(23, ' ') + what);
   console.log('  ============================================================');

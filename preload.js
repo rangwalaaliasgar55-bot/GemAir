@@ -1,4 +1,4 @@
-// GemAir — preload (contextBridge)
+// GemAir 2.4 — preload (contextBridge)
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('gemair', {
@@ -74,9 +74,58 @@ contextBridge.exposeInMainWorld('gemair', {
   exportMemory: () => ipcRenderer.invoke('memory:export'),
   importMemory: (data) => ipcRenderer.invoke('memory:import', data),
 
+  // 2.4 Connections (C, D, H)
+  connectionsGetStatus: () => ipcRenderer.invoke('connections:getStatus'),
+  connectionsSetPriority: (p) => ipcRenderer.invoke('connections:setPriority', p),
+  connectionsAcknowledgeWarning: () => ipcRenderer.invoke('connections:acknowledgeWarning'),
+  connectionsOpenChatGPT: () => ipcRenderer.invoke('connections:openChatGPT'),
+  connectionsCaptureChatGPT: () => ipcRenderer.invoke('connections:captureChatGPT'),
+  connectionsOpenGemini: () => ipcRenderer.invoke('connections:openGemini'),
+  connectionsCaptureGemini: (isFallback) => ipcRenderer.invoke('connections:captureGemini', isFallback),
+  connectionsOpenAIStudio: () => ipcRenderer.invoke('connections:openAIStudio'),
+  connectionsDisconnect: (provider) => ipcRenderer.invoke('connections:disconnect', provider),
+  connectionsClearAll: () => ipcRenderer.invoke('connections:clearAll'),
+  connectionsChatStream: (provider, messages, onDelta) => {
+    const reqId = 'r' + Math.random().toString(36).slice(2);
+    return new Promise((resolve, reject) => {
+      const onChunk = (_e, data) => { if (data.reqId === reqId) onDelta(data.delta); };
+      const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply }); } };
+      const onErr = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: false, error: data.error, provider: data.provider }); } };
+      const cleanup = () => { ipcRenderer.removeListener('ai:chunk', onChunk); ipcRenderer.removeListener('ai:streamEnd', onEnd); ipcRenderer.removeListener('ai:streamError', onErr); };
+      ipcRenderer.on('ai:chunk', onChunk);
+      ipcRenderer.on('ai:streamEnd', onEnd);
+      ipcRenderer.on('ai:streamError', onErr);
+      ipcRenderer.invoke('connections:chatStream', reqId, provider, messages).catch((e) => { cleanup(); reject(e); });
+    });
+  },
+
+  // Modes (M)
+  modesList: () => ipcRenderer.invoke('modes:list'),
+  modesGet: (name) => ipcRenderer.invoke('modes:get', name),
+  modesSave: (mode) => ipcRenderer.invoke('modes:save', mode),
+  modesDelete: (name) => ipcRenderer.invoke('modes:delete', name),
+  modesApply: (name) => ipcRenderer.invoke('modes:apply', name),
+
+  // Desktop tools (A)
+  desktopListWindows: () => ipcRenderer.invoke('desktop:listWindows'),
+  desktopGetFocused: () => ipcRenderer.invoke('desktop:getFocused'),
+  desktopLaunchApp: (name, args) => ipcRenderer.invoke('desktop:launchApp', name, args),
+  desktopFocusApp: (name) => ipcRenderer.invoke('desktop:focusApp', name),
+  desktopSnapWindow: (dir) => ipcRenderer.invoke('desktop:snapWindow', dir),
+  desktopMinimizeAll: () => ipcRenderer.invoke('desktop:minimizeAll'),
+  desktopNextDesktop: () => ipcRenderer.invoke('desktop:nextDesktop'),
+  desktopOpenSite: (url, browser) => ipcRenderer.invoke('desktop:openSite', url, browser),
+
   // events (main -> renderer)
   onReminder: (cb) => ipcRenderer.on('reminder:due', (_e, reminder) => cb(reminder)),
   onWakeToggle: (cb) => ipcRenderer.on('wake:toggle', (_e, on) => cb(on)),
   onActivity: (cb) => ipcRenderer.on('ai:activity', (_e, data) => cb(data)),
-  onHudPanel: (cb) => ipcRenderer.on('hud:panel', (_e, data) => cb(data))
+  onHudPanel: (cb) => ipcRenderer.on('hud:panel', (_e, data) => cb(data)),
+  onConnectionsUpdated: (cb) => ipcRenderer.on('connections:updated', (_e, data) => cb(data)),
+  onConnectionsExpired: (cb) => ipcRenderer.on('connections:expired', (_e, data) => cb(data)),
+  onDesktopFocus: (cb) => ipcRenderer.on('desktop:focus', (_e, data) => cb(data)),
+  onDesktopVolume: (cb) => ipcRenderer.on('desktop:volume', (_e, data) => cb(data)),
+  onDesktopTheme: (cb) => ipcRenderer.on('desktop:theme', (_e, data) => cb(data)),
+  onDesktopDnd: (cb) => ipcRenderer.on('desktop:dnd', (_e, data) => cb(data)),
+  onModeChanged: (cb) => ipcRenderer.on('mode:changed', (_e, data) => cb(data))
 });
