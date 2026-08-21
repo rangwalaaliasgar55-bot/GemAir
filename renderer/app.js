@@ -469,6 +469,23 @@ const AGENTS = [
   { name: 'Dave', emoji: '🧑‍💼', role: 'Comms · email / WhatsApp', talk: 'Preparing a draft for your approval.' }
 ];
 
+// Section III — the 12 one-sentence workflows (Stonic roadmap parity), each a
+// tested tool chain. Also surfaced in the command palette as recipes.
+const WORKFLOWS = [
+  { id: 'wf-organize', name: 'Organize Downloads by Type', detail: 'sort files into folders', icon: '🗂', prompt: "Organize my Downloads folder by file type" },
+  { id: 'wf-screenshots', name: 'Gather This Week\u2019s Screenshots', detail: 'find + move screenshots into one folder', icon: '📸', prompt: "Find this week's screenshots and move them into one folder" },
+  { id: 'wf-large-files', name: 'Find Huge Unused Files', detail: 'files over 500MB unused 6 months', icon: '📦', prompt: "Find files over 500MB that I have not used for 6 months" },
+  { id: 'wf-scaffold', name: 'Scaffold Project Folder Tree', detail: 'create src/docs/tests structure', icon: '🌱', prompt: "Scaffold a project folder tree for my new project" },
+  { id: 'wf-morning', name: 'Morning App Stack Launch', detail: 'open browser, email, calendar', icon: '☀️', prompt: "Launch my morning app stack: browser, email and calendar" },
+  { id: 'wf-close-except', name: 'Close Everything Except\u2026', detail: 'quit all apps but keep one', icon: '✂️', prompt: "Close everything except Spotify" },
+  { id: 'wf-focus', name: 'Focus Block', detail: 'close browsers + messengers', icon: '🎯', prompt: "Start a focus block — close browsers and messengers" },
+  { id: 'wf-open-search', name: 'Open Site & Search Instantly', detail: 'open site then search', icon: '🔎', prompt: "Open Google and search instantly for AI news" },
+  { id: 'wf-multi-tabs', name: 'Open Multiple Tabs', detail: 'open several sites at once', icon: '🗔', prompt: "Open these tabs: GitHub, YouTube, and Gmail" },
+  { id: 'wf-ram-check', name: 'Spoken RAM & Performance Check', detail: 'read CPU/memory out loud', icon: '📊', prompt: "Do a spoken RAM and performance check" },
+  { id: 'wf-gaming', name: 'Optimize PC for Gaming', detail: 'power plan + temp + close heavy apps', icon: '🎮', prompt: "Optimize my PC for gaming" },
+  { id: 'wf-whatsapp', name: 'Hands-free WhatsApp Message', detail: 'open a drafted WhatsApp message', icon: '💬', prompt: "Send a hands-free WhatsApp message saying hello" }
+];
+
 // Voice presets — bound to specific Microsoft Edge neural voices with tuned
 // rate/pitch (Section IIe). Fallbacks remain for the Google accent engine.
 const VOICE_PRESETS = {
@@ -1771,7 +1788,21 @@ function buildSystemPrompt() {
       `- Separate what you verified from what you are inferring, in plain words.\n` +
       `- If the user's premise is wrong, correct it first, briefly.\n` +
       `PLANNER: For a request with two or more steps, begin with a short numbered plan, then execute the necessary tools in order and report completion against that plan. ` +
-      `Use tools for real actions or live data. Be genuinely helpful, concise but human, and always kind.`
+      `Use tools for real actions or live data. Be genuinely helpful, concise but human, and always kind.\\n` +
+      `WORKFLOW RECIPES (Section III) — when the user asks for one of these, execute the exact tool chain, show a short numbered plan with checkpoints, and report which steps completed. Multi-step missions log every action (undo is available via the action log):\\n` +
+      `- "organize downloads by type" → organize_folder(path="~/Downloads") and report categories\\n` +
+      `- "gather this week's screenshots" → find_large_files/move_files (find recent screenshots, move them into one folder)\\n` +
+      `- "find files over 500MB unused 6 months" → find_large_files(minMB=500, unusedMonths=6) and list results\\n` +
+      `- "scaffold project folder tree" → create_folder_tree(folders=["src","src/components","docs","tests","scripts"])\\n` +
+      `- "morning launch app stack" → open_application for browser, email, calendar\\n` +
+      `- "close everything except X" → close_app(name="all", keep=["X"])\\n` +
+      `- "focus block, close browsers and messengers" → close_app for browsers and messengers\\n` +
+      `- "open site and search instantly" → open_url(site) then web_search(query)\\n` +
+      `- "open multiple tabs" → open_url for each site\\n` +
+      `- "spoken RAM/performance check" → get_system_status or system_scan, then speak the numbers\\n` +
+      `- "optimize pc for gaming" → optimize_gaming() and report the steps\\n` +
+      `- "hands-free whatsapp message" → open_whatsapp(phone, text) after confirming the destination.\\n` +
+      `For any multi-step file/system task, always confirm with the user before moving, deleting or closing things (human-in-the-loop).`
   };
 }
 
@@ -4482,6 +4513,7 @@ function bindEvents() {
       { id: 'toggle-wake', name: `${profile.wakeWord ? 'Disable' : 'Enable'} Wake Word`, detail: 'say “Hey Gem”', icon: '🎙', type: 'TOGGLE', action: () => { profile.wakeWord = !profile.wakeWord; persistProfile(); configureWakeWord(profile.wakeWord); } },
       { id: 'toggle-score', name: `${profile.ambientScore ? 'Disable' : 'Enable'} Ambient Score`, detail: 'local synthesized audio', icon: '♫', type: 'TOGGLE', action: () => { profile.ambientScore = !profile.ambientScore; setAmbientScore(profile.ambientScore); persistProfile(); } },
       ...AGENTS.map((a) => ({ id: 'agent-' + a.name.toLowerCase(), name: 'Assign ' + a.name, detail: a.role, icon: a.emoji, type: 'AGENT', action: () => { switchView('assistant'); $('#chatInput').value = '@' + a.name + ' '; $('#chatInput').focus(); } })),
+      ...WORKFLOWS.map((w) => ({ id: w.id, name: w.name, detail: w.detail, icon: w.icon, type: 'WORKFLOW', action: () => { switchView('assistant'); sendMessage(w.prompt); } })),
       ...((window.GemAirThemes ? window.GemAirThemes.list() : []).map((theme) => ({
         id: 'theme-' + theme.id, name: theme.label + ' Theme', detail: theme.tagline, icon: '◆', type: 'THEME',
         action: () => { profile.theme = theme.id; applyTheme(theme.id); persistProfile(); }

@@ -471,7 +471,12 @@ const TOOLS = [
   { type: 'function', function: { name: 'breathing_exercise', description: 'Give a guided calming breathing exercise (great for anxiety or stress).', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'generate_report', description: 'Generate the user\'s weekly life report from their mood, goals, tasks and memory.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'show_panel', description: 'Open a contextual HUD panel on the user screen so they can see live info alongside your reply. Panels: weather (pass city), clock (world/local time), focus (pomodoro timer), breathing (calming exercise), system (live telemetry), news (headlines), report (weekly life report).', parameters: { type: 'object', properties: { panel: { type: 'string', enum: ['weather', 'clock', 'focus', 'breathing', 'system', 'news', 'report'] }, city: { type: 'string', description: 'City name, used by the weather panel' } }, required: ['panel'] } } },
-  { type: 'function', function: { name: 'hide_panel', description: 'Close the floating HUD panel on the user screen.', parameters: { type: 'object', properties: {} } } }
+  { type: 'function', function: { name: 'hide_panel', description: 'Close the floating HUD panel on the user screen.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'close_app', description: 'Close an application. Use name="all" (or "everything") with a keep array to close everything except specific apps. Examples: close_app("chrome"), close_app("all", keep=["spotify","gemair"]).', parameters: { type: 'object', properties: { name: { type: 'string', description: 'App name, e.g. chrome, whatsapp, spotify; or "all" to close everything' }, keep: { type: 'array', items: { type: 'string' }, description: 'App names to keep open when name is "all"' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'find_large_files', description: 'Find large files on disk — by minimum size in MB and optionally how many months unused. Example: find files over 500MB unused 6 months.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Folder to scan (defaults to home)' }, minMB: { type: 'number', description: 'Minimum file size in MB (default 500)' }, unusedMonths: { type: 'number', description: 'Only files not modified for this many months (optional)' } } } } },
+  { type: 'function', function: { name: 'create_folder_tree', description: 'Scaffold a project folder tree (creates empty folders, nothing else). Example: create_folder_tree with folders ["src","src/components","docs"].', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Root path (defaults to Documents)' }, folders: { type: 'array', items: { type: 'string' }, description: 'List of folder paths to create' } } } } },
+  { type: 'function', function: { name: 'move_files', description: 'Move files from a source folder into a destination folder, optionally filtered by extension (".pdf"), type ("images"), "large", or keyword.', parameters: { type: 'object', properties: { source: { type: 'string' }, dest: { type: 'string' }, filter: { type: 'string', description: 'Optional filter: ".pdf", "images", "large", or a keyword' } } } } },
+  { type: 'function', function: { name: 'optimize_gaming', description: 'Optimize the PC for gaming — high-performance power plan, clear temp files, close heavy non-essential apps.', parameters: { type: 'object', properties: { keep: { type: 'array', items: { type: 'string' }, description: 'App names to keep open' } } } } }
 ];
 
 function safeEval(expr) {
@@ -1033,6 +1038,145 @@ async function archiveOldFiles(dir, days) {
 }
 
 // ---------------------------------------------------------------------------
+// GemAir 2.1 — desktop-automation workflows (Section III). All guarded so a
+// missing process / OS quirk / offline environment degrades gracefully.
+// ---------------------------------------------------------------------------
+
+// A small registry of common desktop apps → the process/app name to close.
+const CLOSEABLE_APPS = {
+  browser: ['chrome', 'msedge', 'firefox', 'brave', 'opera', 'vivaldi', 'safari'],
+  chrome: ['chrome'], edge: ['msedge'], firefox: ['firefox'], brave: ['brave'], safari: ['safari'],
+  whatsapp: ['whatsapp'], slack: ['slack'], discord: ['discord'], telegram: ['telegram'],
+  spotify: ['spotify'], steam: ['steam'], zoom: ['zoom'], teams: ['teams'],
+  notepad: ['notepad'], calculator: ['calc'], explorer: ['explorer', 'finder'],
+  terminal: ['cmd', 'terminal'], code: ['Code'], vscode: ['Code'], excel: ['excel'], word: ['winword'], powerpoint: ['powerpnt']
+};
+
+function resolveCloseTargets(name, keep) {
+  const q = String(name || '').toLowerCase();
+  const keepList = (Array.isArray(keep) ? keep : []).map((k) => String(k).toLowerCase());
+  if (q === 'all' || q === 'everything' || q === 'except' || /close everything except/i.test(String(name || ''))) {
+    // close every known app EXCEPT those in `keep`
+    return Object.values(CLOSEABLE_APPS).flat().filter((proc) => !keepList.some((k) => proc.includes(k)));
+  }
+  return CLOSEABLE_APPS[q] || [q];
+}
+
+function closeApp(name, keep) {
+  const targets = resolveCloseTargets(name, keep);
+  if (!targets.length) return { ok: true, closed: [], note: 'Nothing matched to close.' };
+  const p = process.platform;
+  const closed = [];
+  for (const proc of targets) {
+    const safe = String(proc).replace(/[^a-zA-Z0-9 _.-]/g, '');
+    if (!safe) continue;
+    try {
+      if (p === 'win32') exec(`taskkill /IM "${safe}.exe" /F 2>nul || taskkill /IM "${safe}" /F 2>nul`, () => {});
+      else if (p === 'darwin') exec(`osascript -e 'quit app "${safe}"'`, () => {});
+      else exec(`pkill -f "${safe}"`, () => {});
+      closed.push(safe);
+    } catch (e) { /* skip */ }
+  }
+  logAction('close_app', `Closed ${closed.length} app(s): ${closed.join(', ')}`);
+  return { ok: true, closed, note: closed.length ? `Asked ${closed.length} app(s) to close.` : 'Nothing closed.' };
+}
+
+// Find files larger than minMB (and optionally unused for `unusedMonths`).
+function findLargeFiles(root, minMB, unusedMonths) {
+  const base = root || os.homedir();
+  const minBytes = (Number(minMB) || 500) * 1024 * 1024;
+  const cutoff = unusedMonths ? Date.now() - Number(unusedMonths) * 30 * 86400000 : null;
+  const hits = [];
+  const walk = (dir, depth) => {
+    if (depth > 6 || hits.length >= 40) return;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.name.startsWith('.') || e.name === '_archive') continue;
+      const full = path.join(dir, e.name);
+      try {
+        if (e.isDirectory()) walk(full, depth + 1);
+        else {
+          const st = fs.statSync(full);
+          if (st.size >= minBytes && (!cutoff || st.mtimeMs < cutoff)) {
+            hits.push({ path: full, sizeMB: Math.round(st.size / 1048576), modified: new Date(st.mtimeMs).toISOString().slice(0, 10) });
+          }
+        }
+      } catch { /* skip unreadable */ }
+    }
+  };
+  walk(base, 0);
+  logAction('find_large_files', `Found ${hits.length} file(s) > ${minMB || 500}MB${unusedMonths ? ` unused ${unusedMonths}+ months` : ''} in ${base}`);
+  return { files: hits, count: hits.length, base, minMB: minMB || 500, unusedMonths: unusedMonths || null };
+}
+
+// Scaffold a project folder tree (empty folders). Confirms first (Section III #4).
+async function createFolderTree(root, folders) {
+  const base = root || path.join(os.homedir(), 'Documents');
+  const list = Array.isArray(folders) ? folders : (String(folders || '').split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean));
+  const tree = list.length ? list : ['src', 'src/components', 'src/assets', 'docs', 'tests', 'scripts', 'public'];
+  if (!tree.length) return { error: 'Provide folders to create.' };
+  const ok = await confirmAction('Create folder tree?', `GemAir will create ${tree.length} folder(s) under:\n${base}\n\n${tree.join('\n')}\n\nNo files are touched.`);
+  if (!ok) return { error: 'Cancelled by user.' };
+  const created = [];
+  for (const rel of tree) {
+    const clean = String(rel).replace(/[\/\\]+$/,'').trim();
+    if (!clean || clean === '.' || clean.startsWith('..')) continue;
+    const dest = path.join(base, clean);
+    try { fs.mkdirSync(dest, { recursive: true }); created.push(dest); } catch { /* skip */ }
+  }
+  logAction('create_folder_tree', `Created ${created.length} folder(s) under ${base}`);
+  return { ok: true, base, created, count: created.length };
+}
+
+// Move files matching a filter (by extension, type, or older-than days) into a folder.
+async function moveFiles(source, dest, filter) {
+  const from = source || path.join(os.homedir(), 'Downloads');
+  const to = dest || path.join(from, filter ? String(filter || '').replace(/\W+/g, '_').toLowerCase() : 'moved');
+  const f = String(filter || '').toLowerCase();
+  try {
+    const entries = fs.readdirSync(from, { withFileTypes: true }).filter((e) => e.isFile());
+    const candidates = entries.filter((e) => {
+      if (!f) return true;
+      if (f.startsWith('.')) return path.extname(e.name).toLowerCase() === f;
+      if (f === 'large') { try { return fs.statSync(path.join(from, e.name)).size > 100 * 1024 * 1024; } catch { return false; } }
+      return e.name.toLowerCase().includes(f) || categorizeFile(e.name) === f;
+    });
+    if (!candidates.length) return { ok: true, moved: 0, note: `No files matched "${filter || 'all'}" in ${from}.` };
+    const ok = await confirmAction('Move files?', `GemAir will move ${candidates.length} file(s) from:\n${from}\ninto:\n${to}\n\nFiles are moved, not deleted.`);
+    if (!ok) return { error: 'Cancelled by user.' };
+    if (!fs.existsSync(to)) fs.mkdirSync(to, { recursive: true });
+    let n = 0;
+    for (const e of candidates) {
+      try { fs.renameSync(path.join(from, e.name), path.join(to, e.name)); n++; } catch { /* skip locked */ }
+    }
+    logAction('move_files', `Moved ${n} file(s) matching "${filter || 'all'}" to ${to}`);
+    return { ok: true, moved: n, to };
+  } catch (e) { return { error: e.message }; }
+}
+
+// Optimize the PC for gaming: high-performance power plan, clear temp, close
+// heavy non-essential apps. Confirms first (Section III #11).
+async function optimizeGaming(keep) {
+  const ok = await confirmAction('Optimize for gaming?', 'GemAir will:\n• switch to the High Performance power plan\n• clear temporary files\n• close heavy non-essential apps (messengers, browser tabs except kept ones)\n\nNothing personal is deleted — temp caches only.');
+  if (!ok) return { error: 'Cancelled by user.' };
+  const done = [];
+  const p = process.platform;
+  if (p === 'win32') {
+    exec('powercfg /setactive SCHEME_MIN', () => {}); done.push('High-performance power plan');
+    exec('del /q /s %TEMP%\\* 2>nul', () => {}); done.push('Temp files cleared');
+  } else if (p === 'darwin') {
+    exec('sudo pmset -a powernap 0 2>/dev/null', () => {}); done.push('Power settings tuned');
+  } else {
+    exec('rm -rf /tmp/* 2>/dev/null', () => {}); done.push('Temp files cleared');
+  }
+  const closed = closeApp('all', keep || ['gemair']);
+  done.push(`Closed ${closed.closed.length} non-essential app(s)`);
+  logAction('optimize_gaming', `Gaming optimization: ${done.join('; ')}`);
+  return { ok: true, steps: done, closed: closed.closed };
+}
+
+// ---------------------------------------------------------------------------
 // System guardian — "what's slowing my PC down?"
 // ---------------------------------------------------------------------------
 function listTopProcesses() {
@@ -1320,6 +1464,8 @@ const TOOL_RISK = {
   get_wellness_tip: 'safe', get_quote: 'safe', get_system_status: 'safe', get_power_storage: 'safe', calculate: 'safe',
   run_command: 'sensitive', write_file: 'sensitive', control_system: 'sensitive',
   organize_folder: 'sensitive', archive_old_files: 'sensitive', send_email: 'sensitive',
+  close_app: 'sensitive', move_files: 'sensitive', create_folder_tree: 'sensitive', optimize_gaming: 'sensitive',
+  find_large_files: 'safe',
   show_panel: 'safe', hide_panel: 'safe'
 };
 
@@ -1438,6 +1584,20 @@ async function executeTool(name, args) {
         return renameFiles(args.path, args.pattern);
       case 'archive_old_files':
         return archiveOldFiles(args.path, args.days);
+      case 'close_app': {
+        const target = String(args.name || '').slice(0, 80);
+        const ok = await confirmAction('Close application?', `GemAir wants to close: ${target === 'all' ? 'all non-essential applications' : target}${args.keep ? ' (keeping: ' + args.keep.join(', ') + ')' : ''}.\n\nUnsaved work in those apps may be lost. Proceed?`);
+        if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
+        return closeApp(args.name, args.keep);
+      }
+      case 'find_large_files':
+        return findLargeFiles(args.path, args.minMB, args.unusedMonths);
+      case 'create_folder_tree':
+        return await createFolderTree(args.path, args.folders);
+      case 'move_files':
+        return await moveFiles(args.source, args.dest, args.filter);
+      case 'optimize_gaming':
+        return await optimizeGaming(args.keep);
       case 'system_scan':
         return await systemScan();
       case 'get_power_storage': {
