@@ -372,14 +372,60 @@ function supportGuidance(emotion, crisis) {
 }
 
 // ---------------------------------------------------------------------------
+// DEFAULTS — ONE source of truth (U3)
+//
+// 2.1 contradicted itself: the default city was "Mumbai" in the briefing and
+// "Dubai" in the weather command, the theme fell back to 'crimson' in three
+// places and 'cyan' in a fourth, and the voice mode defaulted to 'edge' in the
+// profile, 'neural' in speak(), and 'neural' again in factory-reset. Everything
+// now reads from this object; the theme id defers to themes.js, which stays the
+// single token source.
+// ---------------------------------------------------------------------------
+const DEFAULTS = Object.freeze({
+  name: 'Commander',
+  get theme() { return (window.GemAirThemes && window.GemAirThemes.DEFAULT) || 'crimson'; },
+  city: 'Mumbai',
+  model: 'llama-3.3-70b-versatile',
+  voiceMode: 'edge',        // Edge neural is the primary free engine
+  voicePreset: 'gem',
+  voiceRate: 1.0,
+  voicePitch: 1.1,
+  neuralVoice: 'en',
+  edgeVoice: 'en-US-AriaNeural',
+  sttLang: 'en-US',
+  lang: 'en',
+  ambientTrack: 'deep',
+  ambientVolume: 0.35
+});
+
+/** A pristine profile — used at boot and by factory reset, so they cannot drift. */
+function makeDefaultProfile() {
+  return {
+    name: DEFAULTS.name,
+    theme: DEFAULTS.theme,
+    city: DEFAULTS.city,
+    lang: DEFAULTS.lang,
+    ai: { baseURL: '', apiKey: '', model: DEFAULTS.model },
+    voice: {
+      preset: DEFAULTS.voicePreset,
+      rate: DEFAULTS.voiceRate,
+      pitch: DEFAULTS.voicePitch,
+      mode: DEFAULTS.voiceMode,
+      neuralVoice: DEFAULTS.neuralVoice,
+      edgeVoice: DEFAULTS.edgeVoice,
+      sttLang: DEFAULTS.sttLang,
+      name: ''
+    },
+    memoryOn: true, allowShell: false, wakeWord: false,
+    ambientScore: false, ambientTrack: DEFAULTS.ambientTrack, ambientVolume: DEFAULTS.ambientVolume,
+    screenAwareness: false
+  };
+}
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-let profile = {
-  name: 'Commander', theme: 'crimson',
-  ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' },
-  voice: { preset: 'gem', rate: 1.0, pitch: 1.1, mode: 'edge', neuralVoice: 'en', edgeVoice: 'en-US-AriaNeural', name: '' },
-  memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false, screenAwareness: false
-};
+let profile = makeDefaultProfile();
 let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
 let currentLang = 'en';
@@ -512,14 +558,27 @@ const NEURAL_VOICES = [
   { id: 'fr', label: 'French — smooth female' }
 ];
 
-let speechQueue = Promise.resolve();
-let currentNeuralAudio = null; // allows interrupting neural speech
 let speechGen = 0;             // monotonic generation to cancel stale speech
 
+/**
+ * Hard-stop every speech path (R3).
+ *
+ * Before 2.2 this only cancelled speechSynthesis, so barge-in froze the avatar
+ * mouth while the Edge/neural <audio> element kept talking over the user. Now
+ * it also stops the single TTS engine and drains queued streaming segments.
+ */
 function stopSpeaking() {
   speechGen++;
   try { speechSynthesis.cancel(); } catch (e) {}
-  if (currentNeuralAudio) { try { currentNeuralAudio.pause(); currentNeuralAudio = null; } catch (e) {} }
+  try { if (window.ttsEngine) window.ttsEngine.stop(); } catch (e) {}
+  try {
+    if (streamSpeechState) {
+      streamSpeechState.cancelled = true;
+      streamSpeechState.pending = 0;
+      streamSpeechState.queue = Promise.resolve();
+    }
+  } catch (e) {}
+  document.body.classList.remove('rgb-speaking');
   avatar({ speaking: false });
   hideCaption(200);
 }
@@ -1012,7 +1071,7 @@ function startRgb() {
 
 let rgbBurstTimer = null;
 function triggerRgbBurst() {
-  const restore = profile.theme || 'crimson';
+  const restore = profile.theme || DEFAULTS.theme;
   if (rgbBurstTimer) clearTimeout(rgbBurstTimer);
   document.body.classList.add('konami-burst');
   applyTheme('rgb');
@@ -2006,6 +2065,10 @@ async function handleMessage(text) {
   let reply;
   let agentToolRuns = [];
   let activeAgentName = '';
+  // R1: previously assigned and read WITHOUT ever being declared. Under strict
+  // mode the write threw (swallowed by the try/catch) and the read threw a
+  // ReferenceError before speak(reply) — so streamed replies were never voiced.
+  let skipFinalSpeak = false;
   if (agentMatch) {
     // Task routed to a specific resident agent (independent brain)
     const agentName = agentMatch[1][0].toUpperCase() + agentMatch[1].slice(1);
@@ -2050,7 +2113,7 @@ async function handleMessage(text) {
     let streamed = false;
     // Section IIc: stream speech sentence-by-sentence as tokens arrive (only
     // for online neural/Edge voices; the offline system voice waits for the end).
-    const streamVoiceMode = profile.voice?.mode || 'edge';
+    const streamVoiceMode = profile.voice?.mode || DEFAULTS.voiceMode;
     const streamingVoice = (streamVoiceMode === 'edge' || streamVoiceMode === 'neural') && !!window.ttsEngine;
     if (streamingVoice) resetStreamSpeech();
     const res = await api.aiChatStream(cfg, [sys, ...chatHistory.slice(-16)], (delta) => {
@@ -2132,66 +2195,79 @@ async function maybeConsolidateMemory() {
 }
 
 // ---------------------------------------------------------------------------
-// Voice (TTS): neural (smooth female, free) or system (offline)
+// Voice (TTS) — SINGLE engine path (U1).
+//
+// 2.1 carried a second, unreachable TTS stack in this file (speechQueue /
+// speakNeural / playAudioUrl / chunkForSpeech / speakSystem). It duplicated
+// tts-engine.js, drifted from it, and could never run because window.ttsEngine
+// is always present. It is deleted: every utterance now goes through
+// window.ttsEngine.speak(), which owns the Edge -> Google -> system fallback.
+// Voice-name sentinels live in tts-engine.js (window.ttsEngine.SENTINELS).
 // ---------------------------------------------------------------------------
-const VOICE_SENTINELS = ['female', 'zira', 'aria', 'samantha', 'hazel', 'susan', 'kate', 'serena', 'jenny', 'martha', 'en-us'];
+
+function ttsOptionsFor(clean, gen, mode) {
+  const mod = emotionVoiceMod();
+  const preset = VOICE_PRESETS[profile.voice?.preset] || VOICE_PRESETS.gem;
+  return {
+    gender: profile.voiceGender || profile.avatarGender || 'female',
+    engine: mode || profile.voice?.mode || DEFAULTS.voiceMode,
+    rate: profile.voice?.rate ?? 1.0,
+    pitch: profile.voice?.pitch ?? 1.1,
+    volume: 1.0,
+    neuralVoice: profile.voice?.neuralVoice || DEFAULTS.neuralVoice,
+    edgeVoice: profile.voice?.edgeVoice || preset.edgeVoice || DEFAULTS.edgeVoice,
+    edgeLang: profile.voice?.sttLang || DEFAULTS.sttLang,
+    presetVoice: preset.edgeVoice,
+    preset: profile.voice?.preset || 'gem',
+    emotionMod: mod,
+    gen,
+    // S5: word-boundary events drive real visemes (and the live caption).
+    onBoundary: (ev) => {
+      try {
+        const i = ev && typeof ev.charIndex === 'number' ? ev.charIndex : -1;
+        const word = ev && ev.word ? ev.word
+          : i >= 0 ? (clean.slice(i, i + (ev.charLength || 12)).match(/^\S+/) || [''])[0]
+          : '';
+        if (word && window.gemAvatar && window.gemAvatar.speakWord) window.gemAvatar.speakWord(word);
+        if (i >= 0) captionProgress(i + (ev.charLength || word.length || 0));
+      } catch (e) {}
+    },
+    // R7: the engine checks this between chunks so cancelled speech dies fast
+    isCurrent: () => gen === speechGen
+  };
+}
 
 function speak(text) {
   const clean = String(text || '').replace(/```[\s\S]*?```/g, '(code).').replace(/[#*_`]/g, '').replace(/\s+/g, ' ').trim();
   if (!clean) return;
   stopSpeaking(); // interrupt prior speech so new replies cut in cleanly
   const gen = ++speechGen;
-  const mode = profile.voice?.mode || 'neural';
+  const mode = profile.voice?.mode || DEFAULTS.voiceMode;
   document.body.classList.add('rgb-speaking'); // RGB while AI speaks
   avatar({ speaking: true });                  // Gem's mouth starts moving
   setCaption('gem', clean);                    // live subtitle
   if (mode === 'neural') captionAutoAdvance(clean);
 
-  if (window.ttsEngine) {
-    const mod = emotionVoiceMod();
-    const preset = VOICE_PRESETS[profile.voice?.preset] || VOICE_PRESETS.gem;
-    window.ttsEngine.speak(clean, {
-      gender: profile.voiceGender || profile.avatarGender || 'female',
-      engine: mode,
-      rate: profile.voice?.rate ?? 1.0,
-      pitch: profile.voice?.pitch ?? 1.1,
-      volume: 1.0,
-      neuralVoice: profile.voice?.neuralVoice || 'en',
-      edgeVoice: profile.voice?.edgeVoice || preset.edgeVoice || 'en-US-AriaNeural',
-      edgeLang: profile.voice?.sttLang || 'en-US',
-      presetVoice: preset.edgeVoice,
-      preset: profile.voice?.preset || 'gem',
-      emotionMod: mod,
-      gen
-    }).then(() => {
-      if (gen === speechGen) {
-        document.body.classList.remove('rgb-speaking');
-        avatar({ speaking: false });
-        captionProgress(captionFullText.length);
-        hideCaption(1400);
-      }
-    }).catch(() => {
-      if (gen === speechGen) {
-        document.body.classList.remove('rgb-speaking');
-        avatar({ speaking: false });
-      }
-    });
-  } else {
-    speechQueue = speechQueue.then(async () => {
-      if (gen !== speechGen) return; // superseded
-      if (mode === 'neural') {
-        try { await speakNeural(clean, gen); return; } catch (e) { /* fall back to system voice */ }
-      }
-      if (gen === speechGen) speakSystem(clean);
-    }).catch(() => {}).finally(() => {
-      if (gen === speechGen) {
-        document.body.classList.remove('rgb-speaking');
-        avatar({ speaking: false });
-        captionProgress(captionFullText.length);
-        hideCaption(1400);
-      }
-    });
+  if (!window.ttsEngine) {
+    document.body.classList.remove('rgb-speaking');
+    avatar({ speaking: false });
+    hideCaption(1400);
+    return;
   }
+
+  window.ttsEngine.speak(clean, ttsOptionsFor(clean, gen, mode)).then(() => {
+    if (gen === speechGen) {
+      document.body.classList.remove('rgb-speaking');
+      avatar({ speaking: false });
+      captionProgress(captionFullText.length);
+      hideCaption(1400);
+    }
+  }).catch(() => {
+    if (gen === speechGen) {
+      document.body.classList.remove('rgb-speaking');
+      avatar({ speaking: false });
+    }
+  });
 }
 
 /**
@@ -2203,34 +2279,22 @@ function speak(text) {
 let streamSpeechState = null;
 function speakSegment(seg, opts = {}) {
   if (!window.ttsEngine) return Promise.resolve();
-  const mod = emotionVoiceMod();
-  const preset = VOICE_PRESETS[profile.voice?.preset] || VOICE_PRESETS.gem;
-  return window.ttsEngine.speak(seg, {
-    gender: profile.voiceGender || profile.avatarGender || 'female',
-    engine: profile.voice?.mode || 'edge',
-    rate: profile.voice?.rate ?? 1.0,
-    pitch: profile.voice?.pitch ?? 1.1,
-    volume: 1.0,
-    neuralVoice: profile.voice?.neuralVoice || 'en',
-    edgeVoice: profile.voice?.edgeVoice || preset.edgeVoice || 'en-US-AriaNeural',
-    edgeLang: profile.voice?.sttLang || 'en-US',
-    presetVoice: preset.edgeVoice,
-    preset: profile.voice?.preset || 'gem',
-    emotionMod: mod,
-    gen: ++speechGen
-  }).then(() => {
-    if (streamSpeechState && streamSpeechState.pending > 0) streamSpeechState.pending--;
-    return true;
-  }).catch(() => { if (streamSpeechState && streamSpeechState.pending > 0) streamSpeechState.pending--; return false; });
+  // R3: never start a segment that a barge-in already cancelled
+  if (streamSpeechState && streamSpeechState.cancelled) return Promise.resolve(false);
+  const gen = ++speechGen;
+  const settle = () => { if (streamSpeechState && streamSpeechState.pending > 0) streamSpeechState.pending--; };
+  return window.ttsEngine.speak(seg, ttsOptionsFor(seg, gen))
+    .then(() => { settle(); return true; })
+    .catch(() => { settle(); return false; });
 }
 
-function resetStreamSpeech() { streamSpeechState = { spoken: 0, queue: Promise.resolve(), pending: 0 }; }
+function resetStreamSpeech() { streamSpeechState = { spoken: 0, queue: Promise.resolve(), pending: 0, cancelled: false }; }
 
 // Speak whatever remains unspoken (the trailing partial sentence). Returns true
 // if anything was queued so the caller can skip a duplicate full speak().
 function flushStreamSpeech(fullText) {
   const clean = String(fullText || '').replace(/```[\s\S]*?```/g, '(code).').replace(/[#*_`]/g, '').replace(/\s+/g, ' ').trim();
-  if (!streamSpeechState) return false;
+  if (!streamSpeechState || streamSpeechState.cancelled) return false;
   const s = streamSpeechState;
   if (clean.length > s.spoken) {
     const tail = clean.slice(s.spoken).trim();
@@ -2244,20 +2308,52 @@ function flushStreamSpeech(fullText) {
   return s.pending > 0;
 }
 
+// U6: a period only ends a sentence when it is followed by whitespace/end AND
+// is not part of a decimal or version number ("3.14", "v2.1"). Without this the
+// streamer chopped numbers mid-word and the speech sounded stuttered.
+const SENTENCE_END = /[.!?]["')\]]?(?=\s|$)/;
+
+/** Split a buffer into [completedSentences, remainderStartIndex]. */
+function completedSentences(buf) {
+  const out = [];
+  let start = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const ch = buf[i];
+    if (ch !== '.' && ch !== '!' && ch !== '?' && ch !== '\n') continue;
+    let end = i + 1;
+    if (/["')\]]/.test(buf[end] || '')) end++;
+    const next = buf.slice(end);
+    // must be end-of-buffer or whitespace, and for '.' the next visible char
+    // must not be a digit or lowercase letter (decimals, versions, abbrevs)
+    if (next && !/^\s/.test(next)) continue;
+    if (ch === '.') {
+      const prev = buf[i - 1] || '';
+      const after = (next.match(/^\s*(\S)/) || [])[1] || '';
+      if (/\d/.test(prev) && /\d/.test(after)) continue;      // 3. 14
+      if (after && !/[A-Z0-9"'(\[]/.test(after)) continue;      // lower-case follow-on
+    }
+    if (!next.trim() && buf.length === end) {
+      // trailing sentence with nothing after it — still complete
+    }
+    const seg = buf.slice(start, end).trim();
+    if (seg) out.push({ seg, end });
+    start = end;
+    i = end - 1;
+  }
+  return { sentences: out, consumed: start };
+}
+
 function streamSpeak(fullText) {
   const clean = String(fullText || '').replace(/```[\s\S]*?```/g, '(code).').replace(/[#*_`]/g, '').replace(/\s+/g, ' ').trim();
   if (!streamSpeechState) resetStreamSpeech();
   const s = streamSpeechState;
+  if (s.cancelled) return;
   if (clean.length <= s.spoken) return;
   const newPart = clean.slice(s.spoken);
-  // take completed sentences (ending in . ! ?) from the head of the buffer
-  const m = newPart.match(/^(?:[^.!?\n]*[.!?]["')\]]?)+/);
-  if (!m) return; // no completed sentence yet — wait for more tokens
-  const sentences = m[0].match(/[^.!?\n]*[.!?]["')\]]?/g) || [];
-  for (const sentence of sentences) {
-    const seg = sentence.trim();
-    if (!seg) continue;
-    s.spoken = s.spoken + sentence.length;
+  const { sentences, consumed } = completedSentences(newPart);
+  if (!sentences.length) return; // no completed sentence yet — wait for more tokens
+  s.spoken += consumed;
+  for (const { seg } of sentences) {
     s.pending++;
     s.queue = s.queue.then(() => speakSegment(seg)).catch(() => {});
   }
@@ -2301,97 +2397,6 @@ function emotionVoiceMod() {
   return EMOTION_SPEECH[e] || EMOTION_SPEECH.neutral;
 }
 
-function speakSystem(text) {
-  try {
-    const mod = emotionVoiceMod();
-    const u = new SpeechSynthesisUtterance(text.slice(0, 600));
-    u.rate = Math.max(0.5, Math.min(1.5, Number(profile.voice?.rate ?? 1.0) + mod.rate));
-    u.pitch = Math.max(0.5, Math.min(2, Number(profile.voice?.pitch ?? 1.1) + mod.pitch));
-    const voices = speechSynthesis.getVoices();
-    const wanted = profile.voice?.name;
-    if (wanted) {
-      const v = voices.find((x) => x.name === wanted);
-      if (v) u.voice = v;
-    } else {
-      // auto-pick the best available female English voice
-      const female = voices.find((v) => v.lang && /^en/i.test(v.lang) && VOICE_SENTINELS.some((s) => v.name.toLowerCase().includes(s)));
-      if (female) u.voice = female;
-    }
-    // Drive the avatar's mouth from the real speech timeline: every word
-    // boundary re-triggers a syllable so the lip-sync tracks the audio.
-    u.onboundary = (ev) => {
-      try { window.gemAvatar && window.gemAvatar.syllable(); } catch (e) {}
-      if (ev && typeof ev.charIndex === 'number') captionProgress(ev.charIndex + (ev.charLength || 0));
-    };
-    u.onstart = () => avatar({ speaking: true });
-    u.onend = () => avatar({ speaking: false });
-    speechSynthesis.speak(u);
-  } catch (e) {}
-}
-
-function chunkForSpeech(text, max = 280) {
-  const chunks = [];
-  let cur = '';
-  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
-  for (const s of sentences) {
-    if ((cur + s).length > max && cur) { chunks.push(cur.trim()); cur = ''; }
-    cur += s;
-    if (cur.length > max) { chunks.push(cur.trim()); cur = ''; }
-  }
-  if (cur.trim()) chunks.push(cur.trim());
-  return chunks;
-}
-
-function playAudioUrl(url, gen) {
-  return new Promise((resolve) => {
-    const audio = new Audio();
-    let settled = false;
-    const done = (ok) => { if (!settled) { settled = true; try { audio.pause(); } catch (e) {} if (currentNeuralAudio === audio) currentNeuralAudio = null; resolve(ok); } };
-    audio.onended = () => done(true);
-    audio.onerror = () => done(false);
-    audio.src = url;
-    audio.preload = 'auto';
-    if (gen !== speechGen) { done(false); return; }
-    currentNeuralAudio = audio;
-
-    try {
-      if (!globalAudioCtx) {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) globalAudioCtx = new AudioCtx();
-      }
-      if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
-        globalAudioCtx.resume();
-      }
-      if (globalAudioCtx) {
-        if (!globalAnalyser) {
-          globalAnalyser = globalAudioCtx.createAnalyser();
-          globalAnalyser.fftSize = 128;
-        }
-        audio.crossOrigin = "anonymous";
-        const source = globalAudioCtx.createMediaElementSource(audio);
-        source.connect(globalAnalyser);
-        globalAnalyser.connect(globalAudioCtx.destination);
-        if (window.gemAvatar) window.gemAvatar.setAudioAnalyser(globalAnalyser);
-      }
-    } catch (e) {}
-
-    audio.play().then(() => {}).catch(() => done(false));
-    setTimeout(() => done(false), 30000); // safety
-  });
-}
-
-async function speakNeural(text, gen) {
-  const accent = profile.voice?.neuralVoice || 'en';
-  const chunks = chunkForSpeech(text, 180); // Google TTS limit ~200 chars
-  let any = false;
-  for (const chunk of chunks) {
-    if (gen !== speechGen) return; // interrupted
-    const url = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q=' + encodeURIComponent(chunk) + '&tl=' + encodeURIComponent(accent);
-    const played = await playAudioUrl(url, gen);
-    if (played) any = true;
-  }
-  if (!any) throw new Error('neural TTS unavailable');
-}
 let micStream = null;
 let micAnalyser = null;
 let micMeterFrame = null;
@@ -2441,7 +2446,7 @@ function initRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return null;
   const r = new SR();
-  r.continuous = false; r.interimResults = true; r.lang = profile.voice?.sttLang || 'en-US';
+  r.continuous = false; r.interimResults = true; r.lang = profile.voice?.sttLang || DEFAULTS.sttLang;
   r.onresult = (event) => {
     let interim = '', finalText = '';
     for (let i = event.resultIndex || 0; i < event.results.length; i++) {
@@ -3334,7 +3339,7 @@ function renderVoiceTab() {
     ['ACCENT', (v.neuralVoice || 'EN-US').toUpperCase(), true],
     ['RATE', (v.rate ?? 1.0).toFixed(2), false],
     ['PITCH', (v.pitch ?? 1.1).toFixed(2), false],
-    ['RECOGNITION', (v.sttLang || 'EN-US').toUpperCase(), true],
+    ['RECOGNITION', (v.sttLang || DEFAULTS.sttLang).toUpperCase(), true],
     ['MIC', listening ? 'LISTENING…' : (isRunning ? 'ONLINE' : 'STANDBY'), !!isRunning || listening]
   ];
   el.innerHTML = rows.map((r) => `<div class="vs-row"><span>${r[0]}</span><b class="${r[2] ? 'hot' : ''}">${r[1]}</b></div>`).join('');
@@ -3627,7 +3632,7 @@ function renderBriefing() {
   const topGoal = (memory.goals || []).find((g) => !g.done);
   $('#briefGoal').textContent = topGoal ? '🎯 ' + topGoal.text.slice(0, 40) : '🎯 No active goal — add one!';
   // weather (free)
-  webGet('weather', { city: profile.city || 'Mumbai' }).then((w) => {
+  webGet('weather', { city: profile.city || DEFAULTS.city }).then((w) => {
     const el = $('#briefWeather');
     if (w && w.temperature != null) el.textContent = `🌤 ${w.city.split(',')[0]}: ${w.temperature}°C ${w.condition}`;
   }).catch(() => {});
@@ -3962,7 +3967,7 @@ function syncVoicePresetUi(presetId) {
 }
 
 function updateSttLanguageUi() {
-  const language = profile.voice?.sttLang || 'en-US';
+  const language = profile.voice?.sttLang || DEFAULTS.sttLang;
   const chip = $('#sttLangChip'); if (chip) chip.textContent = '🎙 ' + language.toUpperCase();
   if (recognition) recognition.lang = language;
   if (wakeRecognition) wakeRecognition.lang = language;
@@ -4013,9 +4018,9 @@ function openSettings() {
   $('#setPitch').value = profile.voice?.pitch ?? 1.1;
   $('#rateVal').textContent = $('#setRate').value;
   $('#pitchVal').textContent = $('#setPitch').value;
-  $('#setVoiceMode').value = profile.voice?.mode || 'edge';
+  $('#setVoiceMode').value = profile.voice?.mode || DEFAULTS.voiceMode;
   $('#setNeuralVoice').value = profile.voice?.neuralVoice || 'en';
-  $('#setSttLang').value = profile.voice?.sttLang || 'en-US';
+  $('#setSttLang').value = profile.voice?.sttLang || DEFAULTS.sttLang;
   $('#setMemoryOn').checked = profile.memoryOn !== false;
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setAmbientScore').checked = !!profile.ambientScore;
@@ -4363,7 +4368,7 @@ function bindEvents() {
       if (arrayKeys.some((key) => backup.memory[key] != null && !Array.isArray(backup.memory[key]))) throw new Error('Backup memory structure is invalid.');
       const result = await api.importMemory({ profile: backup.profile, memory: backup.memory });
       if (!result || result.ok === false) throw new Error(result && result.error || 'Import failed.');
-      await loadProfile(); await loadMemory(); applyTheme(profile.theme || 'crimson'); applyAvatarGender(profile.avatarGender || 'female');
+      await loadProfile(); await loadMemory(); applyTheme(profile.theme || DEFAULTS.theme); applyAvatarGender(profile.avatarGender || 'female');
       renderAllMemory(); updateContextMeter(); updateSttLanguageUi(); configureWakeWord(!!profile.wakeWord); configureScreenAwareness(!!profile.screenAwareness);
       $('#importFile').value = '';
       toast('BACKUP RESTORED', 'Profile, memories, goals, voice and settings restored.', '✓');
@@ -4437,9 +4442,9 @@ function bindEvents() {
     configureWakeWord(profile.wakeWord);
   });
   $('#resetBtn').addEventListener('click', async () => {
-    profile = { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { preset: 'gem', rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' }, memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false, screenAwareness: false };
+    profile = makeDefaultProfile();
     setAmbientScore(false);
-    await persistProfile(); applyTheme('crimson'); updateLinkMode(); openSettings();
+    await persistProfile(); applyTheme(DEFAULTS.theme); updateLinkMode(); openSettings();
   });
   $$('.preset').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
   $('#setBaseURL').addEventListener('input', updateAiHint);
@@ -4605,7 +4610,7 @@ function bindEvents() {
   }));
   $('#sttLangChip').addEventListener('click', () => {
     profile.voice = profile.voice || {};
-    const current = STT_LANGUAGES.indexOf(profile.voice.sttLang || 'en-US');
+    const current = STT_LANGUAGES.indexOf(profile.voice.sttLang || DEFAULTS.sttLang);
     profile.voice.sttLang = STT_LANGUAGES[(current + 1) % STT_LANGUAGES.length];
     $('#setSttLang').value = profile.voice.sttLang;
     // Section IId: switching STT to Hindi/Urdu also selects a matching Edge voice.
@@ -4858,7 +4863,7 @@ function openHudDock(panel, arg) {
 
 async function renderWeatherPane(body, title, arg) {
   title.textContent = 'WEATHER';
-  const city = arg || profile.city || 'Dubai';
+  const city = arg || profile.city || DEFAULTS.city;
   body.innerHTML = '<div class="empty">Scanning atmosphere…</div>';
   const w = await webGet('weather', { city });
   if (w.error) { body.innerHTML = `<div class="empty">${escapeHtml(w.error)}</div>`; return; }
@@ -5020,7 +5025,7 @@ async function boot() {
   // controls are live before anything that can fail, and each remaining step
   // runs inside safe() so one failure can never cascade.
   // ---------------------------------------------------------------------
-  safe('applyTheme', () => applyTheme(profile.theme || 'cyan'));
+  safe('applyTheme', () => applyTheme(profile.theme || DEFAULTS.theme));
   safe('bindEvents', bindEvents);
   safe('bindSoulSliders', bindSoulSliders);
   safe('updateLinkMode', updateLinkMode);

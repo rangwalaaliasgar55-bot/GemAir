@@ -84,6 +84,31 @@
     { k: 'FV', w: 1.00, h: 0.18, r: 0.10, p: 0.08 },
     { k: 'MM', w: 0.94, h: 0.04, r: 0.20, p: 0.08 }
   ];
+  const VISEME_BY_KEY = VISEMES.reduce((m, v) => { m[v.k] = v; return m; }, {});
+
+  /**
+   * S5 — map a real spoken word to a viseme sequence.
+   *
+   * Word-boundary events (system voice `onboundary`, Edge `WordBoundary`
+   * metadata) give us the word being spoken; we articulate its vowels so the
+   * mouth genuinely tracks the words instead of firing random syllables.
+   */
+  const LETTER_VISEME = {
+    a: 'AA', e: 'EH', i: 'EE', o: 'OH', u: 'OO', y: 'EE',
+    m: 'MM', b: 'MM', p: 'MM', f: 'FV', v: 'FV', l: 'L', w: 'OO', r: 'OH'
+  };
+  function visemesForWord(word) {
+    const w = String(word || '').toLowerCase().replace(/[^a-z]/g, '');
+    if (!w) return [];
+    const out = [];
+    for (const ch of w) {
+      const k = LETTER_VISEME[ch];
+      if (k && out[out.length - 1] !== k) out.push(k);
+    }
+    if (!out.length) out.push('EH');
+    return out.slice(0, 5);
+  }
+
   function pickViseme(prev) {
     for (let i = 0; i < 6; i++) {
       let r = Math.random();
@@ -548,6 +573,22 @@
         img.src = ART.src;
       },
       syllable() { S.syllableT = 0; S.syllablePhase = 0; },
+      /** S5: articulate a real word across the next ~250ms of animation. */
+      speakWord(word) {
+        const keys = visemesForWord(word);
+        if (!keys.length) return;
+        S.speaking = true;
+        const step = Math.max(45, Math.min(120, 260 / keys.length));
+        keys.forEach((k, i) => {
+          setTimeout(() => {
+            const v = VISEME_BY_KEY[k];
+            if (!v) return;
+            S.viseme = v.k;
+            S.mouthTarget = v.h; S.mouthWTarget = v.w; S.mouthRTarget = v.r;
+            S.syllablePhase = 0; S.syllableT = step / 1000;
+          }, i * step);
+        });
+      },
       onViseme(f) {
         if (!f) return;
         if (typeof f.open === 'number') S.mouthTarget = f.open;
@@ -567,4 +608,7 @@
   }
 
   window.gemAvatar = createAvatar();
+  // R6: the ONE tolerant colour parser (hex / rgb() / hsl()) — app.js routes
+  // every accent through this so hsl-based themes (RGB) stop producing NaN.
+  window.gemAvatar.parseColor = parseColor;
 })();
