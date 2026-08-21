@@ -64,6 +64,37 @@ const api = {
     }
     return await this._webChat(messages);
   },
+  /**
+   * R8 — connection test WITHOUT the silent free-core rescue.
+   *
+   * TEST CONNECTION used aiChat(), which falls back to the free serverless core
+   * whenever the user's own key fails. A completely bogus key therefore printed
+   * a green "OK". This variant reports exactly which path answered, and treats
+   * "a key was supplied but the direct call failed" as a hard failure.
+   */
+  async aiChatStrict(config, messages) {
+    const hasKey = !!(config && config.apiKey && String(config.apiKey).trim());
+    if (window.gemair) {
+      if (!hasKey) {
+        const free = await this._webChat(messages);
+        return { ...free, via: 'free-core' };
+      }
+      try {
+        const reply = await window.gemair.aiChat(config, messages);
+        if (reply && reply.ok === false) return { ok: false, error: reply.error, via: 'direct' };
+        return { ok: true, reply: reply && reply.reply ? reply.reply : reply, via: 'direct' };
+      } catch (e) {
+        return { ok: false, error: e && e.message ? e.message : String(e), via: 'direct' };
+      }
+    }
+    if (hasKey) {
+      if (!window.aiClient) return { ok: false, error: 'NO_DIRECT_CLIENT', via: 'direct' };
+      const direct = await window.aiClient.directClientChat(config, messages);
+      return { ...direct, via: 'direct' };
+    }
+    const free = await this._webChat(messages);
+    return { ...free, via: 'free-core' };
+  },
   async aiChatStream(config, messages, onDelta) {
     if (window.gemair) return window.gemair.aiChatStream(config, messages, onDelta);
     if (window.aiClient && config && config.apiKey) {
@@ -3777,10 +3808,48 @@ function renderMood() {
   });
 }
 
+/**
+ * Accent → rgba() (R6).
+ *
+ * 2.1 assumed the accent was always "#rrggbb". Under the RGB theme getAccent()
+ * returns an hsl() string, so parseInt produced NaN and every
+ * gradient.addColorStop() call threw — silently killing the weekly sparklines,
+ * the mood chart and the command map. This routes through the one tolerant
+ * colour parser (avatar.js parseColor: hex / rgb() / hsl()) with a local
+ * fallback so it still works if avatar.js failed to load.
+ */
+function parseAnyColor(str) {
+  try {
+    if (window.gemAvatar && window.gemAvatar.parseColor) {
+      const c = window.gemAvatar.parseColor(String(str || '').trim());
+      if (c) return c;
+    }
+  } catch (e) {}
+  const v = String(str || '').trim();
+  let m = v.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (m) {
+    let h = m[1];
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+  }
+  m = v.match(/^rgba?\(([^)]+)\)$/i);
+  if (m) { const p = m[1].split(',').map(Number); return { r: p[0] | 0, g: p[1] | 0, b: p[2] | 0 }; }
+  m = v.match(/^hsla?\(([^)]+)\)$/i);
+  if (m) {
+    const p = m[1].split(',').map(parseFloat);
+    const h = ((p[0] % 360) + 360) % 360 / 360, sat = (p[1] || 0) / 100, l = (p[2] || 0) / 100;
+    const f = (n) => {
+      const k = (n + h * 12) % 12, a = sat * Math.min(l, 1 - l);
+      return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+    };
+    return { r: f(0), g: f(8), b: f(4) };
+  }
+  return { r: 59, g: 201, b: 255 };
+}
+
 function hexToRgba(hex, alpha) {
-  const m = hex.replace('#', '');
-  const r = parseInt(m.slice(0, 2), 16), g = parseInt(m.slice(2, 4), 16), b = parseInt(m.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
+  const c = parseAnyColor(hex);
+  return `rgba(${c.r},${c.g},${c.b},${Number.isFinite(Number(alpha)) ? Number(alpha) : 1})`;
 }
 
 function renderGoals() {
@@ -4461,11 +4530,13 @@ function bindEvents() {
   $('#testConn').addEventListener('click', async () => {
     const resEl = $('#testResult');
     resEl.className = 'test-result'; resEl.textContent = 'Testing…';
-    const cfg = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
+    const cfg = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || DEFAULTS.model };
     try {
-      const res = await api.aiChat(cfg, [{ role: 'user', content: 'Reply with exactly: OK' }]);
-      if (res.ok) { resEl.textContent = '✓ OK'; resEl.classList.add('ok'); }
-      else { resEl.textContent = '✗ ' + humanError(res.error); resEl.classList.add('bad'); }
+      // R8: strict — a supplied key that fails must NOT be masked by the free core.
+      const res = await api.aiChatStrict(cfg, [{ role: 'user', content: 'Reply with exactly: OK' }]);
+      if (res.ok && res.via === 'direct') { resEl.textContent = '✓ OK — your key answered'; resEl.classList.add('ok'); }
+      else if (res.ok) { resEl.textContent = '✓ OK — GemAir free core (no key configured)'; resEl.classList.add('ok'); }
+      else { resEl.textContent = '✗ ' + humanError(res.error) + (res.via === 'direct' ? ' (your key/endpoint — the free core was NOT used)' : ''); resEl.classList.add('bad'); }
     } catch (e) { resEl.textContent = '✗ ' + e.message; resEl.classList.add('bad'); }
   });
 

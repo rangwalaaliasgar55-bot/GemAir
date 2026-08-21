@@ -91,12 +91,16 @@ const _usage = new Map(); // `${day}:${identity}` -> count (per-instance best ef
 const FAIR_USE_DAILY = (() => { const n = parseInt(env('FAIR_USE_DAILY'), 10); return Number.isFinite(n) && n > 0 ? n : 200; })();
 
 function identityFor(req, body) {
-  if (body && body.userId && typeof body.userId === 'string' && body.userId.trim()) {
-    return 'u:' + body.userId.trim().slice(0, 64);
-  }
+  // R10: a client-supplied userId alone was trivially rotated to reset the
+  // daily cap, so the IP is always part of the identity.
   const fwd = req.headers && req.headers['x-forwarded-for'];
-  if (fwd) return 'ip:' + String(fwd).split(',')[0].trim().slice(0, 64);
-  return 'ip:unknown';
+  const ip = fwd ? String(fwd).split(',')[0].trim().slice(0, 64)
+    : (req.headers && req.headers['x-real-ip']) ? String(req.headers['x-real-ip']).trim().slice(0, 64)
+    : 'unknown';
+  if (body && body.userId && typeof body.userId === 'string' && body.userId.trim()) {
+    return 'u:' + body.userId.trim().slice(0, 64) + '@' + ip;
+  }
+  return 'ip:' + ip;
 }
 
 function fairUseLeft(identity) {
@@ -155,6 +159,95 @@ function freeBrain(raw) {
   return `I'm here and listening. I can search the live web, check weather, prices, translations, definitions and more — try "weather in Mumbai" or "search latest AI news".`;
 }
 
+// ---------------------------------------------------------------------------
+// R10 — hardening
+//
+// (a) Every upstream fetch gets an AbortController timeout. A hung provider
+//     used to pin the serverless function until the platform killed it, so the
+//     fallback chain never got a chance to rotate.
+// (b) A light Origin/Referer allow-check plus per-IP throttling. Before this,
+//     any script on the internet could POST here and burn the shared free
+//     provider keys; fair-use was keyed on a client-supplied userId which is
+//     trivially rotated.
+// ---------------------------------------------------------------------------
+const UPSTREAM_TIMEOUT_MS = (() => {
+  const n = parseInt(env('AI_TIMEOUT_MS'), 10);
+  return Number.isFinite(n) && n >= 2000 ? n : 20000;
+})();
+
+/** fetch() with a hard deadline. Rejects with a tagged error on timeout. */
+async function fetchWithTimeout(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (e) {
+    if (e && (e.name === 'AbortError' || /abort/i.test(e.message || ''))) {
+      const err = new Error('timeout after ' + timeoutMs + 'ms');
+      err.isTimeout = true;
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Hosts allowed to call the free core. Defaults cover the app's own origins;
+ * ALLOWED_ORIGINS (comma-separated hostnames) extends it. Requests with NO
+ * Origin/Referer are allowed — that is the desktop Electron app and curl-style
+ * health checks, which we do not want to break — but they are throttled the
+ * same as everyone else.
+ */
+function allowedHosts() {
+  const extra = env('ALLOWED_ORIGINS').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return [
+    'gemair.vercel.app',
+    'localhost', '127.0.0.1', '0.0.0.0',
+    ...extra
+  ];
+}
+
+function originAllowed(req) {
+  const raw = (req.headers && (req.headers.origin || req.headers.referer)) || '';
+  if (!raw) return { ok: true, origin: '' };           // native app / no browser origin
+  let host = '';
+  try { host = new URL(raw).hostname.toLowerCase(); } catch { return { ok: false, origin: raw }; }
+  const list = allowedHosts();
+  const ok = list.some((h) => host === h || host.endsWith('.' + h)) ||
+    /\.vercel\.app$/.test(host) ||                     // preview deployments
+    host.endsWith('.e2b.app');                         // sandboxed dev preview
+  return { ok, origin: host };
+}
+
+/** Sliding-window per-IP throttle (best effort, per serverless instance). */
+const _throttle = new Map(); // ip -> number[] (recent request timestamps)
+const THROTTLE_WINDOW_MS = 60000;
+const THROTTLE_MAX = (() => { const n = parseInt(env('THROTTLE_PER_MIN'), 10); return Number.isFinite(n) && n > 0 ? n : 12; })();
+
+function clientIp(req) {
+  const fwd = req.headers && req.headers['x-forwarded-for'];
+  if (fwd) return String(fwd).split(',')[0].trim().slice(0, 64);
+  const real = req.headers && req.headers['x-real-ip'];
+  if (real) return String(real).trim().slice(0, 64);
+  return (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+
+function throttleCheck(ip) {
+  const now = Date.now();
+  const hits = (_throttle.get(ip) || []).filter((t) => now - t < THROTTLE_WINDOW_MS);
+  if (hits.length >= THROTTLE_MAX) {
+    return { ok: false, retryAfter: Math.ceil((THROTTLE_WINDOW_MS - (now - hits[0])) / 1000) };
+  }
+  hits.push(now);
+  _throttle.set(ip, hits);
+  if (_throttle.size > 5000) {
+    for (const [k, v] of _throttle) if (!v.length || now - v[v.length - 1] > THROTTLE_WINDOW_MS) _throttle.delete(k);
+  }
+  return { ok: true };
+}
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -170,27 +263,20 @@ async function tryProvider(provider, messages, temperature, maxTokens) {
   const url = provider.base + (provider.base.endsWith('/chat/completions') ? '' : '/chat/completions');
   let res;
   try {
-    res = await fetch(url, {
+    res = await fetchWithTimeout(url, {
       method: 'POST',
       headers: aiHeaders(provider, provider.key),
       body: JSON.stringify({ model: provider.models[0], messages, temperature, max_tokens: maxTokens })
     });
   } catch (e) {
+    if (e && e.isTimeout) return { ok: false, status: 504, error: 'timeout' };
     return { ok: false, status: 0, error: 'network:' + (e.message || 'fetch failed') };
   }
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    // Gemini/Claude-compat layers may reject tool schemas — retry once without.
-    if (/tool|function|unsupported|invalid/i.test(text) && [400, 404, 422].includes(res.status)) {
-      try {
-        res = await fetch(url, {
-          method: 'POST',
-          headers: aiHeaders(provider, provider.key),
-          body: JSON.stringify({ model: provider.models[0], messages, temperature, max_tokens: maxTokens })
-        });
-        if (res.ok) { const data = await res.json().catch(() => null); const r = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content; return { ok: !!r, status: 200, reply: r ? String(r).trim() : null }; }
-      } catch { /* fall through */ }
-    }
+    // R10: 2.1 retried here with a byte-identical body while the comment
+    // claimed it was "retrying without tools" — this request never sent tools
+    // in the first place, so the retry could only ever reproduce the same
+    // failure at double the latency. Rotate to the next provider instead.
     return { ok: false, status: res.status, error: 'HTTP_' + res.status };
   }
   try {
@@ -213,8 +299,8 @@ async function chatWithFallback(providers, messages) {
     const provider = queue.shift();
     const r = await tryProvider(provider, messages, temperature, maxTokens);
     if (r.ok && r.reply) return { ok: true, reply: r.reply, provider: provider.id };
-    if (r.status === 429) {
-      // rate-limited → rotate to the next provider and retry
+    if (r.status === 429 || r.status === 504) {
+      // rate-limited or timed out → rotate to the next provider and retry
       queue.push(provider);
       continue;
     }
@@ -241,7 +327,7 @@ async function streamPassthrough(req, res, providers, messages, identity) {
     const url = provider.base + (provider.base.endsWith('/chat/completions') ? '' : '/chat/completions');
     let up;
     try {
-      up = await fetch(url, {
+      up = await fetchWithTimeout(url, {
         method: 'POST',
         headers: aiHeaders(provider, provider.key),
         body: JSON.stringify({ model: provider.models[0], messages, temperature, max_tokens: maxTokens, stream: true })
@@ -290,6 +376,24 @@ module.exports = async (req, res) => {
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   res.setHeader('Cache-Control', 'no-store');
+
+  // R10a: only GemAir's own origins may spend the shared free provider keys.
+  const origin = originAllowed(req);
+  if (!origin.ok) {
+    return res.status(403).json({ ok: false, error: 'origin_not_allowed', origin: origin.origin });
+  }
+
+  // R10b: per-IP throttle so one client cannot drain the free tier.
+  const ip = clientIp(req);
+  const gate = throttleCheck(ip);
+  if (!gate.ok) {
+    res.setHeader('Retry-After', String(gate.retryAfter));
+    return res.status(429).json({
+      ok: true,
+      reply: `You're sending messages faster than the free core can serve them. Give me about ${gate.retryAfter} second(s) and try again — or add your own API key under Settings → Power user for unthrottled replies.`,
+      free: true, throttled: true, retryAfter: gate.retryAfter
+    });
+  }
 
   let body = {};
   try { body = req.body || {}; } catch {}

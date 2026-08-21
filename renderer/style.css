@@ -484,7 +484,7 @@ body.rgb-recording #micVuCanvas, body.wake-armed #micVuCanvas { opacity: 1; bord
 .msg p:last-child { margin-bottom: 0; }
 .msg.user { align-self: flex-end; background: var(--accent-dim); border: 1px solid var(--accent-soft); color: #fff; }
 .msg.ai { align-self: flex-start; background: rgba(20,28,46,0.8); border: 1px solid var(--panel-border); color: var(--text); }
-.msg.system-msg { align-self: center; text-align: center; max-width: 96%; background: rgba(0,0,0,0.3); border: 1px border-dashed var(--panel-border); font-size: 12.5px; color: var(--text-dim); }
+.msg.system-msg { align-self: center; text-align: center; max-width: 96%; background: rgba(0,0,0,0.3); border: 1px dashed var(--panel-border); font-size: 12.5px; color: var(--text-dim); }
 .msg.system-msg .sub { font-size: 11.5px; margin-top: 4px; opacity: 0.8; }
 
 .chat-input-row { display: flex; gap: 10px; margin-top: 14px; align-items: center; }
@@ -882,6 +882,8 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
   background: conic-gradient(#ff0040, #ff8c00, #ffe600, #2bff88, #00cfff, #7a4dff, #ff00d4, #ff0040);
 }
 .theme-swatch-grid .swatch span { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-dim); }
+
+/* ============================================================
    Stonic-style command center (3-column layout)
    ============================================================ */
 .stx-left, .stx-center, .stx-right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }

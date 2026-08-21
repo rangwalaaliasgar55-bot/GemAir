@@ -1119,14 +1119,33 @@ async function createFolderTree(root, folders) {
   const ok = await confirmAction('Create folder tree?', `GemAir will create ${tree.length} folder(s) under:\n${base}\n\n${tree.join('\n')}\n\nNo files are touched.`);
   if (!ok) return { error: 'Cancelled by user.' };
   const created = [];
+  const skipped = [];
+  // R9: 2.1 only rejected a LEADING "..", so "src/../../etc" or "C:\\Windows"
+  // escaped the base directory. Reject absolute paths, drive letters, UNC paths
+  // and ANY ".." segment, then re-verify the resolved path is inside base.
+  const baseResolved = path.resolve(base);
+  const withinBase = (target) => {
+    const rel = path.relative(baseResolved, path.resolve(target));
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  };
   for (const rel of tree) {
-    const clean = String(rel).replace(/[\/\\]+$/,'').trim();
-    if (!clean || clean === '.' || clean.startsWith('..')) continue;
-    const dest = path.join(base, clean);
-    try { fs.mkdirSync(dest, { recursive: true }); created.push(dest); } catch { /* skip */ }
+    const raw = String(rel).replace(/[\/\\]+$/, '').trim();
+    const clean = raw.replace(/\\/g, '/');
+    const segments = clean.split('/').filter((seg) => seg !== '');
+    const bad =
+      !clean || clean === '.' ||
+      path.isAbsolute(clean) ||
+      /^[a-zA-Z]:/.test(clean) ||          // C:\...
+      clean.startsWith('//') ||             // UNC \\server\share
+      clean.includes('\0') ||
+      segments.some((seg) => seg === '..' || seg === '.');
+    if (bad) { skipped.push(raw); continue; }
+    const dest = path.join(baseResolved, ...segments);
+    if (!withinBase(dest)) { skipped.push(raw); continue; }
+    try { fs.mkdirSync(dest, { recursive: true }); created.push(dest); } catch { skipped.push(raw); }
   }
-  logAction('create_folder_tree', `Created ${created.length} folder(s) under ${base}`);
-  return { ok: true, base, created, count: created.length };
+  logAction('create_folder_tree', `Created ${created.length} folder(s) under ${base}${skipped.length ? ` (${skipped.length} rejected as unsafe)` : ''}`);
+  return { ok: true, base, created, count: created.length, skipped, rejected: skipped.length };
 }
 
 // Move files matching a filter (by extension, type, or older-than days) into a folder.
@@ -1163,7 +1182,13 @@ async function optimizeGaming(keep) {
   const done = [];
   const p = process.platform;
   if (p === 'win32') {
-    exec('powercfg /setactive SCHEME_MIN', () => {}); done.push('High-performance power plan');
+    // R5: SCHEME_MIN is the POWER SAVER GUID — 2.1 was throttling the CPU while
+    // claiming to optimise for gaming. SCHEME_MAX is High Performance. Fall back
+    // to the Ultimate Performance plan when the OEM has hidden the classic ones.
+    exec('powercfg /setactive SCHEME_MAX', (err) => {
+      if (err) exec('powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61', () => {});
+    });
+    done.push('High-performance power plan');
     exec('del /q /s %TEMP%\\* 2>nul', () => {}); done.push('Temp files cleared');
   } else if (p === 'darwin') {
     exec('sudo pmset -a powernap 0 2>/dev/null', () => {}); done.push('Power settings tuned');
