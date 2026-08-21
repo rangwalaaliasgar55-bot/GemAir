@@ -775,38 +775,47 @@
 
         <fieldset>
           <legend>AI BRAIN</legend>
-          <div class="groq-callout" style="font-size:12px;line-height:1.5;margin-bottom:8px;">
-            ✨ <b>Free AI Core:</b> GemAir runs on Vercel with free 70B AI responses. No API key or credit card required!
+          <div class="groq-callout free-core-badge" style="font-size:12px;line-height:1.5;margin-bottom:8px;">
+            <b>✔ FREE CORE CONNECTED</b> — GemAir is live right now with free AI responses.
+            No API key, no credit card, no sign-in. Everything works out of the box.
           </div>
-          <label>Custom API Key (Optional)
-            <input type="password" id="setApiKey" placeholder="gsk_…" />
-            <span class="hint" style="font-size:11px;color:var(--text-dim)">Only for your own personal provider. Stored on your disk only.</span>
-          </label>
-          <label>Custom Base URL (Optional)
-            <input type="text" id="setBaseURL" placeholder="https://api.groq.com/openai/v1" />
-          </label>
-          <label>Model
-            <input type="text" id="setModel" placeholder="llama-3.3-70b-versatile" />
-          </label>
-          <div class="quick-presets" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
-            <button class="preset mini-btn" data-preset="groq" title="Groq — fast Llama (free tier)">Groq</button>
-            <button class="preset mini-btn" data-preset="openai" title="ChatGPT / OpenAI — use your OpenAI API key (platform.openai.com)">ChatGPT</button>
-            <button class="preset mini-btn" data-preset="gemini" title="Google Gemini — use your Google AI Studio key (aistudio.google.com)">Gemini</button>
-            <button class="preset mini-btn" data-preset="claude" title="Anthropic Claude — use your Anthropic key (console.anthropic.com)">Claude</button>
-            <button class="preset mini-btn" data-preset="deepseek" title="DeepSeek — use your DeepSeek key (platform.deepseek.com)">DeepSeek</button>
-            <button class="preset mini-btn" data-preset="mistral" title="Mistral — use your Mistral key (console.mistral.ai)">Mistral</button>
-            <button class="preset mini-btn" data-preset="openrouter">OpenRouter</button>
-            <button class="preset mini-btn" data-preset="ollama">Ollama</button>
-            <button class="preset mini-btn" data-preset="offline">Offline</button>
-          </div>
-          <div class="hint" id="aiStatusHint" style="font-size:11px;margin-top:6px;">✨ Vercel Free AI Core Connected — 100% free out of the box.</div>
-          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
-            <button class="test-btn" id="testConn" type="button">🔌 TEST CONNECTION</button>
-            <span class="test-result" id="testResult"></span>
-          </div>
-          <label style="margin-top:12px" class="check-label">
+          <label class="check-label" style="margin-bottom:6px">
             <input type="checkbox" id="setMemoryOn" checked /> Auto memory — remember facts across conversations
           </label>
+          <details class="power-user">
+            <summary>⚙ Power user — optional: connect your own AI provider</summary>
+            <div class="power-user-body">
+              <div class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+                This is optional. Unless you add a key here, GemAir keeps using the free core — the app never needs this.
+              </div>
+              <label>Custom API Key (Optional)
+                <input type="password" id="setApiKey" placeholder="gsk_…" />
+                <span class="hint" style="font-size:11px;color:var(--text-dim)">Only for your own personal provider. Stored on your disk only.</span>
+              </label>
+              <label>Custom Base URL (Optional)
+                <input type="text" id="setBaseURL" placeholder="https://api.groq.com/openai/v1" />
+              </label>
+              <label>Model
+                <input type="text" id="setModel" placeholder="llama-3.3-70b-versatile" />
+              </label>
+              <div class="quick-presets" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+                <button class="preset mini-btn" data-preset="groq" title="Groq — fast Llama (free tier)">Groq</button>
+                <button class="preset mini-btn" data-preset="openai" title="ChatGPT / OpenAI — use your OpenAI API key (platform.openai.com)">ChatGPT</button>
+                <button class="preset mini-btn" data-preset="gemini" title="Google Gemini — use your Google AI Studio key (aistudio.google.com)">Gemini</button>
+                <button class="preset mini-btn" data-preset="claude" title="Anthropic Claude — use your Anthropic key (console.anthropic.com)">Claude</button>
+                <button class="preset mini-btn" data-preset="deepseek" title="DeepSeek — use your DeepSeek key (platform.deepseek.com)">DeepSeek</button>
+                <button class="preset mini-btn" data-preset="mistral" title="Mistral — use your Mistral key (console.mistral.ai)">Mistral</button>
+                <button class="preset mini-btn" data-preset="openrouter">OpenRouter</button>
+                <button class="preset mini-btn" data-preset="ollama">Ollama</button>
+                <button class="preset mini-btn" data-preset="offline">Offline</button>
+              </div>
+              <div class="hint" id="aiStatusHint" style="font-size:11px;margin-top:6px;">✨ Free AI Core connected — 100% free out of the box.</div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+                <button class="test-btn" id="testConn" type="button">🔌 TEST CONNECTION</button>
+                <span class="test-result" id="testResult"></span>
+              </div>
+            </div>
+          </details>
         </fieldset>
 
         <fieldset>

@@ -3891,7 +3891,7 @@ function updateAiHint() {
   const prov = detectProvider(base);
   if (key && base) el.textContent = '✓ ' + (PROVIDER_NAMES[prov] || 'Custom AI endpoint') + ' active — using your key only.';
   else if (base && /localhost|127\.0\.0\.1/.test(base)) el.textContent = '✓ Local model detected (no key needed).';
-  else el.textContent = '✨ Vercel Free AI Core Connected — 100% free out of the box. (Tip: pick a Gemini / ChatGPT / Claude preset above for your own key.)';
+  else el.textContent = '✔ FREE CORE CONNECTED — 100% free out of the box. Your own key is optional.';
 }
 function applyPreset(p) {
   // Provider presets — one click fills Base URL + Model. All of these speak

@@ -1076,3 +1076,103 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
 .notes-mini .note-item { border: 1px solid var(--panel-border); border-radius: 9px; padding: 9px 12px; font-size: 12.5px; color: var(--text); background: rgba(0,0,0,0.3); }
 
 /* legacy .assistant-side no longer used in the 3-column layout */
+
+/* ============================================================
+   GemAir 2.1 — key-free default (Section 0) & COST panel (Section I)
+   ============================================================ */
+.free-core-badge {
+  border: 1px solid var(--accent-soft, rgba(255,59,59,.5));
+  background: color-mix(in srgb, var(--accent, #ff3b3b) 8%, transparent);
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: var(--text, #e9f2ff);
+}
+.free-core-badge b {
+  color: var(--accent, #ff3b3b);
+  letter-spacing: 1px;
+}
+.power-user {
+  margin-top: 10px;
+  border: 1px solid var(--panel-border, #1b2434);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.22);
+  padding: 6px 10px;
+}
+.power-user summary {
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  font-family: var(--font-mono, monospace);
+  color: var(--dim, #8aa0bd);
+  padding: 4px 0;
+  user-select: none;
+}
+.power-user summary:hover { color: var(--text, #e9f2ff); }
+.power-user-body {
+  margin-top: 10px;
+  border-top: 1px dashed var(--panel-border, #1b2434);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Settings → COST panel (Section I — FREE FOREVER audit) */
+.cost-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cost-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--panel-border, #1b2434);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.25);
+  font-size: 12px;
+}
+.cost-row .c-feature { color: var(--text, #e9f2ff); font-weight: 600; }
+.cost-row .c-service { color: var(--dim, #8aa0bd); font-size: 11px; font-family: var(--font-mono, monospace); }
+.cost-row .c-price {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--accent, #ff3b3b);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.cost-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent-soft, rgba(255,59,59,.55));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent, #ff3b3b) 9%, transparent);
+}
+.cost-total .ct-label {
+  font-size: 12px;
+  letter-spacing: 1px;
+  font-family: var(--font-mono, monospace);
+  color: var(--dim, #8aa0bd);
+}
+.cost-total .ct-badge {
+  font-family: var(--font-mono, monospace);
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--accent, #ff3b3b);
+  letter-spacing: 1px;
+  text-shadow: 0 0 18px var(--accent-glow, rgba(255,59,59,.35));
+}
+.cost-note {
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--dim, #8aa0bd);
+  line-height: 1.5;
+}
