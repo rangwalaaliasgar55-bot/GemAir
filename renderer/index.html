@@ -13,14 +13,18 @@
   <div class="scanlines" aria-hidden="true"></div>
   <div class="vignette" aria-hidden="true"></div>
 
-  <!-- Boot sequence -->
-  <div class="boot-overlay" id="bootOverlay">
+  <!-- Cinematic boot: BIOS trace → logo ignition → HUD sweep (always skippable) -->
+  <div class="boot-overlay" id="bootOverlay" role="dialog" aria-label="GemAir startup sequence" aria-live="polite">
+    <div class="boot-scan" aria-hidden="true"></div>
+    <div class="boot-bios" id="bootBios"></div>
     <div class="boot-core">
+      <img class="boot-logo" src="assets/gemair-logo.png" alt="" />
       <div class="boot-orb"><span></span></div>
       <div class="boot-title">GEM<span>AIR</span></div>
       <div class="boot-line" id="bootLine">INITIALIZING CORE SYSTEMS…</div>
       <div class="boot-bar"><i id="bootBar"></i></div>
     </div>
+    <div class="boot-skip">PRESS ANY KEY OR TAP TO SKIP</div>
   </div>
 
   <!-- 3D dynamic background scene -->
@@ -808,7 +812,11 @@
         </fieldset>
 
         <fieldset>
-          <legend>ADVANCED</legend>
+          <legend>AMBIENCE & ADVANCED</legend>
+          <label class="check-label">
+            <input type="checkbox" id="setAmbientScore" /> Ambient command-center score (default off)
+          </label>
+          <span class="hint">A quiet, locally synthesized sci-fi soundscape. No audio is downloaded or recorded.</span>
           <label class="check-label">
             <input type="checkbox" id="setAllowShell" /> Allow shell command execution (confirms each command)
           </label>

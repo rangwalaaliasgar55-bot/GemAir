@@ -358,7 +358,7 @@ let profile = {
   name: 'Commander', theme: 'crimson',
   ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' },
   voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' },
-  memoryOn: true, allowShell: false, wakeWord: false
+  memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false
 };
 let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
 let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
@@ -772,6 +772,46 @@ let rgbTimer = null;
 let rgbHue = 300;
 let globalAudioCtx = null;
 let globalAnalyser = null;
+
+let scoreNodes = null;
+
+// A restrained, fully local Web Audio score. It starts only after a user
+// enables it (browser autoplay policy) and defaults to OFF.
+function setAmbientScore(enabled) {
+  if (!enabled) {
+    if (scoreNodes) {
+      try { scoreNodes.gain.gain.setTargetAtTime(0, scoreNodes.ctx.currentTime, 0.18); } catch (e) {}
+      const old = scoreNodes;
+      scoreNodes = null;
+      setTimeout(() => { try { old.oscillators.forEach((osc) => osc.stop()); } catch (e) {} }, 900);
+    }
+    return;
+  }
+  if (scoreNodes) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = globalAudioCtx || new AudioCtx();
+    globalAudioCtx = ctx;
+    if (ctx.state === 'suspended') ctx.resume();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.035, ctx.currentTime + 1.8);
+    filter.type = 'lowpass'; filter.frequency.value = 420;
+    filter.connect(gain); gain.connect(ctx.destination);
+    const oscillators = [55, 82.41, 110].map((hz, i) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = i === 1 ? 'triangle' : 'sine';
+      osc.frequency.value = hz;
+      g.gain.value = i === 0 ? 0.65 : 0.18;
+      osc.connect(g); g.connect(filter); osc.start();
+      return osc;
+    });
+    scoreNodes = { ctx, gain, oscillators };
+  } catch (e) { scoreNodes = null; }
+}
 
 function playSfx(type) {
   if (profile && profile.sfx === false) return;
@@ -3254,6 +3294,7 @@ function openSettings() {
   $('#setSttLang').value = profile.voice?.sttLang || 'en-US';
   $('#setMemoryOn').checked = profile.memoryOn !== false;
   $('#setAllowShell').checked = !!profile.allowShell;
+  $('#setAmbientScore').checked = !!profile.ambientScore;
   $('#setWakeWord').checked = !!profile.wakeWord;
   populateVoices(); populateNeuralVoices(); updateAiHint();
   $('#settingsModal').classList.add('open');
@@ -3599,12 +3640,15 @@ function bindEvents() {
     profile.voice.sttLang = $('#setSttLang').value;
     profile.memoryOn = $('#setMemoryOn').checked;
     profile.allowShell = $('#setAllowShell').checked;
+    profile.ambientScore = $('#setAmbientScore').checked;
     profile.wakeWord = $('#setWakeWord').checked;
     persistProfile().then(() => { updateLinkMode(); closeSettings(); });
+    setAmbientScore(profile.ambientScore);
     configureWakeWord(profile.wakeWord);
   });
   $('#resetBtn').addEventListener('click', async () => {
-    profile = { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' }, memoryOn: true, allowShell: false, wakeWord: false };
+    profile = { name: 'Commander', theme: 'crimson', ai: { baseURL: '', apiKey: '', model: 'llama-3.3-70b-versatile' }, voice: { rate: 1.0, pitch: 1.1, mode: 'neural', neuralVoice: 'en', name: '' }, memoryOn: true, allowShell: false, wakeWord: false, ambientScore: false };
+    setAmbientScore(false);
     await persistProfile(); applyTheme('crimson'); updateLinkMode(); openSettings();
   });
   $$('.preset').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
@@ -3630,73 +3674,124 @@ function bindEvents() {
     } catch (e) { resEl.textContent = '✗ ' + e.message; resEl.classList.add('bad'); }
   });
 
-  // command palette
+  // Command palette — fuzzy search across every operational surface, with
+  // keyboard selection and a durable recents section.
   const palette = $('#palette'), pInput = $('#paletteInput'), pResults = $('#paletteResults');
-  function openPalette() { palette.classList.add('open'); setTimeout(() => pInput.focus(), 30); updatePaletteResults(); }
-  function closePalette() { palette.classList.remove('open'); pInput.value = ''; if (pResults) pResults.innerHTML = ''; }
-  $$('.accent-link[data-pal]').forEach((l) => l.addEventListener('click', () => { switchView(l.dataset.pal); closePalette(); }));
-
-  function updatePaletteResults() {
-    if (!pResults) return;
-    const q = (pInput.value || '').toLowerCase().trim();
+  const RECENTS_KEY = 'gemair:palette-recents';
+  let paletteMatches = [], paletteSelected = 0;
+  const readRecents = () => {
+    try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]').slice(0, 6); } catch (e) { return []; }
+  };
+  const rememberPalette = (id) => {
+    try {
+      const next = [id, ...readRecents().filter((x) => x !== id)].slice(0, 6);
+      localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+    } catch (e) {}
+  };
+  const fuzzyScore = (query, value) => {
+    const q = String(query || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const v = String(value || '').toLowerCase();
+    if (!q) return 1;
+    if (v === q) return 1000;
+    const direct = v.indexOf(q);
+    if (direct >= 0) return 800 - direct * 2 - (v.length - q.length) * 0.2;
+    let qi = 0, score = 0, streak = 0, last = -2;
+    for (let i = 0; i < v.length && qi < q.length; i++) {
+      if (v[i] !== q[qi]) continue;
+      streak = i === last + 1 ? streak + 1 : 1;
+      score += 12 + streak * 5 + (i === 0 || /[\s/\-_]/.test(v[i - 1]) ? 14 : 0);
+      last = i; qi++;
+    }
+    return qi === q.length ? score - (v.length - q.length) * 0.15 : -1;
+  };
+  const paletteItems = () => {
     const items = [
-      { name: 'Voice Core', type: 'VIEW', action: () => switchView('assistant') },
-      { name: 'Desktop Manager', type: 'VIEW', action: () => switchView('core') },
-      { name: 'Life Companion', type: 'VIEW', action: () => switchView('companion') },
-      { name: 'Agent Town', type: 'VIEW', action: () => switchView('town') },
-      { name: 'Global Intel', type: 'VIEW', action: () => switchView('world') },
-      { name: 'Settings', type: 'ACTION', action: () => openSettings() },
-      { name: 'Guided Breathing', type: 'ACTION', action: () => $('#breatheModal').classList.add('open') },
-      { name: 'Weekly Report', type: 'ACTION', action: () => $('#weeklyReportBtn').click() },
-      { name: 'Weather Panel', type: 'PANEL', action: () => openHudDock('weather') },
-      { name: 'World Clock Panel', type: 'PANEL', action: () => openHudDock('clock') },
-      { name: 'Focus Timer Panel', type: 'PANEL', action: () => openHudDock('focus') },
-      { name: 'Live Telemetry Panel', type: 'PANEL', action: () => openHudDock('system') },
-      { name: 'Headlines Panel', type: 'PANEL', action: () => openHudDock('news') },
-      // Theme entries are generated from the string theme table (themes.js)
-      ...((window.GemAirThemes ? window.GemAirThemes.list() : []).map((t) => ({
-        name: t.label + ' Theme', type: 'THEME',
-        action: () => { profile.theme = t.id; applyTheme(t.id); persistProfile(); }
+      { id: 'view-assistant', name: 'Voice Core', detail: 'assistant chat and orb', icon: '◉', type: 'VIEW', action: () => switchView('assistant') },
+      { id: 'view-core', name: 'Desktop Manager', detail: 'memory, notes, system', icon: '⬢', type: 'VIEW', action: () => switchView('core') },
+      { id: 'view-companion', name: 'Life Companion', detail: 'mood, goals, weekly report', icon: '♥', type: 'VIEW', action: () => switchView('companion') },
+      { id: 'view-town', name: 'Agent Town', detail: 'resident agent office', icon: '▦', type: 'VIEW', action: () => switchView('town') },
+      { id: 'view-world', name: 'Global Intel', detail: 'globe, map and headlines', icon: '◍', type: 'VIEW', action: () => switchView('world') },
+      { id: 'settings', name: 'Open Settings', detail: 'AI, voice, themes and privacy', icon: '⚙', type: 'ACTION', action: openSettings },
+      { id: 'breathing', name: 'Guided Breathing', detail: '4-7-8 calm session', icon: '◌', type: 'ACTION', action: () => $('#breatheModal').classList.add('open') },
+      { id: 'weekly-report', name: 'Weekly Report', detail: 'mood, goals and task trends', icon: '▥', type: 'ACTION', action: () => $('#weeklyReportBtn').click() },
+      { id: 'panel-weather', name: 'Weather Panel', detail: 'HUD panel', icon: '☁', type: 'PANEL', action: () => openHudDock('weather') },
+      { id: 'panel-clock', name: 'World Clock Panel', detail: 'HUD panel', icon: '◷', type: 'PANEL', action: () => openHudDock('clock') },
+      { id: 'panel-focus', name: 'Focus Timer Panel', detail: 'HUD panel', icon: '◫', type: 'PANEL', action: () => openHudDock('focus') },
+      { id: 'panel-system', name: 'Live Telemetry Panel', detail: 'HUD panel', icon: '⌁', type: 'PANEL', action: () => openHudDock('system') },
+      { id: 'panel-news', name: 'Headlines Panel', detail: 'HUD panel', icon: '◎', type: 'PANEL', action: () => openHudDock('news') },
+      { id: 'toggle-memory', name: `${profile.memoryOn === false ? 'Enable' : 'Disable'} Auto Memory`, detail: 'settings toggle', icon: '🧠', type: 'TOGGLE', action: () => { profile.memoryOn = profile.memoryOn === false; persistProfile(); toast('MEMORY', profile.memoryOn ? 'Auto memory enabled.' : 'Auto memory disabled.', '🧠'); } },
+      { id: 'toggle-wake', name: `${profile.wakeWord ? 'Disable' : 'Enable'} Wake Word`, detail: 'say “Hey Gem”', icon: '🎙', type: 'TOGGLE', action: () => { profile.wakeWord = !profile.wakeWord; persistProfile(); configureWakeWord(profile.wakeWord); } },
+      { id: 'toggle-score', name: `${profile.ambientScore ? 'Disable' : 'Enable'} Ambient Score`, detail: 'local synthesized audio', icon: '♫', type: 'TOGGLE', action: () => { profile.ambientScore = !profile.ambientScore; setAmbientScore(profile.ambientScore); persistProfile(); } },
+      ...AGENTS.map((a) => ({ id: 'agent-' + a.name.toLowerCase(), name: 'Assign ' + a.name, detail: a.role, icon: a.emoji, type: 'AGENT', action: () => { switchView('assistant'); $('#chatInput').value = '@' + a.name + ' '; $('#chatInput').focus(); } })),
+      ...((window.GemAirThemes ? window.GemAirThemes.list() : []).map((theme) => ({
+        id: 'theme-' + theme.id, name: theme.label + ' Theme', detail: theme.tagline, icon: '◆', type: 'THEME',
+        action: () => { profile.theme = theme.id; applyTheme(theme.id); persistProfile(); }
       })))
     ];
-
-    if (memory && memory.facts) {
-      memory.facts.forEach(f => items.push({ name: f.text, type: 'MEMORY', action: () => { switchView('core'); toast('MEMORY', f.text, '🧠'); } }));
+    (memory.facts || []).slice(0, 40).forEach((fact) => items.push({
+      id: 'memory-' + fact.id, name: fact.text, detail: fact.category || 'memory', icon: '◇', type: 'MEMORY',
+      action: () => { switchView('core'); $('#factFilter').value = fact.text; renderFacts(); }
+    }));
+    return items;
+  };
+  function openPalette() {
+    palette.classList.add('open'); paletteSelected = 0;
+    setTimeout(() => pInput.focus(), 30); updatePaletteResults();
+  }
+  function closePalette() { palette.classList.remove('open'); pInput.value = ''; if (pResults) pResults.innerHTML = ''; }
+  function runPaletteItem(item) {
+    if (!item) return;
+    rememberPalette(item.id); closePalette(); playSfx('click'); item.action();
+  }
+  function updatePaletteSelection() {
+    pResults.querySelectorAll('.palette-item').forEach((el, idx) => el.classList.toggle('selected', idx === paletteSelected));
+    const selected = pResults.querySelector('.palette-item.selected');
+    if (selected) selected.scrollIntoView({ block: 'nearest' });
+  }
+  function updatePaletteResults() {
+    if (!pResults) return;
+    const q = (pInput.value || '').trim();
+    const all = paletteItems();
+    const recentIds = readRecents();
+    if (!q && recentIds.length) {
+      const recent = recentIds.map((id) => all.find((item) => item.id === id)).filter(Boolean);
+      const rest = all.filter((item) => !recentIds.includes(item.id)).slice(0, Math.max(0, 8 - recent.length));
+      paletteMatches = [...recent, ...rest];
+    } else {
+      paletteMatches = all.map((item) => ({ item, score: fuzzyScore(q, [item.name, item.detail, item.type].join(' ')) }))
+        .filter((entry) => entry.score >= 0).sort((a, b) => b.score - a.score).slice(0, 9).map((entry) => entry.item);
     }
-
-    const filtered = items.filter(i => !q || i.name.toLowerCase().includes(q) || i.type.toLowerCase().includes(q)).slice(0, 7);
-
-    if (!filtered.length) {
-      pResults.innerHTML = '<div class="palette-item"><span class="dim">Ask AI: "' + escapeHtml(q) + '"</span><span class="item-type">PRESS ENTER</span></div>';
+    paletteSelected = Math.min(paletteSelected, Math.max(0, paletteMatches.length - 1));
+    if (!paletteMatches.length) {
+      pResults.innerHTML = `<div class="palette-section">NO COMMAND MATCH</div><div class="palette-item palette-ask"><span class="item-main"><span class="item-icon">↗</span><span class="item-copy">Ask Gem “${escapeHtml(q)}”</span></span><span class="item-type">ENTER</span></div>`;
       return;
     }
-
-    pResults.innerHTML = filtered.map((item, idx) => `
-      <div class="palette-item" data-idx="${idx}">
-        <span>${escapeHtml(item.name)}</span>
-        <span class="item-type">${item.type}</span>
-      </div>
-    `).join('');
-
-    pResults.querySelectorAll('.palette-item').forEach((el, idx) => {
-      el.addEventListener('click', () => {
-        playSfx('click');
-        closePalette();
-        if (filtered[idx]) filtered[idx].action();
-      });
+    const recentSet = new Set(recentIds);
+    let markedRecents = false, markedAll = false;
+    pResults.innerHTML = paletteMatches.map((item, idx) => {
+      let heading = '';
+      if (!q && recentSet.has(item.id) && !markedRecents) { markedRecents = true; heading = '<div class="palette-section">RECENTS</div>'; }
+      if (!q && !recentSet.has(item.id) && !markedAll) { markedAll = true; heading = '<div class="palette-section">EXPLORE</div>'; }
+      return `${heading}<div class="palette-item${idx === paletteSelected ? ' selected' : ''}" data-idx="${idx}"><span class="item-main"><span class="item-icon">${item.icon}</span><span class="item-copy">${escapeHtml(item.name)}<span class="item-detail">${escapeHtml(item.detail || '')}</span></span></span><span class="item-type">${item.type}</span></div>`;
+    }).join('');
+    pResults.querySelectorAll('.palette-item[data-idx]').forEach((el) => {
+      el.addEventListener('mouseenter', () => { paletteSelected = Number(el.dataset.idx); updatePaletteSelection(); });
+      el.addEventListener('click', () => runPaletteItem(paletteMatches[Number(el.dataset.idx)]));
     });
   }
-
-  pInput.addEventListener('input', updatePaletteResults);
-  pInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      const v = pInput.value.trim();
-      const first = $('#paletteResults .palette-item');
-      if (first && v) first.click();
-      else if (v) { closePalette(); switchView('assistant'); sendMessage(v); }
-      else closePalette();
-    }
-    if (e.key === 'Escape') closePalette();
+  $$('.accent-link[data-pal]').forEach((link) => link.addEventListener('click', () => { switchView(link.dataset.pal); closePalette(); }));
+  pInput.addEventListener('input', () => { paletteSelected = 0; updatePaletteResults(); });
+  pInput.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      paletteSelected = (paletteSelected + step + Math.max(1, paletteMatches.length)) % Math.max(1, paletteMatches.length);
+      updatePaletteSelection();
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (paletteMatches[paletteSelected]) runPaletteItem(paletteMatches[paletteSelected]);
+      else if (pInput.value.trim()) { const ask = pInput.value.trim(); closePalette(); switchView('assistant'); sendMessage(ask); }
+    } else if (event.key === 'Escape') closePalette();
   });
 
   // keyboard shortcuts
@@ -4149,22 +4244,61 @@ async function boot() {
 function runBootSequence() {
   const overlay = $('#bootOverlay');
   if (!overlay) return Promise.resolve();
-  const lines = ['INITIALIZING CORE…', 'LOADING MEMORY…', 'CALIBRATING VOICE…', 'LINKING TOOLS…', 'ONLINE'];
+  const bios = $('#bootBios'), bar = $('#bootBar'), line = $('#bootLine');
+  const trace = [
+    ['GEMAIR BIOS 2.0.0  //  LOCAL INTELLIGENCE RUNTIME', 'dim'],
+    ['POST  CPU VECTOR MATRIX ..................... OK', 'ok'],
+    ['POST  MEMORY VAULT .......................... OK', 'ok'],
+    ['MOUNT VOICE / EARS .......................... READY', 'ok'],
+    ['LINK  AGENT TOWN ............................ 4 SEATS', ''],
+    ['SYNC  WORLD MONITOR ......................... UTC', ''],
+    ['HANDOFF TO HUD KERNEL', 'ok']
+  ];
+
   return new Promise((resolve) => {
-    let i = 0;
-    const bar = $('#bootBar'), line = $('#bootLine');
-    const tick = () => {
-      if (i < lines.length) {
-        line.textContent = lines[i];
-        bar.style.width = Math.round(((i + 1) / lines.length) * 100) + '%';
-        i++;
-        setTimeout(tick, i === lines.length ? 350 : 380);
-      } else {
-        overlay.classList.add('done');
-        setTimeout(resolve, 450);
-      }
+    let finished = false;
+    const timers = [];
+    const later = (fn, ms) => { const id = setTimeout(fn, ms); timers.push(id); return id; };
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      timers.forEach(clearTimeout);
+      window.removeEventListener('keydown', skip, true);
+      window.removeEventListener('pointerdown', skip, true);
+      overlay.classList.add('done');
+      setTimeout(resolve, 330);
     };
-    tick();
+    const skip = (event) => {
+      if (event && event.type === 'keydown' && ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) return;
+      finish();
+    };
+    window.addEventListener('keydown', skip, true);
+    window.addEventListener('pointerdown', skip, true);
+
+    trace.forEach(([text, cls], i) => later(() => {
+      if (!bios || finished) return;
+      const row = document.createElement('div');
+      row.className = cls;
+      row.textContent = '> ' + text;
+      bios.appendChild(row);
+      bios.scrollTop = bios.scrollHeight;
+      if (bar) bar.style.width = Math.round(((i + 1) / (trace.length + 2)) * 100) + '%';
+    }, 90 + i * 125));
+
+    later(() => {
+      if (finished) return;
+      overlay.classList.add('logo-phase');
+      if (line) line.textContent = 'CORE SIGNATURE VERIFIED';
+      if (bar) bar.style.width = '88%';
+      playSfx('activate');
+    }, 1080);
+    later(() => {
+      if (finished) return;
+      overlay.classList.add('sweep-phase');
+      if (line) line.textContent = 'HUD POWER-ON SWEEP · ONLINE';
+      if (bar) bar.style.width = '100%';
+    }, 1880);
+    later(finish, 2720); // hard bound: transition included, always under 4s
   });
 }
 

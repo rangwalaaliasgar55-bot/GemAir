@@ -147,6 +147,52 @@ body {
 }
 .app { height: 100vh; display: flex; flex-direction: column; position: relative; z-index: 1; }
 
+/* ============ CINEMATIC BOOT ============ */
+.boot-overlay {
+  position: fixed; inset: 0; z-index: 10000; overflow: hidden;
+  background: #010308; color: var(--accent); cursor: pointer;
+  transition: opacity .32s ease, visibility .32s ease;
+}
+.boot-overlay.done { opacity: 0; visibility: hidden; pointer-events: none; }
+.boot-bios {
+  position: absolute; inset: 7vh 7vw auto; height: 58vh; overflow: hidden;
+  font: 500 clamp(9px, 1vw, 12px)/1.65 var(--font-mono); letter-spacing: 1px;
+  color: color-mix(in srgb, var(--accent) 82%, white); text-shadow: 0 0 9px var(--accent-glow);
+  white-space: pre-wrap; opacity: 1; transition: opacity .18s ease;
+}
+.boot-bios .ok { color: var(--good); }
+.boot-bios .dim { color: var(--text-dim); }
+.boot-core {
+  position: absolute; inset: 0; display: grid; place-content: center; justify-items: center;
+  opacity: 0; transform: scale(.86); transition: opacity .18s ease, transform .34s cubic-bezier(.2,.9,.2,1.15);
+}
+.boot-overlay.logo-phase .boot-bios { opacity: 0; }
+.boot-overlay.logo-phase .boot-core,
+.boot-overlay.sweep-phase .boot-core { opacity: 1; transform: scale(1); }
+.boot-logo {
+  width: min(260px, 36vw); height: min(260px, 36vw); object-fit: contain; border-radius: 50%;
+  filter: drop-shadow(0 0 32px var(--accent)); opacity: .92; animation: bootLogoFlash .65s ease both;
+}
+.boot-orb { width: 74px; height: 74px; border: 1px solid var(--accent); border-radius: 50%; display: grid; place-items: center; margin-top: -76px; box-shadow: 0 0 35px var(--accent-glow); }
+.boot-orb span { width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 0 22px var(--accent); }
+.boot-title { margin-top: 22px; font: 700 clamp(28px, 5vw, 54px) var(--font-heading); letter-spacing: .28em; color: #fff; }
+.boot-title span { color: var(--accent); }
+.boot-line { margin-top: 10px; font: 500 10px var(--font-mono); letter-spacing: .2em; color: var(--text-dim); }
+.boot-bar { width: min(340px, 64vw); height: 3px; margin-top: 14px; background: rgba(255,255,255,.08); overflow: hidden; }
+.boot-bar i { display: block; width: 0; height: 100%; background: var(--accent); box-shadow: 0 0 12px var(--accent); transition: width .22s linear; }
+.boot-scan { position: absolute; inset: -20%; pointer-events: none; opacity: 0; background: linear-gradient(90deg, transparent 42%, var(--accent-glow) 50%, transparent 58%); transform: translateX(-80%); }
+.boot-overlay.sweep-phase .boot-scan { opacity: 1; animation: bootPowerSweep .65s ease-out both; }
+.boot-skip { position: absolute; right: 24px; bottom: 20px; font: 500 9px var(--font-mono); letter-spacing: .18em; color: var(--text-dim); animation: blink 1.2s infinite; }
+@keyframes bootLogoFlash { 0% { opacity: 0; transform: scale(.65); filter: brightness(4) drop-shadow(0 0 80px #fff); } 55% { opacity: 1; transform: scale(1.08); } 100% { transform: scale(1); } }
+@keyframes bootPowerSweep { from { transform: translateX(-80%); } to { transform: translateX(80%); } }
+
+.palette-section { padding: 7px 10px 2px; color: var(--text-dim); font: 600 9px var(--font-mono); letter-spacing: .18em; }
+.palette-item .item-main { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.palette-item .item-icon { width: 20px; text-align: center; color: var(--accent); }
+.palette-item .item-copy { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-item .item-detail { color: var(--text-dim); font-size: 10px; margin-left: 6px; }
+
+
 /* ============ TOP BAR ============ */
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
