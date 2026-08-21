@@ -63,14 +63,14 @@ ok('JSON files parse');
 try {
   const pkg = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
-  if (pkg.version !== '2.1.0') fail(`package version must be 2.1.0 (found ${pkg.version})`);
+  if (pkg.version !== '2.2.0') fail(`package version must be 2.2.0 (found ${pkg.version})`);
   if (lock.version !== pkg.version || (lock.packages && lock.packages[''] && lock.packages[''].version !== pkg.version)) fail('package-lock version does not match package.json');
   for (const asset of ['build/icon.png', 'build/icon.ico', 'build/icons/16x16.png', 'build/icons/256x256.png', 'build/icons/512x512.png', 'build/icons/1024x1024.png']) {
     const full = path.join(ROOT, asset);
     if (!fs.existsSync(full) || fs.statSync(full).size < 100) fail(`missing/empty release icon: ${asset}`);
   }
-  if (!fs.existsSync(path.join(ROOT, 'CHANGELOG.md')) || !read('CHANGELOG.md').includes('## [2.1.0]')) fail('CHANGELOG.md must document 2.1.0');
-  else ok('2.1.0 release metadata and platform icons present');
+  if (!fs.existsSync(path.join(ROOT, 'CHANGELOG.md')) || !read('CHANGELOG.md').includes('## [2.2.0]')) fail('CHANGELOG.md must document 2.2.0');
+  else ok('2.2.0 release metadata and platform icons present');
 } catch (e) { fail('release metadata check failed: ' + e.message); }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +146,65 @@ for (const sel of new Set([...appJs.matchAll(/\$\$\(\s*['"]([^'"]+)['"]\s*\)/g)]
 }
 if (dead.length) fail(`dead $$() selectors: ${dead.join(', ')}`);
 else ok('all $$() selectors match something');
+
+// ---------------------------------------------------------------------------
+// V2 — 2.2 surface checks. Every feature added this round has at least one
+// static assertion here, so a future refactor that drops the markup or the
+// handler fails CI instead of shipping a dead control.
+// ---------------------------------------------------------------------------
+const REQUIRED_IDS = {
+  'S1 SAT-LINK feed panel': ['satPanel'],
+  'S2 process monitor': ['processList', 'procFilter', 'refreshProcsBtn'],
+  'S3 tasks panel': ['todoList', 'todoInput', 'todoAdd', 'todoCount'],
+  'S4 language picker': ['setLanguage'],
+  'S7 workflow gallery': ['workflowGallery'],
+  'S8 offline brain toggle': ['setLocalBrain', 'localBrainHint'],
+  'T1 account controls': ['accountState', 'signInGoogleBtn', 'signOutBtn'],
+  'T3 rating controls': ['settingsStars', 'ratingSummary', 'exportRatingsBtn'],
+  'T5 ambient controls': ['setAmbientTrack', 'setAmbientVolume', 'ambientVolVal']
+};
+const missingFeatureIds = [];
+for (const [feature, list] of Object.entries(REQUIRED_IDS)) {
+  const gone = list.filter((id) => !ids.has(id));
+  if (gone.length) missingFeatureIds.push(`${feature}: ${gone.join(', ')}`);
+}
+if (missingFeatureIds.length) fail(`2.2 feature markup missing — ${missingFeatureIds.join(' | ')}`);
+else ok(`${Object.keys(REQUIRED_IDS).length} 2.2 feature surfaces present in the markup`);
+
+// The SAT-LINK tabs must carry the data-sat attribute the handler switches on.
+const satTabs = [...html.matchAll(/class="sat-tab[^"]*"[^>]*data-sat="([a-z]+)"/g)].map((m) => m[1]);
+const wantSat = ['today', 'rap', 'search', 'alerts'];
+const missingSat = wantSat.filter((t) => !satTabs.includes(t));
+if (missingSat.length) fail(`S1: SAT-LINK tab(s) missing data-sat: ${missingSat.join(', ')}`);
+else ok('S1: all four SAT-LINK tabs carry a data-sat target');
+
+// Every modal must be an announced dialog (U4).
+const modalIds = [...html.matchAll(/class="modal-backdrop"[^>]*id="([A-Za-z0-9_-]+)"/g)].map((m) => m[1]);
+const unannounced = modalIds.filter((id) => {
+  const idx = html.indexOf(`id="${id}"`);
+  const tag = html.slice(Math.max(0, idx - 200), idx + 200);
+  return !/role="dialog"/.test(tag) || !/aria-modal="true"/.test(tag);
+});
+if (unannounced.length) fail(`U4: modal(s) without role=dialog/aria-modal: ${unannounced.join(', ')}`);
+else ok(`U4: all ${modalIds.length} modals declare role=dialog + aria-modal`);
+
+// U5: the --dim token does not exist (themes.js emits --text-dim).
+const cssSrc = read('renderer/style.css');
+if (/var\(--dim[,)]/.test(cssSrc)) fail('U5: style.css references the nonexistent --dim token (use --text-dim)');
+else ok('U5: no references to the nonexistent --dim token');
+
+// R4: the 3-column layout rule must be inside a valid comment context.
+if (!/^\.stx-left,\s*\.stx-center,\s*\.stx-right\s*\{[^}]*display:\s*flex/m.test(cssSrc)) {
+  fail('R4: the .stx-left/.stx-center/.stx-right flex rule is missing or malformed');
+} else ok('R4: the 3-column .stx flex rule is intact');
+if (/border:\s*1px\s+border-dashed/.test(cssSrc)) fail('R4: invalid "1px border-dashed" shorthand is back');
+else ok('R4: no invalid border shorthand');
+
+// U3: exactly one DEFAULTS source, and no stray contradicting literals.
+if (!/const DEFAULTS = Object\.freeze\(/.test(appJs)) fail('U3: the DEFAULTS constant is gone');
+else ok('U3: a single frozen DEFAULTS constant exists');
+if (/profile\.theme \|\| 'cyan'/.test(appJs)) fail("U3: the stray 'cyan' theme default is back");
+else ok('U3: no contradicting hard-coded theme default');
 
 // ---------------------------------------------------------------------------
 // 7. Boot the renderer in a STRICT fake DOM
@@ -329,5 +388,48 @@ for (const f of ['renderer/store.js', 'renderer/avatar.js', 'renderer/app.js']) 
     process.exit(1);
   }
   console.log('\n  All checks passed.\n');
+  printManualMatrix();
   process.exit(0);
 })();
+
+/**
+ * V3 — the manual test matrix.
+ *
+ * Static checks cannot prove that audio is audible, that a barge-in really cuts
+ * a voice mid-word, or that a theme switch repaints a canvas. This prints the
+ * short list of things a human must confirm on a real machine before release.
+ */
+function printManualMatrix() {
+  const rows = [
+    ['1', 'Boot', 'Launch GemAir. Boot sequence completes; SYS chip reads SYSTEMS NOMINAL (or names the degraded subsystem — never a false NOMINAL).'],
+    ['2', 'Free reply', 'With NO API key configured, send "hello". A real reply streams in. Settings → TEST CONNECTION reports "free core (no key configured)".'],
+    ['3', 'Bad key is honest', 'Paste a bogus key + Groq preset, TEST CONNECTION. It must FAIL visibly and say the free core was NOT used.'],
+    ['4', 'EDGE voice audible', 'Settings → Voice engine = Edge neural. Send a message. Gem speaks with a real Microsoft neural voice (not the robotic OS voice).'],
+    ['5', 'Streaming speech', 'Ask for a 3-sentence answer. Speech starts on sentence 1 while the rest is still generating, with no duplicate final read-through.'],
+    ['6', 'Barge-in cuts audio', 'While Gem is mid-sentence, press the mic and speak. Audio stops INSTANTLY (not just the mouth animation) and no queued sentence resumes.'],
+    ['7', 'START off silences', 'Start the AI loop, let Gem talk, click STOP. Speech stops immediately.'],
+    ['8', 'Visemes + aura', 'During speech the mouth tracks words; while listening the avatar aura reacts to real mic level.'],
+    ['9', '12 workflows dry-run', 'Agent Town → Workflow Gallery: click each of the 12 cards. Each opens a HITL confirm (or a real result) — none silently no-ops.'],
+    ['10', 'HITL still guards', 'Run "Optimize for gaming" and CANCEL. Nothing changes. Run it again and accept on Windows: powercfg reports High Performance, not Power Saver.'],
+    ['11', 'Process monitor', 'System Core → PROCESSES: real names/PIDs from your machine. Filter works. "End" prompts for confirmation and refuses protected processes.'],
+    ['12', 'Tasks', 'System Core → TASKS: add / complete / delete. The weekly report tasks-per-day sparkline now moves.'],
+    ['13', 'SAT-LINK feeds', 'Click TODAY / RAP / SEARCH / ALERTS. Headlines load, radar image renders for your city, search returns results, advisories list or say ALL CLEAR.'],
+    ['14', 'Theme switch incl. RGB', 'Cycle every theme, including RGB. Weekly sparklines, mood chart and command map keep rendering (no blank canvases, no console errors).'],
+    ['15', 'Settings persist', 'Change voice engine, theme, language, ambient track and volume. Save, quit, relaunch. Every choice is restored.'],
+    ['16', 'Ambient preview', 'Toggle the ambient score in Settings — audio starts immediately. Switch track and move the volume slider: both change what you hear live.'],
+    ['17', 'Language + RTL', 'Settings → Language → اردو. Labels translate and the layout mirrors to right-to-left. Switch back to English.'],
+    ['18', 'Accessibility', 'Open each modal (settings, theme, download, breathe, report). Tab stays trapped inside; Escape closes every one; icon buttons announce a name.'],
+    ['19', 'Layout', 'Resize to 950px wide and to a 700px-tall window. The topbar wraps instead of overflowing; nothing is clipped or unreachable.'],
+    ['20', 'Reasoning strip', 'Send a multi-step request. The REASONING strip appears above the reply, expands, and narrates real tool calls.'],
+    ['21', 'Window memory', 'Move/resize the window, quit, relaunch — it returns to the same place. Unplug a second monitor and relaunch: the window is clamped back on-screen.'],
+    ['22', 'Rating prompt', 'After 8 successful missions, the star prompt appears once. Rate it; Settings shows the average and Export downloads the JSON.']
+  ];
+  const line = (n, area, what) => console.log('  ' + n.padStart(2, ' ') + '  ' + area.padEnd(23, ' ') + what);
+  console.log('  ============================================================');
+  console.log('  MANUAL TEST MATRIX — confirm on a real machine before release');
+  console.log('  ============================================================');
+  line('#', 'AREA', 'EXPECTED');
+  console.log('  ' + '-'.repeat(58));
+  rows.forEach(([n, area, what]) => line(n, area, what));
+  console.log('');
+}

@@ -3941,6 +3941,7 @@ function setupModalAccessibility() {
     });
 
     // when a modal opens, remember what had focus and move focus inside
+    if (typeof MutationObserver === 'undefined') continue; // headless/self-check
     const observer = new MutationObserver(() => {
       if (!backdrop.classList.contains('open')) return;
       if (!lastFocusedBeforeModal) lastFocusedBeforeModal = document.activeElement;

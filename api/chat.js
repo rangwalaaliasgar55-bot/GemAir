@@ -90,17 +90,20 @@ function aiHeaders(provider, key) {
 const _usage = new Map(); // `${day}:${identity}` -> count (per-instance best effort)
 const FAIR_USE_DAILY = (() => { const n = parseInt(env('FAIR_USE_DAILY'), 10); return Number.isFinite(n) && n > 0 ? n : 200; })();
 
-function identityFor(req, body) {
-  // R10: a client-supplied userId alone was trivially rotated to reset the
-  // daily cap, so the IP is always part of the identity.
+function clientIdentities(req, body) {
+  // R10 — charge BOTH buckets. A client-supplied userId alone was trivially
+  // rotated to reset the daily cap, so the IP bucket is ALWAYS charged; a
+  // signed-in userId adds a second bucket so one account cannot dodge the cap
+  // by hopping networks either. A request is limited if EITHER is exhausted.
   const fwd = req.headers && req.headers['x-forwarded-for'];
   const ip = fwd ? String(fwd).split(',')[0].trim().slice(0, 64)
     : (req.headers && req.headers['x-real-ip']) ? String(req.headers['x-real-ip']).trim().slice(0, 64)
     : 'unknown';
-  if (body && body.userId && typeof body.userId === 'string' && body.userId.trim()) {
-    return 'u:' + body.userId.trim().slice(0, 64) + '@' + ip;
+  const out = ['ip:' + ip];
+  if (body && typeof body.userId === 'string' && body.userId.trim()) {
+    out.push('u:' + body.userId.trim().slice(0, 64));
   }
-  return 'ip:' + ip;
+  return out;
 }
 
 function fairUseLeft(identity) {
@@ -109,6 +112,10 @@ function fairUseLeft(identity) {
   const count = _usage.get(key) || 0;
   const left = Math.max(0, FAIR_USE_DAILY - count);
   return { day, key, left, count };
+}
+
+function fairUseLeftAll(identities) {
+  return Math.min(...identities.map((id) => fairUseLeft(id).left));
 }
 
 function consumeFairUse(identity) {
@@ -406,13 +413,14 @@ module.exports = async (req, res) => {
 
   // Per-identity fair-use (Section 0): enforce a daily cap; when hit, still
   // answer helpfully rather than erroring.
-  const identity = identityFor(req, body);
-  const { left } = fairUseLeft(identity);
+  const identities = clientIdentities(req, body);
+  const identity = identities[0];
+  const left = fairUseLeftAll(identities);
   if (left <= 0) {
     const friendly = `You've reached the free core's daily message limit for today. It resets at midnight UTC — or you can add your own key under Settings → Power user to keep going with unlimited replies. Thanks for using GemAir!`;
     return res.json({ ok: true, reply: friendly, free: true, limited: true });
   }
-  consumeFairUse(identity);
+  for (const id of identities) consumeFairUse(id);
 
   // Streaming passthrough (SSE).
   if (body.stream === true) {

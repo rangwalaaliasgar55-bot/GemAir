@@ -1310,9 +1310,10 @@ async function optimizeGaming(keep) {
   const done = [];
   const p = process.platform;
   if (p === 'win32') {
-    // R5: SCHEME_MIN is the POWER SAVER GUID — 2.1 was throttling the CPU while
-    // claiming to optimise for gaming. SCHEME_MAX is High Performance. Fall back
-    // to the Ultimate Performance plan when the OEM has hidden the classic ones.
+    // R5: 2.1 activated the POWER SAVER scheme GUID while claiming to optimise
+    // for gaming, so the "gaming optimizer" actually throttled the CPU.
+    // SCHEME_MAX is High Performance. Fall back to the Ultimate Performance
+    // plan when the OEM has hidden the classic schemes.
     exec('powercfg /setactive SCHEME_MAX', (err) => {
       if (err) exec('powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61', () => {});
     });

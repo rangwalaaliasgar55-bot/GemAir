@@ -2,6 +2,60 @@
 
 All notable changes to GemAir are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] — 2026-08-21
+
+Round 4 — "Perfect and Powerful". A two-sided audit of the merged 2.1 tree found
+that several headline features were not actually working. This release fixes
+those first, then turns the audit's list of dead code into real features.
+
+### Fixed — confirmed bugs (Section R)
+
+- **Streamed replies were never voiced.** `skipFinalSpeak` was assigned and read in `sendMessage()` without ever being declared; under strict mode the write threw (swallowed) and the read threw a `ReferenceError` before `speak(reply)`. Now declared. (R1)
+- **Edge TTS could never play.** The binary frame parser read a **4-byte** header length, but the Edge Read-Aloud protocol uses a **2-byte big-endian** length with audio starting at `2 + headerLen` — so every synthesis resolved `no-audio` and silently fell through to the robotic system voice. Also added the `Sec-MS-GEC` / `Sec-MS-GEC-Version` params Microsoft now requires on the handshake. (R2)
+- **Barge-in did not stop the voice.** `stopSpeaking()` cancelled `speechSynthesis` but never `window.ttsEngine.stop()`, so Gem kept talking over the user from an `<audio>` element while the avatar mouth froze. It now stops the engine and drains the pending streaming-speech queue. (R3)
+- **The 3-column layout lost its flex rule.** A block comment in `style.css` was missing its opening `/*`, which discarded the `.stx-left/.stx-center/.stx-right` rule. Also fixed an invalid `1px border-dashed` shorthand. (R4)
+- **The gaming optimizer made gaming worse.** `powercfg /setactive SCHEME_MIN` is the **Power Saver** GUID; it is now `SCHEME_MAX` (High Performance), with an Ultimate Performance fallback. (R5)
+- **RGB theme broke every chart.** `hexToRgba()` assumed `#rrggbb`, so an `hsl()` accent produced `rgba(NaN…)` and `addColorStop` threw — killing the weekly sparklines, mood chart and command map. All accents now route through one tolerant hex/rgb/hsl parser. (R6)
+- **Google neural TTS almost always failed.** `speakNeural` ignored its generation token (stale chunks played after a cancel) and set `crossOrigin="anonymous"` against `translate.google.com`, which sends no CORS headers. Generation is honoured between chunks and `crossOrigin` is gone. (R7)
+- **TEST CONNECTION gave a false OK.** A bogus key silently fell back to the free core and reported success. It now fails visibly and states that the free core was *not* used. (R8)
+- **Folder-tree path traversal.** `createFolderTree` only rejected a *leading* `..`; absolute paths, drive letters, UNC paths and any `..` segment are now rejected, with a resolved-path re-check against the base directory. (R9)
+- **Free-core API hardening.** `AbortController` timeouts (~20 s) on every provider fetch, removal of a pointless byte-identical "retry without tools", an Origin/Referer allow-check, and per-IP throttling so random internet clients cannot burn the shared free provider keys. (R10)
+
+### Added — dead code became real features (Section S)
+
+- **SAT-LINK FEED** tabs are no longer cosmetic: TODAY (live headlines), RAP (RainViewer rain radar for your city), SEARCH (working web search box), ALERTS (advisories derived from the Open-Meteo forecast, clearly labelled as derived). (S1)
+- **ACTIVE PROCESSES** shows real name/PID/CPU/RAM from the OS with a filter and an END button behind the existing HITL confirm, refusing protected processes. (S2)
+- **Tasks panel** in System Core (add / complete / delete) — `memory.todos` finally has a UI, so the weekly tasks-per-day sparkline reflects real data. (S3)
+- **Complete Hindi and Urdu dictionaries**, a language picker in Settings, and RTL layout switching. (S4)
+- **Reactive listening aura and word-boundary visemes** — `setMicAnalyser` and `onViseme` existed but were never called. (S5)
+- **HUD dock auto-open rules**: weather on rain/storm questions, the weekly report on Friday evening, the focus timer when you mention focusing or pomodoro. (S6)
+- **Workflow gallery**: the 12 recipes render as one-click cards in the Agent Town side panel instead of hiding in palette search. (S7)
+- **WebGPU offline brain tier** (opt-in): the unused `checkWebGPU` probe is now a real in-browser model tier in the fallback chain. (S8)
+- **Local extractive summarizer** so context compaction works in the free/no-key mode GemAir advertises. (S9)
+- **Quick-command editor** behind the expert-panel ＋, which had no handler at all. (S10)
+
+### Added — remaining Stonic gaps (Section T)
+
+- **Supabase Google OAuth** alongside the anonymous identity, enabling genuine cross-device sync and binding fair use to a real account. (T1)
+- **Visible reasoning stream**: a collapsible strip above each reply, fed by planner and tool events. (T2)
+- **In-app star rating** after N successful missions, stored locally and exportable. (T3)
+- **Multi-monitor window memory**: bounds saved per display set and clamped back on-screen when a monitor disappears. (T4)
+- **Ambient score** volume slider and two track choices with instant audible preview. (T5)
+
+### Changed — polish (Section U)
+
+- Deleted the dead parallel TTS stack in `app.js` (~90 unreachable lines); a single engine path through `tts-engine.js`. Deduplicated voice sentinels, Edge voice lists, agent colours and theme hues — `themes.js` remains the single token source. (U1)
+- Honest statuses: the SYS chip reports degraded subsystems, the Agent Town head state reflects real agent activity, fallback headlines and weather are badged **SIMULATED**, and the briefing weather no longer sits on "Loading…" forever. (U2)
+- One `DEFAULTS` constant resolves the Mumbai/Dubai, crimson/cyan and edge/neural contradictions. (U3)
+- Accessibility: `role="dialog"`, `aria-modal`, focus traps and Escape on **all** modals; aria-labels on icon buttons; platform-correct Ctrl/⌘ hints. (U4)
+- Layout: wrapping topbar below 1000px, viewport-relative panel heights, a responsive core grid, and the nonexistent `--dim` token replaced with `--text-dim`. (U5)
+- Voice polish: the sentence splitter no longer breaks on `3.14` or `v2.1`, recognition restarts with exponential backoff when offline, the wake word arms exactly once at boot, turning the AI loop off also silences speech, and the skills circuit is derived from `memory.skills` instead of a painted 85%. (U6)
+
+### Verification (Section V)
+
+- `scripts/workflow-test.js` rewritten: fair use and throttling are now genuinely measured (the old test require()d the module twice and got the same cached instance), source slices validate their anchors instead of silently misranging, the system-prompt window is resolved from the real function bounds, and every Section R fix has a regression guard.
+- `scripts/selfcheck.js` extended with the new ids, selectors, modal ARIA and CSS-token checks, and now prints a 22-row manual test matrix.
+
 ## [2.1.0] — 2026-08-21
 
 ### Added — FREE FOREVER
