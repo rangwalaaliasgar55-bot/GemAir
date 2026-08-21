@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('gemair', {
   },
   aiSummarize: (config, text) => ipcRenderer.invoke('ai:summarize', config, text),
   aiAgentChat: (agentName, config, messages) => ipcRenderer.invoke('ai:agentChat', agentName, config, messages),
+  collaborateAgents: (task) => ipcRenderer.invoke('agent:collaborate', task),
   aiOffline: (text) => ipcRenderer.invoke('ai:offline', text),
   getHeadlines: (limit) => ipcRenderer.invoke('news:get', limit),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),

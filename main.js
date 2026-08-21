@@ -458,6 +458,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'rename_files', description: 'Rename files in a folder by a pattern (e.g. prefix + number).', parameters: { type: 'object', properties: { path: { type: 'string' }, pattern: { type: 'string', description: 'e.g. "project" or "photo_" — a counter is appended' } }, required: ['path', 'pattern'] } } },
   { type: 'function', function: { name: 'archive_old_files', description: 'Move files older than N days into an _archive folder.', parameters: { type: 'object', properties: { path: { type: 'string' }, days: { type: 'number' } }, required: ['days'] } } },
   { type: 'function', function: { name: 'system_scan', description: 'Scan the PC — what is using CPU/RAM, disk space, battery. "What is slowing my PC down?"', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'get_power_storage', description: 'Read live battery charging state and primary disk capacity/free-space sensors.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'see_screen', description: 'Capture the current screen so the AI is aware of what is on it.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'get_action_log', description: 'Get the recent log of actions the AI has performed (transparency).', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'add_skill', description: 'Remember a reusable skill / ability the user has taught you (persistent).', parameters: { type: 'object', properties: { text: { type: 'string' }, name: { type: 'string' } }, required: ['text'] } } },
@@ -1288,7 +1289,7 @@ const TOOL_RISK = {
   search_memory: 'safe', list_todos: 'safe', list_goals: 'safe',
   list_reminders: 'safe', list_notes: 'safe', list_skills: 'safe',
   list_instructions: 'safe', get_mood_history: 'safe', get_affirmation: 'safe',
-  get_wellness_tip: 'safe', get_quote: 'safe', get_system_status: 'safe', calculate: 'safe',
+  get_wellness_tip: 'safe', get_quote: 'safe', get_system_status: 'safe', get_power_storage: 'safe', calculate: 'safe',
   run_command: 'sensitive', write_file: 'sensitive', control_system: 'sensitive',
   organize_folder: 'sensitive', archive_old_files: 'sensitive', send_email: 'sensitive',
   show_panel: 'safe', hide_panel: 'safe'
@@ -1313,6 +1314,11 @@ async function executeTool(name, args) {
       const p = String((args && args.path) || '');
       const content = String((args && args.content) || '');
       const ok = await confirmAction('Write file?', `GemAir wants to write ${content.length.toLocaleString()} characters to:\n\n    ${p}\n\nAn existing file will be overwritten. Proceed?`);
+      if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
+    }
+    if (name === 'send_email' || name === 'open_whatsapp') {
+      const target = name === 'send_email' ? String(args.to || '') : String(args.phone || '');
+      const ok = await confirmAction(name === 'send_email' ? 'Open email draft?' : 'Open WhatsApp draft?', `GemAir wants to open a message draft for:\n\n    ${target}\n\nYou will review and send it yourself. Proceed?`);
       if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
     }
 
@@ -1406,6 +1412,10 @@ async function executeTool(name, args) {
         return archiveOldFiles(args.path, args.days);
       case 'system_scan':
         return await systemScan();
+      case 'get_power_storage': {
+        const info = await getSystemInfo();
+        return { battery: info.battery || null, disk: info.disk || null };
+      }
       case 'see_screen':
         return await seeScreen();
       case 'get_action_log': {
@@ -1879,10 +1889,10 @@ function startReminderScheduler() {
 // memory (mirrors Stonic's "independent agent brains" / Hermes agent seats).
 // ---------------------------------------------------------------------------
 const AGENT_BRAINS = {
-  Alice: { role: 'Research & Writing', prompt: 'You are Alice, the research and writing specialist. You excel at finding information, summarizing sources, drafting documents and answering deep questions. You are precise, curious and thorough.' },
-  Bob: { role: 'System & Automation', prompt: 'You are Bob, the system and automation specialist. You monitor the PC, manage files, run scripts and automate workflows. You are methodical, reliable and safety-conscious.' },
-  Carol: { role: 'Creative & Design', prompt: 'You are Carol, the creative and design specialist. You brainstorm ideas, craft stories, refine writing and suggest designs. You are imaginative, warm and encouraging.' },
-  Dave: { role: 'Planning & Scheduling', prompt: 'You are Dave, the planning and scheduling specialist. You break goals into steps, build schedules, manage to-dos and reminders. You are organized, calm and practical.' }
+  Alice: { role: 'Web Research', tools: ['web_search', 'fetch_webpage'], prompt: 'You are Alice, GemAir’s web researcher. Find current, verifiable information, inspect primary pages, summarize evidence, and cite the returned URLs. Never invent a source.' },
+  Bob: { role: 'File Operations', tools: ['list_directory', 'read_file', 'write_file', 'organize_folder'], prompt: 'You are Bob, GemAir’s file operator. Inspect before changing anything, use precise paths, preserve user data, and report exactly what was read, written, or organized.' },
+  Carol: { role: 'System Verification', tools: ['system_scan', 'get_power_storage'], prompt: 'You are Carol, GemAir’s system verifier. Read live CPU, memory, battery, and disk sensors, identify risks, and verify that a mission can run safely.' },
+  Dave: { role: 'Communications', tools: ['send_email', 'open_whatsapp'], prompt: 'You are Dave, GemAir’s communications operator. Prepare clear email or WhatsApp drafts, confirm the destination, and leave the final send action to the user.' }
 };
 
 function agentSystemPrompt(name) {
@@ -1895,9 +1905,123 @@ function agentSystemPrompt(name) {
       `${b.prompt}\n` +
       `You are ${name}, one of GemAir's resident agents, and your specialty is ${b.role}. ` +
       `You work for the user (${(readProfile().name) || 'Commander'}). Be truthful — never fabricate; verify facts and cite sources. ` +
+      `Your real tools are: ${b.tools.join(', ')}. For every concrete task, call the relevant tool instead of merely describing what you would do. ` +
+      `After tool execution, lead with the actual result and clearly report errors or user cancellations. ` +
       `LONG-TERM MEMORY:\n${facts || '(none)'}\n\n` +
       (instructions ? `STANDING INSTRUCTIONS:\n${instructions}\n\n` : '') +
       `Be helpful, concise and professional.`
+  };
+}
+
+function toolsForAgent(name) {
+  const brain = AGENT_BRAINS[name] || AGENT_BRAINS.Alice;
+  return TOOLS.filter((tool) => brain.tools.includes(tool.function.name));
+}
+
+// Restricted, auditable agent execution. Unlike ordinary aiChat(), resident
+// agents can only see the tools assigned to their desk. Every real tool result
+// is returned to the renderer so chat and Mission Log can show the evidence.
+async function agentChat(name, config, messages) {
+  const base = normalizeBaseURL(config.baseURL);
+  const key = (config.apiKey || '').trim();
+  const model = (config.model || 'llama-3.3-70b-versatile').trim();
+  const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
+  if (!base) throw new Error('NO_ENDPOINT');
+  if (!key && !isLocal) throw new Error('NO_KEY');
+
+  const msgs = [agentSystemPrompt(name), ...messages];
+  const allowed = toolsForAgent(name);
+  const toolRuns = [];
+  for (let turn = 0; turn < 6; turn++) {
+    const msg = await callChat(base, key, model, msgs, allowed);
+    const calls = msg.tool_calls || [];
+    if (!calls.length) {
+      const reply = String(msg.content || '').trim();
+      if (!reply) throw new Error('EMPTY_REPLY');
+      return { reply, toolRuns };
+    }
+    msgs.push(msg);
+    for (const call of calls) {
+      const toolName = call.function.name;
+      if (!(AGENT_BRAINS[name] || AGENT_BRAINS.Alice).tools.includes(toolName)) {
+        const denied = { error: `${name} is not authorized to use ${toolName}` };
+        msgs.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(denied) });
+        toolRuns.push({ name: toolName, args: {}, result: denied, ok: false, ms: 0 });
+        continue;
+      }
+      let args = {};
+      try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
+      const started = Date.now();
+      const result = await executeTool(toolName, args);
+      const ms = Date.now() - started;
+      const ok = !(result && result.error);
+      toolRuns.push({ name: toolName, args, result, ok, ms });
+      logAction(toolName, `${name} ${ok ? 'completed' : 'failed'}: ${JSON.stringify(result).slice(0, 220)}`);
+      msgs.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+    }
+  }
+  throw new Error('TOOL_LOOP');
+}
+
+async function fallbackAgentTask(name, text) {
+  const task = String(text || '').replace(/^@(Alice|Bob|Carol|Dave)\s*/i, '').trim();
+  const calls = [];
+  if (name === 'Alice') calls.push(['web_search', { query: task }]);
+  else if (name === 'Bob') {
+    const pathMatch = task.match(/(?:in|at|folder|directory)\s+["']?([^"']+?)["']?(?:\s*$|\s+(?:and|then))/i);
+    const targetPath = pathMatch ? pathMatch[1].trim() : undefined;
+    if (/organize|sort|tidy/i.test(task)) calls.push(['organize_folder', { path: targetPath }]);
+    else calls.push(['list_directory', { path: targetPath }]);
+  } else if (name === 'Carol') calls.push(['system_scan', {}], ['get_power_storage', {}]);
+  else if (name === 'Dave') {
+    const email = task.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    const phone = task.match(/\+?\d[\d\s()-]{7,}\d/);
+    if (email) calls.push(['send_email', { to: email[0], subject: 'Message from GemAir', body: task }]);
+    else if (phone) calls.push(['open_whatsapp', { phone: phone[0].replace(/\D/g, ''), text: task }]);
+    else return { reply: 'I need an email address or WhatsApp phone number before I can open a draft.', toolRuns: [] };
+  }
+  const toolRuns = [];
+  for (const [toolName, args] of calls) {
+    const started = Date.now();
+    const result = await executeTool(toolName, args);
+    const ok = !(result && result.error);
+    toolRuns.push({ name: toolName, args, result, ok, ms: Date.now() - started });
+    logAction(toolName, `${name} ${ok ? 'completed' : 'failed'}: ${JSON.stringify(result).slice(0, 220)}`);
+  }
+  const status = toolRuns.map((run) => `${run.ok ? '✓' : '✗'} ${run.name}: ${JSON.stringify(run.result)}`).join('\n');
+  return { reply: `${name} completed the real tool run.\n${status}`, toolRuns };
+}
+
+async function collaborateAgents(task) {
+  const mission = String(task || '').trim();
+  if (!mission) return { error: 'A mission description is required.', steps: [] };
+  const steps = [];
+  const run = async (agent, tool, args) => {
+    const started = Date.now();
+    const result = await executeTool(tool, args);
+    const step = { agent, tool, args, result, ok: !(result && result.error), ms: Date.now() - started };
+    steps.push(step);
+    logAction(tool, `${agent} ${step.ok ? 'completed' : 'failed'} collaboration step: ${JSON.stringify(result).slice(0, 200)}`);
+    return result;
+  };
+
+  const research = await run('Alice', 'web_search', { query: mission });
+  const slug = mission.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'mission';
+  const reportPath = path.join(app.getPath('documents'), 'GemAir Missions', `${slug}-${new Date().toISOString().slice(0, 10)}.md`);
+  const report = [
+    '# GemAir Mission Report', '', `**Mission:** ${mission}`, `**Generated:** ${new Date().toLocaleString()}`, '',
+    '## Alice — Verified research', '', '```json', JSON.stringify(research, null, 2), '```', '',
+    '## Handoff', '', 'Alice researched → Bob persisted → Carol verified system readiness.', ''
+  ].join('\n');
+  const written = await run('Bob', 'write_file', { path: reportPath, content: report });
+  const scan = await run('Carol', 'system_scan', {});
+  const sensors = await run('Carol', 'get_power_storage', {});
+  return {
+    ok: steps.every((step) => step.ok),
+    reportPath: written && written.path ? written.path : null,
+    steps,
+    summary: `Alice researched ${mission}. Bob ${written && written.path ? `wrote ${written.path}` : 'could not write the report'}. Carol verified live system health${scan && scan.advice ? ` (${scan.advice.join(' ')})` : ''}.`,
+    sensors
   };
 }
 
@@ -1929,13 +2053,25 @@ ipcMain.handle('ai:chatStream', async (e, reqId, config, messages) => {
 ipcMain.handle('ai:offline', async (_e, text) => ({ ok: true, reply: await offlineBrain(text) }));
 ipcMain.handle('ai:summarize', async (_e, config, text) => ({ ok: true, summary: await summarizeTranscript(config, text) }));
 
-// Agent chat — uses the agent's own brain (role prompt) + the user's AI key
+// Agent chat — restricted real tools + complete execution evidence.
 ipcMain.handle('ai:agentChat', async (_e, agentName, config, messages) => {
   try {
-    const sys = agentSystemPrompt(agentName);
-    const reply = await aiChat(config, [sys, ...messages]);
-    return { ok: true, reply };
-  } catch (err) { return { ok: false, error: err.message }; }
+    const run = await agentChat(agentName, config || {}, messages || []);
+    return { ok: true, reply: run.reply, toolRuns: run.toolRuns };
+  } catch (err) {
+    if (err.message === 'NO_ENDPOINT' || err.message === 'NO_KEY') {
+      try {
+        const last = [...(messages || [])].reverse().find((message) => message.role === 'user');
+        const run = await fallbackAgentTask(agentName, last ? last.content : '');
+        return { ok: true, reply: run.reply, toolRuns: run.toolRuns, fallback: true };
+      } catch (fallbackError) { return { ok: false, error: fallbackError.message, toolRuns: [] }; }
+    }
+    return { ok: false, error: err.message, toolRuns: [] };
+  }
+});
+ipcMain.handle('agent:collaborate', async (_e, task) => {
+  try { return await collaborateAgents(task); }
+  catch (err) { return { ok: false, error: err.message, steps: [] }; }
 });
 
 ipcMain.handle('memory:get', () => readMemory());

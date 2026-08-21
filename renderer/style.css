@@ -540,6 +540,15 @@ body {
 .mem-item .del-btn { background: transparent; border: none; color: var(--text-dim); cursor: pointer; font-size: 14px; }
 .mem-item .del-btn:hover { color: var(--accent); }
 
+.agent-result-block { margin: 10px 0 2px; display: grid; gap: 7px; }
+.agent-result-title { color: var(--accent); font: 600 9px var(--font-mono); letter-spacing: .16em; }
+.agent-result { padding: 9px 10px; border: 1px solid rgba(61,255,154,.25); border-radius: 8px; background: rgba(0,0,0,.28); }
+.agent-result.error { border-color: rgba(255,80,80,.35); }
+.agent-result > div { display: flex; justify-content: space-between; gap: 10px; color: var(--good); font: 10px var(--font-mono); }
+.agent-result.error > div { color: #ff7373; }
+.agent-result pre { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 150px; overflow: auto; color: var(--text-dim); font: 10px/1.5 var(--font-mono); }
+.mission-item.complete .m-action { color: var(--good); }
+
 /* ============ COMPANION VIEW ============ */
 .companion-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 

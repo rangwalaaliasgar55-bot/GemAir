@@ -116,6 +116,18 @@ const api = {
   onReminder(cb) { if (window.gemair) window.gemair.onReminder(cb); },
   onWakeToggle(cb) { if (window.gemair) window.gemair.onWakeToggle(cb); },
   onActivity(cb) { if (window.gemair && window.gemair.onActivity) window.gemair.onActivity(cb); },
+  async collaborateAgents(task) {
+    if (window.gemair && window.gemair.collaborateAgents) return window.gemair.collaborateAgents(task);
+    const research = await webGet('search', { q: task });
+    const report = `# GemAir Mission\n\n${task}\n\n## Alice research\n${JSON.stringify(research, null, 2)}`;
+    downloadText(report, 'gemair-mission.md');
+    const system = await this.getSystemInfo();
+    return { ok: true, reportPath: 'gemair-mission.md (download)', summary: 'Alice researched the mission, Bob created a downloadable report, and Carol verified browser system telemetry.', steps: [
+      { agent: 'Alice', tool: 'web_search', args: { query: task }, result: research, ok: true, ms: 0 },
+      { agent: 'Bob', tool: 'write_file', args: { path: 'gemair-mission.md' }, result: { ok: true, path: 'gemair-mission.md (download)' }, ok: true, ms: 0 },
+      { agent: 'Carol', tool: 'system_scan', args: {}, result: system, ok: true, ms: 0 }
+    ] };
+  },
   onHudPanel(cb) { if (window.gemair && window.gemair.onHudPanel) window.gemair.onHudPanel(cb); },
 
   // report & backup
@@ -369,10 +381,10 @@ let listening = false, recognition = null, isRunning = false;
 const chatHistory = []; // working context window
 
 const AGENTS = [
-  { name: 'Alice', emoji: '👩‍💻', role: 'Research & Writing', talk: 'Compiling the latest on your topic…' },
-  { name: 'Bob', emoji: '👨‍🔧', role: 'System & Automation', talk: 'Monitoring your machine, all green.' },
-  { name: 'Carol', emoji: '👩‍🎨', role: 'Creative & Design', talk: 'Sketching ideas in the corner…' },
-  { name: 'Dave', emoji: '🧑‍💼', role: 'Planning & Scheduling', talk: 'Organizing your day into a clean list.' }
+  { name: 'Alice', emoji: '👩‍💻', role: 'Web Research · search / fetch', talk: 'Verifying live sources on the web…' },
+  { name: 'Bob', emoji: '👨‍🔧', role: 'File Ops · read / write / organize', talk: 'Inspecting paths before I touch a file.' },
+  { name: 'Carol', emoji: '👩‍🔬', role: 'System · battery / disk / scan', talk: 'Checking live system health and capacity.' },
+  { name: 'Dave', emoji: '🧑‍💼', role: 'Comms · email / WhatsApp', talk: 'Preparing a draft for your approval.' }
 ];
 
 // Neural voice accents (free Google TTS — smooth natural female, no key needed)
@@ -1699,18 +1711,22 @@ async function handleMessage(text) {
   activeTypingEl = typing;
 
   let reply;
+  let agentToolRuns = [];
+  let activeAgentName = '';
   if (agentMatch) {
     // Task routed to a specific resident agent (independent brain)
     const agentName = agentMatch[1][0].toUpperCase() + agentMatch[1].slice(1);
+    activeAgentName = agentName;
     const task = agentMatch[2].trim();
     if (window.__assignAgentTask) window.__assignAgentTask(agentName, task);
     addActivity(agentName, 'working on: ' + task);
     chatHistory.push({ role: 'user', content: text });
     const replyEl = typing.querySelector('p');
     typewriterToken++;
-    if (useAI && window.gemair) {
+    if (window.gemair) {
       const sys = buildSystemPrompt();
       const res = await window.gemair.aiAgentChat(agentName, cfg, chatHistory.slice(-16));
+      agentToolRuns = res.toolRuns || [];
       if (res.ok) { reply = res.reply; chatHistory.push({ role: 'assistant', content: reply }); }
       else { reply = '⚠ ' + humanError(res.error); }
     } else if (useAI) {
@@ -1726,6 +1742,8 @@ async function handleMessage(text) {
       chatHistory.push({ role: 'assistant', content: reply });
     }
     await renderReply(replyEl, reply);
+    if (agentToolRuns.length) renderAgentToolResults(typing, activeAgentName, agentToolRuns);
+    if (window.__agentBubble) window.__agentBubble(agentName, reply);
   } else if (useAI) {
     // Try Vercel free serverless AI or user key first; fall back to offline brain if unavailable
     chatHistory.push({ role: 'user', content: text });
@@ -1779,6 +1797,7 @@ async function handleMessage(text) {
   await loadMemory();
   updateTranscriptCount();
   animateCircuits();
+  if (agentToolRuns.length) renderMissionLog();
 
   maybeConsolidateMemory();
 
@@ -2079,9 +2098,24 @@ function startAgentTown() {
     return true;
   };
 
+  const handoffs = [];
+  window.__agentHandoff = (from, to, text) => {
+    handoffs.push({ from, to, text: String(text || 'handoff').slice(0, 52), born: townFrame, until: townFrame + 260 });
+    while (handoffs.length > 5) handoffs.shift();
+    return true;
+  };
+
   function drawFloor() {
-    ctx.fillStyle = '#070b14';
+    const hour = new Date().getHours();
+    const daylight = hour >= 7 && hour < 18;
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, daylight ? '#122033' : '#050914');
+    grad.addColorStop(1, daylight ? '#09111e' : '#03060d');
+    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
+    // Office windows make the local-time lighting legible at a glance.
+    ctx.fillStyle = daylight ? 'rgba(255,210,125,.16)' : 'rgba(70,120,255,.12)';
+    for (let x = 250; x <= 650; x += 200) ctx.fillRect(x, 10, 120, 34);
     ctx.strokeStyle = 'rgba(255,255,255,0.04)';
     ctx.lineWidth = 1;
     for (let x = 0; x <= W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
@@ -2142,6 +2176,27 @@ function startAgentTown() {
     ctx.fillRect(coffee.x + 12, coffee.y + 16, 8, 12);
     ctx.fillStyle = '#0a0f1a';
     ctx.fillRect(coffee.x + 26, coffee.y + 8, 8, 12); // cup
+  }
+
+  function drawHandoffs(t) {
+    for (let i = handoffs.length - 1; i >= 0; i--) {
+      const handoff = handoffs[i];
+      if (townFrame > handoff.until) { handoffs.splice(i, 1); continue; }
+      const from = agents.find((agent) => agent.name === handoff.from);
+      const to = agents.find((agent) => agent.name === handoff.to);
+      if (!from || !to) continue;
+      const progress = Math.min(1, Math.max(0, (townFrame - handoff.born) / 110));
+      const x = from.pos.x + (to.pos.x - from.pos.x) * progress;
+      const y = from.pos.y + (to.pos.y - from.pos.y) * progress - Math.sin(progress * Math.PI) * 34;
+      ctx.save();
+      ctx.setLineDash([4, 5]); ctx.strokeStyle = getAccent(); ctx.globalAlpha = 0.38;
+      ctx.beginPath(); ctx.moveTo(from.pos.x, from.pos.y); ctx.lineTo(to.pos.x, to.pos.y); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.fillStyle = getAccent(); ctx.beginPath(); ctx.arc(x, y, 5 + Math.sin(t * .01) * 1.2, 0, Math.PI * 2); ctx.fill();
+      ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+      ctx.fillText(handoff.text, (from.pos.x + to.pos.x) / 2, (from.pos.y + to.pos.y) / 2 - 18);
+      ctx.restore();
+    }
   }
 
   function drawAgent(a, t) {
@@ -2266,7 +2321,12 @@ function startAgentTown() {
     }
     // idle wander
     if (Math.hypot(a.pos.x - a.target.x, a.pos.y - a.target.y) < 3 || a.timer > 400) {
-      a.target = waypoints[Math.floor(Math.random() * waypoints.length)];
+      const coffeeRun = Math.random() < 0.24;
+      a.target = coffeeRun ? { x: coffee.x, y: coffee.y + 40 } : waypoints[Math.floor(Math.random() * waypoints.length)];
+      if (coffeeRun) {
+        a.chatter = { text: 'Coffee run ☕', until: townFrame + 220 };
+        addActivity(a.name, 'walked to the coffee machine');
+      }
       a.timer = 0;
     }
     moveToward(a, a.target);
@@ -2302,6 +2362,7 @@ function startAgentTown() {
     agents.forEach((a, i) => { drawDesk(desks[i], a); });
     agents.forEach((a) => updateAgent(a));
     maybeChatter();
+    drawHandoffs(t);
     agents.forEach((a) => drawAgent(a, t));
     agents.forEach((a) => drawBubble(a));
     agents.forEach((a) => drawChatter(a));
@@ -2313,6 +2374,69 @@ function startAgentTown() {
     raf = requestAnimationFrame(loop);
   }
   raf = requestAnimationFrame(loop);
+}
+
+async function runCollaborationMission(task) {
+  switchView('assistant');
+  addMessage('user', `[TEAM MISSION] ${task}`);
+  const typing = addMessage('ai', '', { typing: true });
+  const replyEl = typing.querySelector('p');
+  activeTypingEl = typing;
+  setThinking(true);
+  addActivity('TEAM', `Mission started: ${task}`);
+  if (window.__assignAgentTask) window.__assignAgentTask('Alice', 'Research: ' + task);
+  if (window.__agentBubble) window.__agentBubble('Alice', 'I’ll verify live sources first.');
+  try {
+    const result = await api.collaborateAgents(task);
+    const steps = result.steps || [];
+    for (const step of steps) {
+      const runs = [{ name: step.tool, args: step.args, result: step.result, ok: step.ok, ms: step.ms }];
+      renderAgentToolResults(typing, step.agent, runs);
+      if (window.__assignAgentTask) window.__assignAgentTask(step.agent, `${step.tool}: ${task}`);
+      if (window.__agentBubble) window.__agentBubble(step.agent, `${step.ok ? '✓' : '✗'} ${step.tool} complete`);
+      if (step.agent === 'Alice') {
+        if (window.__agentHandoff) window.__agentHandoff('Alice', 'Bob', 'verified research');
+        addActivity('HANDOFF', 'Alice → Bob · verified research');
+      } else if (step.agent === 'Bob') {
+        if (window.__agentHandoff) window.__agentHandoff('Bob', 'Carol', 'report ready to verify');
+        addActivity('HANDOFF', 'Bob → Carol · report ready to verify');
+      }
+    }
+    const reply = result.summary || result.error || 'The collaboration finished.';
+    await renderReply(replyEl, reply);
+    chatHistory.push({ role: 'user', content: `[TEAM MISSION] ${task}` }, { role: 'assistant', content: reply });
+    await api.memoryAppend('user', `[TEAM MISSION] ${task}`);
+    await api.memoryAppend('assistant', reply);
+    await loadMemory(); renderMissionLog(); updateTranscriptCount();
+    addActivity('TEAM', `${result.ok === false ? '✗' : '✓'} Mission complete`);
+    if (result.reportPath) toast('MISSION COMPLETE', `Report: ${result.reportPath}`, '✓');
+    speak(reply);
+  } catch (error) {
+    replyEl.textContent = 'Mission failed: ' + humanError(error.message);
+    addActivity('TEAM', '✗ Mission failed: ' + error.message);
+  } finally {
+    activeTypingEl = null;
+    setThinking(false);
+  }
+}
+
+function renderAgentToolResults(messageEl, agentName, runs) {
+  if (!messageEl || !runs || !runs.length) return;
+  const block = document.createElement('div');
+  block.className = 'agent-result-block';
+  const stringify = (value) => {
+    try { return typeof value === 'string' ? value : JSON.stringify(value, null, 2); } catch (e) { return String(value); }
+  };
+  block.innerHTML = `<div class="agent-result-title">${escapeHtml(agentName)} · REAL TOOL RESULTS</div>` + runs.map((run) => {
+    const icon = run.ok ? '✓' : '✗';
+    const state = run.ok ? 'done' : 'error';
+    return `<div class="agent-result ${state}"><div><b>${icon} ${escapeHtml(run.name)}</b><span>${Math.round(run.ms || 0)}ms</span></div><pre>${escapeHtml(stringify(run.result).slice(0, 1200))}</pre></div>`;
+  }).join('');
+  messageEl.appendChild(block);
+  runs.forEach((run) => {
+    pushToolActivity(run.name, run.args, run.result, (run.ms || 0) / 1000);
+    addActivity(agentName, `${run.ok ? '✓' : '✗'} ${run.name}: ${stringify(run.result).replace(/\s+/g, ' ').slice(0, 110)}`);
+  });
 }
 
 function addActivity(who, text) {
@@ -2434,9 +2558,10 @@ function renderMissionLog() {
   log.innerHTML = '';
   actions.forEach((a) => {
     const div = document.createElement('div');
-    div.className = 'mission-item';
+    const complete = /completed|done|success/i.test(a.detail || '');
+    div.className = 'mission-item' + (complete ? ' complete' : '');
     const t = new Date(a.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
-    div.innerHTML = `<div class="m-action">▸ ${escapeHtml(a.action)} <span class="m-time">${t}</span></div><div class="m-detail">${escapeHtml(a.detail)}</div>`;
+    div.innerHTML = `<div class="m-action">${complete ? '✓' : '▸'} ${escapeHtml(a.action)} <span class="m-time">${t}</span></div><div class="m-detail">${escapeHtml(a.detail)}</div>`;
     log.appendChild(div);
   });
 }
@@ -3463,10 +3588,8 @@ function bindEvents() {
 
     if (agent === 'all') {
       addActivity('TEAM', `Multi-agent mission dispatched: "${task}"`);
-      toast('AGENTS', 'Multi-agent collaboration initiated', '👥');
-      switchView('assistant');
-      $('#chatInput').value = `@Alice @Bob @Carol @Dave ${task}`;
-      sendMessage($('#chatInput').value);
+      toast('AGENTS', 'Alice → Bob → Carol collaboration initiated', '👥');
+      runCollaborationMission(task);
     } else {
       addActivity(agent, `Dispatched mission: "${task}"`);
       toast('AGENT', `${agent} assigned task`, '🚀');
