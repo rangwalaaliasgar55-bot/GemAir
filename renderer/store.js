@@ -64,6 +64,8 @@
   }
 
   const store = {
+    lastError: null,
+    session: null,      // T1: the live Supabase session (anonymous or Google)
     async get() { return getMemory(); },
     async append(role, content) {
       const m = getMemory();
@@ -127,8 +129,29 @@
           store.lastError = { code: 'NO_SDK', message: 'The Supabase JS SDK did not load (offline, or blocked by CSP).' };
           return false;
         }
-        sb = window.supabase.createClient(config.url, config.anonKey, { auth: { persistSession: true, autoRefreshToken: true } });
-        const { error } = await sb.auth.signInAnonymously();
+        sb = window.supabase.createClient(config.url, config.anonKey, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+        });
+
+        // T1: keep the current session visible to the app and re-announce it
+        // whenever Supabase refreshes or the user signs in/out.
+        sb.auth.onAuthStateChange((_event, session) => {
+          store.session = session || null;
+          try {
+            document.dispatchEvent(new CustomEvent('gemair:auth', { detail: store.identity() }));
+          } catch (e) {}
+        });
+
+        // An existing session (e.g. returning from the Google redirect) wins;
+        // otherwise fall back to the anonymous identity as before.
+        const existing = await sb.auth.getSession();
+        if (existing && existing.data && existing.data.session) {
+          store.session = existing.data.session;
+          return true;
+        }
+
+        const { data: anonData, error } = await sb.auth.signInAnonymously();
+        if (!error && anonData) store.session = anonData.session || null;
         if (error) {
           sb = null;
           // 422 from /auth/v1/signup means anonymous sign-ins are switched off.
@@ -168,6 +191,63 @@
         store.lastError = { code: 'EXCEPTION', message: e && e.message };
         return false;
       }
+    },
+
+    // =====================================================================
+    // T1 — real account sign-in (Supabase Google OAuth), alongside the anon
+    // identity. 2.1 could only ever be anonymous, so "cross-device sync" was
+    // aspirational: a second device got a brand-new anonymous user and saw an
+    // empty memory. Signing in with Google gives a STABLE user id, which both
+    // makes the mirror genuinely cross-device and binds fair-use to a real
+    // identity instead of a rotatable client string.
+    //
+    // Anonymous stays the default. Nothing here is required to use GemAir.
+    // =====================================================================
+    isSignedIn() { return !!(store.session && store.session.user && !store.session.user.is_anonymous); },
+
+    async currentUser() {
+      if (!sb) return null;
+      try {
+        const { data } = await sb.auth.getUser();
+        return (data && data.user) || null;
+      } catch (e) { return null; }
+    },
+
+    /** Start the Google OAuth redirect flow. Requires initSupabase() first. */
+    async signInWithGoogle(redirectTo) {
+      if (!sb) { store.lastError = { code: 'NO_CLIENT', message: 'Supabase is not configured on this deployment.' }; return false; }
+      try {
+        const { error } = await sb.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo: redirectTo || window.location.origin }
+        });
+        if (error) {
+          store.lastError = /provider/i.test(error.message || '')
+            ? { code: 'GOOGLE_DISABLED', message: 'Google sign-in is not enabled for this Supabase project (Authentication → Providers → Google).' }
+            : { code: 'OAUTH_FAILED', message: error.message };
+          return false;
+        }
+        return true; // the browser is navigating to Google now
+      } catch (e) {
+        store.lastError = { code: 'EXCEPTION', message: e && e.message };
+        return false;
+      }
+    },
+
+    async signOut() {
+      if (!sb) return false;
+      try { await sb.auth.signOut(); } catch (e) {}
+      store.session = null;
+      // fall back to an anonymous session so local-first sync keeps working
+      try { await sb.auth.signInAnonymously(); } catch (e) {}
+      return true;
+    },
+
+    /** Stable identity for fair-use binding: the real uid when signed in. */
+    identity() {
+      const u = store.session && store.session.user;
+      if (!u) return null;
+      return { id: u.id, email: u.email || null, anonymous: !!u.is_anonymous, name: (u.user_metadata && u.user_metadata.full_name) || null };
     }
   };
 

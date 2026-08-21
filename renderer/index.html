@@ -841,6 +841,34 @@
           </details>
         </fieldset>
 
+        <!-- T1: real account sign-in alongside the anonymous identity -->
+        <fieldset>
+          <legend>ACCOUNT</legend>
+          <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
+            GemAir works fully signed-out — memory is local-first and always yours. Signing in with Google gives you a
+            <b>stable identity</b>, so your memory follows you across devices and the free-core fair-use budget is bound to you
+            rather than to a browser.
+          </p>
+          <div class="account-row">
+            <span class="account-state" id="accountState">Anonymous — this device only</span>
+            <button class="mini-btn" id="signInGoogleBtn" type="button">Sign in with Google</button>
+            <button class="mini-btn" id="signOutBtn" type="button" hidden>Sign out</button>
+          </div>
+        </fieldset>
+
+        <!-- T3: in-app rating prompt history -->
+        <fieldset>
+          <legend>RATE GEMAIR</legend>
+          <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
+            Ratings are stored locally and never uploaded. Export them any time.
+          </p>
+          <div class="rating-row">
+            <div class="star-row" id="settingsStars" role="radiogroup" aria-label="Rate GemAir"></div>
+            <span class="dim" id="ratingSummary">No ratings yet.</span>
+            <button class="mini-btn" id="exportRatingsBtn" type="button">Export</button>
+          </div>
+        </fieldset>
+
         <!-- S4: interface language + RTL -->
         <fieldset>
           <legend>LANGUAGE</legend>

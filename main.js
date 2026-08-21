@@ -4,7 +4,7 @@
 // real tool-calling (weather, web search, reminders, notes, volume, system
 // control, screenshots), and it runs on YOUR AI key (Groq / OpenAI / any
 // OpenAI-compatible endpoint) — or fully offline with the built-in brain.
-const { app, BrowserWindow, ipcMain, shell, dialog, Notification, desktopCapturer, clipboard, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Notification, desktopCapturer, clipboard, Tray, Menu, nativeImage, screen } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -14,6 +14,7 @@ const isDev = process.argv.includes('--dev');
 const userDataDir = app.getPath('userData');
 const PROFILE_FILE = path.join(userDataDir, 'gemair-profile.json');
 const MEMORY_FILE = path.join(userDataDir, 'gemair-memory.json');
+const WINDOW_STATE_FILE = path.join(userDataDir, 'gemair-window-state.json');
 
 // v1 rename (GemAI -> GemAir): Electron derives userData from productName, so
 // the rebrand moves the whole folder (…/GemAI -> …/GemAir). Adopt the old files
@@ -40,13 +41,96 @@ let isQuitting = false;
 
 // ---------------------------------------------------------------------------
 // Window
+//
+// T4 — multi-monitor window memory.
+//
+// 2.1 always opened at a fixed 1440x900 on the primary display, so anyone with
+// a second monitor had to drag and resize GemAir on EVERY launch. Bounds are
+// now remembered PER DISPLAY SET (keyed by the connected monitors' ids and
+// sizes), so docking/undocking a laptop restores the layout that belongs to
+// that arrangement. Restored bounds are always clamped back onto a display that
+// actually exists today, so unplugging a monitor can never strand the window.
 // ---------------------------------------------------------------------------
+const DEFAULT_BOUNDS = { width: 1440, height: 900 };
+
+/** A stable fingerprint of the CURRENT monitor arrangement. */
+function displaySetKey() {
+  try {
+    return screen.getAllDisplays()
+      .map((d) => `${d.id}:${d.bounds.x},${d.bounds.y},${d.bounds.width}x${d.bounds.height}`)
+      .sort()
+      .join('|') || 'unknown';
+  } catch (e) { return 'unknown'; }
+}
+
+function readWindowState() {
+  try { return JSON.parse(fs.readFileSync(WINDOW_STATE_FILE, 'utf8')) || {}; } catch (e) { return {}; }
+}
+
+function writeWindowState(state) {
+  try { fs.writeFileSync(WINDOW_STATE_FILE, JSON.stringify(state, null, 2)); } catch (e) {}
+}
+
+/** Force a saved rectangle back onto a display that exists right now. */
+function clampToVisibleDisplay(bounds) {
+  if (!bounds || !Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)) return null;
+  let displays = [];
+  try { displays = screen.getAllDisplays(); } catch (e) { return null; }
+  if (!displays.length) return null;
+
+  const width = Math.max(1080, Math.min(bounds.width, 8000));
+  const height = Math.max(700, Math.min(bounds.height, 8000));
+
+  const cx = (bounds.x || 0) + width / 2;
+  const cy = (bounds.y || 0) + height / 2;
+  const host = displays.find((d) => {
+    const a = d.workArea;
+    return cx >= a.x && cx <= a.x + a.width && cy >= a.y && cy <= a.y + a.height;
+  });
+
+  const area = (host || screen.getPrimaryDisplay()).workArea;
+  const w = Math.min(width, area.width);
+  const h = Math.min(height, area.height);
+  const x = host ? Math.min(Math.max(bounds.x, area.x), area.x + area.width - w) : Math.round(area.x + (area.width - w) / 2);
+  const y = host ? Math.min(Math.max(bounds.y, area.y), area.y + area.height - h) : Math.round(area.y + (area.height - h) / 2);
+  return { x, y, width: w, height: h, maximized: !!bounds.maximized, onKnownDisplay: !!host };
+}
+
+function restoredBounds() {
+  const state = readWindowState();
+  const saved = state[displaySetKey()];
+  const clamped = clampToVisibleDisplay(saved);
+  if (clamped) return clamped;
+  return { ...DEFAULT_BOUNDS };
+}
+
+function saveWindowBounds() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  try {
+    const maximized = mainWindow.isMaximized();
+    // store the *normal* bounds so un-maximizing restores something sensible
+    const b = maximized ? mainWindow.getNormalBounds() : mainWindow.getBounds();
+    const state = readWindowState();
+    state[displaySetKey()] = { x: b.x, y: b.y, width: b.width, height: b.height, maximized, savedAt: Date.now() };
+    // keep at most 8 remembered arrangements
+    const keys = Object.keys(state).sort((a, b2) => (state[b2].savedAt || 0) - (state[a].savedAt || 0));
+    const trimmed = {};
+    for (const k of keys.slice(0, 8)) trimmed[k] = state[k];
+    writeWindowState(trimmed);
+    return true;
+  } catch (e) { return false; }
+}
+
 function createWindow() {
+  const start = restoredBounds();
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    x: start.x,
+    y: start.y,
+    width: start.width,
+    height: start.height,
     minWidth: 1080,
     minHeight: 700,
+    show: false,             // avoid a flash at the default position
     backgroundColor: '#04060c',
     autoHideMenuBar: true,
     webPreferences: {
@@ -56,6 +140,23 @@ function createWindow() {
       spellcheck: false
     }
   });
+
+  if (start.maximized) mainWindow.maximize();
+  mainWindow.once('ready-to-show', () => mainWindow.show());
+
+  // T4: persist bounds on move/resize (debounced) and whenever the monitor
+  // arrangement changes, so each display set keeps its own layout.
+  let boundsTimer = null;
+  const queueSave = () => { clearTimeout(boundsTimer); boundsTimer = setTimeout(saveWindowBounds, 500); };
+  mainWindow.on('resize', queueSave);
+  mainWindow.on('move', queueSave);
+  mainWindow.on('maximize', queueSave);
+  mainWindow.on('unmaximize', queueSave);
+  try {
+    screen.on('display-added', queueSave);
+    screen.on('display-removed', queueSave);
+    screen.on('display-metrics-changed', queueSave);
+  } catch (e) {}
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
@@ -67,6 +168,7 @@ function createWindow() {
   // Minimize / close to tray instead of quitting — but only when a tray icon
   // actually exists, otherwise the window would hide with no way to get it back.
   mainWindow.on('close', (e) => {
+    saveWindowBounds(); // T4
     if (!isQuitting && tray) {
       e.preventDefault();
       mainWindow.hide();
@@ -2499,5 +2601,6 @@ ipcMain.handle('memory:addTodo', (_e, text) => addTodo(text));
 ipcMain.handle('memory:toggleTodo', (_e, id) => toggleTodoById(id));
 ipcMain.handle('memory:deleteTodo', (_e, id) => deleteTodoById(id));
 
+ipcMain.handle('win:saveBounds', () => saveWindowBounds()); // T4
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:platform', () => process.platform);

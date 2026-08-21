@@ -52,7 +52,10 @@ const api = {
 
   async _webChat(messages) {
     try {
-      const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages }) });
+      // T1: bind fair-use to the signed-in account when there is one
+      const body = { messages };
+      if (window.__gemairUserId) body.userId = window.__gemairUserId;
+      const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       return await r.json();
     } catch (e) { return { ok: false, error: e.message }; }
   },
@@ -581,8 +584,82 @@ function planForRequest(text) {
   return ['Understand scope and constraints', 'Execute the required tools', 'Verify and report the outcome'];
 }
 
+// ---------------------------------------------------------------------------
+// T2 — visible reasoning stream (Stonic's "Luna" feature).
+//
+// 2.1 rendered a static numbered plan and nothing else: the user could see WHAT
+// Gem intended but never WHY, and no live narration of the work. This renders a
+// collapsible strip above the reply, fed by the same planner events plus the
+// tool-execution events the mission log already emits, so it reflects real work
+// rather than a decorative animation. Collapsed by default; the choice sticks.
+// ---------------------------------------------------------------------------
+const REASON_OPEN_KEY = 'gemair:reasoning-open';
+
+function reasoningOpenPref() {
+  try { return localStorage.getItem(REASON_OPEN_KEY) === '1'; } catch (e) { return false; }
+}
+
+function renderReasoningStrip(messageEl, text, steps) {
+  if (!messageEl) return null;
+  const open = reasoningOpenPref();
+  const strip = document.createElement('details');
+  strip.className = 'reason-strip';
+  strip.open = open;
+  strip.innerHTML = `
+    <summary>
+      <span class="reason-pip" aria-hidden="true"></span>
+      <span class="reason-label">REASONING</span>
+      <span class="reason-hint dim" data-reason-hint>thinking…</span>
+    </summary>
+    <div class="reason-body" data-reason-body></div>`;
+  strip.addEventListener('toggle', () => {
+    try { localStorage.setItem(REASON_OPEN_KEY, strip.open ? '1' : '0'); } catch (e) {}
+  });
+  const paragraph = messageEl.querySelector('p');
+  messageEl.insertBefore(strip, paragraph || messageEl.firstChild);
+
+  const body = strip.querySelector('[data-reason-body]');
+  const hint = strip.querySelector('[data-reason-hint]');
+
+  const push = (kind, line) => {
+    if (!body || !body.isConnected) return;
+    const row = document.createElement('div');
+    row.className = 'reason-line ' + kind;
+    row.textContent = line;
+    body.appendChild(row);
+    if (hint) hint.textContent = line.length > 46 ? line.slice(0, 46) + '…' : line;
+  };
+
+  // seed with the planner's read of the request
+  push('plan', `Interpreting: ${String(text || '').slice(0, 120)}`);
+  if (steps && steps.length) {
+    steps.forEach((step, i) => push('plan', `Step ${i + 1}: ${step}`));
+  } else {
+    push('plan', 'Single-step request — answering directly.');
+  }
+
+  return {
+    push,
+    done(summary) {
+      if (hint) hint.textContent = summary || 'done';
+      strip.classList.add('finished');
+    }
+  };
+}
+
+/** The reasoning stream for the reply currently being generated. */
+let activeReasoning = null;
+
+/** Called from tool execution so the strip narrates real work (not a fake). */
+function reasoningNote(kind, line) {
+  try { if (activeReasoning) activeReasoning.push(kind, line); } catch (e) {}
+}
+
 function renderPlanner(messageEl, text) {
   const steps = planForRequest(text);
+  // T2: the reasoning strip renders for EVERY reply, even when there is no
+  // multi-step plan — that is the point of a visible thinking channel.
+  activeReasoning = renderReasoningStrip(messageEl, text, steps);
   if (!messageEl || !steps.length) { activePlan = null; return; }
   const panel = document.createElement('div');
   panel.className = 'plan-checklist';
@@ -2023,6 +2100,10 @@ function toolChipUpdate({ name, state }) {
     chip.dataset.tool = label;
     strip.appendChild(chip);
   }
+  // T2: narrate real tool execution into the reasoning strip
+  if (state === 'start') reasoningNote('tool', `Calling ${label}…`);
+  else if (state === 'done') reasoningNote('tool', `${label} returned successfully.`);
+  else if (state === 'error') reasoningNote('error', `${label} failed — falling back.`);
   chip.className = 'tool-chip ' + (state === 'done' ? 'done' : state === 'error' ? 'error' : 'running');
   chip.innerHTML = `<span class="tc-dot"></span>${escapeHtml(label)}${state === 'done' ? ' ✓' : state === 'error' ? ' ✗' : ' …'}`;
   if (state === 'done') tickPlannerStep();
@@ -2463,7 +2544,15 @@ async function handleMessage(text) {
   maybeConsolidateMemory();
 
   activeTypingEl = null; // reply finished — stop attaching tool chips
+  try {
+    if (activeReasoning) {
+      activeReasoning.push('done', `Answered in ${reply ? reply.length : 0} characters.`);
+      activeReasoning.done('complete');
+      activeReasoning = null;
+    }
+  } catch (e) {}
   updateContextMeter();
+  try { noteSuccessfulMission(); } catch (e) {} // T3
   if (!skipFinalSpeak) speak(reply);
 }
 
@@ -3621,6 +3710,182 @@ function startTownPreview() {
   }
   scheduleViewFrame('assistant', loop);
   canvas.addEventListener('click', () => { playSfx('swoosh'); switchView('town'); });
+}
+
+// ---------------------------------------------------------------------------
+// T1 — account state UI (Supabase Google OAuth alongside the anon identity).
+// ---------------------------------------------------------------------------
+function renderAccountState() {
+  const label = $('#accountState');
+  const inBtn = $('#signInGoogleBtn');
+  const outBtn = $('#signOutBtn');
+  if (!label) return;
+  const store = window.webStore;
+  if (isElectron || !store) {
+    label.textContent = 'Desktop build — memory is stored locally on this machine.';
+    if (inBtn) inBtn.hidden = true;
+    if (outBtn) outBtn.hidden = true;
+    return;
+  }
+  const id = store.identity ? store.identity() : null;
+  if (id && !id.anonymous) {
+    label.textContent = `Signed in as ${id.email || id.name || id.id.slice(0, 8)} — syncing across devices`;
+    label.classList.add('signed-in');
+    if (inBtn) inBtn.hidden = true;
+    if (outBtn) outBtn.hidden = false;
+  } else {
+    label.textContent = id ? 'Anonymous — this device only' : 'Cloud sync is not configured on this deployment';
+    label.classList.remove('signed-in');
+    if (inBtn) inBtn.hidden = !id;
+    if (outBtn) outBtn.hidden = true;
+  }
+}
+
+function setupAccountControls() {
+  document.addEventListener('gemair:auth', () => { renderAccountState(); updateFairUseIdentity(); });
+  $('#signInGoogleBtn')?.addEventListener('click', async () => {
+    if (!window.webStore || !window.webStore.signInWithGoogle) return;
+    const ok = await window.webStore.signInWithGoogle(window.location.origin);
+    if (!ok) {
+      const err = (window.webStore.lastError || {});
+      toast('SIGN-IN', err.message || 'Google sign-in is unavailable on this deployment.', '🔒');
+    }
+  });
+  $('#signOutBtn')?.addEventListener('click', async () => {
+    await window.webStore.signOut();
+    renderAccountState();
+    toast('ACCOUNT', 'Signed out — back to an anonymous local identity.', '👋');
+  });
+  renderAccountState();
+}
+
+/** T1: bind the free-core fair-use budget to the real account when there is one. */
+function updateFairUseIdentity() {
+  try {
+    const id = window.webStore && window.webStore.identity ? window.webStore.identity() : null;
+    window.__gemairUserId = id && !id.anonymous ? id.id : (id ? id.id : null);
+  } catch (e) {}
+}
+
+// ---------------------------------------------------------------------------
+// T3 — in-app star rating after N successful missions.
+//
+// Stonic collects ratings in-app; GemAir had no feedback surface at all. This
+// counts successful missions (a reply that completed without error), asks ONCE
+// per threshold, stores everything in localStorage, and never uploads anything.
+// ---------------------------------------------------------------------------
+const RATING_KEY = 'gemair:ratings';
+const RATING_STATE_KEY = 'gemair:rating-state';
+const RATING_THRESHOLDS = [8, 40, 150];
+
+function readRatings() {
+  try { const v = JSON.parse(localStorage.getItem(RATING_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+}
+function readRatingState() {
+  try { return JSON.parse(localStorage.getItem(RATING_STATE_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+function writeRatingState(next) {
+  try { localStorage.setItem(RATING_STATE_KEY, JSON.stringify(next)); } catch (e) {}
+}
+
+function recordRating(stars, note) {
+  const list = readRatings();
+  list.push({ stars: Math.max(1, Math.min(5, Number(stars) || 0)), note: String(note || '').slice(0, 400), ts: Date.now(), version: window.__gemairVersion || '2.2.0' });
+  try { localStorage.setItem(RATING_KEY, JSON.stringify(list.slice(-50))); } catch (e) {}
+  renderRatingSummary();
+  return list;
+}
+
+function renderRatingSummary() {
+  const el = $('#ratingSummary');
+  if (!el) return;
+  const list = readRatings();
+  if (!list.length) { el.textContent = 'No ratings yet.'; return; }
+  const avg = list.reduce((sum, r) => sum + r.stars, 0) / list.length;
+  const last = new Date(list[list.length - 1].ts).toLocaleDateString();
+  el.textContent = `${avg.toFixed(1)}★ average across ${list.length} rating${list.length === 1 ? '' : 's'} · last ${last}`;
+}
+
+/** Build a 1-5 star control into `host`; calls onPick(stars). */
+function buildStarRow(host, onPick, initial) {
+  if (!host) return;
+  host.innerHTML = '';
+  for (let i = 1; i <= 5; i++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'star' + (initial && i <= initial ? ' on' : '');
+    b.textContent = '★';
+    b.dataset.stars = String(i);
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', initial === i ? 'true' : 'false');
+    b.setAttribute('aria-label', `${i} star${i === 1 ? '' : 's'}`);
+    b.addEventListener('mouseenter', () => {
+      [...host.children].forEach((c, idx) => c.classList.toggle('on', idx < i));
+    });
+    b.addEventListener('click', () => {
+      playSfx('click');
+      [...host.children].forEach((c, idx) => c.classList.toggle('on', idx < i));
+      onPick(i);
+    });
+    host.appendChild(b);
+  }
+  host.addEventListener('mouseleave', () => {
+    const on = Number(host.dataset.value || 0);
+    [...host.children].forEach((c, idx) => c.classList.toggle('on', idx < on));
+  });
+}
+
+function setupRatingUi() {
+  renderRatingSummary();
+  const host = $('#settingsStars');
+  if (host) {
+    buildStarRow(host, (stars) => {
+      host.dataset.value = String(stars);
+      recordRating(stars, 'settings');
+      toast('THANK YOU', `Rated ${stars}★ — stored locally only.`, '⭐');
+    });
+  }
+  $('#exportRatingsBtn')?.addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(readRatings(), null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'gemair-ratings.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  });
+}
+
+/** Called after every successful mission/reply. */
+function noteSuccessfulMission() {
+  const state = readRatingState();
+  state.missions = (state.missions || 0) + 1;
+  const threshold = RATING_THRESHOLDS.find((n) => state.missions === n);
+  writeRatingState(state);
+  if (!threshold) return;
+  if ((state.asked || []).includes(threshold)) return;
+  state.asked = [...(state.asked || []), threshold];
+  writeRatingState(state);
+  setTimeout(() => showRatingPrompt(state.missions), 1500);
+}
+
+function showRatingPrompt(missions) {
+  const log = $('#chatLog');
+  if (!log || log.querySelector('.rating-prompt')) return;
+  const box = document.createElement('div');
+  box.className = 'rating-prompt';
+  box.setAttribute('role', 'group');
+  box.setAttribute('aria-label', 'Rate GemAir');
+  box.innerHTML = `<span>${missions} missions done together. How is GemAir treating you?</span>
+    <span class="star-row" id="promptStars"></span>
+    <button class="mini-btn" type="button" data-later>Later</button>`;
+  log.appendChild(box);
+  log.scrollTop = log.scrollHeight;
+  buildStarRow(box.querySelector('#promptStars'), (stars) => {
+    recordRating(stars, `prompt@${missions}`);
+    box.innerHTML = `<span>Thank you — ${stars}★ recorded locally. You can export ratings from Settings.</span>`;
+    setTimeout(() => box.remove(), 4000);
+  });
+  box.querySelector('[data-later]')?.addEventListener('click', () => box.remove());
 }
 
 // ---------------------------------------------------------------------------
@@ -6060,6 +6325,8 @@ async function boot() {
   safe('iconLabels', labelIconButtons);                // U4
   safe('shortcutHints', applyPlatformShortcutHints);   // U4
   safe('systemStatus', updateSystemStatusChip);        // U2
+  safe('account', setupAccountControls);               // T1
+  safe('rating', setupRatingUi);                       // T3
   safe('circuitWires', startCircuitWires);
   safe('townPreview', startTownPreview);
   safe('townChrome', initTownChrome);
