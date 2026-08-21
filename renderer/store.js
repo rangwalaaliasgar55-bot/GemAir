@@ -87,7 +87,7 @@
     async addReminder(text, at) { const m = getMemory(); m.reminders.push({ id: uid(), text, at, done: false, notified: false, created: Date.now() }); setMemory(m); return true; },
     async deleteReminder(id) { const m = getMemory(); m.reminders = m.reminders.filter(r => r.id !== id); setMemory(m); return true; },
     async markReminder(id, done) { const m = getMemory(); const r = m.reminders.find(x => x.id === id); if (r) { r.done = !!done; r.notified = false; } setMemory(m); return true; },
-    async addTodo(text) { const m = getMemory(); m.todos.unshift({ id: uid(), text, done: false }); setMemory(m); return true; },
+    async addTodo(text) { const m = getMemory(); m.todos.unshift({ id: uid(), text, done: false, created: Date.now() }); setMemory(m); return true; },
     async addMood(emotion, note) {
       const m = getMemory();
       const valence = ({ joy: 1, excitement: 1, love: 0.9, gratitude: 0.9, confident: 0.8, curiosity: 0.25, boredom: -0.3, tired: -0.4, anxiety: -0.6, sadness: -0.7, fear: -0.7, anger: -0.8, hope: 0.7, relief: 0.8, embarrassed: -0.4, guilty: -0.5, neutral: 0 }[emotion]) || 0;
@@ -97,7 +97,7 @@
     },
     async addGoal(text, category) { const m = getMemory(); m.goals.unshift({ id: uid(), text, category: category || 'personal', done: false, created: Date.now() }); setMemory(m); return true; },
     async deleteGoal(id) { const m = getMemory(); m.goals = m.goals.filter(g => g.id !== id); setMemory(m); return true; },
-    async toggleGoal(id) { const m = getMemory(); const g = m.goals.find(x => x.id === id); if (g) g.done = !g.done; setMemory(m); return true; },
+    async toggleGoal(id) { const m = getMemory(); const g = m.goals.find(x => x.id === id); if (g) { g.done = !g.done; g.updated = Date.now(); g.completed = g.done ? Date.now() : null; } setMemory(m); return true; },
     async logAction(action, detail) {
       const m = getMemory();
       m.actionLog.unshift({ id: uid(), action, detail: String(detail || '').slice(0, 300), ts: Date.now() });

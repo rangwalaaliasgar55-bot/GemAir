@@ -551,6 +551,13 @@ body.rgb-recording #micVuCanvas, body.wake-armed #micVuCanvas { opacity: 1; bord
 .mini-btn:hover { transform: scale(1.05); box-shadow: 0 0 12px var(--accent); }
 
 .memory-list { display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; }
+.memory-browser-entry { padding: 10px 12px; border: 1px solid var(--panel-border); border-radius: 9px; background: rgba(0,0,0,.25); }
+.memory-browser-entry > div:first-child { display: flex; align-items: center; gap: 9px; }
+.memory-browser-entry .mb-type { flex: 0 0 auto; color: var(--accent); font: 700 8px var(--font-mono); letter-spacing: .12em; }
+.memory-browser-entry .mb-preview { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.memory-browser-entry button { border: 0; background: transparent; color: var(--text-dim); cursor: pointer; font: 600 9px var(--font-mono); }
+.memory-browser-entry button:hover { color: var(--accent); }
+.memory-browser-entry pre { margin-top: 9px; padding: 9px; max-height: 150px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(0,0,0,.3); color: var(--text-dim); font: 10px/1.5 var(--font-mono); }
 .mem-item {
   display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;
   background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); border-radius: 10px; font-size: 13px;
@@ -711,6 +718,13 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
   color: var(--text-dim); font-family: var(--font-sans); font-size: 13px; cursor: pointer; transition: all .18s;
 }
 .ghost-btn:hover { color: #fff; border-color: var(--text-dim); }
+
+.report-sparklines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.spark-card { position: relative; padding: 10px; border: 1px solid var(--panel-border); border-radius: 9px; background: rgba(0,0,0,.24); }
+.spark-card > span { display: block; color: var(--text-dim); font: 600 8px var(--font-mono); letter-spacing: .12em; }
+.spark-card canvas { width: 100%; height: 62px; display: block; }
+.spark-card > b { color: var(--accent); font: 700 11px var(--font-mono); }
+@media (max-width: 680px) { .report-sparklines { grid-template-columns: 1fr; } }
 
 /* Guided Breathing Modal */
 .breathe-body { text-align: center; align-items: center; }

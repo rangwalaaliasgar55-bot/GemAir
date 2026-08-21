@@ -3230,7 +3230,34 @@ function renderInstructions() {
     list.appendChild(div);
   });
 }
-function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); renderSkills(); renderInstructions(); renderMissionLog(); renderBriefing(); }
+function renderMemoryBrowser() {
+  const list = $('#memoryBrowserList'); if (!list) return;
+  const query = ($('#memoryBrowserSearch')?.value || '').toLowerCase().trim();
+  const typeFilter = $('#memoryBrowserType')?.value || 'all';
+  const entries = [];
+  const push = (type, item, text, meta, remove) => entries.push({ type, item, text: String(text || ''), meta, remove });
+  (memory.facts || []).forEach((item) => push('fact', item, item.text, item.category || 'fact', () => api.memoryDeleteFact(item.id)));
+  (memory.notes || []).forEach((item) => push('note', item, item.text, 'notebook', () => api.memoryDeleteNote(item.id)));
+  (memory.goals || []).forEach((item) => push('goal', item, item.text, `${item.category || 'personal'} · ${item.done ? 'complete' : 'active'}`, () => api.memoryDeleteGoal(item.id)));
+  (memory.skills || []).forEach((item) => push('skill', item, `${item.name ? item.name + ': ' : ''}${item.text}`, 'learned skill', () => api.memoryDeleteSkill(item.id)));
+  (memory.instructions || []).forEach((item) => push('instruction', item, item.text, 'standing rule', () => api.memoryDeleteInstruction(item.id)));
+  (memory.reminders || []).forEach((item) => push('reminder', item, item.text, new Date(item.at).toLocaleString(), () => api.memoryDeleteReminder(item.id)));
+  const filtered = entries.filter((entry) => (typeFilter === 'all' || entry.type === typeFilter) && (!query || `${entry.text} ${entry.meta}`.toLowerCase().includes(query)));
+  if (!filtered.length) { list.innerHTML = '<div class="empty">No memories match this search.</div>'; return; }
+  list.innerHTML = '';
+  filtered.sort((a, b) => (b.item.updated || b.item.created || b.item.ts || 0) - (a.item.updated || a.item.created || a.item.ts || 0)).forEach((entry) => {
+    const row = document.createElement('div'); row.className = 'memory-browser-entry';
+    row.innerHTML = `<div><span class="mb-type">${entry.type.toUpperCase()}</span><span class="mb-preview">${escapeHtml(entry.text)}</span><button class="mb-view">VIEW</button><button class="mb-delete">DELETE</button></div><pre hidden>${escapeHtml(entry.text)}\n\n${escapeHtml(entry.meta || '')}</pre>`;
+    const detail = row.querySelector('pre');
+    row.querySelector('.mb-view').addEventListener('click', (event) => { detail.hidden = !detail.hidden; event.currentTarget.textContent = detail.hidden ? 'VIEW' : 'HIDE'; });
+    row.querySelector('.mb-delete').addEventListener('click', async () => {
+      await entry.remove(); await loadMemory(); renderAllMemory(); toast('MEMORY', 'Individual memory deleted.', '⌫');
+    });
+    list.appendChild(row);
+  });
+}
+
+function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); renderSkills(); renderInstructions(); renderMemoryBrowser(); renderMissionLog(); renderBriefing(); }
 
 // ---------------------------------------------------------------------------
 // Ambient Sound Generator for Focus Sessions
@@ -3336,6 +3363,56 @@ function renderBriefing() {
     const el = $('#briefWeather');
     if (w && w.temperature != null) el.textContent = `🌤 ${w.city.split(',')[0]}: ${w.temperature}°C ${w.condition}`;
   }).catch(() => {});
+}
+
+function weeklyReportSeries() {
+  const now = new Date();
+  const starts = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(now); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - (6 - index)); return day.getTime();
+  });
+  const mood = starts.map((start, index) => {
+    const end = index < 6 ? starts[index + 1] : Date.now() + 1;
+    const points = (memory.mood || []).filter((item) => (item.ts || 0) >= start && (item.ts || 0) < end);
+    return points.length ? points.reduce((sum, item) => sum + Number(item.valence || 0), 0) / points.length : 0;
+  });
+  const tasks = starts.map((start, index) => {
+    const end = index < 6 ? starts[index + 1] : Date.now() + 1;
+    return (memory.todos || []).filter((item) => item.done && Number(item.completed || item.updated || item.created || 0) >= start && Number(item.completed || item.updated || item.created || 0) < end).length;
+  });
+  const goals = starts.map((start, index) => {
+    const end = (index < 6 ? starts[index + 1] : Date.now() + 1) - 1;
+    const available = (memory.goals || []).filter((goal) => !goal.created || goal.created <= end);
+    if (!available.length) return 0;
+    const done = available.filter((goal) => goal.done && (!goal.completed || goal.completed <= end)).length;
+    return Math.round(done / available.length * 100);
+  });
+  return { mood, tasks, goals };
+}
+
+function drawSparkline(canvas, values, options = {}) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d'), width = canvas.width, height = canvas.height, pad = 8;
+  ctx.clearRect(0, 0, width, height);
+  const min = options.min != null ? options.min : Math.min(...values, 0);
+  const max = options.max != null ? options.max : Math.max(...values, 1);
+  const range = Math.max(0.001, max - min);
+  const points = values.map((value, index) => ({ x: pad + index / Math.max(1, values.length - 1) * (width - pad * 2), y: height - pad - (value - min) / range * (height - pad * 2) }));
+  const accent = getAccent();
+  const gradient = ctx.createLinearGradient(0, 0, 0, height); gradient.addColorStop(0, hexToRgba(accent, .34)); gradient.addColorStop(1, hexToRgba(accent, 0));
+  ctx.beginPath(); ctx.moveTo(points[0].x, height - pad); points.forEach((point) => ctx.lineTo(point.x, point.y)); ctx.lineTo(points[points.length - 1].x, height - pad); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
+  ctx.beginPath(); points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)); ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.stroke();
+  points.forEach((point) => { ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(point.x, point.y, 2, 0, Math.PI * 2); ctx.fill(); });
+}
+
+function renderWeeklySparklines() {
+  const series = weeklyReportSeries();
+  drawSparkline($('#reportMoodSpark'), series.mood, { min: -1, max: 1 });
+  drawSparkline($('#reportTaskSpark'), series.tasks, { min: 0, max: Math.max(1, ...series.tasks) });
+  drawSparkline($('#reportGoalSpark'), series.goals, { min: 0, max: 100 });
+  const moodAvg = series.mood.reduce((sum, value) => sum + value, 0) / series.mood.length;
+  $('#reportMoodMetric').textContent = `${Math.round(moodAvg * 100)} avg`;
+  $('#reportTaskMetric').textContent = `${series.tasks.reduce((sum, value) => sum + value, 0)} complete`;
+  $('#reportGoalMetric').textContent = `${series.goals[series.goals.length - 1]}% achieved`;
 }
 
 function buildReportOffline() {
@@ -3790,6 +3867,8 @@ function bindEvents() {
 
   // Memory Category Filters & Search
   $('#factFilter')?.addEventListener('input', () => renderFacts());
+  $('#memoryBrowserSearch').addEventListener('input', renderMemoryBrowser);
+  $('#memoryBrowserType').addEventListener('change', renderMemoryBrowser);
   $$('#memoryCatFilters .qc').forEach((btn) => {
     btn.addEventListener('click', () => {
       playSfx('click');
@@ -3930,6 +4009,7 @@ function bindEvents() {
     $('#reportContent').textContent = 'Generating…';
     const res = await api.generateReport();
     $('#reportContent').textContent = res.report;
+    renderWeeklySparklines();
   });
   $('#reportClose').addEventListener('click', () => $('#reportModal').classList.remove('open'));
   $('#reportClose2').addEventListener('click', () => $('#reportModal').classList.remove('open'));
@@ -3937,11 +4017,36 @@ function bindEvents() {
     try { navigator.clipboard.writeText($('#reportContent').textContent); toast('REPORT', 'Copied to clipboard.', '📋'); } catch (e) {}
   });
 
-  // Export memory
+  // Full profile + memory JSON backup and validated restore.
   $('#exportBtn').addEventListener('click', async () => {
     const data = await api.exportMemory();
-    downloadText(JSON.stringify(data, null, 2), 'gemair-backup-' + Date.now() + '.json');
-    toast('BACKUP', 'Memory exported as JSON.', '⬇');
+    const backup = { schema: 'gemair-backup', schemaVersion: 2, appVersion: '2.0.0', exportedAt: new Date().toISOString(), profile: data.profile || profile, memory: data.memory || memory };
+    downloadText(JSON.stringify(backup, null, 2), 'gemair-backup-' + new Date().toISOString().slice(0, 10) + '.json');
+    toast('BACKUP', 'Full profile and memory exported as JSON.', '⬇');
+  });
+  $('#importBtn').addEventListener('click', () => $('#importFile').click());
+  $('#importFile').addEventListener('change', async () => {
+    const file = $('#importFile').files && $('#importFile').files[0];
+    if (!file) return;
+    try {
+      const raw = typeof file.text === 'function' ? await file.text() : await new Promise((resolve, reject) => {
+        const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsText(file);
+      });
+      const backup = JSON.parse(raw);
+      if (!backup || typeof backup.profile !== 'object' || typeof backup.memory !== 'object') throw new Error('Not a GemAir profile + memory backup.');
+      const arrayKeys = ['facts', 'transcript', 'notes', 'reminders', 'todos', 'mood', 'goals', 'skills', 'instructions', 'actionLog'];
+      if (arrayKeys.some((key) => backup.memory[key] != null && !Array.isArray(backup.memory[key]))) throw new Error('Backup memory structure is invalid.');
+      const result = await api.importMemory({ profile: backup.profile, memory: backup.memory });
+      if (!result || result.ok === false) throw new Error(result && result.error || 'Import failed.');
+      await loadProfile(); await loadMemory(); applyTheme(profile.theme || 'crimson'); applyAvatarGender(profile.avatarGender || 'female');
+      renderAllMemory(); updateContextMeter(); updateSttLanguageUi(); configureWakeWord(!!profile.wakeWord); configureScreenAwareness(!!profile.screenAwareness);
+      $('#importFile').value = '';
+      toast('BACKUP RESTORED', 'Profile, memories, goals, voice and settings restored.', '✓');
+      closeSettings();
+    } catch (error) {
+      $('#importFile').value = '';
+      toast('IMPORT FAILED', error.message, '⚠');
+    }
   });
 
   // Companion: career prompts

@@ -751,7 +751,7 @@ function completeTodo(text) {
   const m = readMemory();
   const q = String(text).toLowerCase();
   const t = m.todos.find((x) => x.text.toLowerCase().includes(q) || q.includes(x.text.toLowerCase()));
-  if (t) t.done = true;
+  if (t) { t.done = true; t.completed = Date.now(); t.updated = Date.now(); }
   writeMemory(m);
   return t ? { ok: true, todo: t.text } : { error: 'Todo not found: ' + text };
 }
@@ -785,7 +785,7 @@ function completeGoal(text) {
   const m = readMemory();
   const q = String(text).toLowerCase();
   const g = m.goals.find((x) => x.text.toLowerCase().includes(q) || q.includes(x.text.toLowerCase()));
-  if (g) g.done = true;
+  if (g) { g.done = true; g.completed = Date.now(); g.updated = Date.now(); }
   writeMemory(m);
   return g ? { ok: true, goal: g.text } : { error: 'Goal not found: ' + text };
 }
@@ -2133,7 +2133,7 @@ ipcMain.handle('memory:extract', (_e, config, userText, assistantText) => extrac
 ipcMain.handle('memory:addMood', (_e, emotion, note) => logMood(emotion, note));
 ipcMain.handle('memory:addGoal', (_e, text, category) => addGoal(text, category));
 ipcMain.handle('memory:deleteGoal', (_e, id) => { const m = readMemory(); m.goals = m.goals.filter(g => g.id !== id); writeMemory(m); return true; });
-ipcMain.handle('memory:toggleGoal', (_e, id) => { const m = readMemory(); const g = m.goals.find(g => g.id === id); if (g) g.done = !g.done; writeMemory(m); return true; });
+ipcMain.handle('memory:toggleGoal', (_e, id) => { const m = readMemory(); const g = m.goals.find(g => g.id === id); if (g) { g.done = !g.done; g.updated = Date.now(); g.completed = g.done ? Date.now() : null; } writeMemory(m); return true; });
 ipcMain.handle('emotion:analyze', (_e, text) => analyzeEmotion(text));
 ipcMain.handle('memory:addSkill', (_e, text, name) => addSkill(text, name));
 ipcMain.handle('memory:deleteSkill', (_e, id) => { const m = readMemory(); m.skills = m.skills.filter(s => s.id !== id); writeMemory(m); return true; });
@@ -2157,8 +2157,12 @@ ipcMain.handle('report:needsCheckIn', () => moodNeedsCheckIn());
 ipcMain.handle('memory:export', () => ({ memory: readMemory(), profile: readProfile() }));
 ipcMain.handle('memory:import', (_e, data) => {
   try {
-    if (data && data.memory) writeMemory(data.memory);
-    if (data && data.profile) writeProfile(data.profile);
+    if (!data || typeof data.memory !== 'object' || typeof data.profile !== 'object') throw new Error('Backup must contain profile and memory objects.');
+    const arrayKeys = ['facts', 'transcript', 'notes', 'reminders', 'todos', 'mood', 'goals', 'skills', 'instructions', 'actionLog'];
+    for (const key of arrayKeys) if (data.memory[key] != null && !Array.isArray(data.memory[key])) throw new Error(`Invalid memory field: ${key}`);
+    const cleanMemory = { ...EMPTY_MEMORY, ...data.memory };
+    writeMemory(cleanMemory);
+    writeProfile(data.profile);
     return { ok: true };
   } catch (e) { return { ok: false, error: e.message }; }
 });

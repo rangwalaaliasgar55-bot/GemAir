@@ -366,6 +366,7 @@
             <div class="core-right">
               <div class="core-tabs">
                 <button class="core-tab active" data-tab="memory">MEMORY</button>
+                <button class="core-tab" data-tab="browser">BROWSER</button>
                 <button class="core-tab" data-tab="processes">PROCESSES</button>
                 <button class="core-tab" data-tab="notes">NOTES</button>
                 <button class="core-tab" data-tab="reminders">REMINDERS</button>
@@ -391,6 +392,25 @@
                 </div>
                 <div class="memory-list" id="memoryList">
                   <div class="empty">No memories yet — talk to Gem and facts will save automatically.</div>
+                </div>
+              </div>
+
+              <div class="hud-panel core-pane" data-pane="browser">
+                <h3 class="panel-title">MEMORY BROWSER <span class="dim">— SEARCH · VIEW · DELETE</span></h3>
+                <div class="inline-add">
+                  <input type="text" id="memoryBrowserSearch" placeholder="Search all facts, notes, goals, skills and rules…" />
+                  <select id="memoryBrowserType" style="max-width:150px">
+                    <option value="all">All types</option>
+                    <option value="fact">Facts</option>
+                    <option value="note">Notes</option>
+                    <option value="goal">Goals</option>
+                    <option value="skill">Skills</option>
+                    <option value="instruction">Rules</option>
+                    <option value="reminder">Reminders</option>
+                  </select>
+                </div>
+                <div class="memory-list memory-browser-list" id="memoryBrowserList">
+                  <div class="empty">Loading memory index…</div>
                 </div>
               </div>
 
@@ -855,7 +875,9 @@
       </div>
 
       <div class="modal-foot">
-        <button class="ghost-btn" id="exportBtn">⬇ EXPORT MEMORY</button>
+        <button class="ghost-btn" id="exportBtn">⬇ EXPORT BACKUP</button>
+        <button class="ghost-btn" id="importBtn">⬆ IMPORT BACKUP</button>
+        <input type="file" id="importFile" accept="application/json,.json" hidden />
         <button class="ghost-btn" id="resetBtn">Reset</button>
         <button class="primary-btn" id="saveBtn">SAVE & APPLY</button>
       </div>
@@ -929,6 +951,11 @@
       </div>
       <div class="modal-body">
         <div class="report-content" id="reportContent">Generating analysis…</div>
+        <div class="report-sparklines" id="reportSparklines">
+          <div class="spark-card"><span>MOOD TREND</span><canvas id="reportMoodSpark" width="300" height="80"></canvas><b id="reportMoodMetric">—</b></div>
+          <div class="spark-card"><span>TASKS DONE / DAY</span><canvas id="reportTaskSpark" width="300" height="80"></canvas><b id="reportTaskMetric">—</b></div>
+          <div class="spark-card"><span>GOAL PROGRESS</span><canvas id="reportGoalSpark" width="300" height="80"></canvas><b id="reportGoalMetric">—</b></div>
+        </div>
         <div class="modal-foot" style="padding:0;margin-top:14px;border:none;">
           <button class="ghost-btn" id="reportCopy">COPY</button>
           <button class="primary-btn" id="reportClose2">CLOSE</button>
