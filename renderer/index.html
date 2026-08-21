@@ -688,14 +688,11 @@
         <p class="dim" style="font-size:12.5px;line-height:1.6;margin-bottom:14px;">
           One tap re-skins the entire command center — every panel, glow and gauge. You can switch anytime from the top bar.
         </p>
-        <div class="theme-swatch-grid" id="themeSwatches">
-          <button class="swatch" data-theme="crimson"><i style="--sw:#ff3b3b"></i><span>Crimson</span></button>
-          <button class="swatch" data-theme="emerald"><i style="--sw:#25d38a"></i><span>Emerald</span></button>
-          <button class="swatch" data-theme="cyan"><i style="--sw:#2fc6ff"></i><span>Cyan</span></button>
-          <button class="swatch" data-theme="violet"><i style="--sw:#a86bff"></i><span>Violet</span></button>
-          <button class="swatch" data-theme="amber"><i style="--sw:#ffb02e"></i><span>Amber</span></button>
-          <button class="swatch" data-theme="rgb"><i class="rgb-sw"></i><span>Rainbow RGB</span></button>
-        </div>
+        <!-- Swatches are generated at boot from the string theme engine
+             (renderer/themes.js) — the single source of truth for every
+             theme token, so the modal, top bar, settings grid and palette
+             can never drift apart. -->
+        <div class="theme-swatch-grid" id="themeSwatches"></div>
       </div>
       <div class="modal-foot">
         <button class="ghost-btn" id="themeSkipBtn">KEEP DEFAULT</button>

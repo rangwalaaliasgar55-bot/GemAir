@@ -1302,6 +1302,20 @@ async function executeTool(name, args) {
       return { error: 'Permission denied: shell command execution is disabled in Settings.' };
     }
 
+    // Human-in-the-loop (Stonic v1.0.15 parity): sensitive actions ask
+    // before they run. The AI gets an explicit answer back either way.
+    if (name === 'run_command') {
+      const cmd = String((args && args.command) || '').slice(0, 400);
+      const ok = await confirmAction('Run shell command?', `GemAir wants to execute on your machine:\n\n    ${cmd}\n\nThis can change files or system state. Proceed?`);
+      if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
+    }
+    if (name === 'write_file') {
+      const p = String((args && args.path) || '');
+      const content = String((args && args.content) || '');
+      const ok = await confirmAction('Write file?', `GemAir wants to write ${content.length.toLocaleString()} characters to:\n\n    ${p}\n\nAn existing file will be overwritten. Proceed?`);
+      if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
+    }
+
     switch (name) {
       case 'get_current_time':
         return { time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) };

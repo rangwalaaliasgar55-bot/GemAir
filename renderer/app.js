@@ -911,6 +911,17 @@ function renderThemeGrid() {
   });
 }
 
+// First-run theme modal swatches — also generated from the same string
+// table, so the modal's colors are guaranteed to match what applyTheme()
+// actually paints across the DOM and canvases.
+function renderThemeSwatches() {
+  const grid = $('#themeSwatches');
+  if (!grid || !window.GemAirThemes) return;
+  grid.innerHTML = window.GemAirThemes.list().map((t) =>
+    `<button class="swatch" data-theme="${t.id}" title="${escapeHtml(t.tagline)}"><i class="${t.dynamic ? 'rgb-sw' : ''}"${t.dynamic ? '' : ` style="--sw:${t.accent}"`}></i><span>${escapeHtml(t.label)}</span></button>`
+  ).join('');
+}
+
 // ---------------------------------------------------------------------------
 // Clock
 // ---------------------------------------------------------------------------
@@ -1263,15 +1274,62 @@ function renderImageIfAny(p, text) {
 }
 
 // Lightweight markdown: code fences + inline code
+// ---------------------------------------------------------------------------
+// Mermaid diagrams in chat replies (Stonic "Visual Hub" parity):
+// the AI can answer with ```mermaid blocks; we render them as live SVG.
+// The library loads on demand from the jsDelivr CDN (already in the CSP).
+// ---------------------------------------------------------------------------
+let mermaidLoader = null;
+function loadMermaid() {
+  if (window.mermaid) return Promise.resolve(window.mermaid);
+  if (!mermaidLoader) {
+    mermaidLoader = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js';
+      s.onload = () => {
+        try {
+          window.mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+        } catch (e) {}
+        resolve(window.mermaid);
+      };
+      s.onerror = () => { mermaidLoader = null; reject(new Error('mermaid CDN unreachable')); };
+      document.body.appendChild(s);
+    });
+  }
+  return mermaidLoader;
+}
+
+async function renderMermaidBlock(block, code) {
+  try {
+    const mermaid = await loadMermaid();
+    const id = 'mm-' + Math.random().toString(36).slice(2, 8);
+    const out = await mermaid.render(id, code);
+    const svg = typeof out === 'string' ? out : (out && out.svg) || '';
+    block.classList.add('done');
+    block.innerHTML = svg || '<div class="mermaid-err">empty diagram</div>';
+  } catch (e) {
+    block.classList.add('error');
+    block.innerHTML = `<pre class="mermaid-src"><code>${escapeHtml(code)}</code></pre><div class="mermaid-err">⚠ diagram could not be rendered — showing source</div>`;
+  }
+}
+
 function renderRich(p, text) {
   const parts = String(text).split(/```/);
   let html = '';
+  const mermaidBlocks = []; // { id, code }
   parts.forEach((part, i) => {
     if (i % 2 === 1) {
-      const code = part.replace(/^\w*\n?/, '');
+      const m = part.match(/^([a-zA-Z0-9_+-]*)\n?([\s\S]*)$/);
+      const lang = (m && m[1] || '').toLowerCase();
+      const code = m ? m[2] : part;
       const id = 'code-' + Date.now() + '-' + i;
-      html += `<pre><code id="${id}">${escapeHtml(code)}</code></pre>`;
-      html += `<div class="code-actions"><button class="save-code-btn" data-code="${id}">💾 SAVE TO FILE</button></div>`;
+      if (lang === 'mermaid') {
+        html += `<div class="mermaid-block" id="${id}"><div class="mermaid-status">◌ rendering diagram…</div></div>`;
+        mermaidBlocks.push({ id, code });
+      } else {
+        html += `<pre><code id="${id}">${escapeHtml(code)}</code></pre>`;
+        html += `<div class="code-actions"><button class="save-code-btn" data-code="${id}">💾 SAVE TO FILE</button></div>`;
+      }
     } else {
       html += escapeHtml(part).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\n/g, '<br>');
     }
@@ -1284,6 +1342,10 @@ function renderRich(p, text) {
       const res = await api.saveCode(codeEl.textContent, 'gemair-output.txt');
       addMessage('system-msg', res.ok ? `Saved to ${res.path}` : `Save failed: ${res.error || 'cancelled'}`);
     });
+  });
+  mermaidBlocks.forEach((b) => {
+    const block = p.querySelector('#' + b.id);
+    if (block) renderMermaidBlock(block, b.code);
   });
 }
 
@@ -2672,6 +2734,49 @@ function pushToolActivity(name, args, result, ms) {
 }
 window.__pushToolActivity = pushToolActivity;
 
+// Live tool-activity feed — listens to the same ai:activity event stream the
+// inline chips use (preload onActivity ← main.js aiChatStream), so the right
+// column shows real-time cards:  web_search … → done ✓ / error ✗
+const toolFeedCards = new Map(); // tool name -> { el, t0 }
+function toolFeedUpdate({ name, state }) {
+  const feed = $('#toolFeed');
+  if (!feed) return;
+  const empty = feed.querySelector('.empty');
+  if (empty) feed.innerHTML = '';
+  const label = String(name || 'tool').replace(/_/g, ' ');
+  const now = Date.now();
+  let rec = toolFeedCards.get(name);
+  if (!rec) {
+    const div = document.createElement('div');
+    div.className = 'tool-card running';
+    div.innerHTML = `
+      <div class="tool-head"><span class="tool-ico">⚙</span><span class="tool-name">${escapeHtml(label)}</span><span class="tool-dur dim">…</span></div>
+      <div class="tool-io"><span class="io-label">STATE</span><pre>running…</pre></div>`;
+    feed.prepend(div);
+    while (feed.children.length > 12) {
+      const last = feed.lastElementChild;
+      for (const [k, v] of toolFeedCards) if (v.el === last) toolFeedCards.delete(k);
+      last.remove();
+    }
+    rec = { el: div, t0: now };
+    toolFeedCards.set(name, rec);
+  }
+  if (state === 'done') {
+    const secs = ((now - rec.t0) / 1000).toFixed(1);
+    rec.el.classList.remove('running'); rec.el.classList.add('done');
+    const io = rec.el.querySelector('.tool-io pre'); if (io) io.textContent = 'done ✓ (' + secs + 's)';
+    const dur = rec.el.querySelector('.tool-dur'); if (dur) { dur.textContent = secs + 's'; dur.classList.remove('dim'); }
+  } else if (state === 'error') {
+    rec.el.classList.remove('running'); rec.el.classList.add('error');
+    const io = rec.el.querySelector('.tool-io pre'); if (io) io.textContent = 'error ✗';
+    const dur = rec.el.querySelector('.tool-dur'); if (dur) dur.textContent = '✗';
+  } else {
+    rec.t0 = now; // (re)start
+    const io = rec.el.querySelector('.tool-io pre'); if (io) io.textContent = 'running…';
+  }
+}
+if (api.onActivity) api.onActivity(toolFeedUpdate);
+
 // ---------------------------------------------------------------------------
 // Memory / Notes / Reminders rendering
 // ---------------------------------------------------------------------------
@@ -3653,7 +3758,9 @@ function bindEvents() {
   // dynamic HUD dock panels
   setupHudDock();
 
-  // first-run theme picker swatches
+  // first-run theme picker swatches — generated from the string theme
+  // engine (themes.js) so theme tokens have ONE source of truth
+  renderThemeSwatches();
   $$('#themeSwatches .swatch').forEach((b) => b.addEventListener('click', () => {
     playSfx('activate');
     profile.theme = b.dataset.theme;

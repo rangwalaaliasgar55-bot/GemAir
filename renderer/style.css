@@ -930,7 +930,21 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
 .tool-io { margin-top: 6px; }
 .tool-io .io-label { font: 700 8.5px var(--font-mono); letter-spacing: 2px; color: var(--text-dim); }
 .tool-io pre { margin: 3px 0 0; font: 400 10px var(--font-mono); color: var(--text-dim); white-space: pre-wrap; word-break: break-all; max-height: 74px; overflow: hidden; }
-.tool-card .tool-io:last-child pre { color: var(--good); }
+/* Mermaid diagram blocks in chat replies */
+.mermaid-block { margin: 10px 0; padding: 14px; border: 1px solid var(--panel-border); border-radius: 12px; background: rgba(0,0,0,0.35); text-align: center; overflow-x: auto; }
+.mermaid-block svg { max-width: 100%; height: auto; }
+.mermaid-status { font: 600 10.5px var(--font-mono); letter-spacing: 1.5px; color: var(--text-dim); padding: 18px 0; animation: pulseDot 1.2s infinite; }
+.mermaid-err { margin-top: 8px; font-size: 10.5px; font-family: var(--font-mono); color: var(--warn); letter-spacing: 1px; }
+.mermaid-src { text-align: left; max-height: 220px; overflow: auto; }
+.mermaid-src code { font-size: 11px; color: var(--text-dim); }
+
+.tool-card.done .tool-io:last-child pre { color: var(--good); }
+.tool-card.running .tool-io:last-child pre { color: var(--warn); }
+.tool-card.running .tool-dur { color: var(--warn); animation: pulseDot 1s infinite; }
+.tool-card.done .tool-name { color: var(--good); }
+.tool-card.error { border-color: rgba(255,80,80,.45); }
+.tool-card.error .tool-name { color: #ff7a7a; }
+.tool-card.error .tool-io:last-child pre { color: #ff7a7a; }
 
 /* voice status tab */
 .voice-status { display: flex; flex-direction: column; gap: 8px; }
