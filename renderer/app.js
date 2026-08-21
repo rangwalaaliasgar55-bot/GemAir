@@ -132,6 +132,33 @@ const api = {
     return n;
   },
   async memoryAddMood(emotion, note) { if (window.gemair) return window.gemair.memoryAddMood(emotion, note); if (window.webStore) await window.webStore.addMood(emotion, note); },
+  // S2 — real process monitor
+  async listProcesses(limit) {
+    if (window.gemair && window.gemair.listProcesses) return window.gemair.listProcesses(limit);
+    return { ok: false, error: 'desktop_only', procs: [] };
+  },
+  async killProcess(pid, name) {
+    if (window.gemair && window.gemair.killProcess) return window.gemair.killProcess(pid, name);
+    return { error: 'desktop_only' };
+  },
+
+  // S3 — tasks
+  async memoryAddTodo(text) {
+    if (window.gemair) return window.gemair.memoryAddTodo(text);
+    if (window.webStore) await window.webStore.addTodo(text);
+    return { ok: true };
+  },
+  async memoryToggleTodo(id) {
+    if (window.gemair) return window.gemair.memoryToggleTodo(id);
+    if (window.webStore) await window.webStore.toggleTodo(id);
+    return { ok: true };
+  },
+  async memoryDeleteTodo(id) {
+    if (window.gemair) return window.gemair.memoryDeleteTodo(id);
+    if (window.webStore) await window.webStore.deleteTodo(id);
+    return { ok: true };
+  },
+
   async memoryAddGoal(text, category) { if (window.gemair) return window.gemair.memoryAddGoal(text, category); if (window.webStore) await window.webStore.addGoal(text, category); },
   async memoryDeleteGoal(id) { if (window.gemair) return window.gemair.memoryDeleteGoal(id); if (window.webStore) await window.webStore.deleteGoal(id); },
   async memoryToggleGoal(id) { if (window.gemair) return window.gemair.memoryToggleGoal(id); if (window.webStore) await window.webStore.toggleGoal(id); },
@@ -538,6 +565,10 @@ function tickPlannerStep() {
   activePlan.completed++;
   const next = nodes[activePlan.completed]; if (next) next.classList.add('running');
 }
+
+// U1: ONE agent colour map. 2.1 kept the same four hex values in `agentColors`
+// (inside a render fn) and again in TOWN_MINI_COLORS ~500 lines later.
+const AGENT_COLORS = { Alice: '#ff5d8f', Bob: '#5d9cff', Carol: '#4be3a1', Dave: '#c78bff' };
 
 const AGENTS = [
   { name: 'Alice', emoji: '👩‍💻', role: 'Web Research · search / fetch', talk: 'Verifying live sources on the web…' },
@@ -981,7 +1012,15 @@ const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => 
 // ---------------------------------------------------------------------------
 // Theme (with RGB / rainbow mode) & Synthetic Web Audio SFX
 // ---------------------------------------------------------------------------
-const THEME_ACCENTS = { crimson: 0, emerald: 152, cyan: 198, violet: 275, amber: 38, rgb: 300 };
+// U1: hues live in themes.js (the single token source). This derives the legacy
+// hue lookup from it instead of hard-coding a third copy of the numbers.
+const THEME_ACCENTS = (() => {
+  const out = {};
+  try {
+    for (const t of (window.GemAirThemes ? window.GemAirThemes.list() : [])) out[t.id] = t.hue;
+  } catch (e) {}
+  return out;
+})();
 let currentAccent = '#ff3b3b';
 let rgbTimer = null;
 let rgbHue = 300;
@@ -1254,37 +1293,122 @@ function switchView(view) {
   if (view === 'core') renderProcesses();
 }
 
-function renderProcesses() {
+/**
+ * S2 — ACTIVE PROCESSES, for real.
+ *
+ * 2.1 rendered a hardcoded six-row fantasy list ("GemAir Audio & Visualizer",
+ * pid 2184) on every platform, including the desktop build where genuine data
+ * is available. This queries the main process and renders real name/pid/cpu/mem
+ * rows, with an END button behind the existing HITL confirm dialog. In the
+ * browser build there are no OS processes to show, so it says so plainly (U2).
+ */
+let processCache = [];
+let processScanning = false;
+
+function processRowHtml(p) {
+  const name = escapeHtml(p.name);
+  const cpu = Number(p.cpu || 0).toFixed(1);
+  const mem = Number(p.memMB || 0).toFixed(0);
+  return `
+    <div class="mem-item proc-row" data-pid="${p.pid}">
+      <div>
+        <b style="font-family:var(--font-mono);color:var(--accent);">[${p.pid}]</b>
+        <span style="font-weight:600;margin-left:8px;">${name}</span>
+        <span class="dim" style="font-size:11px;margin-left:10px;">CPU ${cpu}% · RAM ${mem} MB${p.memPct ? ` (${p.memPct}%)` : ''}</span>
+      </div>
+      <button class="ghost-btn proc-kill" data-pid="${p.pid}" data-name="${name}" aria-label="End process ${name}" style="padding:4px 10px;font-size:10px;">End</button>
+    </div>`;
+}
+
+function paintProcessList() {
   const container = $('#processList');
   if (!container) return;
   const filter = ($('#procFilter')?.value || '').toLowerCase().trim();
-
-  const sampleProcs = [
-    { pid: 1420, name: 'GemAir Core Engine', cpu: '1.4%', mem: '142 MB' },
-    { pid: 2184, name: 'GemAir Audio & Visualizer', cpu: '2.1%', mem: '98 MB' },
-    { pid: 3042, name: 'Web Speech Synthesis', cpu: '0.8%', mem: '64 MB' },
-    { pid: 4890, name: 'Agent Town Virtual Office', cpu: '1.9%', mem: '112 MB' },
-    { pid: 5120, name: 'Gem AI Core', cpu: '0.2%', mem: '45 MB' },
-    { pid: 6310, name: 'Local Persistence Store', cpu: '0.1%', mem: '28 MB' }
-  ];
-
-  const filtered = sampleProcs.filter(p => !filter || p.name.toLowerCase().includes(filter) || String(p.pid).includes(filter));
-
-  if (!filtered.length) {
-    container.innerHTML = '<div class="empty">No matching processes found.</div>';
+  const rows = processCache.filter((p) => !filter || p.name.toLowerCase().includes(filter) || String(p.pid).includes(filter));
+  if (!rows.length) {
+    container.innerHTML = `<div class="empty">${processCache.length ? 'No processes match that filter.' : 'No processes to show.'}</div>`;
     return;
   }
+  container.innerHTML = rows.slice(0, 60).map(processRowHtml).join('');
+}
 
-  container.innerHTML = filtered.map(p => `
-    <div class="mem-item">
-      <div>
-        <b style="font-family:var(--font-mono);color:var(--accent);">[${p.pid}]</b>
-        <span style="font-weight:600;margin-left:8px;">${p.name}</span>
-        <span class="dim" style="font-size:11px;margin-left:10px;">CPU: ${p.cpu} | RAM: ${p.mem}</span>
-      </div>
-      <button class="ghost-btn" style="padding:4px 10px;font-size:10px;" onclick="playSfx('click'); toast('MONITOR', 'Process [${p.pid}] active', '⚙️')">Info</button>
-    </div>
-  `).join('');
+async function renderProcesses(force) {
+  const container = $('#processList');
+  if (!container) return;
+  if (!isElectron) {
+    container.innerHTML = '<div class="empty">Process monitoring needs the desktop app — the browser sandbox cannot see OS processes. <b>Download GemAir</b> to enable it.</div>';
+    return;
+  }
+  if (processCache.length && !force) { paintProcessList(); return; }
+  if (processScanning) return;
+  processScanning = true;
+  container.innerHTML = '<div class="empty">Scanning processes…</div>';
+  try {
+    const res = await api.listProcesses(60);
+    if (!res || !res.ok) {
+      container.innerHTML = '<div class="empty">Could not read the process table on this system.</div>';
+      return;
+    }
+    processCache = res.procs || [];
+    paintProcessList();
+  } finally {
+    processScanning = false;
+  }
+}
+
+async function killProcessFromUi(pid, name) {
+  // HITL: main.js shows the confirm dialog before anything is terminated.
+  const res = await api.killProcess(Number(pid), name);
+  if (res && res.ok) {
+    processCache = processCache.filter((p) => p.pid !== Number(pid));
+    paintProcessList();
+    toast('MONITOR', `Ended ${name} (PID ${pid})`, '🛑');
+    playSfx('click');
+  } else if (res && res.error && !/cancelled/i.test(res.error)) {
+    toast('MONITOR', res.error, '⚠️');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// S3 — Tasks panel.
+//
+// memory.todos already existed (the AI could add/complete them by voice, and
+// the weekly report aggregated them into a tasks-per-day sparkline) but NO UI
+// ever created one, so that chart was permanently flat. This is the missing
+// surface: add, complete, delete.
+// ---------------------------------------------------------------------------
+function renderTodos() {
+  const list = $('#todoList');
+  if (!list) return;
+  const todos = (memory.todos || []).slice();
+  const openCount = todos.filter((t) => !t.done).length;
+  const count = $('#todoCount');
+  if (count) count.textContent = todos.length ? `— ${openCount} OPEN · ${todos.length - openCount} DONE` : '';
+  if (!todos.length) {
+    list.innerHTML = '<div class="empty">No tasks yet. Add one above, or just tell Gem “remind me to finish the report”.</div>';
+    return;
+  }
+  list.innerHTML = todos.map((t) => `
+    <div class="mem-item todo-item${t.done ? ' done' : ''}">
+      <label style="display:flex;align-items:center;gap:10px;flex:1;cursor:pointer;">
+        <input type="checkbox" class="todo-toggle" data-id="${t.id}" ${t.done ? 'checked' : ''} aria-label="Mark task complete" />
+        <span style="${t.done ? 'text-decoration:line-through;opacity:.55;' : ''}">${escapeHtml(t.text)}</span>
+      </label>
+      <button class="ghost-btn todo-del" data-id="${t.id}" aria-label="Delete task" style="padding:4px 10px;font-size:10px;">✕</button>
+    </div>`).join('');
+}
+
+async function addTodoFromUi() {
+  const input = $('#todoInput');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  await api.memoryAddTodo(text);
+  await loadMemory();
+  renderTodos();
+  playSfx('click');
+  toast('TASKS', 'Task added', '✅');
 }
 
 // ---------------------------------------------------------------------------
@@ -2522,9 +2646,8 @@ function startAgentTown() {
   const server = { x: 40, y: 440 };
   const coffee = { x: 470, y: 210 };
 
-  const agentColors = { Alice: '#ff5d8f', Bob: '#5d9cff', Carol: '#4be3a1', Dave: '#c78bff' };
   const agents = AGENTS.map((a, i) => ({
-    name: a.name, role: a.role, color: agentColors[a.name],
+    name: a.name, role: a.role, color: AGENT_COLORS[a.name],
     home: desks[i], pos: { x: desks[i].x, y: desks[i].y - 20 }, target: { ...desks[i] },
     state: 'idle', task: '', timer: 0, phase: Math.random() * Math.PI * 2
   }));
@@ -3080,11 +3203,10 @@ function renderMissionLog() {
 // (window.__townAgents) so they never fight the town renderer.
 // ---------------------------------------------------------------------------
 const TOWN_DESKS = [{ x: 130, y: 70 }, { x: 620, y: 70 }, { x: 130, y: 300 }, { x: 620, y: 300 }];
-const TOWN_MINI_COLORS = { Alice: '#ff5d8f', Bob: '#5d9cff', Carol: '#4be3a1', Dave: '#c78bff' };
 
 function townAgents() {
   if (Array.isArray(window.__townAgents)) return window.__townAgents;
-  return AGENTS.map((a, i) => ({ name: a.name, emoji: a.emoji, role: a.role, color: TOWN_MINI_COLORS[a.name], state: 'idle', task: '', pos: { x: TOWN_DESKS[i].x, y: TOWN_DESKS[i].y - 20 } }));
+  return AGENTS.map((a, i) => ({ name: a.name, emoji: a.emoji, role: a.role, color: AGENT_COLORS[a.name], state: 'idle', task: '', pos: { x: TOWN_DESKS[i].x, y: TOWN_DESKS[i].y - 20 } }));
 }
 
 function renderTownChrome() {
@@ -3561,7 +3683,7 @@ function renderMemoryBrowser() {
   });
 }
 
-function renderAllMemory() { renderFacts(); renderNotes(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); renderSkills(); renderInstructions(); renderMemoryBrowser(); renderMissionLog(); renderBriefing(); }
+function renderAllMemory() { renderFacts(); renderNotes(); renderTodos(); renderReminders(); updateTranscriptCount(); renderGoals(); renderMood(); renderSkills(); renderInstructions(); renderMemoryBrowser(); renderMissionLog(); renderBriefing(); }
 
 // ---------------------------------------------------------------------------
 // Ambient Sound Generator for Focus Sessions
@@ -4127,7 +4249,7 @@ function populateNeuralVoices() {
 function populateEdgeVoices() {
   const sel = $('#setEdgeVoice');
   if (!sel) return;
-  const list = (window.edgeTts && window.edgeTts.VOICES) || DEFAULT_EDGE_VOICES;
+  const list = (window.edgeTts && window.edgeTts.VOICES) || EDGE_VOICE_FALLBACK;
   sel.innerHTML = '';
   list.forEach((v) => {
     const opt = document.createElement('option');
@@ -4138,18 +4260,14 @@ function populateEdgeVoices() {
   });
 }
 // Fallback list in case edge-tts.js didn't load (kept in sync with it).
-const DEFAULT_EDGE_VOICES = [
+// U1: edge-tts.js owns the voice catalogue. This is only a two-entry safety net
+// for the case where edge-tts.js failed to load at all — it is NOT a second
+// copy of the list to keep in sync.
+const EDGE_VOICE_FALLBACK = [
   { name: 'en-US-AriaNeural', lang: 'en-US', gender: 'Female', label: 'Aria (US) · warm female' },
-  { name: 'en-US-JennyNeural', lang: 'en-US', gender: 'Female', label: 'Jenny (US) · bright female' },
-  { name: 'en-GB-SoniaNeural', lang: 'en-GB', gender: 'Female', label: 'Sonia (UK) · warm female' },
-  { name: 'en-GB-RyanNeural', lang: 'en-GB', gender: 'Male', label: 'Ryan (UK) · male' },
-  { name: 'en-IN-NeerjaNeural', lang: 'en-IN', gender: 'Female', label: 'Neerja (India) · female' },
-  { name: 'hi-IN-SwaraNeural', lang: 'hi-IN', gender: 'Female', label: 'Swara (हिन्दी) · female' },
-  { name: 'ur-PK-UzmaNeural', lang: 'ur-PK', gender: 'Female', label: 'Uzma (اردو) · female' },
-  { name: 'ur-PK-AsadNeural', lang: 'ur-PK', gender: 'Male', label: 'Asad (اردو) · male' },
-  { name: 'ur-IN-GulNeural', lang: 'ur-IN', gender: 'Female', label: 'Gul (Urdu IN) · female' },
-  { name: 'ur-IN-SalmanNeural', lang: 'ur-IN', gender: 'Male', label: 'Salman (Urdu IN) · male' }
+  { name: 'en-GB-RyanNeural', lang: 'en-GB', gender: 'Male', label: 'Ryan (UK) · male' }
 ];
+
 function updateAiHint() {
   const base = $('#setBaseURL').value.trim(), key = $('#setApiKey').value.trim();
   const el = $('#aiStatusHint');
@@ -4317,6 +4435,31 @@ function bindEvents() {
   }));
 
   // memory / notes / reminders add
+  // S2 — process monitor controls
+  const procFilter = $('#procFilter');
+  if (procFilter) procFilter.addEventListener('input', () => paintProcessList());
+  const refreshProcs = $('#refreshProcsBtn');
+  if (refreshProcs) refreshProcs.addEventListener('click', () => { playSfx('click'); renderProcesses(true); });
+  const processList = $('#processList');
+  if (processList) processList.addEventListener('click', (e) => {
+    const btn = e.target.closest('.proc-kill');
+    if (!btn) return;
+    killProcessFromUi(btn.dataset.pid, btn.dataset.name);
+  });
+
+  // S3 — Tasks panel
+  const todoAdd = $('#todoAdd');
+  if (todoAdd) todoAdd.addEventListener('click', addTodoFromUi);
+  const todoInput = $('#todoInput');
+  if (todoInput) todoInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addTodoFromUi(); });
+  const todoList = $('#todoList');
+  if (todoList) todoList.addEventListener('click', async (e) => {
+    const toggle = e.target.closest('.todo-toggle');
+    if (toggle) { await api.memoryToggleTodo(toggle.dataset.id); await loadMemory(); renderTodos(); playSfx('click'); return; }
+    const del = e.target.closest('.todo-del');
+    if (del) { await api.memoryDeleteTodo(del.dataset.id); await loadMemory(); renderTodos(); playSfx('click'); }
+  });
+
   $('#factAdd').addEventListener('click', async () => { const v = $('#factInput').value.trim(); if (v) { await api.memoryAddFact({ text: v, category: 'fact' }); $('#factInput').value = ''; await loadMemory(); renderAllMemory(); animateCircuits(); } });
   $('#factInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#factAdd').click(); });
   $('#noteAdd').addEventListener('click', async () => { const v = $('#noteInput').value.trim(); if (v) { await api.memoryAddNote(v); $('#noteInput').value = ''; await loadMemory(); renderNotes(); } });

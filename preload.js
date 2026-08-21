@@ -52,6 +52,19 @@ contextBridge.exposeInMainWorld('gemair', {
   memoryAddInstruction: (text) => ipcRenderer.invoke('memory:addInstruction', text),
   memoryDeleteInstruction: (id) => ipcRenderer.invoke('memory:deleteInstruction', id),
 
+  // processes (S2) — read-only scan + guarded kill
+  listProcesses: (limit) => ipcRenderer.invoke('proc:list', limit),
+  killProcess: (pid, name) => ipcRenderer.invoke('proc:kill', pid, name),
+
+  // tasks (S3)
+  memoryListTodos: () => ipcRenderer.invoke('memory:listTodos'),
+  memoryAddTodo: (text) => ipcRenderer.invoke('memory:addTodo', text),
+  memoryToggleTodo: (id) => ipcRenderer.invoke('memory:toggleTodo', id),
+  memoryDeleteTodo: (id) => ipcRenderer.invoke('memory:deleteTodo', id),
+
+  // window bounds memory (T4)
+  saveWindowBounds: () => ipcRenderer.invoke('win:saveBounds'),
+
   // files
   saveCode: (content, suggestedName) => ipcRenderer.invoke('file:saveCode', content, suggestedName),
 

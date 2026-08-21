@@ -751,7 +751,33 @@ function listTodos() {
   const m = readMemory();
   return m.todos.map((t, i) => ({ index: i, text: t.text, done: !!t.done }));
 }
-function addTodo(text) { const m = readMemory(); m.todos.unshift({ text, done: false, created: Date.now() }); writeMemory(m); return { ok: true }; }
+function addTodo(text) {
+  const clean = String(text || '').trim().slice(0, 240);
+  if (!clean) return { error: 'Empty task.' };
+  const m = readMemory();
+  const todo = { id: uid(), text: clean, done: false, created: Date.now() };
+  m.todos.unshift(todo);
+  writeMemory(m);
+  return { ok: true, todo };
+}
+/** S3 — id-addressed mutations so the Tasks panel can toggle/delete precisely. */
+function toggleTodoById(id) {
+  const m = readMemory();
+  const t = (m.todos || []).find((x) => x.id === id);
+  if (!t) return { error: 'Task not found.' };
+  t.done = !t.done;
+  t.updated = Date.now();
+  t.completed = t.done ? Date.now() : null;
+  writeMemory(m);
+  return { ok: true, todo: t };
+}
+function deleteTodoById(id) {
+  const m = readMemory();
+  const before = (m.todos || []).length;
+  m.todos = (m.todos || []).filter((x) => x.id !== id);
+  writeMemory(m);
+  return { ok: before !== m.todos.length };
+}
 function completeTodo(text) {
   const m = readMemory();
   const q = String(text).toLowerCase();
@@ -1231,6 +1257,95 @@ function listTopProcesses() {
         return { Name: parts[0], CPU: parseFloat(parts[1]) || 0, MemPct: parseFloat(parts[2]) || 0 };
       });
       resolve(lines);
+    });
+  });
+}
+
+/**
+ * S2 — real process scan for the ACTIVE PROCESSES panel.
+ *
+ * 2.1 rendered a hardcoded fake list ("GemAir Audio & Visualizer", pid 2184)
+ * even on the desktop build, where real data is one exec() away. This returns
+ * genuine name/pid/cpu/mem rows on Windows, macOS and Linux.
+ */
+function scanProcesses(limit = 40) {
+  const p = process.platform;
+  const cap = Math.max(5, Math.min(200, Number(limit) || 40));
+  const totalMemMB = os.totalmem() / (1024 * 1024);
+
+  if (p === 'win32') {
+    const ps = 'Get-Process | Sort-Object WS -Descending | Select-Object -First ' + cap +
+      ' Id,ProcessName,CPU,@{n=\'MemMB\';e={[math]::Round($_.WS/1MB,1)}} | ConvertTo-Json -Compress';
+    return new Promise((resolve) => {
+      exec('powershell -NoProfile -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 10000, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
+        if (err) return resolve({ ok: false, error: 'scan_failed', procs: [] });
+        let rows = [];
+        try { rows = JSON.parse(out); } catch { return resolve({ ok: false, error: 'parse_failed', procs: [] }); }
+        if (!Array.isArray(rows)) rows = [rows];
+        resolve({
+          ok: true,
+          platform: p,
+          procs: rows.filter(Boolean).map((r) => ({
+            pid: Number(r.Id) || 0,
+            name: String(r.ProcessName || 'unknown'),
+            cpu: Number(r.CPU) || 0,
+            memMB: Number(r.MemMB) || 0,
+            memPct: totalMemMB ? Math.round((Number(r.MemMB) || 0) / totalMemMB * 1000) / 10 : 0
+          }))
+        });
+      });
+    });
+  }
+
+  const cmd = p === 'darwin'
+    ? 'ps -A -o pid=,comm=,%cpu=,rss= -r | head -' + cap
+    : 'ps -eo pid=,comm=,%cpu=,rss= --sort=-%cpu | head -' + cap;
+  return new Promise((resolve) => {
+    exec(cmd, { timeout: 10000, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
+      if (err) return resolve({ ok: false, error: 'scan_failed', procs: [] });
+      const procs = String(out || '').trim().split('\n').map((line) => {
+        const m = line.trim().match(/^(\d+)\s+(\S.*?)\s+([\d.]+)\s+(\d+)$/);
+        if (!m) return null;
+        const memMB = Math.round((Number(m[4]) / 1024) * 10) / 10;
+        return {
+          pid: Number(m[1]),
+          name: m[2].split('/').pop(),
+          cpu: Number(m[3]),
+          memMB,
+          memPct: totalMemMB ? Math.round((memMB / totalMemMB) * 1000) / 10 : 0
+        };
+      }).filter(Boolean);
+      resolve({ ok: true, platform: p, procs });
+    });
+  });
+}
+
+/** Never let the UI (or a model) terminate the shell/session itself. */
+const PROTECTED_PROCESS_NAMES = /^(system|systemd|init|kernel_task|launchd|winlogon|csrss|services|smss|wininit|lsass|svchost|explorer)$/i;
+
+/**
+ * S2 — terminate a process. Always behind the existing HITL confirm dialog,
+ * refuses PID<=1, refuses core OS processes, and refuses to kill GemAir itself.
+ */
+async function killProcess(pid, name) {
+  const id = Number(pid);
+  if (!Number.isInteger(id) || id <= 1) return { error: 'Invalid PID.' };
+  if (id === process.pid) return { error: 'GemAir will not terminate itself.' };
+  const label = String(name || '').replace(/\.exe$/i, '');
+  if (PROTECTED_PROCESS_NAMES.test(label)) return { error: `"${label}" is a protected system process — refusing.` };
+
+  const ok = await confirmAction(
+    'End process?',
+    `GemAir will terminate:\n\n  ${label || 'PID ' + id}  (PID ${id})\n\nUnsaved work in that program will be lost.`
+  );
+  if (!ok) return { error: 'Cancelled by user.' };
+
+  return new Promise((resolve) => {
+    const cmd = process.platform === 'win32' ? `taskkill /PID ${id} /T /F` : `kill -TERM ${id}`;
+    exec(cmd, { timeout: 8000 }, (err) => {
+      if (err) { resolve({ error: 'Could not end that process (permission denied or already gone).' }); return; }
+      logAction('kill_process', `Ended process ${label || ''} (PID ${id})`);
+      resolve({ ok: true, pid: id, name: label });
     });
   });
 }
@@ -2374,5 +2489,15 @@ ipcMain.handle('memory:import', (_e, data) => {
     return { ok: true };
   } catch (e) { return { ok: false, error: e.message }; }
 });
+// S2 — real process monitor (scan is read-only; kill goes through confirmAction)
+ipcMain.handle('proc:list', (_e, limit) => scanProcesses(limit));
+ipcMain.handle('proc:kill', (_e, pid, name) => killProcess(pid, name));
+
+// S3 — Tasks panel
+ipcMain.handle('memory:listTodos', () => listTodos());
+ipcMain.handle('memory:addTodo', (_e, text) => addTodo(text));
+ipcMain.handle('memory:toggleTodo', (_e, id) => toggleTodoById(id));
+ipcMain.handle('memory:deleteTodo', (_e, id) => deleteTodoById(id));
+
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:platform', () => process.platform);

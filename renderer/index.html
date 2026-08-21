@@ -369,6 +369,7 @@
                 <button class="core-tab active" data-tab="memory">MEMORY</button>
                 <button class="core-tab" data-tab="browser">BROWSER</button>
                 <button class="core-tab" data-tab="processes">PROCESSES</button>
+                <button class="core-tab" data-tab="tasks">TASKS</button>
                 <button class="core-tab" data-tab="notes">NOTES</button>
                 <button class="core-tab" data-tab="reminders">REMINDERS</button>
                 <button class="core-tab" data-tab="skills">SKILLS</button>
@@ -424,6 +425,18 @@
                 </div>
                 <div class="memory-list" id="processList">
                   <div class="empty">Loading process monitor…</div>
+                </div>
+              </div>
+
+              <!-- S3: Tasks — the missing UI behind memory.todos and the weekly tasks sparkline -->
+              <div class="hud-panel core-pane" data-pane="tasks">
+                <h3 class="panel-title" data-i18n="tasks.title">TASKS <span class="dim" id="todoCount"></span></h3>
+                <div class="inline-add">
+                  <input type="text" id="todoInput" placeholder="Add a task…" aria-label="New task" />
+                  <button class="mini-btn" id="todoAdd" aria-label="Add task">+</button>
+                </div>
+                <div class="memory-list" id="todoList">
+                  <div class="empty">No tasks yet. Add one above, or just tell Gem “remind me to finish the report”.</div>
                 </div>
               </div>
 
