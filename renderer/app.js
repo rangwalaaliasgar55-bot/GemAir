@@ -4580,6 +4580,27 @@ function bindEvents() {
   }));
 
   // memory / notes / reminders add
+  // S4 — interface language picker (+ RTL switch)
+  const langSel = $('#setLanguage');
+  if (langSel && window.GemAirI18n) {
+    const i18n = window.GemAirI18n;
+    langSel.innerHTML = '';
+    for (const l of i18n.LANGUAGES) {
+      const opt = document.createElement('option');
+      opt.value = l.id;
+      opt.textContent = `${l.native} — ${l.label}${l.dir === 'rtl' ? ' (RTL)' : ''}`;
+      if (l.id === i18n.locale) opt.selected = true;
+      langSel.appendChild(opt);
+    }
+    langSel.addEventListener('change', () => {
+      const next = i18n.setLocale(langSel.value);
+      profile.lang = next;
+      persistProfile();
+      playSfx('click');
+      toast('LANGUAGE', `Interface switched to ${(i18n.LANGUAGES.find((l) => l.id === next) || {}).native || next}`, '🌐');
+    });
+  }
+
   // S2 — process monitor controls
   const procFilter = $('#procFilter');
   if (procFilter) procFilter.addEventListener('input', () => paintProcessList());
@@ -5385,6 +5406,12 @@ async function boot() {
   // runs inside safe() so one failure can never cascade.
   // ---------------------------------------------------------------------
   safe('applyTheme', () => applyTheme(profile.theme || DEFAULTS.theme));
+  // S4: restore the saved interface language (and RTL direction) at boot
+  safe('applyLocale', () => {
+    if (!window.GemAirI18n) return;
+    if (profile.lang && profile.lang !== window.GemAirI18n.locale) window.GemAirI18n.setLocale(profile.lang);
+    else window.GemAirI18n.apply();
+  });
   safe('bindEvents', bindEvents);
   safe('bindSoulSliders', bindSoulSliders);
   safe('updateLinkMode', updateLinkMode);

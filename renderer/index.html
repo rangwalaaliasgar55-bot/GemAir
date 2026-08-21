@@ -434,9 +434,9 @@
 
               <!-- S3: Tasks — the missing UI behind memory.todos and the weekly tasks sparkline -->
               <div class="hud-panel core-pane" data-pane="tasks">
-                <h3 class="panel-title" data-i18n="tasks.title">TASKS <span class="dim" id="todoCount"></span></h3>
+                <h3 class="panel-title"><span data-i18n="tasks.title">TASKS</span> <span class="dim" id="todoCount"></span></h3>
                 <div class="inline-add">
-                  <input type="text" id="todoInput" placeholder="Add a task…" aria-label="New task" />
+                  <input type="text" id="todoInput" placeholder="Add a task…" data-i18n-placeholder="tasks.add" aria-label="New task" />
                   <button class="mini-btn" id="todoAdd" aria-label="Add task">+</button>
                 </div>
                 <div class="memory-list" id="todoList">
@@ -833,6 +833,17 @@
               </div>
             </div>
           </details>
+        </fieldset>
+
+        <!-- S4: interface language + RTL -->
+        <fieldset>
+          <legend>LANGUAGE</legend>
+          <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
+            Switches every <b>data-i18n</b> label in the interface. Urdu also flips the layout to right-to-left.
+          </p>
+          <label><span data-i18n="settings.language">Interface language</span>
+            <select id="setLanguage" aria-label="Interface language"></select>
+          </label>
         </fieldset>
 
         <fieldset>

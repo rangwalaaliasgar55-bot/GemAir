@@ -1218,3 +1218,19 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
 .todo-item { display: flex; align-items: center; gap: 10px; }
 .todo-item input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
 .todo-item.done { opacity: 0.75; }
+
+/* ============================================================
+   S4 — RTL (Urdu). Direction is set on <html>; body.rtl lets us
+   mirror the few places that assume a left-to-right reading order.
+   ============================================================ */
+body.rtl .msg.user { align-self: flex-start; }
+body.rtl .msg.ai { align-self: flex-end; }
+body.rtl .chat-input-row { flex-direction: row-reverse; }
+body.rtl .inline-add { flex-direction: row-reverse; }
+body.rtl .panel-title,
+body.rtl .sat-item,
+body.rtl .mem-item { text-align: right; }
+body.rtl .sat-item,
+body.rtl .todo-item { flex-direction: row-reverse; }
+body.rtl .core-tabs,
+body.rtl .sat-tabs { flex-direction: row-reverse; }
