@@ -62,7 +62,14 @@ const api = {
       const direct = await window.aiClient.directClientChat(config, messages);
       if (direct.ok) return direct;
     }
-    return await this._webChat(messages);
+    const free = await this._webChat(messages);
+    if (free.ok) return free;
+    // S8: Layer B — opt-in in-browser model before the offline intent brain.
+    if (window.aiClient && window.aiClient.isLocalReady()) {
+      const local = await window.aiClient.localChat(messages);
+      if (local.ok) return local;
+    }
+    return free;
   },
   /**
    * R8 — connection test WITHOUT the silent free-core rescue.
@@ -102,6 +109,12 @@ const api = {
       if (direct.ok) return direct;
     }
     const res = await this._webChat(messages);
+    // S8: Layer B — if the free core could not answer and the user opted into
+    // the in-browser WebGPU model, run it before dropping to the intent brain.
+    if (!res.ok && window.aiClient && window.aiClient.isLocalReady()) {
+      const local = await window.aiClient.localChat(messages, onDelta);
+      if (local.ok) return local;
+    }
     if (!res.ok) return res;
     const text = res.reply;
     for (const ch of text) { onDelta(ch); await sleep(12); } // simulate streaming locally
@@ -1053,39 +1066,113 @@ let scoreNodes = null;
 
 // A restrained, fully local Web Audio score. It starts only after a user
 // enables it (browser autoplay policy) and defaults to OFF.
-function setAmbientScore(enabled) {
-  if (!enabled) {
-    if (scoreNodes) {
-      try { scoreNodes.gain.gain.setTargetAtTime(0, scoreNodes.ctx.currentTime, 0.18); } catch (e) {}
-      const old = scoreNodes;
-      scoreNodes = null;
-      setTimeout(() => { try { old.oscillators.forEach((osc) => osc.stop()); } catch (e) {} }, 900);
-    }
-    return;
+/**
+ * T5 — ambient score with a volume slider and two selectable tracks.
+ *
+ * 2.1 had a single hard-coded drone at a fixed 0.035 gain and no way to change
+ * either. The gain node is now kept so the slider can retarget it live, and
+ * each track is a distinct oscillator recipe with an audible difference.
+ */
+const AMBIENT_TRACKS = {
+  deep: {
+    label: 'DEEP FIELD',
+    cutoff: 420,
+    voices: [
+      { hz: 55, type: 'sine', gain: 0.65 },
+      { hz: 82.41, type: 'triangle', gain: 0.18 },
+      { hz: 110, type: 'sine', gain: 0.18 }
+    ],
+    lfo: { hz: 0.07, depth: 130 }   // slow filter sweep = "breathing" pulse
+  },
+  reactor: {
+    label: 'REACTOR',
+    cutoff: 620,
+    voices: [
+      { hz: 65.41, type: 'sawtooth', gain: 0.16 },
+      { hz: 98, type: 'sine', gain: 0.5 },
+      { hz: 196, type: 'triangle', gain: 0.09 }
+    ],
+    lfo: { hz: 0.9, depth: 60 }     // faster shimmer = "warm hum + ticks"
   }
-  if (scoreNodes) return;
+};
+
+function ambientVolume() {
+  const v = Number(profile.ambientVolume);
+  return Math.max(0, Math.min(1, Number.isFinite(v) ? v : DEFAULTS.ambientVolume));
+}
+
+/** Peak gain for the master node — the slider maps 0..1 onto a gentle range. */
+function ambientGainTarget() {
+  return 0.0001 + ambientVolume() * 0.09;
+}
+
+function setAmbientVolume(value) {
+  profile.ambientVolume = Math.max(0, Math.min(1, Number(value) || 0));
+  if (scoreNodes) {
+    try { scoreNodes.gain.gain.setTargetAtTime(ambientGainTarget(), scoreNodes.ctx.currentTime, 0.12); } catch (e) {}
+  }
+}
+
+function stopAmbientScore() {
+  if (!scoreNodes) return;
+  try { scoreNodes.gain.gain.setTargetAtTime(0, scoreNodes.ctx.currentTime, 0.18); } catch (e) {}
+  const old = scoreNodes;
+  scoreNodes = null;
+  setTimeout(() => {
+    try { old.oscillators.forEach((osc) => osc.stop()); } catch (e) {}
+    try { if (old.lfo) old.lfo.stop(); } catch (e) {}
+  }, 900);
+}
+
+function setAmbientScore(enabled, trackId) {
+  if (trackId && trackId !== profile.ambientTrack) profile.ambientTrack = trackId;
+  if (!enabled) { stopAmbientScore(); return; }
+  // T5: switching track while playing must restart with the new recipe so the
+  // change is instantly audible, which is the whole point of the preview.
+  if (scoreNodes) {
+    if (scoreNodes.track === (profile.ambientTrack || DEFAULTS.ambientTrack)) return;
+    stopAmbientScore();
+  }
+  const id = profile.ambientTrack || DEFAULTS.ambientTrack;
+  const track = AMBIENT_TRACKS[id] || AMBIENT_TRACKS[DEFAULTS.ambientTrack];
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = globalAudioCtx || new AudioCtx();
     globalAudioCtx = ctx;
     if (ctx.state === 'suspended') ctx.resume();
+
     const gain = ctx.createGain();
     const filter = ctx.createBiquadFilter();
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.035, ctx.currentTime + 1.8);
-    filter.type = 'lowpass'; filter.frequency.value = 420;
-    filter.connect(gain); gain.connect(ctx.destination);
-    const oscillators = [55, 82.41, 110].map((hz, i) => {
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, ambientGainTarget()), ctx.currentTime + 1.4);
+    filter.type = 'lowpass';
+    filter.frequency.value = track.cutoff;
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    const oscillators = track.voices.map((v) => {
       const osc = ctx.createOscillator();
       const g = ctx.createGain();
-      osc.type = i === 1 ? 'triangle' : 'sine';
-      osc.frequency.value = hz;
-      g.gain.value = i === 0 ? 0.65 : 0.18;
+      osc.type = v.type;
+      osc.frequency.value = v.hz;
+      g.gain.value = v.gain;
       osc.connect(g); g.connect(filter); osc.start();
       return osc;
     });
-    scoreNodes = { ctx, gain, oscillators };
+
+    // gentle movement so the bed never sounds like a stuck tone
+    let lfo = null;
+    try {
+      lfo = ctx.createOscillator();
+      const lfoGain = ctx.createGain();
+      lfo.frequency.value = track.lfo.hz;
+      lfoGain.gain.value = track.lfo.depth;
+      lfo.connect(lfoGain); lfoGain.connect(filter.frequency);
+      lfo.start();
+    } catch (e) { lfo = null; }
+
+    scoreNodes = { ctx, gain, oscillators, lfo, track: id };
   } catch (e) { scoreNodes = null; }
 }
 
@@ -3473,6 +3560,35 @@ function startTownPreview() {
 }
 
 // ---------------------------------------------------------------------------
+// S7 — Workflow gallery.
+//
+// The 12 Section III recipes existed only as palette search hits, so a user who
+// never opened the palette never knew they were there. This renders them as
+// one-click cards in the Agent Town side panel; a click runs the exact same
+// prompt the palette entry did, through the same tool chain.
+// ---------------------------------------------------------------------------
+function renderWorkflowGallery() {
+  const grid = $('#workflowGallery');
+  if (!grid) return;
+  grid.innerHTML = WORKFLOWS.map((w) => `
+    <button class="wf-card" data-wf="${escapeHtml(w.id)}" title="${escapeHtml(w.prompt)}" aria-label="${escapeHtml(w.name)}">
+      <span class="wf-ico" aria-hidden="true">${w.icon}</span>
+      <span class="wf-name">${escapeHtml(w.name)}</span>
+      <span class="wf-detail">${escapeHtml(w.detail)}</span>
+    </button>`).join('');
+  grid.querySelectorAll('.wf-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      const wf = WORKFLOWS.find((w) => w.id === card.dataset.wf);
+      if (!wf) return;
+      playSfx('swoosh');
+      toast('WORKFLOW', wf.name, wf.icon);
+      switchView('assistant');
+      sendMessage(wf.prompt);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // S10 — quick-command editor.
 //
 // The ＋ in the expert-panel tab strip had no handler at all — it was a dead
@@ -4529,6 +4645,18 @@ function openSettings() {
   $('#setMemoryOn').checked = profile.memoryOn !== false;
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setAmbientScore').checked = !!profile.ambientScore;
+  // T5 — ambient track + volume
+  const trackSel = $('#setAmbientTrack');
+  if (trackSel) trackSel.value = profile.ambientTrack || DEFAULTS.ambientTrack;
+  const volSlider = $('#setAmbientVolume');
+  if (volSlider) {
+    volSlider.value = String(ambientVolume());
+    const label = $('#ambientVolVal');
+    if (label) label.textContent = Math.round(ambientVolume() * 100) + '%';
+  }
+  // S8 — local brain toggle reflects the engine's real state
+  const localBrain = $('#setLocalBrain');
+  if (localBrain) localBrain.checked = !!(window.aiClient && window.aiClient.isLocalReady());
   $('#setScreenAwareness').checked = !!profile.screenAwareness;
   $('#setWakeWord').checked = !!profile.wakeWord;
   populateVoices(); populateNeuralVoices(); populateEdgeVoices(); updateAiHint();
@@ -4749,6 +4877,51 @@ function bindEvents() {
   }));
 
   // memory / notes / reminders add
+  // T5 — ambient controls preview instantly, while the panel is open
+  const ambientTrackSel = $('#setAmbientTrack');
+  if (ambientTrackSel) ambientTrackSel.addEventListener('change', () => {
+    profile.ambientTrack = ambientTrackSel.value;
+    if ($('#setAmbientScore')?.checked) setAmbientScore(true, ambientTrackSel.value);
+  });
+  const ambientVol = $('#setAmbientVolume');
+  if (ambientVol) ambientVol.addEventListener('input', () => {
+    setAmbientVolume(ambientVol.value);
+    const label = $('#ambientVolVal');
+    if (label) label.textContent = Math.round(ambientVolume() * 100) + '%';
+  });
+  const ambientToggle = $('#setAmbientScore');
+  if (ambientToggle) ambientToggle.addEventListener('change', () => {
+    // instant audible preview on toggle, without waiting for SAVE
+    setAmbientScore(ambientToggle.checked, $('#setAmbientTrack')?.value);
+  });
+
+  // S8 — opt into the in-browser WebGPU model
+  const localBrainToggle = $('#setLocalBrain');
+  if (localBrainToggle) localBrainToggle.addEventListener('change', async () => {
+    const hint = $('#localBrainHint');
+    if (!window.aiClient) return;
+    if (!localBrainToggle.checked) {
+      window.aiClient.disableLocalModel();
+      if (hint) hint.textContent = 'Offline brain tier disabled.';
+      return;
+    }
+    if (!(await window.aiClient.isWebGpuSupported())) {
+      localBrainToggle.checked = false;
+      if (hint) hint.textContent = 'This browser has no WebGPU adapter, so the in-browser model cannot run here.';
+      toast('OFFLINE BRAIN', 'WebGPU is not available in this browser.', '⚠️');
+      return;
+    }
+    if (hint) hint.textContent = 'Downloading model weights… this runs once and is cached by the browser.';
+    const ok = await window.aiClient.enableLocalModel((pct, text) => {
+      if (hint) hint.textContent = `Loading offline brain — ${pct}% ${text ? '· ' + text : ''}`;
+    });
+    localBrainToggle.checked = ok;
+    if (hint) hint.textContent = ok
+      ? `Offline brain READY (${window.aiClient.LOCAL_MODEL.id}) — used automatically when the free core is unreachable.`
+      : 'Could not load the in-browser model. GemAir will keep using the free core and the offline intent brain.';
+    toast('OFFLINE BRAIN', ok ? 'Local model ready' : 'Local model unavailable', ok ? '🧠' : '⚠️');
+  });
+
   // S10 — the expert-panel ＋ finally does something
   const expertPlus = document.querySelector('.expert-plus');
   if (expertPlus) {
@@ -4760,6 +4933,7 @@ function bindEvents() {
     expertPlus.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openQuickCommandEditor(); } });
   }
   renderQuickCommands();
+  renderWorkflowGallery(); // S7
 
   // S4 — interface language picker (+ RTL switch)
   const langSel = $('#setLanguage');
@@ -4986,12 +5160,14 @@ function bindEvents() {
     profile.voice.pitch = Number($('#setPitch').value);
     profile.voice.mode = $('#setVoiceMode').value;
     profile.voice.neuralVoice = $('#setNeuralVoice').value;
-    profile.voice.edgeVoice = $('#setEdgeVoice')?.value || profile.voice.edgeVoice || 'en-US-AriaNeural';
+    profile.voice.edgeVoice = $('#setEdgeVoice')?.value || profile.voice.edgeVoice || DEFAULTS.edgeVoice;
     profile.voice.name = $('#setVoice').value;
     profile.voice.sttLang = $('#setSttLang').value;
     profile.memoryOn = $('#setMemoryOn').checked;
     profile.allowShell = $('#setAllowShell').checked;
     profile.ambientScore = $('#setAmbientScore').checked;
+    profile.ambientTrack = $('#setAmbientTrack')?.value || profile.ambientTrack || DEFAULTS.ambientTrack;
+    profile.ambientVolume = Number($('#setAmbientVolume')?.value ?? ambientVolume());
     profile.screenAwareness = $('#setScreenAwareness').checked;
     profile.wakeWord = $('#setWakeWord').checked;
     persistProfile().then(() => { updateLinkMode(); closeSettings(); });

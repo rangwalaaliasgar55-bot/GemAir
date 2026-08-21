@@ -677,6 +677,12 @@
             </div>
 
             <div class="town-side">
+              <!-- S7: the 12 workflow recipes were reachable only by typing in the
+                   command palette. This renders them as one-click cards. -->
+              <div class="hud-panel workflow-gallery">
+                <h3 class="panel-title">WORKFLOW GALLERY <span class="dim">— ONE-CLICK RECIPES</span></h3>
+                <div class="wf-grid" id="workflowGallery"></div>
+              </div>
               <div class="hud-panel activity-panel">
                 <h3 class="panel-title">AGENT FEED <span class="dim">— LIVE STATUS</span></h3>
                 <div class="activity-feed" id="activityFeed">
@@ -919,6 +925,18 @@
             <input type="checkbox" id="setAmbientScore" /> Ambient command-center score (default off)
           </label>
           <span class="hint">A quiet, locally synthesized sci-fi soundscape. No audio is downloaded or recorded.</span>
+          <!-- T5: the score had no volume control and only one texture -->
+          <label>Ambient track
+            <select id="setAmbientTrack" aria-label="Ambient track">
+              <option value="deep">DEEP FIELD — low drone + slow pulse</option>
+              <option value="reactor">REACTOR — warm hum + soft ticks</option>
+            </select>
+          </label>
+          <div class="soul-slider" style="display:flex;align-items:center;gap:12px;">
+            <span>VOLUME</span>
+            <input type="range" id="setAmbientVolume" min="0" max="1" step="0.05" value="0.35" aria-label="Ambient volume" />
+            <b id="ambientVolVal">35%</b>
+          </div>
           <label class="check-label">
             <input type="checkbox" id="setScreenAwareness" /> Optional screen awareness during active voice sessions
           </label>
@@ -926,6 +944,14 @@
           <label class="check-label">
             <input type="checkbox" id="setAllowShell" /> Allow shell command execution (confirms each command)
           </label>
+          <!-- S8: Layer B — opt-in in-browser model -->
+          <label class="check-label">
+            <input type="checkbox" id="setLocalBrain" /> Offline brain tier — run a small model in your browser (WebGPU)
+          </label>
+          <span class="hint" id="localBrainHint">
+            Optional. Downloads roughly 800&nbsp;MB of model weights the first time, then answers with no network and no key
+            whenever the free core is unreachable. Requires a WebGPU-capable browser. Off by default — nothing downloads until you enable it.
+          </span>
         </fieldset>
 
         <fieldset>

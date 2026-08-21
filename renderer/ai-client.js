@@ -106,9 +106,122 @@
     }
   }
 
+  // =========================================================================
+  // Layer B — WebGPU in-browser model (S8)
+  //
+  // 2.1 shipped checkWebGPU() as a probe whose result was never used: nothing
+  // consulted it, nothing loaded a model, and Layer B was purely aspirational
+  // in the file header. This turns it into a REAL optional tier in the fallback
+  // chain (direct key -> free core -> WebGPU local -> offline intent brain).
+  //
+  // The model weights are large, so this tier is strictly OPT-IN: it only ever
+  // loads after enableLocalModel() is called (Settings toggle), it streams from
+  // a CDN, and every failure degrades silently to the next tier. Nothing about
+  // the default experience changes, and no download happens unless asked.
+  // =========================================================================
+  const LOCAL_MODEL = {
+    // Small instruct model that fits comfortably in browser memory.
+    id: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',
+    esm: 'https://esm.run/@mlc-ai/web-llm'
+  };
+
+  let localState = 'idle';       // idle | loading | ready | unavailable
+  let localEngine = null;
+  let localLoadPromise = null;
+  let localProgress = 0;
+
+  function localStatus() {
+    return { state: localState, progress: localProgress, model: LOCAL_MODEL.id };
+  }
+
+  function emitLocalStatus(detail) {
+    try {
+      document.dispatchEvent(new CustomEvent('gemair:localbrain', { detail: detail || localStatus() }));
+    } catch (e) {}
+  }
+
+  /**
+   * Download + initialise the in-browser model. Safe to call repeatedly; the
+   * same promise is reused. Returns true once the engine can answer.
+   */
+  async function enableLocalModel(onProgress) {
+    if (localState === 'ready') return true;
+    if (localState === 'unavailable') return false;
+    if (localLoadPromise) return localLoadPromise;
+
+    localLoadPromise = (async () => {
+      if (!(await checkWebGPU())) {
+        localState = 'unavailable';
+        emitLocalStatus({ state: localState, error: 'no-webgpu' });
+        return false;
+      }
+      localState = 'loading';
+      emitLocalStatus();
+      try {
+        const webllm = await import(/* webpackIgnore: true */ LOCAL_MODEL.esm);
+        localEngine = await webllm.CreateMLCEngine(LOCAL_MODEL.id, {
+          initProgressCallback: (report) => {
+            localProgress = Math.round((report && report.progress ? report.progress : 0) * 100);
+            if (typeof onProgress === 'function') onProgress(localProgress, report && report.text);
+            emitLocalStatus({ state: 'loading', progress: localProgress, text: report && report.text });
+          }
+        });
+        localState = 'ready';
+        localProgress = 100;
+        emitLocalStatus();
+        return true;
+      } catch (e) {
+        localState = 'unavailable';
+        localEngine = null;
+        emitLocalStatus({ state: localState, error: (e && e.message) || 'load-failed' });
+        return false;
+      } finally {
+        localLoadPromise = null;
+      }
+    })();
+
+    return localLoadPromise;
+  }
+
+  function disableLocalModel() {
+    try { if (localEngine && localEngine.unload) localEngine.unload(); } catch (e) {}
+    localEngine = null;
+    localState = 'idle';
+    localProgress = 0;
+    emitLocalStatus();
+  }
+
+  /** Answer from the local model. Returns { ok:false } unless it is READY. */
+  async function localChat(messages, onDelta) {
+    if (localState !== 'ready' || !localEngine) return { ok: false, error: 'LOCAL_NOT_READY' };
+    try {
+      if (typeof onDelta === 'function') {
+        const stream = await localEngine.chat.completions.create({ messages, stream: true, temperature: 0.6, max_tokens: 800 });
+        let full = '';
+        for await (const part of stream) {
+          const delta = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
+          if (delta) { full += delta; onDelta(delta); }
+        }
+        return { ok: !!full.trim(), reply: full.trim(), via: 'webgpu' };
+      }
+      const res = await localEngine.chat.completions.create({ messages, temperature: 0.6, max_tokens: 800 });
+      const reply = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;
+      return { ok: !!reply, reply: (reply || '').trim(), via: 'webgpu' };
+    } catch (e) {
+      return { ok: false, error: (e && e.message) || 'local-chat-failed' };
+    }
+  }
+
   const aiClient = {
     checkWebGPU,
     directClientChat,
+    // S8 — Layer B, now real
+    enableLocalModel,
+    disableLocalModel,
+    localChat,
+    localStatus,
+    isLocalReady: () => localState === 'ready',
+    LOCAL_MODEL,
     async isWebGpuSupported() {
       return await checkWebGPU();
     }

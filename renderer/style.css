@@ -1242,3 +1242,17 @@ body.rtl .sat-tabs { flex-direction: row-reverse; }
   border-radius: 8px; padding: 7px 10px; color: var(--text); font-size: 11.5px; outline: none;
 }
 .qc.custom { border-style: dashed; }
+
+/* S7 — workflow gallery cards */
+.wf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.wf-card {
+  display: flex; flex-direction: column; gap: 3px; text-align: left;
+  padding: 10px 11px; border-radius: 10px; cursor: pointer;
+  background: rgba(0,0,0,0.32); border: 1px solid var(--panel-border); color: var(--text);
+  transition: border-color .15s, transform .15s, background .15s;
+}
+.wf-card:hover { border-color: var(--accent-soft); background: rgba(0,0,0,0.5); transform: translateY(-2px); }
+.wf-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wf-ico { font-size: 16px; line-height: 1; }
+.wf-name { font-size: 11.5px; font-weight: 600; line-height: 1.3; }
+.wf-detail { font-size: 10px; color: var(--text-dim); line-height: 1.35; }
