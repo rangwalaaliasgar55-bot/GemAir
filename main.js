@@ -1997,6 +1997,28 @@ async function offlineBrain(text) {
     return `CPU ${i.cpuLoad}%, memory ${i.memPercent}% used, up ${Math.floor(i.uptime / 3600)}h ${Math.floor((i.uptime % 3600) / 60)}m. Full readout is on the System Core panel.`;
   }
 
+  // Section III workflows — graceful offline equivalents (desktop).
+  if (/organize|sort|tidy/.test(q) && /download|folder|file/.test(q)) {
+    const r = await organizeFolder();
+    return r.error || `Organized ${r.total} files into ${Object.keys(r.categories || {}).length} category folders.`;
+  }
+  if (/close everything|close all|close.*except/.test(q)) {
+    closeApp('all');
+    return 'Closing every non-essential application except GemAir.';
+  }
+  if (/large file|huge file|big file|free up space/.test(q)) {
+    const m = q.match(/(\d+)\s*(gb|mb)/) || q.match(/over\s*(\d+)\s*(gb|mb)?/);
+    const minMB = m ? (m[2] === 'gb' ? Number(m[1]) * 1024 : Number(m[1])) : 500;
+    const r = findLargeFiles(os.homedir(), minMB, /month/.test(q) ? 6 : null);
+    return r.count
+      ? `Found ${r.count} file(s) over ${minMB}MB: ${r.files.slice(0, 5).map((f) => `${f.path} (${f.sizeMB}MB)`).join(', ')}`
+      : `No files over ${minMB}MB found in your home folder.`;
+  }
+  if (/optimize.*(?:for )?gaming|gaming.*optimiz/.test(q)) {
+    const r = await optimizeGaming();
+    return r.error || 'Gaming optimization complete: ' + r.steps.join('; ');
+  }
+
   if (/joke/.test(q)) return "There are only 10 kinds of people: those who understand binary and those who don't.";
   if (/calculate|calc|math|what is|whats|what's|=/.test(q)) {
     const expr = q.replace(/[^0-9+\-*/().%\s]/g, ' ').trim();
