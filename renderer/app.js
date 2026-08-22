@@ -929,7 +929,7 @@ function reportInitFailure(label, err) {
   // U2: 2.1 left the SYS chip frozen at "SYSTEMS NOMINAL" no matter how many
   // subsystems failed to boot. Tell the truth instead.
   updateSystemStatusChip();
-  if (_initFailures.length === 1) {
+  if (_initFailures.length === 1 && window.gemair) {
     setTimeout(() => {
       try {
         toast('DEGRADED', `${_initFailures.length} component(s) failed to start — the rest of GemAir still works.`, '⚠');
@@ -1415,11 +1415,8 @@ function applyTheme(t) {
   if (window.GemAirThemes) {
     const theme = window.GemAirThemes.apply(t);
     if (t !== 'rgb') currentAccent = theme.accent; // string token → all canvases
-    const tag = $('#themeNameTag');
-    if (tag) tag.textContent = theme.label.toUpperCase();
   }
   document.body.dataset.theme = t;
-  $$('.theme-btn').forEach((b) => b.classList.toggle('active', b.dataset.theme === t));
   const themeGrid = $('#themeGrid');
   if (themeGrid) themeGrid.querySelectorAll('.theme-card').forEach((c) => c.classList.toggle('active', c.dataset.tid === t));
   if (t === 'rgb') { startRgb(); }
@@ -1793,20 +1790,6 @@ function startBackground3D() {
 }
 
 // 3D tilt on panels
-function startPanelTilt() {
-  if (REDUCED_MOTION) return;
-  const tiltables = document.querySelectorAll('.hud-panel, .agent-desk');
-  tiltables.forEach((el) => {
-    el.addEventListener('mousemove', (e) => {
-      const r = el.getBoundingClientRect();
-      const rx = ((e.clientY - r.top) / r.height - 0.5) * -6;
-      const ry = ((e.clientX - r.left) / r.width - 0.5) * 6;
-      el.style.transform = `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg)`;
-    });
-    el.addEventListener('mouseleave', () => { el.style.transform = 'perspective(900px) rotateX(0) rotateY(0)'; });
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Orb particle animation
 // ---------------------------------------------------------------------------
@@ -2072,7 +2055,7 @@ function renderRich(p, text) {
         mermaidBlocks.push({ id, code });
       } else {
         html += `<pre><code id="${id}">${escapeHtml(code)}</code></pre>`;
-        html += `<div class="code-actions"><button class="save-code-btn" data-code="${id}">💾 SAVE TO FILE</button></div>`;
+        html += `<div class="code-actions"><button class="copy-code-btn" data-code="${id}">📋 COPY</button><button class="save-code-btn" data-code="${id}">💾 SAVE TO FILE</button></div>`;
       }
     } else {
       html += escapeHtml(part).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\n/g, '<br>');
@@ -2085,6 +2068,17 @@ function renderRich(p, text) {
       if (!codeEl) return;
       const res = await api.saveCode(codeEl.textContent, 'gemair-output.txt');
       addMessage('system-msg', res.ok ? `Saved to ${res.path}` : `Save failed: ${res.error || 'cancelled'}`);
+    });
+  });
+  p.querySelectorAll('.copy-code-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const codeEl = document.getElementById(btn.dataset.code);
+      if (!codeEl) return;
+      try {
+        await navigator.clipboard.writeText(codeEl.textContent);
+        btn.textContent = '✓ COPIED';
+        setTimeout(() => { btn.textContent = '📋 COPY'; }, 1500);
+      } catch { toast('COPY', 'Clipboard blocked by browser', '⚠'); }
     });
   });
   mermaidBlocks.forEach((b) => {
@@ -2196,30 +2190,7 @@ function updateLinkMode() {
 }
 
 // LEFT column — MEDIA LINK panel (Stonic-style system status card)
-function updateMediaLink() {
-  const cfg = profile.ai || {};
-  const prov = detectProvider(cfg.baseURL);
-  const hasKey = !!(cfg.apiKey && cfg.baseURL);
-  const ai = $('#mlAi');
-  if (ai) {
-    const names = { gemini: 'GEMINI', chatgpt: 'CHATGPT', claude: 'CLAUDE', groq: 'GROQ', openrouter: 'OPENROUTER', local: 'LOCAL', custom: 'CUSTOM' };
-    let t = (hasKey && names[prov]) || (hasKey ? 'LINK' : (isElectron ? 'OFFLINE BRAIN' : 'FREE CORE'));
-    ai.textContent = t;
-    ai.classList.toggle('hot', t !== 'OFFLINE BRAIN');
-  }
-  const v = $('#mlVoice');
-  if (v) { v.textContent = isRunning ? (listening ? 'LISTENING' : 'ONLINE') : 'STANDBY'; v.classList.toggle('hot', !!isRunning); }
-  const s = $('#mlSfx');
-  if (s) { s.textContent = profile.sfx === false ? 'OFF' : 'ON'; s.classList.toggle('hot', profile.sfx !== false); }
-  const st = $('#mediaLinkState');
-  if (st) st.textContent = isRunning ? '— SYSTEM ONLINE' : '— STANDBY';
-  // 2.4 active brain in media link
-  try {
-    const ab = getActiveBrain();
-    const mlActive = $('#mlActiveBrain');
-    if (mlActive) { mlActive.textContent = ab; mlActive.classList.toggle('hot', ab !== 'FREE CORE'); }
-  } catch {}
-}
+function updateMediaLink() { /* panel removed */ }
 
 function buildSystemPrompt() {
   const s = profile.soul || {};
@@ -2451,6 +2422,41 @@ async function handleMessage(text) {
 
   // S6: contextual HUD dock
   try { hudAutoFromMessage(text); } catch (e) {}
+
+  // Dynamic HUD navigation — Gem opens views/panels on request.
+  try {
+    const nav = matchViewNavigation(text);
+    if (nav) {
+      let line;
+      if (nav.modal === 'settings') { openSettings(); line = 'Settings open.'; }
+      else if (nav.modal === 'theme') { $('#themeModal')?.classList.add('open'); line = 'Theme picker open — the whole HUD recolours live.'; }
+      else { switchView(nav.view); line = nav.label + ' online.'; }
+      addMessage('ai', line);
+      chatHistory.push({ role: 'user', content: text }, { role: 'assistant', content: line });
+      updateContextMeter();
+      api.memoryAppend('user', text); api.memoryAppend('assistant', line);
+      speak(line);
+      return;
+    }
+  } catch (e) {}
+
+  // Local natural commands — real desktop actions, zero AI keys (desktop only).
+  try {
+    const act = matchLocalAction(text);
+    if (act) {
+      const res = await runLocalAction(act);
+      if (res) {
+        reasoningNote('tool', 'local action: ' + act.kind);
+        addMessage('ai', res);
+        chatHistory.push({ role: 'user', content: text }, { role: 'assistant', content: res });
+        updateContextMeter();
+        api.memoryAppend('user', text); api.memoryAppend('assistant', res);
+        speak(res);
+        return;
+      }
+    }
+  } catch (e) {}
+
   // 2.4 M — voice triggers for modes
   try {
     const low = text.toLowerCase();
@@ -5180,7 +5186,8 @@ async function refreshHeadlines(category = worldCategory) {
         const status = headline.simulated ? 'SIMULATED' : (headline.score ? '▲ ' + headline.score : 'LIVE');
         const meta = [String(headline.category || worldCategory).toUpperCase(), headline.by, status].filter(Boolean).join(' · ');
         if (headline.simulated) div.classList.add('simulated');
-        div.innerHTML = `<div class="n-title">${escapeHtml(headline.title)}</div><div class="n-meta">${escapeHtml(meta)}</div>`;
+        const idx = String(worldHeadlines.indexOf(headline) + 1).padStart(2, "0");
+        div.innerHTML = `<span class="n-idx">${idx}</span><div class="n-body"><div class="n-title">${escapeHtml(headline.title)}</div><div class="n-meta">${escapeHtml(meta)}</div></div>`;
         div.addEventListener('click', () => api.openExternal(headline.url));
         list.appendChild(div);
       });
@@ -5228,6 +5235,302 @@ function updateSttLanguageUi() {
   const chip = $('#sttLangChip'); if (chip) chip.textContent = '🎙 ' + language.toUpperCase();
   if (recognition) recognition.lang = language;
   if (wakeRecognition) wakeRecognition.lang = language;
+}
+
+// ---------------------------------------------------------------------------
+// T4 — Cinematic first-run onboarding (Stonic v1.0.55 parity):
+// welcome → name → live HUD theme → voice, over an ambient score.
+// Pure renderer-side; falls back to the classic chat ask if anything fails.
+// ---------------------------------------------------------------------------
+const ONBOARD_STEPS = ['welcome', 'name', 'voice'];
+let onboard = null;
+
+function safeLaunchOnboarding() {
+  try { launchOnboarding(); return !!$('#onboardOverlay'); } catch (e) { return false; }
+}
+
+function setupOnboarding() {
+  const overlay = $('#onboardOverlay');
+  if (!overlay || overlay.dataset.wired) return;
+  overlay.dataset.wired = '1';
+  $('#onboardNext')?.addEventListener('click', () => onboardingAdvance());
+  $('#onboardBack')?.addEventListener('click', () => onboardingAdvance(-1));
+  $('#onboardSkip')?.addEventListener('click', () => onboardingFinish(true));
+  $('#onboardName')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onboardingAdvance(); } });
+  overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') onboardingFinish(true); });
+  $('.onboard-voice').forEach((b) => b.addEventListener('click', () => {
+    playSfx('click');
+    const g = b.dataset.gender === 'male' ? 'male' : 'female';
+    profile.voiceGender = g;
+    profile.avatarGender = g;
+    if (window.ttsEngine) window.ttsEngine.gender = g;
+    $('.onboard-voice').forEach((x) => x.classList.toggle('active', x === b));
+    try { speak(g === 'male' ? 'Male voice online. I am Gem.' : 'Female voice online. I am Gem.'); } catch (e) {}
+  }));
+  $('#replayOnboardBtn')?.addEventListener('click', () => { playSfx('click'); launchOnboarding(); });
+}
+
+function launchOnboarding() {
+  const overlay = $('#onboardOverlay');
+  if (!overlay || onboard) return;
+  setupOnboarding();
+  onboard = { step: 0, prevAmbient: !!profile.ambientScore };
+  overlay.hidden = false;
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  onboardingPaint();
+  // Ambient score during first run only — restore the user's preference after.
+  try { setAmbientScore(true, profile.ambientTrack || DEFAULTS.ambientTrack); } catch (e) {}
+  setTimeout(() => $('#onboardName')?.focus?.(), 350);
+}
+
+function onboardingPaint() {
+  if (!onboard) return;
+  $('.onboard-step').forEach((s) => s.classList.toggle('active', s.dataset.ostep === ONBOARD_STEPS[onboard.step]));
+  const dots = $('#onboardDots');
+  if (dots) dots.innerHTML = ONBOARD_STEPS.map((s, i) => '<i class="' + (i <= onboard.step ? 'on' : '') + '"></i>').join('');
+  const back = $('#onboardBack');
+  if (back) back.style.visibility = onboard.step === 0 ? 'hidden' : 'visible';
+  const next = $('#onboardNext');
+  if (next) next.textContent = onboard.step === ONBOARD_STEPS.length - 1 ? 'ENTER THE HUD »' : onboard.step === 0 ? 'BEGIN »' : 'CONTINUE »';
+}
+
+function onboardingAdvance(dir) {
+  if (!onboard) return;
+  playSfx('click');
+  if (dir < 0 && onboard.step > 0) { onboard.step--; onboardingPaint(); return; }
+  if (ONBOARD_STEPS[onboard.step] === 'name') {
+    const v = ($('#onboardName')?.value || '').trim();
+    if (v) profile.name = v.slice(0, 24);
+  }
+  if (onboard.step < ONBOARD_STEPS.length - 1) {
+    onboard.step++;
+    onboardingPaint();
+    if (ONBOARD_STEPS[onboard.step] === 'name') $('#onboardName')?.focus?.();
+  } else onboardingFinish(false);
+}
+
+async function onboardingFinish(skipped) {
+  const overlay = $('#onboardOverlay');
+  if (!overlay || !onboard) return;
+  if (!skipped && ONBOARD_STEPS[onboard.step] === 'name') {
+    const v = ($('#onboardName')?.value || '').trim();
+    if (v) profile.name = v.slice(0, 24);
+  }
+  profile.onboarded = true;
+  const prevAmbient = onboard.prevAmbient;
+  onboard = null;
+  overlay.classList.remove('open');
+  setTimeout(() => { overlay.hidden = true; }, 280);
+  try { setAmbientScore(prevAmbient, profile.ambientTrack || DEFAULTS.ambientTrack); } catch (e) {}
+  await persistProfile();
+  try {
+    await api.memoryAddFact({ text: `The user's name is ${profile.name}`, category: 'identity' });
+    await loadMemory(); renderAllMemory(); renderBriefing();
+  } catch (e) {}
+  const hi = `Welcome to the HUD, ${profile.name}. Everything is yours — try "open Agent Town", "show World Monitor", or just talk to me.`;
+  addMessage('ai', hi);
+  try { await api.memoryAppend('assistant', hi); } catch (e) {}
+  try { speak(hi); } catch (e) {}
+  try { updateNowCard(); } catch (e) {}
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic HUD navigation (Stonic v1.0.33): Gem can drive the interface itself,
+// typed or spoken, in EVERY runtime (Electron, web, offline).
+// ---------------------------------------------------------------------------
+const NAV_VERB_RE = /\b(?:open|show(?:\s*me)?|go(?:\s*to)?|switch(?:\s*to)?|jump(?:\s*to)?|take\s*(?:me\s*)?to|view|display|navigate(?:\s*to)?)\b/i;
+const VIEW_NAVS = [
+  { re: /\bagent\s*town\b|\btown hall\b/i, view: 'town', label: 'Agent Town' },
+  { re: /\bworld(?:\s*monitor)?\b|\bglobe\b|\bcommand map\b/i, view: 'world', label: 'World Monitor' },
+  { re: /\bsystem(?:\s*core)?\b|\bprocesses\b|\btask\s*manager\b/i, view: 'core', label: 'System Core' },
+  { re: /\bcompanion\b/i, view: 'companion', label: 'Companion' },
+  { re: /\bdashboard\b|\bhome(?:\s*(?:view|screen))?\b|\bmain\s*(?:view|screen)\b|\bassistant\b/i, view: 'assistant', label: 'Assistant' }
+];
+
+function matchViewNavigation(text) {
+  const t = String(text || '');
+  if (!NAV_VERB_RE.test(t)) return null;
+  for (const n of VIEW_NAVS) if (n.re.test(t)) return n;
+  if (/\bsettings?(?:\s*panel)?\b|\bpreferences\b/i.test(t)) return { modal: 'settings', label: 'Settings' };
+  if (/\bthemes?\b|\brecolou?r\b/i.test(t)) return { modal: 'theme', label: 'Theme picker' };
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// STONIC-PITCH PARITY — local natural commands. Typed or SPOKEN phrases map to
+// REAL desktop actions through the existing bridge, processed locally, zero AI
+// keys. Precision-first: only whitelisted app names / clear patterns match;
+// everything else falls through to the AI brains (which still have all 79 tools
+// with HITL confirms — including WhatsApp + file operations).
+// ---------------------------------------------------------------------------
+const APP_ALIASES = {
+  chrome: 'chrome', 'google chrome': 'chrome', edge: 'msedge', firefox: 'firefox',
+  spotify: 'spotify', vscode: 'code', 'vs code': 'code', code: 'code',
+  notepad: 'notepad', calculator: 'calculator', calc: 'calculator',
+  terminal: 'windowsterminal', cmd: 'cmd', powershell: 'powershell',
+  explorer: 'explorer', 'file explorer': 'explorer', files: 'explorer',
+  premiere: 'premiere', photoshop: 'photoshop', word: 'winword', excel: 'excel',
+  powerpoint: 'powerpnt', steam: 'steam', discord: 'discord', whatsapp: 'whatsapp',
+  telegram: 'telegram', slack: 'slack', zoom: 'zoom', paint: 'mspaint'
+};
+const SITE_MAP = {
+  youtube: 'https://youtube.com', google: 'https://google.com', github: 'https://github.com',
+  gmail: 'https://mail.google.com', reddit: 'https://reddit.com', netflix: 'https://netflix.com',
+  chatgpt: 'https://chatgpt.com', twitter: 'https://x.com', x: 'https://x.com',
+  whatsapp: 'https://web.whatsapp.com', maps: 'https://maps.google.com',
+  drive: 'https://drive.google.com', instagram: 'https://instagram.com',
+  linkedin: 'https://linkedin.com', stackoverflow: 'https://stackoverflow.com'
+};
+const NAV_SITE_RE = new RegExp('\\b(open|go to|visit)\\s+((?:' + Object.keys(SITE_MAP).join('|') + ')\\s*(?:\\.com)?\\b)', 'i');
+const SEARCH_SITE_RE = /\b(search|look up|find)\s+(.+?)\s+(?:on|in)\s+(youtube|google)\b|\b(youtube|google)\s+(?:search(?: for)?)?\s*(.+)/i;
+const LAUNCH_RE = /^\s*(?:open|launch|start|run)\s+(?:the\s+)?([a-z0-9 .+#-]{2,24})\s*$/i;
+const FOCUS_RE = /\b(?:switch to|bring(?: up)?|focus|jump to)\s+(?:the\s+)?([a-z0-9 .+#-]{2,24})\b/i;
+
+function matchLocalAction(raw) {
+  const t = String(raw || '').toLowerCase().trim().replace(/[!.?]+$/, '');
+  if (!t || !window.gemair) return null;
+  let m;
+
+  if ((m = t.match(/\b(?:set\s+)?volume\s+(?:to\s+)?(\d{1,3})\s*(?:%|percent)?\b/)))
+    return { kind: 'volume', args: { action: 'set', level: Math.min(100, Number(m[1])) }, say: 'Volume set to ' + Math.min(100, Number(m[1])) + ' percent.' };
+  if (/\bvolume\s+up\b|\bturn\s+(?:the\s+)?volume\s+up\b|\blouder\b/.test(t))
+    return { kind: 'volume', args: { action: 'up' }, say: 'Volume up.' };
+  if (/\bvolume\s+down\b|\bturn\s+(?:the\s+)?volume\s+down\b|\bquieter\b/.test(t))
+    return { kind: 'volume', args: { action: 'down' }, say: 'Volume down.' };
+  if (/\bunmute\b/.test(t)) return { kind: 'volume', args: { action: 'unmute' }, say: 'Unmuted.' };
+  if (/\bmute\b/.test(t)) return { kind: 'volume', args: { action: 'mute' }, say: 'Muted.' };
+
+  if (/\bbattery\b/.test(t)) return { kind: 'battery' };
+  if (/\b(ram|memory usage|how much memory)\b/.test(t)) return { kind: 'ram' };
+  if (/\b(storage|disk space|disk)\b/.test(t)) return { kind: 'disk' };
+  if (/\b(system status|system health|pc status|computer status|how.s my (pc|computer))\b/.test(t))
+    return { kind: 'sysinfo' };
+
+  if ((m = t.match(NAV_SITE_RE))) {
+    const site = m[2].replace(/\.com\s*$/, '').trim();
+    return { kind: 'site', url: SITE_MAP[site], say: 'Opening ' + site + '.' };
+  }
+  if ((m = t.match(SEARCH_SITE_RE))) {
+    const engine = (m[3] || m[4] || '').toLowerCase();
+    const q = (m[2] || m[5] || '').trim();
+    if (engine && q && SITE_MAP[engine]) {
+      const url = engine === 'youtube'
+        ? 'https://www.youtube.com/results?search_query=' + encodeURIComponent(q)
+        : 'https://www.google.com/search?q=' + encodeURIComponent(q);
+      return { kind: 'site', url, say: 'Searching ' + engine + ' for ' + q + '.' };
+    }
+  }
+
+  if (/\b(close|minimize|hide)\s+(all|everything)\b.*\bwindows?\b|\bshow (?:the )?desktop\b/.test(t))
+    return { kind: 'minimizeAll', say: 'All windows minimized.' };
+  if (/\bnext\s+(?:virtual\s+)?desktop\b|\bswitch\s+desktop\b/.test(t))
+    return { kind: 'nextDesktop', say: 'Next virtual desktop.' };
+  if (/\bsnap\s+(?:this\s+)?window\s+(left|right)\b|\b(?:move|put)\s+(?:this\s+)?window\s+(?:to\s+the\s+)?(left|right)\b/.test(t)) {
+    const dir = /\bleft\b/.test(t) ? 'left' : 'right';
+    return { kind: 'snap', dir, say: 'Window snapped ' + dir + '.' };
+  }
+  if (/\bmaximi[sz]e\s+(?:this\s+)?window\b|\bfullscreen\b/.test(t))
+    return { kind: 'snap', dir: 'max', say: 'Window maximized.' };
+
+  if ((m = t.match(LAUNCH_RE))) {
+    const name = m[1].trim().toLowerCase();
+    const app = APP_ALIASES[name];
+    if (app) return { kind: 'launch', app, label: name, say: 'Launching ' + name + '.' };
+  }
+  if ((m = t.match(FOCUS_RE))) {
+    const name = m[1].trim().toLowerCase();
+    const app = APP_ALIASES[name];
+    if (app) return { kind: 'focus', app, label: name, say: 'Switching to ' + name + '.' };
+  }
+
+  if ((m = t.match(/^\s*(?:note|note that|make a note[:,]?|take a note[:,]?)\s*(?:that\s+)?(.{3,240})$/i)))
+    return { kind: 'note', text: m[1].trim(), say: 'Noted.' };
+  if ((m = t.match(/^\s*remind me to\s+(.{3,200}?)\s+(?:in\s+(\d{1,3})\s*(minute|min|hour|hr)s?|tomorrow(?: morning)?)\s*$/i))) {
+    const ms = m[2] ? Number(m[2]) * (/hour|hr/.test(m[3]) ? 3600000 : 60000) : 12 * 3600000;
+    return { kind: 'remind', text: 'Reminder: ' + m[1].trim(), at: Date.now() + ms, say: 'Reminder set.' };
+  }
+  if ((m = t.match(/^\s*(?:add|create)\s+(?:a\s+)?(?:task|todo|to-do)[:,]?\s*(.{3,200})$/i)))
+    return { kind: 'todo', text: m[1].trim(), say: 'Task added.' };
+
+  if (/\b(what.s running|list (?:open )?windows|open windows|running apps)\b/.test(t))
+    return { kind: 'listWindows' };
+
+  return null;
+}
+
+async function runLocalAction(act) {
+  try {
+    switch (act.kind) {
+      case 'volume': {
+        const r = await api.desktopSetVolume(act.args);
+        return r && r.error ? 'Volume control failed: ' + r.error : act.say;
+      }
+      case 'battery': {
+        const info = await api.getSystemInfo();
+        const b = info && info.battery;
+        if (!b) return 'No battery detected — you appear to be on AC power.';
+        return 'Battery at ' + Math.round(b.percent) + ' percent' + (b.charging ? ' and charging.' : '.');
+      }
+      case 'ram': {
+        const info = await api.getSystemInfo();
+        if (!info || !info.memTotal) return 'I could not read memory usage.';
+        const usedGB = (info.memUsed / 1e9).toFixed(1), totalGB = (info.memTotal / 1e9).toFixed(1);
+        return 'RAM: ' + usedGB + ' of ' + totalGB + ' GB in use (' + info.memPercent + ' percent).';
+      }
+      case 'disk': {
+        const info = await api.getSystemInfo();
+        const d = info && info.disk;
+        if (!d) return 'I could not read disk usage.';
+        return 'Disk: ' + d.freeGB + ' GB free of ' + d.totalGB + ' GB (' + d.percent + ' percent used).';
+      }
+      case 'sysinfo': {
+        const info = await api.getSystemInfo();
+        if (!info) return 'System telemetry unavailable.';
+        const b = info.battery ? ' Battery ' + Math.round(info.battery.percent) + '%' + (info.battery.charging ? ' (charging)' : '') + '.' : '';
+        const d = info.disk ? ' Disk ' + info.disk.freeGB + '/' + info.disk.totalGB + ' GB free.' : '';
+        const up = Math.floor((info.uptime || 0) / 3600);
+        return 'All systems nominal. CPU load ' + Math.round((info.cpuLoad || 0)) + '%, RAM ' + info.memPercent + '%.' + d + b + ' Uptime ' + up + 'h.';
+      }
+      case 'site': {
+        const r = await api.desktopOpenSite(act.url);
+        if (r && r.error) return 'Could not open the browser: ' + r.error;
+        return act.say;
+      }
+      case 'minimizeAll': { await api.desktopMinimizeAll(); return act.say; }
+      case 'nextDesktop': { await api.desktopNextDesktop(); return act.say; }
+      case 'snap': { const r = await api.desktopSnapWindow(act.dir); return r && r.error ? 'Snap failed: ' + r.error : act.say; }
+      case 'launch': {
+        const r = await api.desktopLaunchApp(act.app);
+        return r && r.error ? 'Could not launch ' + act.label + ': ' + r.error : act.say;
+      }
+      case 'focus': {
+        const r = await api.desktopFocusApp(act.app);
+        return r && r.error ? act.label + ' is not running — say "open ' + act.label + '" to launch it.' : act.say;
+      }
+      case 'note': {
+        await api.memoryAddNote(act.text);
+        try { renderAllMemory(); } catch (e) {}
+        return act.say + ' "' + act.text.slice(0, 60) + (act.text.length > 60 ? '…' : '') + '"';
+      }
+      case 'remind': {
+        await api.memoryAddReminder(act.text, new Date(act.at).toISOString());
+        try { renderAllMemory(); } catch (e) {}
+        return act.say;
+      }
+      case 'todo': {
+        await api.memoryAddTodo(act.text);
+        try { renderAllMemory(); } catch (e) {}
+        return act.say + ' "' + act.text.slice(0, 60) + '"';
+      }
+      case 'listWindows': {
+        const r = await api.desktopListWindows();
+        const wins = (r && r.windows) || r || [];
+        if (!Array.isArray(wins) || !wins.length) return 'No windows detected right now.';
+        return wins.slice(0, 8).map((w) => '• ' + (w.title || w.name || 'window')).join('\n');
+      }
+      default: return null;
+    }
+  } catch (e) { return 'That action failed: ' + (e && e.message ? e.message : e); }
 }
 
 function applyVoicePresetToControls(presetId) {
@@ -5383,12 +5686,7 @@ function bindEvents() {
   if (_eventsBound) return;
   _eventsBound = true;
   $$('.nav-btn').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.view)));
-  $$('.theme-btn').forEach((b) => b.addEventListener('click', () => {
-    playSfx('click');
-    profile.theme = b.dataset.theme;
-    applyTheme(profile.theme);
-    persistProfile();
-  }));
+/* theme-btn swatches removed — themes live in Settings */
 
   // HUD Themes picker in Settings (generated from the string theme table)
   renderThemeGrid();
@@ -5413,19 +5711,7 @@ function bindEvents() {
     if (tab) tab.click();
   });
 
-  // SFX button toggle
-  const sfxBtn = $('#sfxBtn');
-  if (sfxBtn) {
-    sfxBtn.addEventListener('click', () => {
-      profile.sfx = !(profile.sfx !== false);
-      sfxBtn.classList.toggle('active', profile.sfx !== false);
-      $('#sfxIcon').textContent = profile.sfx !== false ? '🔊' : '🔇';
-      $('#sfxText').textContent = profile.sfx !== false ? 'SFX ON' : 'SFX OFF';
-      if (profile.sfx !== false) playSfx('click');
-      persistProfile();
-      updateMediaLink();
-    });
-  }
+/* sfxBtn removed — toggle lives in Settings */
 
   // Clear chat log
   const clearChatBtn = $('#clearChatBtn');
@@ -5757,14 +6043,10 @@ function bindEvents() {
 
   // settings
   // download
-  const dlBtn = $('#downloadBtn');
-  if (dlBtn) {
-    // inside the packaged desktop app there is nothing to download
-    if (window.gemair) dlBtn.hidden = true;
-    else dlBtn.addEventListener('click', openDownload);
-  }
+/* downloadBtn removed — lives in Settings */
   $('#downloadClose').addEventListener('click', closeDownload);
   $('#downloadClose2').addEventListener('click', closeDownload);
+  $('#settingsDownloadBtn')?.addEventListener('click', openDownload);
   $('#downloadModal').addEventListener('click', (e) => { if (e.target === $('#downloadModal')) closeDownload(); });
   // let the OS links open in the user's real browser when running in Electron
   $$('#dlGrid .dl-card').forEach((c) => c.addEventListener('click', (e) => {
@@ -6542,15 +6824,9 @@ async function boot() {
   safe('circuitWires', startCircuitWires);
   safe('townPreview', startTownPreview);
   safe('townChrome', initTownChrome);
-  safe('mediaLink', updateMediaLink);
   safe('voiceTab', renderVoiceTab);
+  safe('onboarding', setupOnboarding);           // T4 first-run wizard + replay
   safe('notesMini', renderNotesMini);
-  safe('avatar', () => {
-    if (window.gemAvatar) {
-      window.gemAvatar.mount('#avatarCanvas');
-      applyAvatarGender(profile.avatarGender || 'female');
-    }
-  });
   safe('agentTown', startAgentTown);
   safe('radar', startRadar);
   safe('renderMemory', renderAllMemory);
@@ -6558,7 +6834,6 @@ async function boot() {
   safe('circuits', animateCircuits);
   safe('moodIndicator', () => updateMoodIndicator(currentEmotion));
   safe('loadModes', loadModes);
-  setTimeout(() => safe('panelTilt', startPanelTilt), 300);
 
   // restore recent conversation history from persistent memory
   const last = (memory.transcript || []).slice(-40);
@@ -6571,12 +6846,16 @@ async function boot() {
   // they type is captured as their name (see handleMessage). Also let them
   // pick the HUD theme so the very first impression is theirs.
   if (!knowsUser && !last.length) {
-    addMessage('ai', greeting);
-    const ask = 'Before we begin — what should I call you?';
-    addMessage('ai', ask);
-    awaitingName = true;
-    setTimeout(() => speak(greeting + ' ' + ask), 700);
-    setTimeout(() => { $('#themeModal')?.classList.add('open'); }, 1600);
+    // T4 — cinematic onboarding replaces the old chat-question flow.
+    // Fallback: if the wizard can't run, the original chat ask still works.
+    if (!safeLaunchOnboarding()) {
+      addMessage('ai', greeting);
+      const ask = 'Before we begin — what should I call you?';
+      addMessage('ai', ask);
+      awaitingName = true;
+      setTimeout(() => speak(greeting + ' ' + ask), 700);
+      setTimeout(() => { $('#themeModal')?.classList.add('open'); }, 1600);
+    }
   } else if (last.length) {
     addMessage('system-msg', `↻ Restored ${last.length} past messages from persistent memory.`);
     last.forEach((m) => { if (m.role === 'user') addMessage('user', m.content); else if (m.role === 'assistant') addMessage('ai', m.content); });
@@ -6616,7 +6895,7 @@ function runBootSequence() {
   if (REDUCED_MOTION) { overlay.classList.add('done'); return Promise.resolve(); }
   const bios = $('#bootBios'), bar = $('#bootBar'), line = $('#bootLine');
   const trace = [
-    ['GEMAIR BIOS 2.4.0  //  LOCAL INTELLIGENCE RUNTIME', 'dim'],
+    ['GEMAIR BIOS // LOCAL INTELLIGENCE RUNTIME', 'dim'],
     ['POST  CPU VECTOR MATRIX ..................... OK', 'ok'],
     ['POST  MEMORY VAULT .......................... OK', 'ok'],
     ['MOUNT VOICE / EARS .......................... READY', 'ok'],
@@ -6797,16 +7076,12 @@ function updateActiveBrain() {
   const chip = $('#activeBrainChip');
   const nameEl = $('#activeBrainName');
   const dot = $('#activeBrainDot');
-  const mlAi = $('#mlAi');
-  const mlActive = $('#mlActiveBrain');
   const linkMode = $('#linkMode');
   if (nameEl) nameEl.textContent = active;
   if (chip) {
     chip.className = 'active-brain-chip ' + (active === 'CHATGPT' ? 'connected' : active === 'GEMINI' ? 'experimental' : 'fallback');
     chip.title = 'Active brain: ' + active + ' — chain: accounts → free core → offline';
   }
-  if (mlAi) { mlAi.textContent = active; mlAi.classList.toggle('hot', active !== 'OFFLINE BRAIN'); }
-  if (mlActive) { mlActive.textContent = active; mlActive.classList.toggle('hot', active !== 'FREE CORE'); }
   if (linkMode) linkMode.textContent = '— ' + active;
   const nowBrain = $('#nowBrain');
   if (nowBrain) nowBrain.textContent = active;
@@ -7357,7 +7632,7 @@ function renderPlanAct(plan, state='preview') {
     <div class="plan-step-row ${step.status}" data-step="${step.id}">
       <span class="step-num">${step.id}</span>
       <span class="step-text">${escapeHtml(step.text)}</span>
-      <span class="step-status">${step.status==='done'?'✓':step.status==='running'?'…':step.status==='error'?'✗':''}</span>
+      <span class="step-status">${step.status==='done'?'✓':step.status==='running'?'…':step.status==='error'?'✗':step.status==='skipped'?'–':''}</span>
     </div>
   `).join('');
   const showBtn = $('#showPlanBtn');
@@ -7382,15 +7657,22 @@ async function executePlanAct(plan) {
         // call via main process executeTool indirectly via api? We need to call window.gemair? For now use api directly if available
         if (step.tool === 'launch_app') res = await api.desktopLaunchApp(step.args.name, step.args.args);
         else if (step.tool === 'open_site') res = await api.desktopOpenSite(step.args.url, step.args.browser);
-        else if (step.tool === 'control_volume') { res = { ok: true }; try { if (window.gemair) await window.gemair.desktopOpenSite ? {} : {} } catch{} }
+        else if (step.tool === 'control_volume') res = await api.desktopSetVolume(step.args);
+        else if (step.tool === 'snap_window') res = await api.desktopSnapWindow(step.args.direction);
+        else if (step.tool === 'minimize_all') res = await api.desktopMinimizeAll();
+        else if (step.tool === 'focus_app') res = await api.desktopFocusApp(step.args.name);
         else if (step.tool === 'apply_mode') res = await api.modesApply(step.args.name);
         else if (step.tool === 'list_windows') res = await api.desktopListWindows();
         else if (step.tool === 'optimize_gaming') res = await api.modesApply('GAMING');
         else res = { ok: true, note: 'step without tool' };
       } else {
-        // no tool, just simulate
-        await sleep(400);
-        res = { ok: true };
+        // No executable tool mapped — report honestly instead of faking success.
+        step.status = 'skipped';
+        renderPlanAct(plan, 'running');
+        results.push({ step: step.text, ok: false, skipped: true, result: { note: 'no tool mapped' } });
+        reasoningNote('tool', step.text + ' → no tool mapped, skipped');
+        await sleep(120);
+        continue;
       }
       ok = !(res && res.error);
     } catch (e) {
@@ -7403,8 +7685,11 @@ async function executePlanAct(plan) {
         await sleep(500);
         if (step.tool === 'launch_app') res = await api.desktopLaunchApp(step.args.name, step.args.args);
         else if (step.tool === 'open_site') res = await api.desktopOpenSite(step.args.url, step.args.browser);
+        else if (step.tool === 'control_volume') res = await api.desktopSetVolume(step.args);
         else if (step.tool === 'apply_mode') res = await api.modesApply(step.args.name);
         else if (step.tool === 'list_windows') res = await api.desktopListWindows();
+        else if (step.tool === 'optimize_gaming') res = await api.modesApply('GAMING');
+        else if (step.tool === 'snap_window') res = await api.desktopSnapWindow(step.args.direction);
         ok = !(res && res.error);
       } catch {}
     }
@@ -7416,7 +7701,8 @@ async function executePlanAct(plan) {
     await sleep(200);
   }
   renderPlanAct(plan, 'done');
-  const summary = `Mission complete — ${results.filter(r=>r.ok).length}/${results.length} steps succeeded.`;
+  const skippedCount = results.filter((r) => r.skipped).length;
+  const summary = `Mission complete — ${results.filter((r) => r.ok).length}/${results.length} steps succeeded${skippedCount ? ', ' + skippedCount + ' skipped (no tool mapped)' : ''}.`;
   toast('PLAN-ACT', summary, '✅');
   try { speak(summary); } catch {}
   // log to action log
@@ -7499,12 +7785,20 @@ function updateNowCard() {
       if (i.battery && typeof i.battery.percent==='number') nowBattery.textContent = i.battery.percent + '%' + (i.battery.charging ? ' ⚡' : '');
       else nowBattery.textContent = 'AC / none';
     }
-    const nb = $('#nowBattery'); if (nb && i.battery) nb.textContent = i.battery.percent + '%' + (i.battery.charging?' ⚡':'');
   }).catch(()=>{});
 }
 
 // ---------------------------------------------------------------------------
 // 2.4 Boot extensions
 // ---------------------------------------------------------------------------
+
+// PWA (2.5): register the service worker so the hosted web build installs
+// and runs from anywhere — phones, tablets, other laptops. Electron and the
+// fake-DOM selfcheck both skip this safely.
+try {
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', () => { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch {} });
+  }
+} catch {}
 
 document.addEventListener('DOMContentLoaded', boot);

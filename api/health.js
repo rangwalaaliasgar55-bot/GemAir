@@ -1,13 +1,34 @@
-// GemAir serverless — health check (for uptime monitors & Vercel dashboard)
+// GemAir serverless — health check (uptime monitors, Vercel dashboard, ops)
+// Reports WHICH subsystems are configured — never any secret values.
+const { guard, json, env, VERSION } = require('./_lib/http');
+
+const PROVIDERS = {
+  groq: ['GROQ_API_KEY', 'GROQ_KEY', 'VERCEL_GROQ_KEY'],
+  gemini: ['GEMINI_API_KEY', 'GEMINI_KEY', 'GOOGLE_AI_API_KEY', 'GOOGLE_GEMINI_API_KEY'],
+  openrouter: ['OPENROUTER_API_KEY', 'OPENROUTER_KEY'],
+  openai: ['OPENAI_API_KEY']
+};
+
 module.exports = (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  const keyNames = ['GROQ_API_KEY', 'OPENAI_API_KEY', 'AI_KEY', 'GROQ_KEY', 'VERCEL_GROQ_KEY'];
-  res.json({
+  if (guard(req, res)) return;
+  const has = (names) => names.some((n) => !!env(n));
+  const kvUrl = env('KV_REST_API_URL') || env('KV_URL');
+  return json(res, 200, {
     status: 'ok',
     name: 'GemAir',
-    version: '2.0.0',
-    aiConfigured: !!(keyNames.map((n) => process.env[n]).find((v) => v && String(v).trim())),
-    supabaseConfigured: !!process.env.SUPABASE_URL,
+    version: VERSION,
+    providers: {
+      groq: has(PROVIDERS.groq),
+      gemini: has(PROVIDERS.gemini),
+      openrouter: has(PROVIDERS.openrouter),
+      openai: has(PROVIDERS.openai),
+      override: !!(env('AI_BASE_URL') && PROVIDERS && Object.values(PROVIDERS).some(has))
+    },
+    anyAiConfigured: Object.values(PROVIDERS).some(has) || (!!env('AI_BASE_URL') && !!env('GROQ_API_KEY')),
+    supabaseConfigured: !!env('SUPABASE_URL'),
+    sharedLimiter: { enabled: !!(kvUrl && env('KV_REST_API_TOKEN')) },
+    freeBrainFallback: true, // always answers, even with nothing configured
+    uptimeSec: Math.round(process.uptime()),
     time: new Date().toISOString()
   });
 };

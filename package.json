@@ -1,6 +1,6 @@
 {
   "name": "gemair",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "GemAir — a free, open-source JARVIS-style desktop assistant. A sci-fi command center for your PC: voice assistant, system core, agent town and world monitor.",
   "main": "main.js",
   "author": "GemAir",
@@ -13,6 +13,7 @@
     "web": "npx serve renderer -l 8080",
     "serve": "node scripts/dev-server.js",
     "check": "node scripts/selfcheck.js && node scripts/workflow-test.js",
+    "test": "npm run check",
     "test:workflows": "node scripts/workflow-test.js",
     "dev:web": "vercel dev",
     "build:web": "echo 'GemAir web = static renderer/ + serverless api/. Deploy with: vercel'",

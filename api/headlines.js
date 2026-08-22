@@ -1,4 +1,5 @@
 // GemAir serverless — live category headlines (Google News RSS, HN fallback)
+const { guard, fetchText, VERSION } = require('./_lib/http');
 const TOPICS = { tech: 'TECHNOLOGY', world: 'WORLD', business: 'BUSINESS' };
 const FALLBACK_HEADLINES = [
   { id: 101, title: 'GemAir 2.0 — local-first agentic mission control', url: 'https://github.com/rangwalaaliasgar55-bot/GemAir', score: 342, by: 'GemAir', category: 'tech' },
@@ -34,14 +35,16 @@ function parseRss(xml, category, limit) {
 }
 
 module.exports = async (req, res) => {
+  if (guard(req, res)) return;
   const limit = Math.min(30, Math.max(1, parseInt(req.query.limit, 10) || 12));
   const category = TOPICS[req.query.category] ? req.query.category : 'tech';
   try {
     const topic = TOPICS[category];
-    const response = await fetch(`https://news.google.com/rss/headlines/section/topic/${topic}?hl=en-US&gl=US&ceid=US:en`, {
-      headers: { 'User-Agent': 'GemAir/2.0' }
+    const xml = await fetchText(`https://news.google.com/rss/headlines/section/topic/${topic}?hl=en-US&gl=US&ceid=US:en`, {
+      headers: { 'User-Agent': 'GemAir/' + VERSION },
+      timeoutMs: 9000
     });
-    const items = parseRss(await response.text(), category, limit);
+    const items = parseRss(xml, category, limit);
     if (items.length) return res.json(items);
   } catch (error) { /* use local fallback below */ }
   // U2: flag the offline fallback so the UI can badge it SIMULATED instead of

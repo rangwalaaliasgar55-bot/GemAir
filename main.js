@@ -1,5 +1,5 @@
-// GemAir 2.4 — main process
-// Three leaps: (1) true account connect like Stonic (no API keys ever), (2) opencode-style agentic desktop management, (3) user-defined MODES
+// GemAir 2.5 — main process
+// Leaps: account connect without API keys · agentic desktop management · MODES · guarded IPC surface
 const { app, BrowserWindow, ipcMain, shell, dialog, Notification, desktopCapturer, clipboard, Tray, Menu, nativeImage, screen, safeStorage, session } = require('electron');
 const path = require('path');
 const os = require('os');
@@ -488,34 +488,92 @@ const WEATHER_CODES = {
   80: 'Showers', 81: 'Rain showers', 82: 'Heavy showers', 95: 'Thunderstorm', 96: 'Storm + hail', 99: 'Storm + hail'
 };
 async function getWeather(city) {
-  const geo = await fetch('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(city) + '&count=1&language=en&format=json').then(r => r.json());
+  const geo = await fetchDeadline('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(city) + '&count=1&language=en&format=json').then(r => r.json());
   const loc = geo.results && geo.results[0];
   if (!loc) return { error: 'City not found: ' + city };
-  const w = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current_weather=true`).then(r => r.json());
+  const w = await fetchDeadline(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current_weather=true`).then(r => r.json());
   const cw = w.current_weather || {};
   return { city: loc.name + (loc.country ? ', ' + loc.country : ''), temperature: cw.temperature, windspeed: cw.windspeed, condition: WEATHER_CODES[cw.weathercode] || 'Unknown', units: '°C / km/h' };
 }
+// Fetch with a hard deadline — a hung endpoint must never pin a tool call.
+async function fetchDeadline(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+function stripTags(s) {
+  return String(s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/\s+/g, ' ').trim();
+}
+function unwrapDdg(href) {
+  const m = String(href || '').match(/[?&]uddg=([^&]+)/);
+  if (!m) return null;
+  let url;
+  try { url = decodeURIComponent(m[1]); } catch { return null; }
+  if (!/^https?:\/\//i.test(url)) return null;
+  if (/duckduckgo\.com\/y\.js/i.test(url)) return null; // sponsored result
+  return url;
+}
+// 2.5 FIX: web_search used DuckDuckGo's Instant-Answers API, which returns
+// EMPTY results for most queries (it is not a general search engine). Primary
+// source is now the DDG HTML results page (free, keyless), ads filtered,
+// with Wikipedia and Instant-Answers fallbacks.
 async function webSearch(query) {
-  const url = 'https://api.duckduckgo.com/?q=' + encodeURIComponent(query) + '&format=json&no_html=1&skip_disambig=1';
-  const d = await fetch(url).then(r => r.json());
-  const results = [];
-  const flatten = (topics) => {
-    for (const t of topics || []) {
-      if (t.Topics) flatten(t.Topics);
-      else if (t.Text) results.push({ title: String(t.Text).split(' - ')[0], url: t.FirstURL });
+  const q = String(query || '').slice(0, 300);
+  let results = [];
+  try {
+    const res = await fetchDeadline('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q), {
+      headers: { 'User-Agent': BROWSER_UA, 'Accept-Language': 'en-US,en;q=0.9' }
+    }, 9000);
+    if (res.ok) {
+      const html = await res.text();
+      const anchorRe = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+      const snippetRe = /<a[^>]*class="result__snippet"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+      const snippets = {};
+      let m;
+      while ((m = snippetRe.exec(html))) {
+        const u = unwrapDdg(m[1]);
+        if (u && !snippets[u]) snippets[u] = stripTags(m[2]).slice(0, 280);
+      }
+      while ((m = anchorRe.exec(html)) && results.length < 8) {
+        const u = unwrapDdg(m[1]);
+        const title = stripTags(m[2]);
+        if (u && title) results.push({ title, url: u, snippet: snippets[u] || '' });
+      }
     }
-  };
-  flatten(d.RelatedTopics);
-  let answer = d.AbstractText || d.Answer || null;
-  let source = d.AbstractSource || null;
-  let answerUrl = d.AbstractURL || null;
-  if (!answer) {
+  } catch { /* fall through to the free keyless fallbacks */ }
+
+  let answer = null, source = null, answerUrl = null;
+  if (!results.length || !results[0].snippet) {
     try {
-      const w = await fetch('https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=1&search=' + encodeURIComponent(query)).then(r => r.json());
-      if (Array.isArray(w) && w[2] && w[2][0]) { answer = w[2][0]; source = 'Wikipedia'; answerUrl = w[3][0]; }
+      const w = await fetchDeadline('https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=1&search=' + encodeURIComponent(q)).then(r => r.json());
+      if (Array.isArray(w) && w[2] && w[2][0]) {
+        answer = w[2][0]; source = 'Wikipedia'; answerUrl = w[3][0];
+        if (!results.length) results = [{ title: w[1] && w[1][0] || w[2][0], url: w[3][0], snippet: w[2][0] }];
+      }
     } catch {}
   }
-  return { answer, source, url: answerUrl, results: results.slice(0, 5) };
+  if (!results.length) {
+    try {
+      const d = await fetchDeadline('https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_html=1&skip_disambig=1').then(r => r.json());
+      const flat = [];
+      const walk = (topics) => { for (const t of topics || []) { if (t.Topics) walk(t.Topics); else if (t.Text && t.FirstURL) flat.push({ title: String(t.Text).split(' - ')[0], url: t.FirstURL, snippet: '' }); } };
+      walk(d.RelatedTopics);
+      if (d.AbstractText || d.Answer) { answer = answer || d.AbstractText || d.Answer; source = source || d.AbstractSource || 'DuckDuckGo'; answerUrl = answerUrl || d.AbstractURL || null; }
+      if (flat.length) results = flat.slice(0, 6);
+    } catch {}
+  }
+  if (results.length && !answer && results[0].snippet) {
+    answer = results[0].title + ' — ' + results[0].snippet;
+    try { source = new URL(results[0].url).hostname.replace(/^www\./, ''); } catch { source = null; }
+    answerUrl = results[0].url;
+  }
+  return { answer, source, url: answerUrl, results: results.slice(0, 8), searched: true };
 }
 function stripHtml(html) {
   return String(html || '').replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
@@ -523,14 +581,14 @@ function stripHtml(html) {
 async function fetchWebpage(url) {
   let u = String(url).trim();
   if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-  const res = await fetch(u, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GemAir/2.0)' } });
+  const res = await fetchDeadline(u, { redirect: 'follow', headers: { 'User-Agent': BROWSER_UA } }, 12000);
   if (!res.ok) return { error: 'HTTP ' + res.status };
   const html = await res.text();
   const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
   return { title: title.trim(), url: res.url, excerpt: stripHtml(html).slice(0, 4000) };
 }
 async function searchWikipedia(query) {
-  const res = await fetch('https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=6&search=' + encodeURIComponent(query)).then(r => r.json());
+  const res = await fetchDeadline('https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=6&search=' + encodeURIComponent(query)).then(r => r.json());
   return { titles: res[1] || [], descriptions: res[2] || [], urls: res[3] || [] };
 }
 function searchYouTube(query) {
@@ -2600,3 +2658,6 @@ ipcMain.handle('desktop:snapWindow', (_e, dir) => windowTools.snapWindow(dir));
 ipcMain.handle('desktop:minimizeAll', () => windowTools.minimizeAll());
 ipcMain.handle('desktop:nextDesktop', () => windowTools.nextVirtualDesktop());
 ipcMain.handle('desktop:openSite', (_e, url, browser) => windowTools.openSite(url, browser));
+// Plan-act volume steps route through the SAME control_volume tool so HITL
+// policy and the action log apply exactly as they do for AI-initiated calls.
+ipcMain.handle('desktop:setVolume', (_e, args) => executeTool('control_volume', args || {}));

@@ -19,6 +19,8 @@
 //
 // Optional AI_BASE_URL/AI_MODEL override any single provider (backward compat).
 
+const { originAllowed, applyCors, requestOrigin, env } = require('./_lib/http');
+
 const KEY_ENV_NAMES = ['GROQ_API_KEY', 'OPENAI_API_KEY', 'AI_KEY', 'GROQ_KEY', 'VERCEL_GROQ_KEY'];
 
 // Free provider fallback chain. Each entry is an OpenAI-compatible endpoint;
@@ -51,10 +53,6 @@ const FREE_PROVIDERS = [
     models: ['gpt-4o-mini']
   }
 ];
-
-function env(key) {
-  try { return String(process.env[key] || '').trim(); } catch { return ''; }
-}
 
 // Collect providers that have at least one key available. If the user set
 // AI_BASE_URL (a specific provider like a local Ollama or a custom gateway),
@@ -112,10 +110,6 @@ function fairUseLeft(identity) {
   const count = _usage.get(key) || 0;
   const left = Math.max(0, FAIR_USE_DAILY - count);
   return { day, key, left, count };
-}
-
-function fairUseLeftAll(identities) {
-  return Math.min(...identities.map((id) => fairUseLeft(id).left));
 }
 
 function consumeFairUse(identity) {
@@ -200,34 +194,6 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_
   }
 }
 
-/**
- * Hosts allowed to call the free core. Defaults cover the app's own origins;
- * ALLOWED_ORIGINS (comma-separated hostnames) extends it. Requests with NO
- * Origin/Referer are allowed — that is the desktop Electron app and curl-style
- * health checks, which we do not want to break — but they are throttled the
- * same as everyone else.
- */
-function allowedHosts() {
-  const extra = env('ALLOWED_ORIGINS').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-  return [
-    'gemair.vercel.app',
-    'localhost', '127.0.0.1', '0.0.0.0',
-    ...extra
-  ];
-}
-
-function originAllowed(req) {
-  const raw = (req.headers && (req.headers.origin || req.headers.referer)) || '';
-  if (!raw) return { ok: true, origin: '' };           // native app / no browser origin
-  let host = '';
-  try { host = new URL(raw).hostname.toLowerCase(); } catch { return { ok: false, origin: raw }; }
-  const list = allowedHosts();
-  const ok = list.some((h) => host === h || host.endsWith('.' + h)) ||
-    /\.vercel\.app$/.test(host) ||                     // preview deployments
-    host.endsWith('.e2b.app');                         // sandboxed dev preview
-  return { ok, origin: host };
-}
-
 /** Sliding-window per-IP throttle (best effort, per serverless instance). */
 const _throttle = new Map(); // ip -> number[] (recent request timestamps)
 const THROTTLE_WINDOW_MS = 60000;
@@ -241,27 +207,91 @@ function clientIp(req) {
   return (req.socket && req.socket.remoteAddress) || 'unknown';
 }
 
-function throttleCheck(ip) {
+/** Per-IP throttle: shared fixed-window via KV when enabled, else in-memory sliding window. */
+async function throttleCheck(ip) {
   const now = Date.now();
-  const hits = (_throttle.get(ip) || []).filter((t) => now - t < THROTTLE_WINDOW_MS);
-  if (hits.length >= THROTTLE_MAX) {
-    return { ok: false, retryAfter: Math.ceil((THROTTLE_WINDOW_MS - (now - hits[0])) / 1000) };
+  const memCheck = () => {
+    const hits = (_throttle.get(ip) || []).filter((t) => now - t < THROTTLE_WINDOW_MS);
+    if (hits.length >= THROTTLE_MAX) {
+      return { ok: false, retryAfter: Math.ceil((THROTTLE_WINDOW_MS - (now - hits[0])) / 1000) };
+    }
+    hits.push(now);
+    _throttle.set(ip, hits);
+    if (_throttle.size > 5000) {
+      for (const [k, v] of _throttle) if (!v.length || now - v[v.length - 1] > THROTTLE_WINDOW_MS) _throttle.delete(k);
+    }
+    return { ok: true };
+  };
+  if (!kvEnabled) return memCheck();
+  try {
+    const slot = Math.floor(now / THROTTLE_WINDOW_MS); // 1-minute buckets
+    const key = 'gemair:th:' + slot + ':' + ip;
+    const out = await kvPipeline([['INCR', key], ['EXPIRE', key, '120', 'NX']]);
+    const first = Array.isArray(out) ? out[0] : out;
+    const count = parseInt((first && first.result) || 0, 10) || 0;
+    if (count > THROTTLE_MAX) {
+      return { ok: false, retryAfter: Math.max(1, Math.ceil((THROTTLE_WINDOW_MS - (now % THROTTLE_WINDOW_MS)) / 1000)) };
+    }
+    return { ok: true };
+  } catch {
+    return memCheck(); // KV unreachable → degrade to per-instance counting
   }
-  hits.push(now);
-  _throttle.set(ip, hits);
-  if (_throttle.size > 5000) {
-    for (const [k, v] of _throttle) if (!v.length || now - v[v.length - 1] > THROTTLE_WINDOW_MS) _throttle.delete(k);
-  }
-  return { ok: true };
 }
 
-function corsHeaders() {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Cache-Control': 'no-store'
-  };
+// ---------------------------------------------------------------------------
+// SHARED COUNTERS (2.5) — fair-use and throttle across ALL serverless instances.
+//
+// The in-memory Maps below are per-instance: every cold start resets them, so
+// at real scale one user could get a fresh budget from each instance. When
+// Vercel KV credentials are configured (KV_REST_API_URL + KV_REST_API_TOKEN,
+// an Upstash-compatible REST endpoint), counters move to INCR/GET commands
+// over plain fetch — no SDK, ~one extra round-trip per message. Any KV failure
+// silently degrades to the in-memory counters, never to an error for the user.
+// ---------------------------------------------------------------------------
+const KV_URL = env('KV_REST_API_URL') || env('KV_URL');
+const KV_TOKEN = env('KV_REST_API_TOKEN');
+const kvEnabled = !!(KV_URL && KV_TOKEN);
+
+async function kvPipeline(cmds) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const r = await fetch(KV_URL.replace(/\/+$/, ''), {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + KV_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify(cmds.length === 1 ? cmds[0] : cmds),
+      signal: controller.signal
+    });
+    if (!r.ok) throw new Error('KV_HTTP_' + r.status);
+    return await r.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Current daily counts for each identity (shared when KV is on). */
+async function fairUseCounts(identities) {
+  if (!kvEnabled) return identities.map((id) => fairUseLeft(id).count);
+  const day = new Date().toISOString().slice(0, 10);
+  try {
+    const out = await kvPipeline(identities.map((id) => ['GET', day + ':' + id]));
+    const arr = Array.isArray(out) ? out : [out];
+    return arr.map((p) => parseInt((p && p.result) || 0, 10) || 0);
+  } catch {
+    return identities.map((id) => fairUseLeft(id).count); // degrade, don't fail
+  }
+}
+
+/** Charge today's message against every identity bucket. */
+async function fairUseBump(identities) {
+  if (!kvEnabled) { for (const id of identities) consumeFairUse(id); return; }
+  const day = new Date().toISOString().slice(0, 10);
+  const cmds = [];
+  for (const id of identities) {
+    cmds.push(['INCR', day + ':' + id]);
+    cmds.push(['EXPIRE', day + ':' + id, '172800', 'NX']); // 48h TTL self-cleanup
+  }
+  try { await kvPipeline(cmds); } catch { /* best effort */ }
 }
 
 // Single, guarded chat/completions call to one provider+model. Returns
@@ -317,14 +347,16 @@ async function chatWithFallback(providers, messages) {
 }
 
 // SSE passthrough: stream deltas from the first available provider.
-async function streamPassthrough(req, res, providers, messages, identity) {
+async function streamPassthrough(req, res, providers, messages) {
   const temperature = 0.6, maxTokens = 1200;
-  res.writeHead(200, {
+  const sseHeaders = {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'Access-Control-Allow-Origin': '*'
-  });
+    Connection: 'keep-alive'
+  };
+  const callerOrigin = requestOrigin(req);
+  if (callerOrigin && originAllowed({ headers: { origin: callerOrigin } }).ok) sseHeaders['Access-Control-Allow-Origin'] = callerOrigin;
+  res.writeHead(200, sseHeaders);
   const queue = providers.slice();
   const send = (obj) => res.write('data: ' + JSON.stringify(obj) + '\n\n');
   let attempts = 0;
@@ -376,13 +408,12 @@ async function streamPassthrough(req, res, providers, messages, identity) {
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    applyCors(req, res);
     return res.status(204).end();
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   res.setHeader('Cache-Control', 'no-store');
+  applyCors(req, res); // precise CORS on real responses too (vercel.json no longer sends a wildcard)
 
   // R10a: only GemAir's own origins may spend the shared free provider keys.
   const origin = originAllowed(req);
@@ -392,7 +423,7 @@ module.exports = async (req, res) => {
 
   // R10b: per-IP throttle so one client cannot drain the free tier.
   const ip = clientIp(req);
-  const gate = throttleCheck(ip);
+  const gate = await throttleCheck(ip);
   if (!gate.ok) {
     res.setHeader('Retry-After', String(gate.retryAfter));
     return res.status(429).json({
@@ -412,25 +443,28 @@ module.exports = async (req, res) => {
   const prompt = lastUser && lastUser.content ? String(lastUser.content).trim() : '';
 
   // Per-identity fair-use (Section 0): enforce a daily cap; when hit, still
-  // answer helpfully rather than erroring.
+  // answer helpfully rather than erroring. Counters are shared across
+  // serverless instances whenever Vercel KV credentials are configured.
   const identities = clientIdentities(req, body);
-  const identity = identities[0];
-  const left = fairUseLeftAll(identities);
+  const counts = await fairUseCounts(identities);
+  const left = Math.min(...counts.map((c) => Math.max(0, FAIR_USE_DAILY - c)));
   if (left <= 0) {
     const friendly = `You've reached the free core's daily message limit for today. It resets at midnight UTC — or you can add your own key under Settings → Power user to keep going with unlimited replies. Thanks for using GemAir!`;
     return res.json({ ok: true, reply: friendly, free: true, limited: true });
   }
-  for (const id of identities) consumeFairUse(id);
+  await fairUseBump(identities);
 
   // Streaming passthrough (SSE).
   if (body.stream === true) {
     const providers = availableProviders();
-    if (providers.length) return streamPassthrough(req, res, providers, messages, identity);
-    res.writeHead(200, {
+    if (providers.length) return streamPassthrough(req, res, providers, messages);
+    const fbHeaders = {
       'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      'Access-Control-Allow-Origin': '*'
-    });
+      'Cache-Control': 'no-cache, no-transform'
+    };
+    const fbOrigin = requestOrigin(req);
+    if (fbOrigin && originAllowed({ headers: { origin: fbOrigin } }).ok) fbHeaders['Access-Control-Allow-Origin'] = fbOrigin;
+    res.writeHead(200, fbHeaders);
     res.write('data: ' + JSON.stringify({ delta: freeBrain(prompt), provider: 'free' }) + '\n\n');
     res.write('data: ' + JSON.stringify({ done: true }) + '\n\n');
     return res.end();

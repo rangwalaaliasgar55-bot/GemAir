@@ -63,20 +63,46 @@ ok('JSON files parse');
 try {
   const pkg = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
-  if (pkg.version !== '2.4.0') fail(`package version must be 2.4.0 (found ${pkg.version})`);
+  if (pkg.version !== '2.5.0') fail(`package version must be 2.5.0 (found ${pkg.version})`);
   if (lock.version !== pkg.version || (lock.packages && lock.packages[''] && lock.packages[''].version !== pkg.version)) fail('package-lock version does not match package.json');
   for (const asset of ['build/icon.png', 'build/icon.ico', 'build/icons/16x16.png', 'build/icons/256x256.png', 'build/icons/512x512.png', 'build/icons/1024x1024.png']) {
     const full = path.join(ROOT, asset);
     if (!fs.existsSync(full) || fs.statSync(full).size < 100) fail(`missing/empty release icon: ${asset}`);
   }
-  if (!fs.existsSync(path.join(ROOT, 'CHANGELOG.md')) || !read('CHANGELOG.md').includes('## [2.4.0]')) fail('CHANGELOG.md must document 2.4.0');
-  else ok('2.4.0 release metadata and platform icons present');
+  if (!fs.existsSync(path.join(ROOT, 'CHANGELOG.md')) || !read('CHANGELOG.md').includes('## [2.5.0]')) fail('CHANGELOG.md must document 2.5.0');
+  else ok('2.5.0 release metadata and platform icons present');
   // 2.4 new lib files must exist
   for (const f of ['lib/connections.js', 'lib/modes.js', 'lib/window-tools.js', 'CONNECTIONS.md']) {
     if (!fs.existsSync(path.join(ROOT, f))) fail(`missing 2.4 file: ${f}`);
   }
   ok('2.4 lib + CONNECTIONS.md present');
 } catch (e) { fail('release metadata check failed: ' + e.message); }
+
+// ---------------------------------------------------------------------------
+// 2.5 upgrade guards — version single-sourcing, CORS tightening, PWA
+// ---------------------------------------------------------------------------
+try {
+  const httpLib = read('api/_lib/http.js');
+  const vMatch = httpLib.match(/const VERSION = '([0-9.]+)'/);
+  if (!vMatch || vMatch[1] !== JSON.parse(read('package.json')).version) {
+    fail(`api/_lib/http.js VERSION (${vMatch ? vMatch[1] : 'missing'}) must equal package.json version`);
+  } else ok('API layer VERSION matches package.json (single source of truth)');
+} catch (e) { fail('api/_lib/http.js missing or unreadable: ' + e.message); }
+
+try {
+  const vercel = JSON.parse(read('vercel.json'));
+  const wildcard = (vercel.headers || []).some((h) => (h.headers || []).some((x) => x.key === 'Access-Control-Allow-Origin' && x.value === '*'));
+  if (wildcard) fail('vercel.json re-introduced a wildcard Access-Control-Allow-Origin — api handlers set precise CORS themselves');
+  else ok('no wildcard CORS in vercel.json (precise per-handler CORS enforced)');
+} catch (e) { fail('vercel.json invalid: ' + e.message); }
+
+try {
+  for (const f of ['renderer/sw.js', 'renderer/manifest.webmanifest', 'renderer/assets/gemair-512.png']) {
+    if (!fs.existsSync(path.join(ROOT, f))) fail(`missing PWA asset: ${f}`);
+  }
+  if (!read('renderer/index.html').includes('rel="manifest"')) fail('index.html no longer links the web manifest (PWA install broken)');
+  else ok('PWA shell present (manifest linked, sw.js + icons shipped)');
+} catch (e) { fail('PWA check failed: ' + e.message); }
 
 // ---------------------------------------------------------------------------
 // 3. Read-only DOM properties must never be assigned
@@ -173,7 +199,7 @@ const REQUIRED_IDS = {
   'T5 ambient controls': ['setAmbientTrack', 'setAmbientVolume', 'ambientVolVal'],
   'C1 Connection Hub': ['connectionHubCard', 'connectChatGPTBtn', 'chatgptStatusDot', 'chatgptEmail', 'chatgptPlanBadge', 'chatgptUsage', 'disconnectChatGPTBtn', 'captureChatGPTBtn'],
   'D Gemini Connect': ['connectGeminiBtn', 'geminiStatusDot', 'geminiEmail', 'geminiPlanBadge', 'geminiUsage', 'disconnectGeminiBtn', 'captureGeminiBtn', 'openAIStudioBtn'],
-  'H Hub UI': ['freeCoreDot', 'brainPriorityPicker', 'clearAllConnectionsBtn', 'activeBrainChip', 'activeBrainName', 'activeBrainDot', 'mlActiveBrain', 'connectionsStatusRow'],
+  'H Hub UI': ['freeCoreDot', 'brainPriorityPicker', 'clearAllConnectionsBtn', 'activeBrainChip', 'activeBrainName', 'activeBrainDot', 'connectionsStatusRow'],
   'A Window Tools': ['etabDesktop', 'desktopWindowsList', 'focusedApp', 'focusedTitle', 'refreshDesktopBtn'],
   'A1 Plan-Act': ['planActPanel', 'planActBody', 'planActState', 'showPlanBtn', 'runPlanBtn'],
   'M Modes': ['nowCard', 'nowMode', 'nowBrain', 'nowReminder', 'nowBattery', 'currentModeChip', 'topbarModeChips', 'modesList', 'modeDesignerCard', 'modeNameInput', 'modeAppsInput', 'modeSitesList', 'modeVolumeInput', 'modeThemeInput', 'saveModeBtn', 'applyModeBtn'],
@@ -414,7 +440,7 @@ for (const f of ['renderer/store.js', 'renderer/avatar.js', 'renderer/app.js']) 
  */
 function printManualMatrix() {
   const rows = [
-    ['1', 'Boot', 'Launch GemAir. Boot sequence completes; SYS chip reads SYSTEMS NOMINAL (or names degraded). Version tag v2.4.0'],
+    ['1', 'Boot', 'Launch GemAir. Boot sequence completes; SYS chip reads SYSTEMS NOMINAL (or names degraded). Version tag v2.5.0'],
     ['2', 'Free reply', 'With NO API key, send "hello". Real reply streams in. TEST CONNECTION reports free core'],
     ['3', 'Bad key honest', 'Paste bogus key + Groq preset, TEST CONNECTION must FAIL visibly, says free core NOT used'],
     ['4', 'EDGE voice', 'Voice engine = Edge neural. Send message. Gem speaks with Microsoft neural voice'],

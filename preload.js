@@ -1,4 +1,4 @@
-// GemAir 2.4 — preload (contextBridge)
+// GemAir 2.5 — preload (contextBridge)
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('gemair', {
@@ -115,6 +115,7 @@ contextBridge.exposeInMainWorld('gemair', {
   desktopMinimizeAll: () => ipcRenderer.invoke('desktop:minimizeAll'),
   desktopNextDesktop: () => ipcRenderer.invoke('desktop:nextDesktop'),
   desktopOpenSite: (url, browser) => ipcRenderer.invoke('desktop:openSite', url, browser),
+  desktopSetVolume: (args) => ipcRenderer.invoke('desktop:setVolume', args),
 
   // events (main -> renderer)
   onReminder: (cb) => ipcRenderer.on('reminder:due', (_e, reminder) => cb(reminder)),

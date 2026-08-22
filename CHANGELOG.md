@@ -2,6 +2,81 @@
 
 All notable changes to GemAir are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] — 2026-08-22
+
+Round 6 v2.5 "ANYWHERE & HARDENED" — the free core survives real scale, the web build installs anywhere as a PWA, and every API endpoint shares one guarded, timeouted HTTP layer.
+
+### Changed — Topbar cleanup
+
+- **Topbar slimmed**: SFX toggle, theme swatches + name tag, and Get App button removed from header — all live in Settings where they belong (APPEARANCE section now has a DOWNLOAD GEMAIR button). Header is now: brand → clock → mode chips → brain chip → settings gear. Compact 8px padding, smaller brand orb (32px), smaller heading.
+- **Settings gear icon fixed**: replaced the corrupted SVG path (broken arc coordinates `4.6 15`) with a clean gear character that renders correctly.
+- **Clock modernized**: thinner mono weight (500), tighter letter-spacing (3px), slightly smaller (17px) for a sleeker digital look.
+- **Dead code cleaned**: removed all JS handlers for the removed elements (theme-btn swatches, sfxBtn toggle, downloadBtn open) and matching CSS — zero dangling references.
+
+### Changed — Interface polish pass
+
+- **Command-centre tightening**: panels are now 14×16px padding with 12px radius and subtler backdrop blur; grid gap dropped to 12px; left column narrowed to 278px, right column widened to 340–420px for tool I/O; topbar compact (10px padding, smaller clock, static accent line); headings tightened to 11.5px/2px spacing; scrollbars styled; footer dimmed to 55% opacity; news items, briefing chips, satellite tabs, expert tabs, chat input, toasts, town preview — all tighter.
+- **Orb panel hero treatment**: subtle inner accent glow, refined shadow, tighter padding.
+- **Mobile responsive**: tighter topbar and panel padding at ≤600px.
+
+### Changed — Stonic-exact interface cleanup
+
+- **3D panel tilt removed** — panels no longer bend/perspective-shift on hover; the HUD is rock-steady like the reference.
+- **Avatar removed** — the center column is now the pure Stonic composition: MEMORY/SKILLS/SOUL/SETTING circuits wired into the particle sphere with START AI (the spoken-voice gender switch stays).
+- **MEDIA LINK panel removed** from the left column — the dashboard is now NOW card + SAT-LINK feed + numbered headlines + briefing, matching Stonic's tighter composition.
+- **"1 degraded component" toast suppressed** in web mode — a single desktop-only subsystem failing to initialise is no longer alarming; the toast only fires in Electron or when ≥2 components fail.
+- **First-run onboarding trimmed to welcome → name → voice** — theme selection lives in Settings → HUD THEMES where it belongs.
+- **DEMO VIDEO / FEEDBACK topbar pills removed.**
+- **Fixed a silent onboarding breaker**: four multi-element selectors had been mangled to single-element lookups, so the wizard's CONTINUE/voice buttons never wired at runtime. All repaired.
+
+### Added — Local voice commands (Stonic pitch, fully free)
+
+- **Natural desktop control with zero AI keys**: typed or spoken phrases now execute REAL actions locally through the existing desktop bridge — "open premiere", "switch to spotify", "volume to 40", "mute", "battery", "ram", "disk space", "system status", "snap window left", "close all windows", "next desktop", "search AI news on youtube", plus hands-free notes ("note that…"), reminders ("remind me to… in 20 minutes") and tasks ("add task …"). Precision-first matching (whitelisted app names + clear patterns) so normal conversation is never hijacked; anything unmatched still flows to the AI brains where all 79 tools remain available behind HITL confirms.
+- **Stonic-style topbar**: ▶ DEMO VIDEO and 💬 FEEDBACK pills beside the logo; headlines are now numbered (01, 02, 03…) exactly like the reference interface; chat input placeholder matches the "Type instruction or / command" convention.
+
+### Added — Stonic-parity interface upgrades
+
+- **Cinematic first-run onboarding**: a four-step wizard (welcome → your name → live HUD theme picker → voice choice with instant sample) over the ambient score, exactly matching Stonic v1.0.55's redesigned onboarding. Theme cards are generated from `themes.js` so new themes appear automatically; the ambient score plays only during the wizard and your saved preference is restored afterwards. Re-runnable anytime via Settings → IDENTITY → **REPLAY FIRST-RUN INTRO**, or `gemair.onboardReplay()` in the console. The classic chat-based ask remains as an automatic fallback if the wizard cannot run.
+- **Dynamic HUD navigation** (Stonic v1.0.33 parity): Gem can now drive the interface itself — "open Agent Town", "show World Monitor", "go to System Core", "open settings", "open themes" work typed or spoken, in every runtime (Electron, web, offline brain).
+- **Honest Plan-Act reporting**: mission steps without a mapped tool are now marked **skipped** (strikethrough, excluded from success count) instead of silently faking success.
+- Boot BIOS line no longer hardcodes a version number (was still reading 2.4.0).
+
+### Added — Remote access from anywhere
+
+- **PWA install**: `renderer/manifest.webmanifest` + `renderer/sw.js` service worker + guarded registration. The hosted web build now installs on phones/tablets/desktops (standalone window, maskable icon, offline app shell). Navigations are network-first with a cached fallback; static assets use stale-while-revalidate; `/api/*` is network-only with a graceful offline JSON so the UI degrades to the offline brain instead of throwing.
+- **LAN access**: `npm run serve` now binds `0.0.0.0`, prints phone/tablet URLs from your LAN interfaces, and serves the correct `.webmanifest` MIME type.
+- **REMOTE.md**: the complete guide — hosted web (anywhere), LAN, and Tailscale/Cloudflare Tunnel options for reaching a home desktop install, plus how Supabase sync keeps memory following you across devices.
+
+### Added — Scale-proof free tier
+
+- **Shared fair-use & throttle counters**: when `KV_REST_API_URL` + `KV_REST_API_TOKEN` (Vercel KV / any Upstash-compatible REST endpoint) are configured, daily fair-use and per-minute throttling count across ALL serverless instances via plain `fetch` — no SDK, ~one round-trip per message. Any KV failure silently degrades to per-instance counting. The old per-instance Maps remain the zero-config default.
+- **Health endpoint upgraded** (`api/health.js`): per-provider key booleans (groq/gemini/openrouter/openai/override), Supabase status, shared-limiter status, uptime — never any secret values.
+
+### Hardened — One guarded API layer
+
+- New **`api/_lib/http.js`**: single-source origin allow-list, precise CORS (echoes exactly the allowed caller origin), OPTIONS handling, JSON helpers, and `AbortController` deadlines for every upstream fetch.
+- All endpoints (`weather`, `search`, `headlines`, `crypto`, `currency`, `dictionary`, `translate`, `config`, `health`) now run through the shared guard; previously only the chat proxy checked origins and several upstream calls had no timeout at all.
+- **Wildcard CORS removed** from `vercel.json` — it let any website burn the shared free provider keys from a browser. A selfcheck guard now fails the build if it ever comes back.
+- Input clamping/sanitization on query params (`coin`, `word`, `text`, currency codes); unknown crypto coins now answer honestly instead of returning a stale fake price; simulated fallbacks stay clearly badged.
+- Version is single-sourced in `api/_lib/http.js` and asserted equal to `package.json` by selfcheck.
+
+### Fixed
+
+- **WEB SEARCH WAS BROKEN — now fixed and live-verified.** It relied on DuckDuckGo's *Instant Answers* API, which returns EMPTY results for most queries (it is not a general search engine). Both runtimes now scrape **DDG HTML organic results** (free, keyless, ads filtered via the `y.js` redirect check) with a Wikipedia → Instant-Answers fallback chain; the web endpoint adds a Hacker News Algolia supplement for sparse queries and reports which sources were used. Verified live: "best laptops 2026" returns 8 real results (PCMag/CNET/Tom's Hardware).
+- Every network fetch in the desktop tool layer (`web_search`, `get_weather`, `fetch_webpage`, `search_wikipedia`) now carries an AbortController deadline — a hung endpoint can no longer pin a tool call.
+- **Plan-Act volume steps were a hardcoded fake success** (`control_volume` did nothing but report ok). Steps now route through the real tool over IPC (`desktop:setVolume` → `executeTool('control_volume')`), so HITL policy and the action log apply exactly as for AI-initiated calls. Preload exposes `desktopSetVolume`.
+- Plan-Act retry path now retries volume/gaming/snap steps too (it silently skipped them before).
+- Removed the dead line and duplicated battery write in `updateNowCard()`.
+- Documentation drift: the tool registry is exactly **79 tools**; README/GUIDE/AI-FRAMEWORK now all say 79.
+
+### Improved — Interface
+
+- **Code blocks gained a COPY button** next to SAVE TO FILE (clipboard write with ✓ feedback and graceful fallback when clipboard is blocked).
+- The SAVE/COPY buttons are actually styled for the first time (they shipped as unstyled default browser buttons) — themed borders, hover glow in the active accent, press feedback.
+- Accessibility: visible `:focus-visible` keyboard focus rings themed to the active HUD accent.
+- Themed slim scrollbars across the app.
+- Smoother message entrance animation that respects `prefers-reduced-motion`.
+
 ## [2.4.0] — 2026-08-21
 
 Round 5 v2.4 "CONNECTED DESKTOP AGENT" — three leaps at once: true account connect like Stonic (no API keys ever), opencode-style agentic desktop management, user-defined MODES that arrange the whole desktop from one sentence.
