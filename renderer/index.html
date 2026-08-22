@@ -6,7 +6,14 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://vercel.live https://*.vercel.live; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://vercel.live; img-src 'self' data: blob: https:; font-src 'self' data: https: https://fonts.gstatic.com; connect-src 'self' https: wss:; media-src 'self' blob: data: https:; frame-src 'self' https://vercel.live; worker-src 'self' blob:" />
   <title>GemAir — Mission Control AI Center</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="apple-touch-icon" href="favicon.svg" />
+  <link rel="apple-touch-icon" href="assets/gemair-512.png" />
+  <!-- PWA: install GemAir from any browser → works from anywhere -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#04060c" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="GemAir" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="reduced-motion.css" />
 </head>
@@ -36,7 +43,7 @@
         <div class="brand-orb"><span></span></div>
         <div class="brand-text">
           <h1>GEM<span class="dim">AIR</span></h1>
-          <p>MISSION CONTROL <span class="ver" id="verTag">v2.4.0</span></p>
+          <p>MISSION CONTROL <span class="ver" id="verTag">v2.5.0</span></p>
         </div>
       </div>
 
@@ -62,25 +69,7 @@
           <span class="dot" id="sysDot"></span>
           <span id="sysChipText" data-i18n="status.nominal">SYSTEMS NOMINAL</span>
         </div>
-        <button class="sfx-btn active" id="sfxBtn" title="Toggle interface sound effects">
-          <span id="sfxIcon">🔊</span> <span id="sfxText">SFX ON</span>
-        </button>
-        <span class="theme-name-tag" id="themeNameTag" title="Active HUD theme — click swatches to recolour the entire interface">CRIMSON</span>
-        <div class="theme-switcher" id="themeSwitcher">
-          <button class="theme-btn active" data-theme="crimson" title="Crimson Jarvis theme"><i></i></button>
-          <button class="theme-btn" data-theme="emerald" title="Emerald Hacker theme"><i></i></button>
-          <button class="theme-btn" data-theme="cyan" title="Cyan Cyberpunk theme"><i></i></button>
-          <button class="theme-btn" data-theme="violet" title="Violet Nebula theme"><i></i></button>
-          <button class="theme-btn" data-theme="amber" title="Amber Core theme"><i></i></button>
-          <button class="theme-btn rgb" data-theme="rgb" title="Rainbow Dynamic RGB theme"><i></i></button>
-        </div>
-        <button class="download-btn" id="downloadBtn" title="Download the desktop app">
-          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v11m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
-          <span>Get App</span>
-        </button>
-        <button class="icon-btn" id="settingsBtn" title="Settings">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.03 1.56V21a2 2 0 11-4 0v-.09A1.7 1.7 0 008.98 19.4a1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.56-1.03H3a2 2 0 110-4h.09A1.7 1.7 0 004.6 8.98a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001.03-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.03 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9a1.7 1.7 0 001.56 1.03H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.56 1.03z"/></svg>
-        </button>
+        <button class="icon-btn" id="settingsBtn" title="Settings">⚙</button>
       </div>
     </header>
 
@@ -120,21 +109,6 @@
                   <div class="now-line"><span>BRAIN</span><b id="nowBrain">FREE CORE</b></div>
                   <div class="now-line"><span>NEXT</span><b id="nowReminder">No reminders</b></div>
                   <div class="now-line"><span>BATTERY</span><b id="nowBattery">—</b></div>
-                </div>
-              </div>
-
-              <div class="hud-panel media-link">
-                <h3 class="panel-title">MEDIA LINK <span class="dim" id="mediaLinkState">— SYSTEM OFFLINE</span></h3>
-                <div class="ml-body">
-                  <div class="ml-orbit" aria-hidden="true"><span></span><i></i></div>
-                  <div class="ml-line"><span>VOICE</span><b id="mlVoice">STANDBY</b></div>
-                  <div class="ml-line"><span>AI LINK</span><b id="mlAi">FREE CORE</b></div>
-                  <div class="ml-line"><span>BRAIN</span><b id="mlActiveBrain">FREE CORE</b></div>
-                  <div class="ml-line"><span>SFX</span><b id="mlSfx">ON</b></div>
-                  <div class="ml-icons">
-                    <span class="ml-ico" title="Voice assistant online">◉</span>
-                    <span class="ml-ico" title="Chat channel">▣</span>
-                  </div>
                 </div>
               </div>
 
@@ -210,12 +184,11 @@
                 <div class="orb-panel hud-panel">
                   <div class="thinking-pill" id="thinkingPill"><span>THINKING</span><i></i></div>
                   <canvas id="orbCanvas" width="560" height="560"></canvas>
-                  <canvas id="avatarCanvas" width="560" height="560" aria-hidden="true"></canvas>
                   <canvas id="micVuCanvas" width="180" height="34" aria-label="Microphone input level"></canvas>
                   <div class="gem-nameplate">
                     <span class="gem-name">GEM</span>
                     <span class="gem-role" id="gemRole">personal intelligence</span>
-                    <button class="gender-toggle-btn" id="avatarGenderToggle" title="Switch Avatar Gender (Female / Male)">
+                    <button class="gender-toggle-btn" id="avatarGenderToggle" title="Switch Voice (Female / Male)">
                       <span id="avatarGenderLabel">♀ FEMALE</span>
                     </button>
                   </div>
@@ -302,7 +275,7 @@
                       <button class="mic-btn" id="micBtn" title="Talk to Gem (Speech Recognition)">
                         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M19 11a7 7 0 01-14 0M12 18v3"/></svg>
                       </button>
-                      <input type="text" id="chatInput" placeholder="Type instruction or / command…" autocomplete="off" />
+                      <input type="text" id="chatInput" placeholder="Type instruction or / command for Gem…" autocomplete="off" />
                       <button class="send-btn" id="sendBtn" title="Send message">➤</button>
                     </div>
                     <div class="quick-commands" id="quickCommands">
@@ -844,6 +817,37 @@
   <!-- Mode transition sweep overlay (M4) -->
   <div class="mode-sweep" id="modeSweep" aria-hidden="true"></div>
 
+  <!-- T4 — Stonic-style cinematic first-run onboarding -->
+  <div class="onboard-backdrop" id="onboardOverlay" role="dialog" aria-modal="true" aria-labelledby="onboardTitle" hidden>
+    <div class="onboard-card">
+      <button class="icon-btn onboard-skip" id="onboardSkip" title="Skip setup">SKIP »</button>
+      <div class="onboard-dots" id="onboardDots" aria-hidden="true"></div>
+      <section class="onboard-step active" data-ostep="welcome">
+        <div class="onboard-orb" aria-hidden="true"></div>
+        <h2 id="onboardTitle">GEMAIR</h2>
+        <p class="onboard-sub">Your own JARVIS — free forever, private by design.</p>
+        <p class="onboard-hint">VOICE · MEMORY · 79 TOOLS · AGENT TOWN · WORLD MONITOR</p>
+      </section>
+      <section class="onboard-step" data-ostep="name">
+        <h2>WHAT SHOULD I CALL YOU?</h2>
+        <p class="onboard-sub">Gem will remember it everywhere you sync.</p>
+        <input type="text" id="onboardName" maxlength="24" placeholder="Commander…" autocomplete="off" />
+      </section>
+      <section class="onboard-step" data-ostep="voice">
+        <h2>CHOOSE GEM'S VOICE</h2>
+        <p class="onboard-sub">You can change this anytime in Settings.</p>
+        <div class="onboard-voices">
+          <button type="button" class="onboard-voice active" data-gender="female"><b>♀ FEMALE</b><span>warm · natural</span></button>
+          <button type="button" class="onboard-voice" data-gender="male"><b>♂ MALE</b><span>deep · measured</span></button>
+        </div>
+      </section>
+      <div class="onboard-actions">
+        <button class="ghost-btn" id="onboardBack">« BACK</button>
+        <button class="primary-btn" id="onboardNext">BEGIN »</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
     <div class="modal" style="width:min(860px,96vw);">
       <div class="modal-head">
@@ -928,6 +932,7 @@
             <label>Your name (stored in memory)
               <input type="text" id="setUserName" placeholder="e.g. Commander" />
             </label>
+            <button type="button" class="ghost-btn" id="replayOnboardBtn" style="margin-top:10px;width:100%;">⟲ REPLAY FIRST-RUN INTRO</button>
           </fieldset>
           <fieldset>
             <legend>AI BRAIN — FREE CORE + OPTIONAL OWN PROVIDER</legend>
@@ -1171,6 +1176,11 @@
             <div class="modes-list" id="settingsModesList">
               <div class="empty">Loading modes…</div>
             </div>
+          </fieldset>
+          <fieldset>
+            <legend>GET DESKTOP APP</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">Download GemAir for Windows, macOS, or Linux. Full voice control, 79 tools, ChatGPT sign-in.</p>
+            <button class="primary-btn" id="settingsDownloadBtn" style="width:100%;">⬇ DOWNLOAD GEMAIR</button>
           </fieldset>
         </div>
 

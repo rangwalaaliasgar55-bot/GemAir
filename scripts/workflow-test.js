@@ -48,11 +48,14 @@ function sliceBetween(src, startAnchor, endAnchor, label) {
   return out;
 }
 
-/** Load api/chat.js as a genuinely FRESH module instance (V1). */
+/** Load api/chat.js as a genuinely FRESH module instance (V1). 2.5: also
+ *  busts the shared api/_lib modules so limiter state resets for real. */
 function freshFreeCore() {
-  const p = require.resolve('../api/chat.js');
-  delete require.cache[p];
-  return require(p);
+  for (const p of Object.keys(require.cache)) {
+    const norm = p.split(path.sep).join('/');
+    if (norm.includes('/api/')) delete require.cache[p];
+  }
+  return require(path.join(ROOT, 'api/chat.js'));
 }
 
 /** Minimal res double that records the payload and status. */
@@ -78,7 +81,7 @@ function callCore(core, body, headers = {}) {
 
   // Fresh env: no provider keys anywhere.
   for (const k of Object.keys(process.env)) {
-    if (/API_KEY|AI_|GROQ|GEMINI|OPENROUTER|OPENAI|SUPABASE|FAIR_USE|THROTTLE|ALLOWED_ORIGINS/.test(k)) delete process.env[k];
+    if (/API_KEY|AI_|GROQ|GEMINI|OPENROUTER|OPENAI|SUPABASE|FAIR_USE|THROTTLE|ALLOWED_ORIGINS|KV_|UPSTASH|REDIS/.test(k)) delete process.env[k];
   }
 
   // -------------------------------------------------------------------------

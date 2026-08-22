@@ -13,6 +13,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { URL } = require('url');
 
 const ROOT = path.join(__dirname, '..');
@@ -41,6 +42,8 @@ const MIME = {
   '.jpg': 'image/jpeg',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
+  '.webmanifest': 'application/manifest+json',
+  '.txt': 'text/plain; charset=utf-8',
   '.map': 'application/json'
 };
 
@@ -129,7 +132,16 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
+  const lanIps = [];
+  try {
+    for (const ifaces of Object.values(os.networkInterfaces())) {
+      for (const net of ifaces || []) {
+        if (net.family === 'IPv4' && !net.internal) lanIps.push(net.address);
+      }
+    }
+  } catch {}
   console.log(`\n  GemAir dev server running`);
-  console.log(`  → http://localhost:${PORT}`);
+  console.log(`  → local:   http://localhost:${PORT}`);
+  for (const ip of lanIps) console.log(`  → network: http://${ip}:${PORT}   ← open on your phone/tablet`);
   console.log(`  → static: renderer/   api: api/*.js\n`);
 });

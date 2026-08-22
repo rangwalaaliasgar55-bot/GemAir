@@ -5,26 +5,14 @@
 // and, with ?mode=alerts, real advisories DERIVED from the Open-Meteo forecast.
 // These are explicitly labelled as derived — GemAir never presents them as
 // official government warnings.
+const { guard, fetchJson: getJson } = require('./_lib/http');
+
 const CODES = {
   0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
   45: 'Fog', 48: 'Rime fog', 51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle',
   61: 'Light rain', 63: 'Rain', 65: 'Heavy rain', 71: 'Light snow', 73: 'Snow', 75: 'Heavy snow',
   80: 'Showers', 81: 'Rain showers', 82: 'Heavy showers', 95: 'Thunderstorm', 96: 'Storm + hail', 99: 'Storm + hail'
 };
-
-const TIMEOUT_MS = 8000;
-
-async function getJson(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const r = await fetch(url, { signal: controller.signal });
-    if (!r.ok) throw new Error('HTTP_' + r.status);
-    return await r.json();
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 /** Turn a raw Open-Meteo daily forecast into plain-language advisories. */
 function deriveAlerts(daily) {
@@ -53,6 +41,7 @@ function deriveAlerts(daily) {
 }
 
 module.exports = async (req, res) => {
+  if (guard(req, res)) return; // OPTIONS preflight / non-allowed origin
   const city = (req.query.city || '').trim();
   const mode = (req.query.mode || 'current').trim();
   if (!city) return res.status(400).json({ error: 'city is required' });

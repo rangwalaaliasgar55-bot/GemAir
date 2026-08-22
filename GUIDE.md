@@ -13,7 +13,7 @@ companion, not just a tool:
 - It **understands how you feel** (emotion engine) and responds with empathy.
 - It **never forgets** — memories, skills, rules, goals, mood and notes persist forever.
 - It **tells the truth** — it searches real sources, cites them, and says "I don't know" instead of guessing.
-- It **does real work** — 45+ tools covering the web, your files, apps, and system.
+- It **does real work** — 79 tools covering the web, your files, apps, and system.
 - It's **free** — no $56 license, no subscription, and most features need no AI key at all.
 
 ---
@@ -24,7 +24,7 @@ companion, not just a tool:
 GemAir/
 ├── main.js                  # Electron main process — the "brain & hands"
 │   ├── AI chat + streaming  #   OpenAI-compatible (Groq/OpenAI/Ollama) + tool-calling
-│   ├── TOOLS registry       #   MCP-style: 45+ typed functions (the "tool layer")
+│   ├── TOOLS registry       #   MCP-style: 79 typed functions (the "tool layer")
 │   ├── emotion engine       #   17 emotions + valence/arousal/intensity
 │   ├── support engine       #   compassionate responses + crisis detection
 │   ├── memory store         #   local JSON (facts/transcript/notes/reminders/…)

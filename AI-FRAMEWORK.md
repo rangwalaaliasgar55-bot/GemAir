@@ -52,7 +52,7 @@ Stonic's own blog describes their architecture as "an orchestra — four layers"
 |---|---|---|
 | **Listening** | "Speech recognition tuned for natural commands" | Web Speech API recognition (`tts-engine.js`, mic button, wake word) |
 | **Reasoning** | "A language model interprets intent and breaks it into steps" | Any OpenAI-compatible brain — ChatGPT, Gemini, Claude, Groq, local Ollama |
-| **Action** | "A modular tool system executes steps… every action is logged, critical actions ask" | `TOOLS[]` + `executeTool()` in `main.js` — 30+ tools (weather, web search, files, shell, WhatsApp, memory…) with a max-6-rounds loop |
+| **Action** | "A modular tool system executes steps… every action is logged, critical actions ask" | `TOOLS[]` + `executeTool()` in `main.js` — 79 tools (weather, web search, files, shell, WhatsApp, memory, desktop windows, modes…) with a max-6-rounds loop |
 | **Experience** | "A full cinematic interface — not a chat bubble" | The HUD: orb, circuits, Agent Town, Global Intel, themes, SFX |
 
 ---
@@ -168,7 +168,7 @@ Preset `Claude` → base `https://api.anthropic.com/v1` (Anthropic's OpenAI-comp
 
 ## 6. The tool loop (how the brain gets "hands")
 
-Every OpenAI-compatible brain is called with a `tools` array (30+ in `main.js`). The loop, max 6 rounds:
+Every OpenAI-compatible brain is called with a `tools` array (79 in `main.js`). The loop, max 6 rounds:
 
 ```
 1. POST chat/completions with tools
