@@ -15,6 +15,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="GemAir" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="light-mode.css" />
   <link rel="stylesheet" href="reduced-motion.css" />
 </head>
 <body>
@@ -1189,6 +1190,13 @@
 
         <!-- APPEARANCE SECTION -->
         <div class="settings-section" data-section="appearance">
+          <fieldset>
+            <legend>LIGHT / DARK MODE</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
+              Switch interface brightness without changing your selected HUD accent theme.
+            </p>
+            <button class="ghost-btn" id="appearanceToggle" type="button" aria-pressed="false">☀ SWITCH TO LIGHT</button>
+          </fieldset>
           <fieldset>
             <legend>HUD THEMES</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">

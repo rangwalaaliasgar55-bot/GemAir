@@ -522,6 +522,7 @@ const DEFAULTS = Object.freeze({
   edgeVoice: 'en-US-AriaNeural',
   sttLang: 'en-US',
   lang: 'en',
+  appearance: 'dark',
   ambientTrack: 'deep',
   ambientVolume: 0.35,
   currentMode: '',
@@ -536,6 +537,7 @@ function makeDefaultProfile() {
     theme: DEFAULTS.theme,
     city: DEFAULTS.city,
     lang: DEFAULTS.lang,
+    appearance: DEFAULTS.appearance,
     currentMode: DEFAULTS.currentMode,
     brainPriority: DEFAULTS.brainPriority,
     connectionsWarningAcknowledged: DEFAULTS.connectionsWarningAcknowledged,
@@ -1377,10 +1379,12 @@ function getAccent() { return currentAccent; }
 
 function setAccentFromHue(hue) {
   const h = ((hue % 360) + 360) % 360;
-  const accent = `hsl(${h}, 92%, 60%)`;
-  const soft = `hsla(${h}, 92%, 60%, 0.55)`;
-  const glow = `hsla(${h}, 92%, 60%, 0.35)`;
-  const dim = `hsla(${h}, 92%, 60%, 0.14)`;
+  const lightAppearance = profile.appearance === 'light';
+  const lightness = lightAppearance ? 38 : 60;
+  const accent = `hsl(${h}, 92%, ${lightness}%)`;
+  const soft = `hsla(${h}, 92%, ${lightness}%, ${lightAppearance ? 0.7 : 0.55})`;
+  const glow = `hsla(${h}, 92%, ${lightness}%, ${lightAppearance ? 0.2 : 0.35})`;
+  const dim = `hsla(${h}, 92%, ${lightness}%, ${lightAppearance ? 0.1 : 0.14})`;
   currentAccent = accent;
   const root = document.body.style;
   root.setProperty('--accent', accent);
@@ -1415,11 +1419,35 @@ function triggerRgbBurst() {
   }, REDUCED_MOTION ? 900 : 8000);
 }
 
+function applyAppearance(mode, { notify = false } = {}) {
+  const appearance = mode === 'light' ? 'light' : 'dark';
+  profile.appearance = appearance;
+  let appliedTheme = null;
+  if (window.GemAirThemes && typeof window.GemAirThemes.setAppearance === 'function') appliedTheme = window.GemAirThemes.setAppearance(appearance);
+  else document.body.dataset.appearance = appearance;
+  if (appliedTheme && profile.theme !== 'rgb') currentAccent = appliedTheme.accent;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = appearance === 'light' ? '#f4f7fb' : '#04060c';
+  const toggle = $('#appearanceToggle');
+  if (toggle) {
+    const light = appearance === 'light';
+    toggle.setAttribute('aria-pressed', String(light));
+    toggle.textContent = light ? '🌙 SWITCH TO DARK' : '☀ SWITCH TO LIGHT';
+  }
+  if (notify) toast('APPEARANCE', appearance.toUpperCase() + ' mode enabled.', appearance === 'light' ? '☀' : '🌙');
+  return appearance;
+}
+function toggleAppearance() {
+  applyAppearance(profile.appearance === 'light' ? 'dark' : 'light', { notify: true });
+  persistProfile();
+}
+
 function applyTheme(t) {
   // String-driven theme engine (renderer/themes.js) is the single source
   // of truth: it writes all color tokens out as CSS variables and fires
   // `gemair:theme`, so the DOM and every canvas re-skin together.
   if (window.GemAirThemes) {
+    if (typeof window.GemAirThemes.setAppearance === 'function') window.GemAirThemes.setAppearance(profile.appearance || DEFAULTS.appearance);
     const theme = window.GemAirThemes.apply(t);
     if (t !== 'rgb') currentAccent = theme.accent; // string token → all canvases
   }
@@ -5618,6 +5646,7 @@ function openSettings() {
   const localBrain = $('#setLocalBrain');
   if (localBrain) localBrain.checked = !!(window.aiClient && window.aiClient.isLocalReady());
   $('#setScreenAwareness').checked = !!profile.screenAwareness;
+  applyAppearance(profile.appearance || DEFAULTS.appearance);
   $('#setWakeWord').checked = !!profile.wakeWord;
   $('#setWakeWordText').value = profile.wakeWordText || 'Hey Gem';
   populateVoices(); populateNeuralVoices(); populateEdgeVoices(); updateAiHint();
@@ -6088,6 +6117,7 @@ function bindEvents() {
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#settingsClose').addEventListener('click', closeSettings);
   $('#settingsModal').addEventListener('click', (e) => { if (e.target === $('#settingsModal')) closeSettings(); });
+  $('#appearanceToggle').addEventListener('click', toggleAppearance);
   $('#saveBtn').addEventListener('click', () => {
     profile.name = $('#setUserName').value.trim() || 'Commander';
     profile.ai = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
@@ -6120,7 +6150,7 @@ function bindEvents() {
   $('#resetBtn').addEventListener('click', async () => {
     profile = makeDefaultProfile();
     setAmbientScore(false);
-    await persistProfile(); applyTheme(DEFAULTS.theme); updateLinkMode(); openSettings();
+    await persistProfile(); applyAppearance(DEFAULTS.appearance); applyTheme(DEFAULTS.theme); updateLinkMode(); openSettings();
   });
   $$('.preset').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
   $('#setBaseURL').addEventListener('input', updateAiHint);
@@ -6194,6 +6224,7 @@ function bindEvents() {
       { id: 'view-town', name: 'Agent Town', detail: 'resident agent office', icon: '▦', type: 'VIEW', action: () => switchView('town') },
       { id: 'view-world', name: 'Global Intel', detail: 'globe, map and headlines', icon: '◍', type: 'VIEW', action: () => switchView('world') },
       { id: 'settings', name: 'Open Settings', detail: 'AI, voice, themes and privacy', icon: '⚙', type: 'ACTION', action: openSettings },
+      { id: 'toggle-appearance', name: `Switch to ${profile.appearance === 'light' ? 'Dark' : 'Light'} Mode`, detail: 'persistent interface appearance', icon: profile.appearance === 'light' ? '🌙' : '☀', type: 'TOGGLE', action: toggleAppearance },
       { id: 'breathing', name: 'Guided Breathing', detail: '4-7-8 calm session', icon: '◌', type: 'ACTION', action: () => $('#breatheModal').classList.add('open') },
       { id: 'weekly-report', name: 'Weekly Report', detail: 'mood, goals and task trends', icon: '▥', type: 'ACTION', action: () => $('#weeklyReportBtn').click() },
       { id: 'panel-weather', name: 'Weather Panel', detail: 'HUD panel', icon: '☁', type: 'PANEL', action: () => openHudDock('weather') },

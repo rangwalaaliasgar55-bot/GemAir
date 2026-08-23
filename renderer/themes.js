@@ -31,7 +31,7 @@
     crimson: {
       label: 'Crimson',
       tagline: 'JARVIS red — classic Iron Man',
-      accent: '#ff3b3b', hue: 0,
+      accent: '#ff3b3b', lightAccent: '#c92a2a', hue: 0,
       bg: '#04060c', bg2: '#070b15',
       text: '#e7f0ff', dim: '#8a9bb2',
       good: '#3dff9a', warn: '#ffc24b',
@@ -42,7 +42,7 @@
     emerald: {
       label: 'Emerald',
       tagline: 'Hacker green — matrix terminal',
-      accent: '#35ffb0', hue: 152,
+      accent: '#35ffb0', lightAccent: '#087f5b', hue: 152,
       bg: '#040a08', bg2: '#071310',
       text: '#e9fff5', dim: '#7fae9c',
       good: '#3dff9a', warn: '#ffc24b',
@@ -53,7 +53,7 @@
     cyan: {
       label: 'Cyan',
       tagline: 'Cyberpunk blue — neon city',
-      accent: '#3bc9ff', hue: 198,
+      accent: '#3bc9ff', lightAccent: '#066a9c', hue: 198,
       bg: '#04080d', bg2: '#071019',
       text: '#e6f6ff', dim: '#7fa3b8',
       good: '#3dff9a', warn: '#ffc24b',
@@ -64,7 +64,7 @@
     violet: {
       label: 'Violet',
       tagline: 'Nebula purple — deep space',
-      accent: '#b05cff', hue: 275,
+      accent: '#b05cff', lightAccent: '#7048a8', hue: 275,
       bg: '#06040d', bg2: '#0b0716',
       text: '#f0e9ff', dim: '#a08bb8',
       good: '#3dff9a', warn: '#ffc24b',
@@ -75,7 +75,7 @@
     amber: {
       label: 'Amber',
       tagline: 'Warm core — cockpit instruments',
-      accent: '#ffb73b', hue: 38,
+      accent: '#ffb73b', lightAccent: '#9a5b00', hue: 38,
       bg: '#0a0604', bg2: '#120b06',
       text: '#fff3e2', dim: '#b39a7c',
       good: '#3dff9a', warn: '#ffc24b',
@@ -86,7 +86,7 @@
     rgb: {
       label: 'RGB',
       tagline: 'Rainbow cycle — full spectrum',
-      accent: '#ff3bff', hue: 300,
+      accent: '#ff3bff', lightAccent: '#9c2c9c', hue: 300,
       dynamic: true,
       bg: '#04060c', bg2: '#070b15',
       text: '#e7f0ff', dim: '#8a9bb2',
@@ -110,28 +110,30 @@
 
   // Derive the full CSS custom-property set from a theme's string tokens.
   // U5: glass depth strictly via tokens — panel, border, error, info, sweep all via themes.js
-  function derive(theme) {
-    const a = theme.accent;
+  function derive(theme, appearance) {
+    const light = appearance === 'light';
+    const a = light ? (theme.lightAccent || theme.accent) : theme.accent;
     return {
       accent: a,
-      'accent-soft': rgba(a, 0.55),
-      'accent-glow': rgba(a, 0.32),
-      'accent-dim': rgba(a, 0.14),
-      bg: theme.bg,
-      'bg-2': theme.bg2,
-      text: theme.text,
-      'text-dim': theme.dim,
-      good: theme.good,
-      warn: theme.warn,
-      error: theme.error || '#ff6b6b',
-      info: theme.info || '#3bc9ff',
-      panel: theme.panel || 'rgba(12, 18, 32, 0.76)',
-      'panel-border': theme.panelBorder || 'rgba(120, 140, 180, 0.18)',
-      sweep: theme.sweep || rgba(a, 0.32)
+      'accent-soft': rgba(a, light ? 0.7 : 0.55),
+      'accent-glow': rgba(a, light ? 0.2 : 0.32),
+      'accent-dim': rgba(a, light ? 0.1 : 0.14),
+      bg: light ? '#f4f7fb' : theme.bg,
+      'bg-2': light ? '#e5ebf3' : theme.bg2,
+      text: light ? '#111827' : theme.text,
+      'text-dim': light ? '#526077' : theme.dim,
+      good: light ? '#087f5b' : theme.good,
+      warn: light ? '#8a5700' : theme.warn,
+      error: light ? '#c92a2a' : (theme.error || '#ff6b6b'),
+      info: light ? '#066a9c' : (theme.info || '#3bc9ff'),
+      panel: light ? 'rgba(255, 255, 255, 0.78)' : (theme.panel || 'rgba(12, 18, 32, 0.76)'),
+      'panel-border': light ? 'rgba(45, 60, 85, 0.2)' : (theme.panelBorder || 'rgba(120, 140, 180, 0.18)'),
+      sweep: rgba(a, light ? 0.2 : 0.32)
     };
   }
 
   let current = DEFAULT;
+  let currentAppearance = 'dark';
 
   function getTheme(name) {
     const id = THEMES[name] ? name : DEFAULT;
@@ -141,21 +143,26 @@
   function apply(name) {
     const id = THEMES[name] ? name : DEFAULT;
     const theme = THEMES[id];
+    const vars = derive(theme, currentAppearance);
     current = id;
 
     if (typeof document !== 'undefined') {
       const body = document.body;
-      if (body) body.dataset.theme = id;
+      if (body) { body.dataset.theme = id; body.dataset.appearance = currentAppearance; }
       // Write every token out as a CSS variable — this is what makes
       // the ENTIRE interface recolour, exactly like Stonic's HUD themes.
       const target = body ? body.style : document.documentElement.style;
-      const vars = derive(theme);
       for (const k of Object.keys(vars)) target.setProperty('--' + k, vars[k]);
       document.dispatchEvent(new CustomEvent('gemair:theme', {
-        detail: { theme: id, label: theme.label, accent: theme.accent, hue: theme.hue, dynamic: !!theme.dynamic }
+        detail: { theme: id, label: theme.label, accent: vars.accent, hue: theme.hue, dynamic: !!theme.dynamic, appearance: currentAppearance }
       }));
     }
-    return getTheme(id);
+    return { ...getTheme(id), accent: vars.accent, appearance: currentAppearance };
+  }
+
+  function setAppearance(mode) {
+    currentAppearance = mode === 'light' ? 'light' : 'dark';
+    return apply(current);
   }
 
   const api = {
@@ -165,6 +172,8 @@
     get(name) { return getTheme(name); },
     current() { return current; },
     isDynamic(name) { return !!THEMES[name || current].dynamic; },
+    appearance() { return currentAppearance; },
+    setAppearance,
     apply
   };
 
