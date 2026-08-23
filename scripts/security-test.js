@@ -72,6 +72,17 @@ async function callChat(body, headers = {}) {
   assert(!/exec\(cmd, \{ timeout: 20000 \}/.test(main), 'legacy arbitrary-shell runCommand remains');
   console.log('  ok   shell, path, tool validation, and queue guards are present');
 
+  for (const tool of ['upload_file', 'download_file']) {
+    assert(main.includes(`name: '${tool}'`), `${tool} definition is missing`);
+    assert(main.includes(`case '${tool}':`), `${tool} execution case is missing`);
+    assert(main.includes(`${tool}: 'sensitive'`), `${tool} must be classified sensitive`);
+  }
+  assert(main.includes('MAX_FILE_TRANSFER_BYTES = 25 * 1024 * 1024'), 'file transfer size cap is missing');
+  assert(main.includes("throw new Error('Uploads require HTTPS.')"), 'upload HTTPS enforcement is missing');
+  assert(main.includes('dns.promises.lookup') && main.includes('isPrivateNetworkAddress'), 'file transfer public-network validation is missing');
+  assert(main.includes("fs.promises.open(temporary, 'wx', 0o600)"), 'download is not using a private temporary file');
+  console.log('  ok   file transfers are size-limited, confirmed, home-bound, and public-network-only');
+
   delete process.env.THROTTLE_PER_MIN;
   console.log('\n  All security regression tests passed.\n');
 })().catch((error) => {

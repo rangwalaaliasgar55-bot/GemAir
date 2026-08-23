@@ -4,6 +4,8 @@ const { app, BrowserWindow, ipcMain, shell, dialog, Notification, desktopCapture
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const dns = require('dns');
+const net = require('net');
 const { exec, execFile } = require('child_process');
 
 const connections = require('./lib/connections');
@@ -470,6 +472,8 @@ const TOOLS = [
   // Modes
   { type: 'function', function: { name: 'apply_mode', description: 'Apply a desktop mode by name (WORK, GAMING, CHILL, STUDY, or custom). Arranges apps, sites, volume, theme, DND, playlist.', parameters: { type: 'object', properties: { name: { type: 'string', description: 'Mode name' } }, required: ['name'] } } },
   { type: 'function', function: { name: 'list_modes', description: 'List all available desktop modes.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'upload_file', description: 'Upload a local file (maximum 25 MB) to an HTTPS signed or public PUT URL.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Local file inside the user home folder' }, destination: { type: 'string', description: 'HTTPS upload URL' } }, required: ['path', 'destination'] } } },
+  { type: 'function', function: { name: 'download_file', description: 'Download a public HTTP(S) file (maximum 25 MB) into the user home folder.', parameters: { type: 'object', properties: { url: { type: 'string' }, destination: { type: 'string', description: 'Optional local output path inside the user home folder' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'add_calendar_event', description: 'Create an iCalendar event and open it in the system calendar.', parameters: { type: 'object', properties: { title: { type: 'string' }, start: { type: 'string', description: 'ISO 8601 date/time' }, end: { type: 'string', description: 'Optional ISO 8601 date/time' }, description: { type: 'string' }, location: { type: 'string' } }, required: ['title', 'start'] } } },
   { type: 'function', function: { name: 'create_mode', description: 'Create or update a custom mode bundle.', parameters: { type: 'object', properties: { name: { type: 'string' }, apps: { type: 'array', items: { type: 'string' } }, sites: { type: 'array', items: { type: 'object' } }, volume: { type: 'number' }, theme: { type: 'string' }, dnd: { type: 'boolean' }, playlist: { type: 'string' } }, required: ['name'] } } }
 ];
@@ -710,6 +714,125 @@ function runCommand(command) {
       });
     });
   });
+}
+
+const MAX_FILE_TRANSFER_BYTES = 25 * 1024 * 1024;
+function isPrivateNetworkAddress(address) {
+  let value = String(address || '').toLowerCase();
+  if (value.startsWith('::ffff:')) value = value.slice(7);
+  if (net.isIPv4(value)) {
+    const parts = value.split('.').map(Number);
+    return parts[0] === 0 || parts[0] === 10 || parts[0] === 127 ||
+      (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
+      (parts[0] === 169 && parts[1] === 254) || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+      (parts[0] === 192 && (parts[1] === 0 || parts[1] === 168)) ||
+      (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19 || (parts[1] === 51 && parts[2] === 100))) ||
+      (parts[0] === 203 && parts[1] === 0 && parts[2] === 113) || parts[0] >= 224;
+  }
+  if (net.isIPv6(value)) return value === '::' || value === '::1' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb') || value.startsWith('ff') || value.startsWith('2001:db8:');
+  return true;
+}
+async function requirePublicHttpUrl(value, { httpsOnly = false } = {}) {
+  const normalized = normalizeHttpUrl(value, { publicOnly: true });
+  if (!normalized) throw new Error('A valid public HTTP(S) URL is required.');
+  const parsed = new URL(normalized);
+  if (httpsOnly && parsed.protocol !== 'https:') throw new Error('Uploads require HTTPS.');
+  let addresses;
+  let dnsTimer;
+  try {
+    addresses = await Promise.race([
+      dns.promises.lookup(parsed.hostname, { all: true, verbatim: true }),
+      new Promise((_, reject) => { dnsTimer = setTimeout(() => reject(new Error('DNS timeout')), 5000); })
+    ]);
+  } catch { throw new Error('Could not resolve the destination host.'); }
+  finally { if (dnsTimer) clearTimeout(dnsTimer); }
+  if (!addresses.length || addresses.some((entry) => isPrivateNetworkAddress(entry.address))) throw new Error('Private, local, and reserved network destinations are blocked.');
+  return normalized;
+}
+async function fetchPublicWithRedirects(initialUrl, options, { httpsOnly = false, upload = false } = {}) {
+  let current = initialUrl;
+  for (let redirect = 0; redirect <= 4; redirect++) {
+    current = await requirePublicHttpUrl(current, { httpsOnly });
+    const response = await fetch(current, { ...options, redirect: 'manual' });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    const location = response.headers.get('location');
+    try { if (response.body) await response.body.cancel(); } catch {}
+    if (!location || redirect === 4) throw new Error('Too many or invalid redirects.');
+    if (upload && ![307, 308].includes(response.status)) throw new Error('Upload redirect must preserve the PUT method.');
+    current = new URL(location, current).toString();
+  }
+  throw new Error('Too many redirects.');
+}
+function safeDownloadName(url) {
+  let name = 'download-' + Date.now();
+  try { name = decodeURIComponent(path.basename(new URL(url).pathname)) || name; } catch {}
+  name = name.replace(/[^\p{L}\p{N}._() +#-]/gu, '_').replace(/^\.+/, '').slice(0, 120);
+  return name || `download-${Date.now()}`;
+}
+async function uploadFile(localPath, destination) {
+  const source = resolveUserPath(localPath);
+  const stat = await fs.promises.stat(source);
+  if (!stat.isFile()) return { error: 'Upload path is not a file.' };
+  if (stat.size > MAX_FILE_TRANSFER_BYTES) return { error: 'Upload exceeds the 25 MB limit.' };
+  let uploadUrl;
+  try { uploadUrl = await requirePublicHttpUrl(destination, { httpsOnly: true }); } catch (error) { return { error: error.message }; }
+  const host = new URL(uploadUrl).hostname;
+  const ok = await confirmAction('Upload file?', `GemAir will upload:\n${source}\n\nSize: ${(stat.size / 1048576).toFixed(2)} MB\nDestination host: ${host}\n\nOnly continue if you trust this destination.`);
+  if (!ok) return { error: 'Cancelled by user.' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  try {
+    const body = await fs.promises.readFile(source);
+    const response = await fetchPublicWithRedirects(uploadUrl, {
+      method: 'PUT', headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(body.length) }, body, signal: controller.signal
+    }, { httpsOnly: true, upload: true });
+    if (!response.ok) return { error: `Upload failed with HTTP ${response.status}.` };
+    logAction('upload_file', `Uploaded ${source} (${stat.size} bytes) to ${host}`);
+    return { ok: true, path: source, destinationHost: host, bytes: stat.size, status: response.status };
+  } catch (error) {
+    return { error: error && error.name === 'AbortError' ? 'Upload timed out.' : error.message };
+  } finally { clearTimeout(timer); }
+}
+async function downloadFile(url, destination) {
+  let downloadUrl;
+  try { downloadUrl = await requirePublicHttpUrl(url); } catch (error) { return { error: error.message }; }
+  const fallback = path.join(os.homedir(), 'Downloads', safeDownloadName(downloadUrl));
+  let target;
+  try { target = resolveUserPath(destination, fallback); } catch (error) { return { error: error.message }; }
+  if (fs.existsSync(target)) return { error: 'Download destination already exists. Choose a new filename.' };
+  const ok = await confirmAction('Download file?', `GemAir will download from:\n${new URL(downloadUrl).hostname}\n\nand save it to:\n${target}\n\nMaximum size: 25 MB.`);
+  if (!ok) return { error: 'Cancelled by user.' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  const temporary = `${target}.part-${process.pid}-${Date.now()}`;
+  let handle = null;
+  try {
+    const response = await fetchPublicWithRedirects(downloadUrl, { method: 'GET', signal: controller.signal });
+    if (!response.ok || !response.body) return { error: `Download failed with HTTP ${response.status}.` };
+    const declared = Number(response.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > MAX_FILE_TRANSFER_BYTES) { await response.body.cancel(); return { error: 'Download exceeds the 25 MB limit.' }; }
+    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+    handle = await fs.promises.open(temporary, 'wx', 0o600);
+    const reader = response.body.getReader();
+    let bytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_FILE_TRANSFER_BYTES) { await reader.cancel(); throw new Error('Download exceeds the 25 MB limit.'); }
+      await handle.write(value);
+    }
+    await handle.close(); handle = null;
+    await fs.promises.rename(temporary, target);
+    logAction('download_file', `Downloaded ${bytes} bytes from ${new URL(downloadUrl).hostname} to ${target}`);
+    return { ok: true, path: target, bytes, sourceHost: new URL(downloadUrl).hostname };
+  } catch (error) {
+    return { error: error && error.name === 'AbortError' ? 'Download timed out.' : error.message };
+  } finally {
+    clearTimeout(timer);
+    if (handle) try { await handle.close(); } catch {}
+    try { await fs.promises.unlink(temporary); } catch {}
+  }
 }
 
 function escapeIcsText(value) {
@@ -1584,7 +1707,7 @@ const TOOL_RISK = {
   launch_app: 'safe', focus_app: 'safe', snap_window: 'safe', minimize_all: 'safe',
   next_virtual_desktop: 'safe', open_site: 'safe', list_windows: 'safe',
   apply_mode: 'safe', list_modes: 'safe', create_mode: 'safe',
-  add_calendar_event: 'sensitive'
+  add_calendar_event: 'sensitive', upload_file: 'sensitive', download_file: 'sensitive'
 };
 
 const TOOL_SCHEMAS = new Map(TOOLS.map((tool) => [tool.function.name, tool.function.parameters || { type: 'object', properties: {} }]));
@@ -1860,6 +1983,10 @@ async function executeToolNow(name, args) {
       }
       case 'list_modes':
         return { modes: modesLib.listModes() };
+      case 'upload_file':
+        return await uploadFile(args.path, args.destination);
+      case 'download_file':
+        return await downloadFile(args.url, args.destination);
       case 'add_calendar_event':
         return await addCalendarEvent(args);
       case 'create_mode': {
@@ -2301,9 +2428,9 @@ function startFocusPolling() {
 // Multi-agent brains
 const AGENT_BRAINS = {
   Alice: { role: 'Web Research', tools: ['web_search', 'fetch_webpage'], prompt: 'You are Alice, GemAir’s web researcher. Find current, verifiable information, inspect primary pages, summarize evidence, and cite the returned URLs. Never invent a source.' },
-  Bob: { role: 'File Operations', tools: ['list_directory', 'read_file', 'write_file', 'organize_folder', 'launch_app', 'open_site', 'list_windows'], prompt: 'You are Bob, GemAir’s file operator and desktop manager. Inspect before changing anything, use precise paths, preserve user data, and report exactly what was read, written, or organized. You can launch apps and open sites.' },
+  Bob: { role: 'File Operations', tools: ['list_directory', 'read_file', 'write_file', 'upload_file', 'download_file', 'organize_folder', 'launch_app', 'open_site', 'list_windows'], prompt: 'You are Bob, GemAir’s file operator and desktop manager. Inspect before changing anything, use precise paths, preserve user data, and report exactly what was read, written, transferred, or organized. You can launch apps and open sites.' },
   Carol: { role: 'System Verification', tools: ['system_scan', 'get_power_storage', 'get_system_status', 'list_windows'], prompt: 'You are Carol, GemAir’s system verifier. Read live CPU, memory, battery, and disk sensors, identify risks, and verify that a mission can run safely. You can see desktop state via list_windows.' },
-  Dave: { role: 'Communications', tools: ['send_email', 'open_whatsapp'], prompt: 'You are Dave, GemAir’s communications operator. Prepare clear email or WhatsApp drafts, confirm the destination, and leave the final send action to the user.' }
+  Dave: { role: 'Communications', tools: ['send_email', 'open_whatsapp', 'add_calendar_event'], prompt: 'You are Dave, GemAir’s communications operator. Prepare clear email, WhatsApp, and calendar drafts, confirm the destination or schedule, and leave the final send/import action to the user.' }
 };
 function agentSystemPrompt(name) {
   const b = AGENT_BRAINS[name] || AGENT_BRAINS.Alice;
