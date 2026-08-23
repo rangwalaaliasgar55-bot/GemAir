@@ -947,6 +947,15 @@
             <label class="check-label" style="margin-bottom:6px">
               <input type="checkbox" id="setMemoryOn" checked /> Auto memory — remember facts across conversations
             </label>
+            <label>Conversation context
+              <select id="setContextStrategy" aria-describedby="contextStrategyHint">
+                <option value="full">Full — retain up to 100 messages</option>
+                <option value="balanced">Balanced — summarize at 70%</option>
+                <option value="recent">Recent — prioritize the latest 20 messages</option>
+                <option value="minimal">Minimal — fastest, latest 10 messages</option>
+              </select>
+              <span class="hint" id="contextStrategyHint" style="font-size:11px;color:var(--text-dim)">Controls how much conversation Gem sends to the AI and when older turns are compressed.</span>
+            </label>
             <details class="power-user">
               <summary>⚙ Power user — optional: connect your own AI provider</summary>
               <div class="power-user-body">

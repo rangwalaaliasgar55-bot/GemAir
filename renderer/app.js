@@ -523,6 +523,7 @@ const DEFAULTS = Object.freeze({
   sttLang: 'en-US',
   lang: 'en',
   appearance: 'dark',
+  contextStrategy: 'balanced',
   ambientTrack: 'deep',
   ambientVolume: 0.35,
   currentMode: '',
@@ -538,6 +539,7 @@ function makeDefaultProfile() {
     city: DEFAULTS.city,
     lang: DEFAULTS.lang,
     appearance: DEFAULTS.appearance,
+    contextStrategy: DEFAULTS.contextStrategy,
     currentMode: DEFAULTS.currentMode,
     brainPriority: DEFAULTS.brainPriority,
     connectionsWarningAcknowledged: DEFAULTS.connectionsWarningAcknowledged,
@@ -578,9 +580,23 @@ let planActQueue = null;
 let listening = false, recognition = null, isRunning = false;
 const chatHistory = []; // working context window
 const CONTEXT_TOKEN_LIMIT = 16000;
+const CONTEXT_STRATEGIES = Object.freeze({
+  full: { label: 'Full', keep: 100, send: 48, threshold: 90, summarize: false },
+  recent: { label: 'Recent', keep: 20, send: 20, threshold: 60, summarize: true },
+  balanced: { label: 'Balanced', keep: 40, send: 32, threshold: 70, summarize: true },
+  minimal: { label: 'Minimal', keep: 10, send: 10, threshold: 45, summarize: true }
+});
 let contextCompacting = false;
 let activePlan = null;
 
+function getContextStrategy() {
+  return CONTEXT_STRATEGIES[profile.contextStrategy] || CONTEXT_STRATEGIES.balanced;
+}
+function getContextMessages(maximum = 48) {
+  const strategy = getContextStrategy();
+  const count = Math.max(1, Math.min(maximum, strategy.send));
+  return chatHistory.slice(-count);
+}
 function estimateContextTokens(extraText = '') {
   const chars = chatHistory.reduce((sum, message) => sum + String(message.content || '').length + String(message.role || '').length + 4, 0) + String(extraText || '').length;
   return Math.ceil(chars / 4);
@@ -596,33 +612,49 @@ function getContextElements() {
 function updateContextMeter(extraText = '') {
   const tokens = estimateContextTokens(extraText);
   const percent = Math.min(100, Math.round(tokens / CONTEXT_TOKEN_LIMIT * 100));
+  const strategy = getContextStrategy();
   const { chip, value, bar } = getContextElements();
   if (value) value.textContent = tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'K' : String(tokens);
   if (bar) bar.style.width = percent + '%';
-  if (chip) { chip.classList.toggle('warn', percent >= 70 && percent < 90); chip.classList.toggle('danger', percent >= 90); chip.title = `${tokens.toLocaleString()} estimated tokens · ${percent}% of ${CONTEXT_TOKEN_LIMIT.toLocaleString()}`; }
+  if (chip) {
+    chip.classList.toggle('warn', percent >= strategy.threshold && percent < 90);
+    chip.classList.toggle('danger', percent >= 90);
+    chip.title = `${tokens.toLocaleString()} estimated tokens · ${percent}% of ${CONTEXT_TOKEN_LIMIT.toLocaleString()} · ${strategy.label} strategy`;
+  }
   [['#townCtx', percent], ['#townCtxMini', percent]].forEach(([selector, pct]) => { const meter = $(selector); if (meter) meter.style.width = pct + '%'; });
   return { tokens, percent };
 }
 
 async function compactChatContextIfNeeded(extraText = '') {
   const usage = updateContextMeter(extraText);
-  if (usage.percent < 70 || contextCompacting || chatHistory.length < 10) return false;
+  const strategy = getContextStrategy();
+  const underPressure = usage.percent >= strategy.threshold;
+  const storedLimit = strategy.keep + (strategy.summarize ? Math.max(4, Math.floor(strategy.keep * 0.25)) : 0);
+  if ((!underPressure && chatHistory.length <= storedLimit) || contextCompacting || chatHistory.length < 4) return false;
   contextCompacting = true;
   try {
-    const keep = chatHistory.slice(-8);
-    const old = chatHistory.slice(0, -8);
-    const transcript = old.map((message) => `${message.role}: ${message.content}`).join('\n');
+    const keepCount = underPressure ? Math.min(strategy.keep, Math.max(2, Math.floor(chatHistory.length * 0.6))) : strategy.keep;
+    const keep = chatHistory.slice(-keepCount);
+    const old = chatHistory.slice(0, -keepCount);
+    if (!old.length) return false;
+    if (!strategy.summarize) {
+      chatHistory.splice(0, chatHistory.length, ...keep);
+      updateContextMeter(extraText);
+      toast('CTX TRIMMED', `Full strategy retained the latest ${keep.length} messages.`, '◫');
+      return true;
+    }
+    const transcript = old.map((message) => `${message.role}: ${message.content}`).join('\n').slice(-60000);
     let summary = null;
     try {
       const result = await api.aiSummarize(profile.ai || {}, transcript);
-      if (result && result.ok) summary = result.summary;
+      if (result && result.ok && result.summary) summary = String(result.summary).slice(0, 12000);
     } catch (e) {}
     if (!summary) {
-      summary = old.slice(-8).map((message) => `• ${message.role}: ${String(message.content || '').replace(/\s+/g, ' ').slice(0, 180)}`).join('\n');
+      summary = old.slice(-12).map((message) => `• ${message.role}: ${String(message.content || '').replace(/\s+/g, ' ').slice(0, 220)}`).join('\n');
     }
-    chatHistory.splice(0, chatHistory.length, { role: 'system', content: `Compacted conversation context:\n${summary}` }, ...keep);
+    chatHistory.splice(0, chatHistory.length, { role: 'system', content: `Conversation summary (${strategy.label} strategy):\n${summary}` }, ...keep);
     updateContextMeter(extraText);
-    toast('CTX COMPACTED', 'Older turns summarized; the conversation continues seamlessly.', '◫');
+    toast('CTX COMPRESSED', `${old.length} older messages summarized; ${keep.length} recent messages retained.`, '◫');
     return true;
   } finally { contextCompacting = false; }
 }
@@ -2691,7 +2723,7 @@ async function handleMessage(text) {
     typewriterToken++;
     if (window.gemair) {
       const sys = buildSystemPrompt();
-      const res = await window.gemair.aiAgentChat(agentName, cfg, chatHistory.slice(-16));
+      const res = await window.gemair.aiAgentChat(agentName, cfg, getContextMessages(24));
       agentToolRuns = res.toolRuns || [];
       if (res.ok) { reply = res.reply; chatHistory.push({ role: 'assistant', content: reply }); }
       else { reply = '⚠ ' + humanError(res.error); }
@@ -2701,7 +2733,7 @@ async function handleMessage(text) {
       const toolRun = await runBrowserAgentTool(agentName, task);
       agentToolRuns = [toolRun];
       reply = await (async () => {
-        const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a GemAir resident agent. Report this REAL tool result truthfully and concisely: ${JSON.stringify(toolRun.result)}` }, ...chatHistory.slice(-14)]);
+        const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a GemAir resident agent. Report this REAL tool result truthfully and concisely: ${JSON.stringify(toolRun.result)}` }, ...getContextMessages(24)]);
         if (res.ok) return res.reply;
         return `[${agentName}] ${toolRun.ok ? '✓' : '✗'} ${toolRun.name}: ${JSON.stringify(toolRun.result)}`;
       })();
@@ -2725,7 +2757,7 @@ async function handleMessage(text) {
     const streamingVoice = (streamVoiceMode === 'edge' || streamVoiceMode === 'neural') && !!window.ttsEngine;
     if (streamingVoice) resetStreamSpeech();
     usedConnectedBrain = useConnected;
-    const res = await api.connectionsChatStream(useConnected, [sys, ...chatHistory.slice(-16)], (delta)=>{
+    const res = await api.connectionsChatStream(useConnected, [sys, ...getContextMessages(48)], (delta)=>{
       if (!streamed) { replyEl.innerHTML = ''; streamed = true; }
       acc += delta;
       replyEl.textContent = acc;
@@ -2748,7 +2780,7 @@ async function handleMessage(text) {
       // C4 resilience: session dies mid-chat -> instant FREE CORE fallback, never dead air
       toast('BRAIN FALLBACK', (useConnected||'').toUpperCase() + ' failed (' + (res.error||'') + ') — switching to FREE CORE', '🔄');
       // try free core
-      const freeRes = await api.aiChatStream(cfg, [sys, ...chatHistory.slice(-16)], (delta)=>{
+      const freeRes = await api.aiChatStream(cfg, [sys, ...getContextMessages(48)], (delta)=>{
         if (!streamed) { replyEl.innerHTML = ''; streamed = true; }
         acc += delta;
         replyEl.textContent = acc;
@@ -2780,7 +2812,7 @@ async function handleMessage(text) {
     const streamVoiceMode = profile.voice?.mode || DEFAULTS.voiceMode;
     const streamingVoice = (streamVoiceMode === 'edge' || streamVoiceMode === 'neural') && !!window.ttsEngine;
     if (streamingVoice) resetStreamSpeech();
-    const res = await api.aiChatStream(cfg, [sys, ...chatHistory.slice(-16)], (delta) => {
+    const res = await api.aiChatStream(cfg, [sys, ...getContextMessages(48)], (delta) => {
       if (!streamed) { replyEl.innerHTML = ''; streamed = true; }
       acc += delta;
       replyEl.textContent = acc;
@@ -5682,6 +5714,7 @@ function openSettings() {
   $('#setNeuralVoice').value = profile.voice?.neuralVoice || 'en';
   $('#setSttLang').value = profile.voice?.sttLang || DEFAULTS.sttLang;
   $('#setMemoryOn').checked = profile.memoryOn !== false;
+  $('#setContextStrategy').value = CONTEXT_STRATEGIES[profile.contextStrategy] ? profile.contextStrategy : DEFAULTS.contextStrategy;
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setAmbientScore').checked = !!profile.ambientScore;
   // T5 — ambient track + volume
@@ -6185,6 +6218,7 @@ function bindEvents() {
     profile.voice.name = $('#setVoice').value;
     profile.voice.sttLang = $('#setSttLang').value;
     profile.memoryOn = $('#setMemoryOn').checked;
+    profile.contextStrategy = CONTEXT_STRATEGIES[$('#setContextStrategy').value] ? $('#setContextStrategy').value : DEFAULTS.contextStrategy;
     profile.allowShell = $('#setAllowShell').checked;
     profile.ambientScore = $('#setAmbientScore').checked;
     profile.ambientTrack = $('#setAmbientTrack')?.value || profile.ambientTrack || DEFAULTS.ambientTrack;
@@ -6196,6 +6230,7 @@ function bindEvents() {
     setAmbientScore(profile.ambientScore);
     configureScreenAwareness(profile.screenAwareness);
     updateSttLanguageUi();
+    updateContextMeter();
     configureWakeWord(profile.wakeWord);
   });
   $('#resetBtn').addEventListener('click', async () => {
