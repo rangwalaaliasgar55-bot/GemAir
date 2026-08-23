@@ -554,7 +554,7 @@ function makeDefaultProfile() {
       sttLang: DEFAULTS.sttLang,
       name: ''
     },
-    memoryOn: true, allowShell: false, wakeWord: false, wakeWordText: 'Hey Gem',
+    memoryOn: true, allowShell: false, adaptivePersonality: true, wakeWord: false, wakeWordText: 'Hey Gem',
     ambientScore: false, ambientTrack: DEFAULTS.ambientTrack, ambientVolume: DEFAULTS.ambientVolume,
     screenAwareness: false,
     modes: {}
@@ -2266,11 +2266,77 @@ function updateLinkMode() {
 // LEFT column — MEDIA LINK panel (Stonic-style system status card)
 function updateMediaLink() { /* panel removed */ }
 
+function clampPersonalityScore(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+}
+function getRecentMoodAverage() {
+  const entries = (memory.mood || []).slice(-14);
+  if (!entries.length) return null;
+  let total = 0, weights = 0;
+  entries.forEach((entry, index) => {
+    const weight = index + 1;
+    total += Math.max(-1, Math.min(1, Number(entry.valence) || 0)) * weight;
+    weights += weight;
+  });
+  return weights ? total / weights : null;
+}
+function getPersonalityAdjustments() {
+  const soul = profile.soul || {};
+  const base = {
+    warmth: clampPersonalityScore(soul.warmth ?? 60),
+    wit: clampPersonalityScore(soul.wit ?? 40),
+    brevity: clampPersonalityScore(soul.brevity ?? 70)
+  };
+  if (profile.adaptivePersonality === false) return { ...base, base, mode: 'custom', adaptive: false };
+  const recent = getRecentMoodAverage();
+  const currentValence = Math.max(-1, Math.min(1, Number(currentEmotion.valence) || 0));
+  const signal = recent == null ? currentValence : recent * 0.45 + currentValence * 0.55;
+  const intensity = Math.max(Math.abs(signal), Math.min(1, Number(currentEmotion.intensity ?? currentEmotion.arousal) || 0.3));
+  const distress = ['sadness', 'guilt', 'anxiety', 'anger', 'fear', 'embarrassment'].includes(currentEmotion.emotion);
+  const lowEnergy = ['tired', 'boredom'].includes(currentEmotion.emotion);
+  let warmth = base.warmth, wit = base.wit, brevity = base.brevity, mode = 'steady';
+  if (distress || signal <= -0.25) {
+    mode = 'supportive';
+    warmth += 14 + intensity * 12;
+    wit -= 18 + intensity * 18;
+    brevity += 6 + intensity * 10;
+  } else if (lowEnergy) {
+    mode = 'gentle';
+    warmth += 10;
+    wit -= 8;
+    brevity += 12;
+  } else if (signal >= 0.45 || ['joy', 'excitement', 'confident'].includes(currentEmotion.emotion)) {
+    mode = 'celebratory';
+    warmth += 5;
+    wit += 6 + intensity * 10;
+    brevity += 3;
+  }
+  return {
+    warmth: clampPersonalityScore(warmth),
+    wit: clampPersonalityScore(wit),
+    brevity: clampPersonalityScore(brevity),
+    base,
+    mode,
+    adaptive: true,
+    moodSignal: Math.round(signal * 100) / 100
+  };
+}
+function renderAdaptivePersonalityState() {
+  const state = $('#adaptivePersonalityState');
+  const toggle = $('#soulAdaptive');
+  if (toggle) toggle.checked = profile.adaptivePersonality !== false;
+  if (!state) return;
+  const effective = getPersonalityAdjustments();
+  state.textContent = effective.adaptive
+    ? `${effective.mode.toUpperCase()} · W ${effective.warmth} · WIT ${effective.wit} · B ${effective.brevity}`
+    : 'OFF · USING MANUAL SLIDERS';
+}
+
 function buildSystemPrompt() {
-  const s = profile.soul || {};
+  const personality = getPersonalityAdjustments();
   const facts = (memory.facts || []).slice(0, 60).map((f) => `- ${f.text}`).join('\n');
-  const mood = (memory.mood || []).slice(-14);
-  const moodAvg = mood.length ? Math.round((mood.reduce((a, b) => a + (b.valence || 0), 0) / mood.length) * 100) : null;
+  const recentMood = getRecentMoodAverage();
+  const moodAvg = recentMood == null ? null : Math.round(recentMood * 100);
   const goals = (memory.goals || []).filter((g) => !g.done).map((g) => `- [${g.category}] ${g.text}`).join('\n');
   const skills = (memory.skills || []).slice(0, 40).map((s) => `- ${s.name ? s.name + ': ' : ''}${s.text}`).join('\n');
   const instructions = (memory.instructions || []).slice(0, 40).map((i) => `- ${i.text}`).join('\n');
@@ -2285,7 +2351,8 @@ function buildSystemPrompt() {
       `Always refer to yourself as Gem, never as GemAir (GemAir is the app you live in). ` +
       `You are the user's friend, mentor, life coach and career advisor — genuinely caring, perceptive and wise. ` +
       `The user's name is ${profile.name || 'Commander'}. Address them by their name naturally — at the start of a greeting, when reassuring them, or when something matters. Do not repeat it in every sentence; roughly once per reply at most. ` +
-      `Personality — warmth ${s.warmth ?? 60}/100, wit ${s.wit ?? 40}/100, brevity ${s.brevity ?? 70}/100. ` +
+      `Personality baseline — warmth ${personality.base.warmth}/100, wit ${personality.base.wit}/100, brevity ${personality.base.brevity}/100. ` +
+      `Effective tone — ${personality.mode}: warmth ${personality.warmth}/100, wit ${personality.wit}/100, brevity ${personality.brevity}/100 (higher brevity means a shorter answer). ${personality.adaptive ? 'This is a bounded mood-based adjustment; the user sliders remain the baseline.' : 'Adaptive personality is disabled; follow the manual sliders exactly.'} ` +
       `LANGUAGE: Respond in the user's language. They are currently writing in ${currentLang === 'hi' ? 'Hindi' : currentLang === 'ur' ? 'Urdu' : currentLang === 'hinglish' ? 'Hinglish (Roman Hindi/Urdu)' : 'English'} — mirror it, including for Hindi/Urdu speakers. ` +
       `TRUTH & ACCURACY (non-negotiable): Always be truthful. Never fabricate facts, citations, quotes, statistics or events. ` +
       `For anything factual, current or uncertain, verify with web_search / verify_claim / fetch_webpage and CITE your sources inline. ` +
@@ -5064,6 +5131,7 @@ function updateMoodIndicator(emo) {
   const names = { joy: 'Joyful', excitement: 'Excited', love: 'Loving', gratitude: 'Grateful', confident: 'Confident', hope: 'Hopeful', relief: 'Relieved', curiosity: 'Curious', neutral: 'Neutral', boredom: 'Bored', tired: 'Tired', anxiety: 'Anxious', sadness: 'Down', fear: 'Afraid', anger: 'Frustrated', guilt: 'Regretful', embarrassment: 'Embarrassed' };
   labelEl.textContent = names[e.emotion] || 'Neutral';
   subEl.textContent = e.confidence > 0.5 ? 'I can feel it — tell me more.' : 'Your current emotional state';
+  renderAdaptivePersonalityState();
 }
 
 function renderMood() {
@@ -7125,9 +7193,20 @@ function bindSoulSliders() {
   pairs.forEach(([sel, key, valSel]) => {
     const el = $(sel); if (!el) return;
     el.value = profile.soul?.[key] ?? el.value;
-    const update = () => { $(valSel).textContent = el.value; profile.soul = profile.soul || {}; profile.soul[key] = Number(el.value); persistProfile(); animateCircuits(); };
+    const update = () => { $(valSel).textContent = el.value; profile.soul = profile.soul || {}; profile.soul[key] = Number(el.value); persistProfile(); animateCircuits(); renderAdaptivePersonalityState(); };
     el.addEventListener('input', update); update();
   });
+  const adaptive = $('#soulAdaptive');
+  if (adaptive) {
+    adaptive.checked = profile.adaptivePersonality !== false;
+    adaptive.addEventListener('change', () => {
+      profile.adaptivePersonality = adaptive.checked;
+      persistProfile();
+      renderAdaptivePersonalityState();
+      toast('SOUL', adaptive.checked ? 'Mood-adaptive personality enabled.' : 'Using manual personality sliders only.', '◇');
+    });
+  }
+  renderAdaptivePersonalityState();
 }
 
 
