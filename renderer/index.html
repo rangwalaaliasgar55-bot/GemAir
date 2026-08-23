@@ -279,17 +279,17 @@
                       <input type="text" id="chatInput" placeholder="Type instruction or / command for Gem…" autocomplete="off" />
                       <button class="send-btn" id="sendBtn" title="Send message">➤</button>
                     </div>
-                    <div class="quick-commands" id="quickCommands">
-                      <button class="qc" data-cmd="What's the weather?">🌦 Weather</button>
-                      <button class="qc" data-cmd="Search the web for ">🔎 Search</button>
-                      <button class="qc" data-cmd="Open calculator">🚀 Calculator</button>
-                      <button class="qc" data-cmd="Remind me to ">⏰ Reminder</button>
-                      <button class="qc" data-cmd="Write a note: ">📝 Note</button>
-                      <button class="qc" data-cmd="Tell me a joke">😄 Joke</button>
-                      <button class="qc" data-cmd="Show system status">📊 Telemetry</button>
-                      <button class="qc" data-cmd="chill mode">🌙 Chill</button>
-                      <button class="qc" data-cmd="gaming setup">🎮 Gaming</button>
-                      <button class="qc" data-cmd="list windows">🖥 Windows</button>
+                    <div class="quick-commands" id="quickCommands" role="toolbar" aria-label="Quick assistant actions">
+                      <button type="button" class="qc" data-cmd="Search the web for " data-shortcut="1" aria-keyshortcuts="Alt+1" title="Search the web (Alt+1)">🔎 Search</button>
+                      <button type="button" class="qc" data-cmd="What's the weather?" data-shortcut="2" aria-keyshortcuts="Alt+2" title="Check weather (Alt+2)">🌦 Weather</button>
+                      <button type="button" class="qc" data-cmd="Write a note: " data-shortcut="3" aria-keyshortcuts="Alt+3" title="Write a note (Alt+3)">📝 Note</button>
+                      <button type="button" class="qc" data-cmd="Remind me to " data-shortcut="4" aria-keyshortcuts="Alt+4" title="Set a reminder (Alt+4)">⏰ Reminder</button>
+                      <button type="button" class="qc" data-cmd="Open calculator">🚀 Calculator</button>
+                      <button type="button" class="qc" data-cmd="Tell me a joke">😄 Joke</button>
+                      <button type="button" class="qc" data-cmd="Show system status">📊 Telemetry</button>
+                      <button type="button" class="qc" data-cmd="chill mode">🌙 Chill</button>
+                      <button type="button" class="qc" data-cmd="gaming setup">🎮 Gaming</button>
+                      <button type="button" class="qc" data-cmd="list windows">🖥 Windows</button>
                     </div>
                   </div>
                 </div>

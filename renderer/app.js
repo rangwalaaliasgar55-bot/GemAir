@@ -6156,12 +6156,35 @@ function bindEvents() {
   $('#setBaseURL').addEventListener('input', updateAiHint);
   $('#setApiKey').addEventListener('input', updateAiHint);
 
-  // quick commands
-  $$('.qc').forEach((b) => b.addEventListener('click', () => {
+  // Accessible quick-action toolbar. Arrow keys move within the toolbar;
+  // Alt+1…4 invoke Search, Weather, Note, and Reminder from any view.
+  const quickToolbar = $('#quickCommands');
+  const quickButtons = quickToolbar ? Array.from(quickToolbar.querySelectorAll('.qc')) : [];
+  function activateQuickButton(button) {
+    if (!button) return;
     switchView('assistant');
-    $('#chatInput').value = b.dataset.cmd;
-    $('#chatInput').focus();
-  }));
+    const agentTab = $('.expert-tab[data-etab="agent"]');
+    if (agentTab && !agentTab.classList.contains('active')) agentTab.click();
+    const input = $('#chatInput');
+    input.value = button.dataset.cmd || '';
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    quickButtons.forEach((candidate) => { candidate.tabIndex = candidate === button ? 0 : -1; });
+    playSfx('click');
+  }
+  quickButtons.forEach((button, index) => {
+    button.tabIndex = index === 0 ? 0 : -1;
+    button.addEventListener('click', () => activateQuickButton(button));
+  });
+  quickToolbar?.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const current = Math.max(0, quickButtons.indexOf(document.activeElement));
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? quickButtons.length - 1
+      : (current + (event.key === 'ArrowRight' ? 1 : -1) + quickButtons.length) % quickButtons.length;
+    quickButtons.forEach((button, index) => { button.tabIndex = index === next ? 0 : -1; });
+    quickButtons[next]?.focus();
+  });
 
   // test AI connection
   $('#testConn').addEventListener('click', async () => {
@@ -6328,7 +6351,11 @@ function bindEvents() {
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     konamiIndex = key === konami[konamiIndex] ? konamiIndex + 1 : (key === konami[0] ? 1 : 0);
     if (konamiIndex === konami.length) { konamiIndex = 0; triggerRgbBurst(); }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
+    if (e.altKey && !e.ctrlKey && !e.metaKey && /^[1-4]$/.test(e.key)) {
+      const quickButton = quickButtons.find((button) => button.dataset.shortcut === e.key);
+      if (quickButton) { e.preventDefault(); activateQuickButton(quickButton); }
+    }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') { $('#chatInput').focus(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === ',') { openSettings(); }
     // U4: Escape now closes EVERY modal (breathe / report / theme included),

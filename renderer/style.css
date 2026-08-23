@@ -487,6 +487,11 @@ body.rgb-recording #micVuCanvas, body.wake-armed #micVuCanvas { opacity: 1; bord
   transition: all .18s; font-family: inherit;
 }
 .qc:hover { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); transform: translateY(-1px); }
+.qc:focus-visible { color: var(--accent); border-color: var(--accent); outline: 2px solid var(--accent-glow); outline-offset: 2px; }
+@media (max-width: 1000px) {
+  .quick-commands { flex-wrap: nowrap; overflow-x: auto; padding: 3px 2px 8px; scrollbar-width: thin; scroll-snap-type: x proximity; }
+  .quick-commands .qc { flex: 0 0 auto; scroll-snap-align: start; }
+}
 
 /* ============ SYSTEM CORE VIEW ============ */
 /* U5: the fixed 360px first column only collapsed at 1100px, so between ~900px
