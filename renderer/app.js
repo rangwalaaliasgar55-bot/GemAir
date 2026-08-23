@@ -2126,7 +2126,7 @@ function loadMermaid() {
       s.src = 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js';
       s.onload = () => {
         try {
-          window.mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+          window.mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' });
         } catch (e) {}
         resolve(window.mermaid);
       };

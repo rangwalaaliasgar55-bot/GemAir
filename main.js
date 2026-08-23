@@ -99,6 +99,68 @@ function saveWindowBounds() {
   } catch (e) { return false; }
 }
 
+function trustedExternalUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && url.toString().length <= 4096 ? url.toString() : null;
+  } catch { return null; }
+}
+function openExternalSafely(value) {
+  const external = trustedExternalUrl(value);
+  if (!external) return false;
+  Promise.resolve(shell.openExternal(external)).catch((error) => console.error('[open-external]', error.message));
+  return true;
+}
+function isAppFileUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'file:' && decodeURIComponent(url.pathname).replace(/\\/g, '/').endsWith('/renderer/index.html');
+  } catch { return false; }
+}
+function isLocalFileOrigin(value) {
+  try { return new URL(String(value || '')).protocol === 'file:'; } catch { return false; }
+}
+function sameAppDocument(target, current) {
+  try {
+    const next = new URL(target), active = new URL(current);
+    return isAppFileUrl(next.toString()) && isAppFileUrl(active.toString()) && next.pathname === active.pathname;
+  } catch { return false; }
+}
+function authHostAllowed(value, provider) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:' || url.username || url.password) return false;
+    const common = ['accounts.google.com', 'appleid.apple.com', 'login.microsoftonline.com'];
+    const providerHosts = provider === 'chatgpt'
+      ? ['chatgpt.com', 'openai.com']
+      : ['google.com', 'gemini.google.com', 'aistudio.google.com', 'googleusercontent.com'];
+    return [...common, ...providerHosts].some((host) => url.hostname === host || url.hostname.endsWith('.' + host));
+  } catch { return false; }
+}
+function configureAuthWindowSecurity(window, provider) {
+  if (!window || window.isDestroyed()) return;
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!authHostAllowed(url, provider)) {
+      event.preventDefault();
+      openExternalSafely(url);
+    }
+  });
+  window.webContents.on('did-create-window', (child) => configureAuthWindowSecurity(child, provider));
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (!authHostAllowed(url, provider)) {
+      openExternalSafely(url);
+      return { action: 'deny' };
+    }
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        autoHideMenuBar: true,
+        webPreferences: { partition: provider === 'chatgpt' ? 'persist:chatgpt' : 'persist:gemini', nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, navigateOnDragDrop: false, safeDialogs: true }
+      }
+    };
+  });
+}
+
 function createWindow() {
   const start = restoredBounds();
   mainWindow = new BrowserWindow({
@@ -115,6 +177,12 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      navigateOnDragDrop: false,
+      safeDialogs: true,
       spellcheck: false
     }
   });
@@ -143,11 +211,24 @@ function createWindow() {
       try { dialog.showErrorBox('GemAir renderer stopped', 'Your state is safe, but the interface stopped more than once. Please restart GemAir.'); } catch {}
     }
   });
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (sameAppDocument(url, mainWindow.webContents.getURL())) return;
+    event.preventDefault();
+    openExternalSafely(url);
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http')) shell.openExternal(url);
+    openExternalSafely(url);
     return { action: 'deny' };
   });
+  const mainSession = mainWindow.webContents.session;
+  mainSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const requestingUrl = details && (details.requestingUrl || details.securityOrigin);
+    callback(webContents === mainWindow.webContents && permission === 'media' && isLocalFileOrigin(requestingUrl || mainWindow.webContents.getURL()));
+  });
+  mainSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+    return webContents === mainWindow.webContents && permission === 'media' && isLocalFileOrigin(requestingOrigin || mainWindow.webContents.getURL());
+  });
+  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.on('close', (e) => {
     saveWindowBounds();
     if (!isQuitting && tray) {
@@ -2860,9 +2941,13 @@ function createAuthWindow(provider) {
       partition,
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false
+      sandbox: true,
+      webSecurity: true,
+      navigateOnDragDrop: false,
+      safeDialogs: true
     }
   });
+  configureAuthWindowSecurity(authWindow, provider);
   // Clear previous session? Keep persist so user doesn't re-login each time
   const url = provider === 'chatgpt' ? 'https://chatgpt.com/auth/login' : 'https://accounts.google.com/signin/v2/identifier?service=gemini&continue=https://gemini.google.com/app';
   authWindow.loadURL(url);
@@ -3185,7 +3270,7 @@ ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
   catch (err) { return { ok: false, error: err.message }; }
 });
 ipcMain.handle('news:get', (_e, limit, category) => getHeadlines(limit || 12, category || 'tech'));
-ipcMain.handle('app:openExternal', (_e, url) => { if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url); });
+ipcMain.handle('app:openExternal', (_e, url) => openExternalSafely(url));
 ipcMain.handle('report:generate', () => generateReport());
 ipcMain.handle('report:needsCheckIn', () => moodNeedsCheckIn());
 ipcMain.handle('memory:export', () => ({ memory: readMemory(), profile: readProfile() }));
@@ -3236,8 +3321,9 @@ ipcMain.handle('connections:openAIStudio', async () => {
   authWindow = new BrowserWindow({
     width: 1100, height: 800, show: true, autoHideMenuBar: false,
     title: 'AI Studio — Sign in with Google (zero key copy-paste)',
-    webPreferences: { partition: 'persist:gemini', nodeIntegration: false, contextIsolation: true }
+    webPreferences: { partition: 'persist:gemini', nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, navigateOnDragDrop: false, safeDialogs: true }
   });
+  configureAuthWindowSecurity(authWindow, 'gemini');
   authWindow.loadURL('https://aistudio.google.com/');
   return { ok: true };
 });
