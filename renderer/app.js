@@ -222,9 +222,9 @@ const api = {
   openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async version() { return window.gemair ? window.gemair.version() : '2.1.0'; },
-  onReminder(cb) { if (window.gemair) window.gemair.onReminder(cb); },
-  onWakeToggle(cb) { if (window.gemair) window.gemair.onWakeToggle(cb); },
-  onActivity(cb) { if (window.gemair && window.gemair.onActivity) window.gemair.onActivity(cb); },
+  onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
+  onWakeToggle(cb) { return registerRendererDisposer(window.gemair && window.gemair.onWakeToggle ? window.gemair.onWakeToggle(cb) : null); },
+  onActivity(cb) { return registerRendererDisposer(window.gemair && window.gemair.onActivity ? window.gemair.onActivity(cb) : null); },
   async collaborateAgents(task) {
     if (window.gemair && window.gemair.collaborateAgents) return window.gemair.collaborateAgents(task);
     const research = await webGet('search', { q: task });
@@ -237,7 +237,7 @@ const api = {
       { agent: 'Carol', tool: 'system_scan', args: {}, result: system, ok: true, ms: 0 }
     ] };
   },
-  onHudPanel(cb) { if (window.gemair && window.gemair.onHudPanel) window.gemair.onHudPanel(cb); },
+  onHudPanel(cb) { return registerRendererDisposer(window.gemair && window.gemair.onHudPanel ? window.gemair.onHudPanel(cb) : null); },
   // 2.4 Connections
   async connectionsGetStatus() { if (window.gemair && window.gemair.connectionsGetStatus) return window.gemair.connectionsGetStatus(); return { chatgpt: { connected: false, dot: 'DISCONNECTED' }, gemini: { connected: false, dot: 'DISCONNECTED' }, freeCore: { connected: true, dot: 'FALLBACK' }, meta: { priority: 'free' } }; },
   async connectionsSetPriority(p) { if (window.gemair) return window.gemair.connectionsSetPriority(p); },
@@ -263,13 +263,13 @@ const api = {
   async desktopMinimizeAll() { if (window.gemair) return window.gemair.desktopMinimizeAll(); },
   async desktopNextDesktop() { if (window.gemair) return window.gemair.desktopNextDesktop(); },
   async desktopOpenSite(url, browser) { if (window.gemair) return window.gemair.desktopOpenSite(url, browser); return { ok: true }; },
-  onConnectionsUpdated(cb) { if (window.gemair && window.gemair.onConnectionsUpdated) window.gemair.onConnectionsUpdated(cb); },
-  onConnectionsExpired(cb) { if (window.gemair && window.gemair.onConnectionsExpired) window.gemair.onConnectionsExpired(cb); },
-  onDesktopFocus(cb) { if (window.gemair && window.gemair.onDesktopFocus) window.gemair.onDesktopFocus(cb); },
-  onDesktopVolume(cb) { if (window.gemair && window.gemair.onDesktopVolume) window.gemair.onDesktopVolume(cb); },
-  onDesktopTheme(cb) { if (window.gemair && window.gemair.onDesktopTheme) window.gemair.onDesktopTheme(cb); },
-  onDesktopDnd(cb) { if (window.gemair && window.gemair.onDesktopDnd) window.gemair.onDesktopDnd(cb); },
-  onModeChanged(cb) { if (window.gemair && window.gemair.onModeChanged) window.gemair.onModeChanged(cb); },
+  onConnectionsUpdated(cb) { return registerRendererDisposer(window.gemair && window.gemair.onConnectionsUpdated ? window.gemair.onConnectionsUpdated(cb) : null); },
+  onConnectionsExpired(cb) { return registerRendererDisposer(window.gemair && window.gemair.onConnectionsExpired ? window.gemair.onConnectionsExpired(cb) : null); },
+  onDesktopFocus(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDesktopFocus ? window.gemair.onDesktopFocus(cb) : null); },
+  onDesktopVolume(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDesktopVolume ? window.gemair.onDesktopVolume(cb) : null); },
+  onDesktopTheme(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDesktopTheme ? window.gemair.onDesktopTheme(cb) : null); },
+  onDesktopDnd(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDesktopDnd ? window.gemair.onDesktopDnd(cb) : null); },
+  onModeChanged(cb) { return registerRendererDisposer(window.gemair && window.gemair.onModeChanged ? window.gemair.onModeChanged(cb) : null); },
 
   // report & backup
   async generateReport() {
@@ -1023,7 +1023,6 @@ window.addEventListener('unhandledrejection', (e) => {
 let _eventsBound = false;
 function ensureInteractive() {
   if (_eventsBound) return;
-  _eventsBound = true;
   try {
     bindEvents();
     console.warn('[GemAir] recovered: events bound by the safety net.');
@@ -1236,6 +1235,27 @@ function normaliseInput(text) {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const rendererLifecycle = typeof AbortController === 'function' ? new AbortController() : null;
+const rendererDisposers = new Set();
+function addLifecycleListener(target, type, handler, options = {}) {
+  if (!target || typeof target.addEventListener !== 'function') return handler;
+  const normalized = typeof options === 'boolean' ? { capture: options } : { ...options };
+  if (rendererLifecycle) normalized.signal = rendererLifecycle.signal;
+  target.addEventListener(type, handler, normalized);
+  return handler;
+}
+function registerRendererDisposer(disposer) {
+  if (typeof disposer === 'function') rendererDisposers.add(disposer);
+  return disposer;
+}
+function disposeRendererLifecycle() {
+  if (rendererLifecycle && !rendererLifecycle.signal.aborted) rendererLifecycle.abort();
+  for (const dispose of rendererDisposers) {
+    try { dispose(); } catch {}
+  }
+  rendererDisposers.clear();
+}
+window.addEventListener('beforeunload', disposeRendererLifecycle, { once: true });
 
 // ---------------------------------------------------------------------------
 // Theme (with RGB / rainbow mode) & Synthetic Web Audio SFX
@@ -1598,7 +1618,7 @@ function resumeViewFrames(view) {
   viewFrameWaiters.delete(view);
   waiting.forEach((callback) => requestAnimationFrame(callback));
 }
-document.addEventListener('visibilitychange', () => {
+addLifecycleListener(document, 'visibilitychange', () => {
   if (!document.hidden) {
     const active = $$('.view').find((view) => view.classList.contains('active'));
     if (active) resumeViewFrames(active.id.replace('view-', ''));
@@ -1788,10 +1808,14 @@ async function pollSystem() {
 // ---------------------------------------------------------------------------
 // 3D background scene (starfield + rotating wireframe polyhedron + parallax)
 // ---------------------------------------------------------------------------
+let background3DStarted = false, orbStarted = false, globeStarted = false;
 function startBackground3D() {
+  if (background3DStarted) return;
   const canvas = $('#bgCanvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  background3DStarted = true;
   let accent = getAccent();
   let w, h, dpr, mx = 0, my = 0;
   function resize() {
@@ -1808,8 +1832,8 @@ function startBackground3D() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   resize();
-  window.addEventListener('resize', debounce(resize), { passive: true });
-  window.addEventListener('mousemove', (e) => { mx = (e.clientX / w - 0.5) * 2; my = (e.clientY / h - 0.5) * 2; });
+  addLifecycleListener(window, 'resize', debounce(resize), { passive: true });
+  addLifecycleListener(window, 'mousemove', (e) => { mx = (e.clientX / w - 0.5) * 2; my = (e.clientY / h - 0.5) * 2; }, { passive: true });
 
   // stars
   const stars = [];
@@ -1875,8 +1899,11 @@ function startBackground3D() {
 // Orb particle animation
 // ---------------------------------------------------------------------------
 function startOrb() {
+  if (orbStarted) return;
   const canvas = $('#orbCanvas'); if (!canvas) return;
   const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  orbStarted = true;
   let accent = getAccent();
   let w, h, dpr;
   function resize() {
@@ -1885,7 +1912,7 @@ function startOrb() {
     canvas.width = w * dpr; canvas.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-  resize(); window.addEventListener('resize', debounce(resize), { passive: true });
+  resize(); addLifecycleListener(window, 'resize', debounce(resize), { passive: true });
   const parts = [];
   for (let i = 0; i < 110; i++) parts.push({ ang: Math.random() * Math.PI * 2, rad: Math.random(), spd: 0.002 + Math.random() * 0.006, size: 1 + Math.random() * 2.2, phase: Math.random() * Math.PI * 2 });
   function draw(t) {
@@ -1913,8 +1940,11 @@ function startOrb() {
 // Globe
 // ---------------------------------------------------------------------------
 function startGlobe() {
+  if (globeStarted) return;
   const canvas = $('#globeCanvas'); if (!canvas) return;
   const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  globeStarted = true;
   let w, h, dpr, visibleMarkers = [];
   const hotspots = [
     { lat: 40.7, lon: -74, label: 'NYC' }, { lat: 51.5, lon: -0.1, label: 'LON' },
@@ -1954,18 +1984,18 @@ function startGlobe() {
     panel.onclick = () => api.openExternal(marker.headline.url);
     $$('#newsList .news-item').forEach((item) => item.classList.toggle('selected', item.dataset.newsId === String(marker.headline.id)));
   }
-  canvas.addEventListener('pointermove', (event) => {
+  addLifecycleListener(canvas, 'pointermove', (event) => {
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * (w / rect.width), y = (event.clientY - rect.top) * (h / rect.height);
     canvas.style.cursor = visibleMarkers.some((marker) => Math.hypot(marker.x - x, marker.y - y) < 15) ? 'pointer' : 'crosshair';
   });
-  canvas.addEventListener('click', (event) => {
+  addLifecycleListener(canvas, 'click', (event) => {
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * (w / rect.width), y = (event.clientY - rect.top) * (h / rect.height);
     const marker = visibleMarkers.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
     if (marker && Math.hypot(marker.x - x, marker.y - y) < 18) selectHotspot(marker);
   });
-  resize(); window.addEventListener('resize', debounce(resize), { passive: true });
+  resize(); addLifecycleListener(window, 'resize', debounce(resize), { passive: true });
 
   function draw(time) {
     const accent = getAccent();
@@ -3390,7 +3420,7 @@ function startAgentTown() {
   }
 
   // click -> assign task (routes to the agent's own brain)
-  canvas.addEventListener('click', (e) => {
+  addLifecycleListener(canvas, 'click', (e) => {
     const rect = canvas.getBoundingClientRect();
     const sx = W / rect.width, sy = H / rect.height;
     const mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy;
@@ -4021,7 +4051,7 @@ function initTownChrome() {
   const canvas = $('#townCanvas'), tag = $('#pressE');
   let hovered = null;
   if (canvas && tag) {
-    canvas.addEventListener('mousemove', (e) => {
+    addLifecycleListener(canvas, 'mousemove', (e) => {
       const rect = canvas.getBoundingClientRect();
       const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
       const mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy;
@@ -4039,9 +4069,9 @@ function initTownChrome() {
         canvas.style.cursor = '';
       }
     });
-    canvas.addEventListener('mouseleave', () => { hovered = null; tag.classList.remove('show'); });
+    addLifecycleListener(canvas, 'mouseleave', () => { hovered = null; tag.classList.remove('show'); });
   }
-  window.addEventListener('keydown', (e) => {
+  addLifecycleListener(window, 'keydown', (e) => {
     if (e.key.toLowerCase() !== 'e' || e.ctrlKey || e.metaKey || e.altKey) return;
     const ae = document.activeElement;
     if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
@@ -4105,7 +4135,7 @@ function startTownPreview() {
     scheduleViewFrame('assistant', loop);
   }
   scheduleViewFrame('assistant', loop);
-  canvas.addEventListener('click', () => { playSfx('swoosh'); switchView('town'); });
+  addLifecycleListener(canvas, 'click', () => { playSfx('swoosh'); switchView('town'); });
 }
 
 // ---------------------------------------------------------------------------
@@ -4138,7 +4168,7 @@ function renderAccountState() {
 }
 
 function setupAccountControls() {
-  document.addEventListener('gemair:auth', () => { renderAccountState(); updateFairUseIdentity(); });
+  addLifecycleListener(document, 'gemair:auth', () => { renderAccountState(); updateFairUseIdentity(); });
   $('#signInGoogleBtn')?.addEventListener('click', async () => {
     if (!window.webStore || !window.webStore.signInWithGoogle) return;
     const ok = await window.webStore.signInWithGoogle(window.location.origin);
@@ -6607,7 +6637,7 @@ function bindEvents() {
   // keyboard shortcuts + Konami easter egg
   const konami = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
   let konamiIndex = 0;
-  window.addEventListener('keydown', (e) => {
+  addLifecycleListener(window, 'keydown', (e) => {
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     konamiIndex = key === konami[konamiIndex] ? konamiIndex + 1 : (key === konami[0] ? 1 : 0);
     if (konamiIndex === konami.length) { konamiIndex = 0; triggerRgbBurst(); }
@@ -7274,8 +7304,8 @@ function runBootSequence() {
       if (event && event.type === 'keydown' && ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) return;
       finish();
     };
-    window.addEventListener('keydown', skip, true);
-    window.addEventListener('pointerdown', skip, true);
+    addLifecycleListener(window, 'keydown', skip, true);
+    addLifecycleListener(window, 'pointerdown', skip, true);
 
     trace.forEach(([text, cls], i) => later(() => {
       if (!bios || finished) return;
@@ -8164,7 +8194,7 @@ function updateNowCard() {
 // fake-DOM selfcheck both skip this safely.
 try {
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-    window.addEventListener('load', () => { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch {} });
+    addLifecycleListener(window, 'load', () => { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch {} });
   }
 } catch {}
 

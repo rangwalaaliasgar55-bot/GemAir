@@ -1,6 +1,13 @@
 // GemAir 2.5 — preload (contextBridge)
 const { contextBridge, ipcRenderer } = require('electron');
 
+function subscribeIpc(channel, callback) {
+  if (typeof callback !== 'function') return () => {};
+  const handler = (_event, value) => callback(value);
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+}
+
 contextBridge.exposeInMainWorld('gemair', {
   platform: process.platform,
   getSystemInfo: () => ipcRenderer.invoke('system:info'),
@@ -123,15 +130,15 @@ contextBridge.exposeInMainWorld('gemair', {
   desktopSetVolume: (args) => ipcRenderer.invoke('desktop:setVolume', args),
 
   // events (main -> renderer)
-  onReminder: (cb) => ipcRenderer.on('reminder:due', (_e, reminder) => cb(reminder)),
-  onWakeToggle: (cb) => ipcRenderer.on('wake:toggle', (_e, on) => cb(on)),
-  onActivity: (cb) => ipcRenderer.on('ai:activity', (_e, data) => cb(data)),
-  onHudPanel: (cb) => ipcRenderer.on('hud:panel', (_e, data) => cb(data)),
-  onConnectionsUpdated: (cb) => ipcRenderer.on('connections:updated', (_e, data) => cb(data)),
-  onConnectionsExpired: (cb) => ipcRenderer.on('connections:expired', (_e, data) => cb(data)),
-  onDesktopFocus: (cb) => ipcRenderer.on('desktop:focus', (_e, data) => cb(data)),
-  onDesktopVolume: (cb) => ipcRenderer.on('desktop:volume', (_e, data) => cb(data)),
-  onDesktopTheme: (cb) => ipcRenderer.on('desktop:theme', (_e, data) => cb(data)),
-  onDesktopDnd: (cb) => ipcRenderer.on('desktop:dnd', (_e, data) => cb(data)),
-  onModeChanged: (cb) => ipcRenderer.on('mode:changed', (_e, data) => cb(data))
+  onReminder: (cb) => subscribeIpc('reminder:due', cb),
+  onWakeToggle: (cb) => subscribeIpc('wake:toggle', cb),
+  onActivity: (cb) => subscribeIpc('ai:activity', cb),
+  onHudPanel: (cb) => subscribeIpc('hud:panel', cb),
+  onConnectionsUpdated: (cb) => subscribeIpc('connections:updated', cb),
+  onConnectionsExpired: (cb) => subscribeIpc('connections:expired', cb),
+  onDesktopFocus: (cb) => subscribeIpc('desktop:focus', cb),
+  onDesktopVolume: (cb) => subscribeIpc('desktop:volume', cb),
+  onDesktopTheme: (cb) => subscribeIpc('desktop:theme', cb),
+  onDesktopDnd: (cb) => subscribeIpc('desktop:dnd', cb),
+  onModeChanged: (cb) => subscribeIpc('mode:changed', cb)
 });

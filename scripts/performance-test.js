@@ -37,7 +37,7 @@ assert(main.includes('await fs.promises.writeFile(res.filePath, content)'), 'sav
 console.log('  ok   battery, screenshot, and save-dialog I/O are asynchronous');
 
 assert(renderer.includes('function debounce(fn, wait = 120)'), 'renderer debounce helper is missing');
-const resizeListeners = renderer.match(/window\.addEventListener\('resize', debounce\(resize\), \{ passive: true \}\)/g) || [];
+const resizeListeners = renderer.match(/addLifecycleListener\(window, 'resize', debounce\(resize\), \{ passive: true \}\)/g) || [];
 assert.strictEqual(resizeListeners.length, 3, 'all three canvas resize listeners must be debounced');
 assert(!renderer.includes("window.addEventListener('resize', resize)"), 'an immediate resize listener remains');
 console.log('  ok   canvas resize work is debounced and passive');
