@@ -1434,24 +1434,47 @@ function resolveCloseTargets(name, keep) {
   }
   return CLOSEABLE_APPS[q] || [q];
 }
-function closeApp(name, keep) {
-  const targets = resolveCloseTargets(name, keep);
-  if (!targets.length) return { ok: true, closed: [], note: 'Nothing matched to close.' };
-  const p = process.platform;
-  const closed = [];
-  for (const proc of targets) {
-    const safe = String(proc).replace(/[^a-zA-Z0-9 _.-]/g, '');
-    if (!safe) continue;
-    try {
-      if (p === 'win32') exec(`taskkill /IM "${safe}.exe" /F 2>nul || taskkill /IM "${safe}" /F 2>nul`, () => {});
-      else if (p === 'darwin') exec(`osascript -e 'quit app "${safe}"'`, () => {});
-      else exec(`pkill -f "${safe}"`, () => {});
-      closed.push(safe);
-    } catch (e) {}
-  }
-  logAction('close_app', `Closed ${closed.length} app(s): ${closed.join(', ')}`);
-  return { ok: true, closed, note: closed.length ? `Asked ${closed.length} app(s) to close.` : 'Nothing closed.' };
+function execFileCapture(file, args, timeout = 8000) {
+  return new Promise((resolve) => {
+    execFile(file, args, { timeout, windowsHide: true, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      resolve({
+        ok: !error,
+        code: error ? (error.code || 1) : 0,
+        stdout: String(stdout || '').slice(0, 2000),
+        stderr: String(stderr || '').slice(0, 1000)
+      });
+    });
+  });
 }
+async function terminateAppProcess(processName) {
+  const safe = String(processName || '').trim();
+  if (!safe || safe.length > 80 || !/^[a-zA-Z0-9 _.-]+$/.test(safe)) return { ok: false, name: safe.slice(0, 80), error: 'Invalid process name.' };
+  if (process.platform === 'win32') {
+    const names = /\.exe$/i.test(safe) ? [safe] : [safe + '.exe', safe];
+    for (const image of names) {
+      const result = await execFileCapture('taskkill', ['/IM', image, '/T', '/F']);
+      if (result.ok) return { ok: true, name: safe };
+    }
+    return { ok: false, name: safe, error: 'Process not found or permission denied.' };
+  }
+  if (process.platform === 'darwin') {
+    const result = await execFileCapture('osascript', ['-e', `quit app "${safe}"`]);
+    return result.ok ? { ok: true, name: safe } : { ok: false, name: safe, error: 'Application not found or refused to quit.' };
+  }
+  const result = await execFileCapture('pkill', ['-f', '--', safe]);
+  return result.ok ? { ok: true, name: safe } : { ok: false, name: safe, error: 'Process not found or permission denied.' };
+}
+async function closeApp(name, keep) {
+  const targets = [...new Set(resolveCloseTargets(name, keep))];
+  if (!targets.length) return { ok: true, closed: [], failures: [], note: 'Nothing matched to close.' };
+  const outcomes = await Promise.all(targets.map(terminateAppProcess));
+  const closed = outcomes.filter((outcome) => outcome.ok).map((outcome) => outcome.name);
+  const failures = outcomes.filter((outcome) => !outcome.ok).map((outcome) => ({ name: outcome.name, error: outcome.error }));
+  logAction('close_app', `Closed ${closed.length}/${targets.length} app process(es): ${closed.join(', ')}`);
+  if (!closed.length && failures.length) return { error: 'No matching applications could be closed.', closed, failures };
+  return { ok: failures.length === 0, closed, failures, note: `Closed ${closed.length}/${targets.length} matching app process(es).` };
+}
+
 async function findLargeFiles(root, minMB, unusedMonths) {
   const base = resolveUserPath(root, os.homedir());
   const thresholdMB = Math.max(1, Number(minMB) || 500);
@@ -1542,27 +1565,40 @@ async function moveFiles(source, dest, filter) {
   } catch (error) { return { error: error.message }; }
 }
 
-async function optimizeGaming(keep) {
-  const ok = await confirmAction('Optimize for gaming?', 'GemAir will:\n• switch to the High Performance power plan\n• clear temporary files\n• close heavy non-essential apps (messengers, browser tabs except kept ones)\n\nNothing personal is deleted — temp caches only.');
-  if (!ok) return { error: 'Cancelled by user.' };
-  const done = [];
-  const p = process.platform;
-  if (p === 'win32') {
-    exec('powercfg /setactive SCHEME_MAX', (err) => {
-      if (err) exec('powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61', () => {});
-    });
-    done.push('High-performance power plan');
-    exec('del /q /s %TEMP%\\* 2>nul', () => {}); done.push('Temp files cleared');
-  } else if (p === 'darwin') {
-    exec('sudo pmset -a powernap 0 2>/dev/null', () => {}); done.push('Power settings tuned');
-  } else {
-    exec('rm -rf /tmp/* 2>/dev/null', () => {}); done.push('Temp files cleared');
+async function clearGemAirTempFiles() {
+  const tempRoot = os.tmpdir();
+  let entries = [];
+  try { entries = await fs.promises.readdir(tempRoot, { withFileTypes: true }); } catch { return 0; }
+  let cleared = 0;
+  for (const entry of entries) {
+    if (!/^\.?gemair[-_.]/i.test(entry.name)) continue;
+    try { await fs.promises.rm(path.join(tempRoot, entry.name), { recursive: true, force: true }); cleared++; } catch {}
   }
-  const closed = closeApp('all', keep || ['gemair']);
-  done.push(`Closed ${closed.closed.length} non-essential app(s)`);
-  logAction('optimize_gaming', `Gaming optimization: ${done.join('; ')}`);
-  return { ok: true, steps: done, closed: closed.closed };
+  return cleared;
 }
+async function setPerformancePowerMode() {
+  if (process.platform === 'win32') {
+    let result = await execFileCapture('powercfg', ['/setactive', 'SCHEME_MAX']);
+    if (!result.ok) result = await execFileCapture('powercfg', ['/setactive', 'e9a42b02-d5df-448d-aa00-03f14749eb61']);
+    return result.ok ? { ok: true, note: 'High-performance power plan enabled' } : { ok: false, note: 'Power plan unchanged (not supported or permission denied)' };
+  }
+  if (process.platform === 'linux') {
+    const result = await execFileCapture('powerprofilesctl', ['set', 'performance']);
+    return result.ok ? { ok: true, note: 'Performance power profile enabled' } : { ok: false, note: 'Power profile unchanged (powerprofilesctl unavailable)' };
+  }
+  return { ok: false, note: 'Power profile unchanged on macOS' };
+}
+async function optimizeGaming(keep) {
+  const ok = await confirmAction('Optimize for gaming?', 'GemAir will:\n• request the operating system performance power profile\n• clear GemAir-owned temporary caches only\n• close mapped non-essential apps except those you keep\n\nNo personal files or unrelated system temp files are deleted.');
+  if (!ok) return { error: 'Cancelled by user.' };
+  const power = await setPerformancePowerMode();
+  const tempEntries = await clearGemAirTempFiles();
+  const closed = await closeApp('all', keep || ['gemair']);
+  const steps = [power.note, `Cleared ${tempEntries} GemAir temporary cache entr${tempEntries === 1 ? 'y' : 'ies'}`, closed.error || closed.note];
+  logAction('optimize_gaming', `Gaming optimization: ${steps.join('; ')}`);
+  return { ok: !closed.error, steps, power, closed: closed.closed || [], closeFailures: closed.failures || [] };
+}
+
 function listTopProcesses() {
   const p = process.platform;
   if (p === 'win32') {
@@ -1654,14 +1690,12 @@ async function killProcess(pid, name) {
     `GemAir will terminate:\n\n  ${label || 'PID ' + id}  (PID ${id})\n\nUnsaved work in that program will be lost.`
   );
   if (!ok) return { error: 'Cancelled by user.' };
-  return new Promise((resolve) => {
-    const cmd = process.platform === 'win32' ? `taskkill /PID ${id} /T /F` : `kill -TERM ${id}`;
-    exec(cmd, { timeout: 8000 }, (err) => {
-      if (err) { resolve({ error: 'Could not end that process (permission denied or already gone).' }); return; }
-      logAction('kill_process', `Ended process ${label || ''} (PID ${id})`);
-      resolve({ ok: true, pid: id, name: label });
-    });
-  });
+  const result = process.platform === 'win32'
+    ? await execFileCapture('taskkill', ['/PID', String(id), '/T', '/F'])
+    : await execFileCapture('kill', ['-TERM', String(id)]);
+  if (!result.ok) return { error: 'Could not end that process (permission denied or already gone).' };
+  logAction('kill_process', `Ended process ${label || ''} (PID ${id})`);
+  return { ok: true, pid: id, name: label };
 }
 function getStorage() {
   const total = os.totalmem(), free = os.freemem();
@@ -2082,10 +2116,10 @@ async function executeToolNow(name, args) {
         const target = String(args.name || '').slice(0, 80);
         const ok = await confirmAction('Close application?', `GemAir wants to close: ${target === 'all' ? 'all non-essential applications' : target}${args.keep ? ' (keeping: ' + args.keep.join(', ') + ')' : ''}.\n\nUnsaved work in those apps may be lost. Proceed?`);
         if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
-        return closeApp(args.name, args.keep);
+        return await closeApp(args.name, args.keep);
       }
       case 'find_large_files':
-        return findLargeFiles(args.path, args.minMB, args.unusedMonths);
+        return await findLargeFiles(args.path, args.minMB, args.unusedMonths);
       case 'create_folder_tree':
         return await createFolderTree(args.path, args.folders);
       case 'move_files':
@@ -2534,13 +2568,13 @@ async function offlineBrain(text) {
     return r.error || `Organized ${r.total} files into ${Object.keys(r.categories || {}).length} category folders.`;
   }
   if (/close everything|close all|close.*except/.test(q)) {
-    closeApp('all');
-    return 'Closing every non-essential application except GemAir.';
+    const closed = await closeApp('all', ['gemair']);
+    return closed.error || closed.note;
   }
   if (/large file|huge file|big file|free up space/.test(q)) {
     const m = q.match(/(\d+)\s*(gb|mb)/) || q.match(/over\s*(\d+)\s*(gb|mb)?/);
     const minMB = m ? (m[2] === 'gb' ? Number(m[1]) * 1024 : Number(m[1])) : 500;
-    const r = findLargeFiles(os.homedir(), minMB, /month/.test(q) ? 6 : null);
+    const r = await findLargeFiles(os.homedir(), minMB, /month/.test(q) ? 6 : null);
     return r.count
       ? `Found ${r.count} file(s) over ${minMB}MB: ${r.files.slice(0, 5).map((f) => `${f.path} (${f.sizeMB}MB)`).join(', ')}`
       : `No files over ${minMB}MB found in your home folder.`;
