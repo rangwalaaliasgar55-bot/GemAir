@@ -762,15 +762,55 @@ function normalizeHttpUrl(value, { publicOnly = false } = {}) {
     return parsed.toString();
   } catch { return null; }
 }
-async function fetchWebpage(url) {
-  const u = normalizeHttpUrl(url, { publicOnly: true });
-  if (!u) return { error: 'Provide a valid public HTTP(S) URL.' };
-  const res = await fetchDeadline(u, { redirect: 'follow', headers: { 'User-Agent': BROWSER_UA } }, 12000);
-  if (!res.ok) return { error: 'HTTP ' + res.status };
-  const html = await res.text();
-  const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
-  return { title: title.trim(), url: res.url, excerpt: stripHtml(html).slice(0, 4000) };
+const MAX_WEBPAGE_BYTES = 2 * 1024 * 1024;
+async function readResponseTextLimited(response, maxBytes = MAX_WEBPAGE_BYTES) {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    try { if (response.body) await response.body.cancel(); } catch {}
+    throw new Error('WEBPAGE_TOO_LARGE');
+  }
+  if (!response.body) {
+    const buffer = new Uint8Array(await response.arrayBuffer());
+    if (buffer.byteLength > maxBytes) throw new Error('WEBPAGE_TOO_LARGE');
+    return new TextDecoder().decode(buffer);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0, text = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > maxBytes) { await reader.cancel(); throw new Error('WEBPAGE_TOO_LARGE'); }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
 }
+async function fetchWebpage(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetchPublicWithRedirects(url, {
+      method: 'GET',
+      headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html,application/xhtml+xml,text/plain,application/json,application/xml;q=0.8' },
+      signal: controller.signal
+    });
+    if (!response.ok) return { error: 'HTTP ' + response.status };
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    if (contentType && !/^(text\/|application\/(?:xhtml\+xml|json|xml))/.test(contentType)) {
+      try { if (response.body) await response.body.cancel(); } catch {}
+      return { error: 'Unsupported webpage content type.' };
+    }
+    const html = await readResponseTextLimited(response);
+    const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
+    return { title: stripHtml(title).slice(0, 300), url: response.url, excerpt: stripHtml(html).slice(0, 4000) };
+  } catch (error) {
+    if (error && error.name === 'AbortError') return { error: 'Webpage request timed out.' };
+    if (error && error.message === 'WEBPAGE_TOO_LARGE') return { error: 'Webpage exceeds the 2 MB safety limit.' };
+    return { error: error && error.message ? error.message : 'Webpage request failed.' };
+  } finally { clearTimeout(timer); }
+}
+
 async function searchWikipedia(query) {
   const res = await fetchDeadline('https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=6&search=' + encodeURIComponent(query)).then(r => r.json());
   return { titles: res[1] || [], descriptions: res[2] || [], urls: res[3] || [] };
@@ -900,27 +940,39 @@ function isPrivateNetworkAddress(address) {
   if (net.isIPv6(value)) return value === '::' || value === '::1' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb') || value.startsWith('ff') || value.startsWith('2001:db8:');
   return true;
 }
-async function requirePublicHttpUrl(value, { httpsOnly = false } = {}) {
+async function requirePublicHttpUrl(value, { httpsOnly = false, signal = null } = {}) {
   const normalized = normalizeHttpUrl(value, { publicOnly: true });
   if (!normalized) throw new Error('A valid public HTTP(S) URL is required.');
   const parsed = new URL(normalized);
   if (httpsOnly && parsed.protocol !== 'https:') throw new Error('Uploads require HTTPS.');
+  if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
   let addresses;
-  let dnsTimer;
+  let dnsTimer, abortHandler;
   try {
-    addresses = await Promise.race([
+    const races = [
       dns.promises.lookup(parsed.hostname, { all: true, verbatim: true }),
       new Promise((_, reject) => { dnsTimer = setTimeout(() => reject(new Error('DNS timeout')), 5000); })
-    ]);
-  } catch { throw new Error('Could not resolve the destination host.'); }
-  finally { if (dnsTimer) clearTimeout(dnsTimer); }
+    ];
+    if (signal) races.push(new Promise((_, reject) => {
+      abortHandler = () => reject(new DOMException('Aborted', 'AbortError'));
+      signal.addEventListener('abort', abortHandler, { once: true });
+    }));
+    addresses = await Promise.race(races);
+  } catch (error) {
+    if (error && error.name === 'AbortError') throw error;
+    throw new Error('Could not resolve the destination host.');
+  } finally {
+    if (dnsTimer) clearTimeout(dnsTimer);
+    if (signal && abortHandler) signal.removeEventListener('abort', abortHandler);
+  }
   if (!addresses.length || addresses.some((entry) => isPrivateNetworkAddress(entry.address))) throw new Error('Private, local, and reserved network destinations are blocked.');
   return normalized;
 }
+
 async function fetchPublicWithRedirects(initialUrl, options, { httpsOnly = false, upload = false } = {}) {
   let current = initialUrl;
   for (let redirect = 0; redirect <= 4; redirect++) {
-    current = await requirePublicHttpUrl(current, { httpsOnly });
+    current = await requirePublicHttpUrl(current, { httpsOnly, signal: options && options.signal });
     const response = await fetch(current, { ...options, redirect: 'manual' });
     if (![301, 302, 303, 307, 308].includes(response.status)) return response;
     const location = response.headers.get('location');
