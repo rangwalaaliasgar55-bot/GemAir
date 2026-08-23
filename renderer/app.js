@@ -1686,6 +1686,13 @@ function fmtUptime(s) {
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   return (d ? d + 'd ' : '') + h + 'h ' + m + 'm';
 }
+function debounce(fn, wait = 120) {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), wait);
+  };
+}
 async function pollSystem() {
   try {
     const i = await api.getSystemInfo();
@@ -1734,7 +1741,7 @@ function startBackground3D() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   resize();
-  window.addEventListener('resize', resize);
+  window.addEventListener('resize', debounce(resize), { passive: true });
   window.addEventListener('mousemove', (e) => { mx = (e.clientX / w - 0.5) * 2; my = (e.clientY / h - 0.5) * 2; });
 
   // stars
@@ -1811,7 +1818,7 @@ function startOrb() {
     canvas.width = w * dpr; canvas.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-  resize(); window.addEventListener('resize', resize);
+  resize(); window.addEventListener('resize', debounce(resize), { passive: true });
   const parts = [];
   for (let i = 0; i < 110; i++) parts.push({ ang: Math.random() * Math.PI * 2, rad: Math.random(), spd: 0.002 + Math.random() * 0.006, size: 1 + Math.random() * 2.2, phase: Math.random() * Math.PI * 2 });
   function draw(t) {
@@ -1891,7 +1898,7 @@ function startGlobe() {
     const marker = visibleMarkers.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
     if (marker && Math.hypot(marker.x - x, marker.y - y) < 18) selectHotspot(marker);
   });
-  resize(); window.addEventListener('resize', resize);
+  resize(); window.addEventListener('resize', debounce(resize), { passive: true });
 
   function draw(time) {
     const accent = getAccent();

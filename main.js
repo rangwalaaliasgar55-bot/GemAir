@@ -1144,87 +1144,112 @@ async function confirmAction(title, detail) {
 async function organizeFolder(dir) {
   const base = resolveUserPath(dir, path.join(os.homedir(), 'Downloads'));
   try {
-    const entries = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
+    const entries = (await fs.promises.readdir(base, { withFileTypes: true })).filter((entry) => entry.isFile());
     if (!entries.length) return { ok: true, total: 0, categories: {}, base, note: 'Nothing to organize.' };
     const ok = await confirmAction('Organize folder?', `GemAir will sort ${entries.length} files in:\n${base}\n\ninto subfolders by type (images, documents, videos, etc.). Files are moved, not deleted.`);
     if (!ok) return { error: 'Cancelled by user.' };
-    const moved = {}, total = entries.length;
-    for (const e of entries) {
-      const cat = categorizeFile(e.name);
-      const dest = path.join(base, cat);
-      if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-      fs.renameSync(path.join(base, e.name), path.join(dest, e.name));
-      moved[cat] = (moved[cat] || 0) + 1;
+    const moved = {}, failures = [];
+    for (const entry of entries) {
+      const category = categorizeFile(entry.name);
+      const destination = path.join(base, category);
+      try {
+        await fs.promises.mkdir(destination, { recursive: true });
+        await fs.promises.rename(path.join(base, entry.name), path.join(destination, entry.name));
+        moved[category] = (moved[category] || 0) + 1;
+      } catch (error) { failures.push({ file: entry.name, error: error.message }); }
     }
+    const total = Object.values(moved).reduce((sum, count) => sum + count, 0);
     logAction('organize_folder', `Organized ${total} files into ${Object.keys(moved).length} categories in ${base}`);
-    return { ok: true, total, categories: moved, base };
-  } catch (e) { return { error: e.message }; }
+    return { ok: failures.length === 0, total, categories: moved, base, failures: failures.slice(0, 20) };
+  } catch (error) { return { error: error.message }; }
 }
-function findDuplicates(dir) {
+async function findDuplicates(dir) {
   const base = resolveUserPath(dir, os.homedir());
   try {
-    const map = {};
-    const walk = (d, depth) => {
+    const filesBySignature = {};
+    const walk = async (current, depth) => {
       if (depth > 4) return;
       let entries;
-      try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-      for (const e of entries) {
-        if (e.name.startsWith('.')) continue;
-        const full = path.join(d, e.name);
-        if (e.isDirectory() && !e.isSymbolicLink()) walk(full, depth + 1);
-        else {
-          let key;
+      try { entries = await fs.promises.readdir(current, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue;
+        const full = path.join(current, entry.name);
+        if (entry.isDirectory() && !entry.isSymbolicLink()) await walk(full, depth + 1);
+        else if (entry.isFile()) {
           try {
-            const st = fs.statSync(full);
-            key = e.name.toLowerCase() + ':' + st.size;
-          } catch { key = e.name.toLowerCase(); }
-          (map[key] = map[key] || []).push(full);
+            const stat = await fs.promises.stat(full);
+            const signature = entry.name.toLowerCase() + ':' + stat.size;
+            (filesBySignature[signature] = filesBySignature[signature] || []).push(full);
+          } catch {}
         }
       }
     };
-    walk(base, 0);
-    const dups = Object.values(map).filter((arr) => arr.length > 1).slice(0, 20);
-    logAction('find_duplicates', `Found ${dups.length} duplicate groups in ${base}`);
-    return { duplicates: dups, count: dups.length };
-  } catch (e) { return { error: e.message }; }
+    await walk(base, 0);
+    const duplicates = Object.values(filesBySignature).filter((paths) => paths.length > 1).slice(0, 20);
+    logAction('find_duplicates', `Found ${duplicates.length} duplicate groups in ${base}`);
+    return { duplicates, count: duplicates.length };
+  } catch (error) { return { error: error.message }; }
 }
 async function renameFiles(dir, pattern) {
   const base = resolveUserPath(dir, os.homedir());
-  const pat = String(pattern || 'file').replace(/[^\w\- ]/g, '');
+  const safePattern = String(pattern || 'file').replace(/[^\w\- ]/g, '').trim() || 'file';
   try {
-    const files = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
-    if (!files.length) return { ok: true, renamed: 0, pattern: pat };
-    const ok = await confirmAction('Rename files?', `GemAir will rename ${files.length} files in:\n${base}\nto "${pat}-001", "${pat}-002", … (extensions kept).`);
+    const files = (await fs.promises.readdir(base, { withFileTypes: true })).filter((entry) => entry.isFile());
+    if (!files.length) return { ok: true, renamed: 0, pattern: safePattern };
+    const ok = await confirmAction('Rename files?', `GemAir will rename ${files.length} files in:\n${base}\nto "${safePattern}-001", "${safePattern}-002", … (extensions kept).`);
     if (!ok) return { error: 'Cancelled by user.' };
-    let n = 0;
-    for (const e of files) {
-      const ext = path.extname(e.name);
-      const newName = pat + '-' + String(n + 1).padStart(3, '0') + ext;
-      fs.renameSync(path.join(base, e.name), path.join(base, newName));
-      n++;
+    const nonce = `.gemair-rename-${process.pid}-${Date.now()}-`;
+    const staged = [];
+    try {
+      for (let index = 0; index < files.length; index++) {
+        const entry = files[index];
+        const source = path.join(base, entry.name);
+        const temporary = path.join(base, nonce + index);
+        await fs.promises.rename(source, temporary);
+        staged.push({ source, temporary, final: path.join(base, safePattern + '-' + String(index + 1).padStart(3, '0') + path.extname(entry.name)) });
+      }
+    } catch (error) {
+      for (const item of staged.reverse()) try { await fs.promises.rename(item.temporary, item.source); } catch {}
+      return { error: `Could not stage files safely: ${error.message}` };
     }
-    logAction('rename_files', `Renamed ${n} files with pattern "${pat}"`);
-    return { ok: true, renamed: n, pattern: pat };
-  } catch (e) { return { error: e.message }; }
+    let renamed = 0;
+    const failures = [];
+    for (const item of staged) {
+      try { await fs.promises.rename(item.temporary, item.final); renamed++; }
+      catch (error) { failures.push({ file: path.basename(item.source), temporary: item.temporary, error: error.message }); }
+    }
+    logAction('rename_files', `Renamed ${renamed} files with pattern "${safePattern}"`);
+    return { ok: failures.length === 0, renamed, pattern: safePattern, failures: failures.slice(0, 20) };
+  } catch (error) { return { error: error.message }; }
 }
+
 async function archiveOldFiles(dir, days) {
   const base = resolveUserPath(dir, os.homedir());
-  const cutoff = Date.now() - days * 86400000;
+  const ageDays = Math.max(1, Math.min(36500, Number(days) || 30));
+  const cutoff = Date.now() - ageDays * 86400000;
   try {
     const archive = path.join(base, '_archive');
-    const candidates = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile() && (() => { try { return fs.statSync(path.join(base, e.name)).mtimeMs < cutoff; } catch { return false; } })());
-    if (!candidates.length) return { ok: true, archived: 0, archive };
-    const ok = await confirmAction('Archive old files?', `GemAir will move ${candidates.length} files older than ${days} days from:\n${base}\ninto an "_archive" subfolder. Nothing is deleted.`);
-    if (!ok) return { error: 'Cancelled by user.' };
-    if (!fs.existsSync(archive)) fs.mkdirSync(archive, { recursive: true });
-    let n = 0;
-    for (const e of candidates) {
-      try { fs.renameSync(path.join(base, e.name), path.join(archive, e.name)); n++; } catch {}
+    const entries = await fs.promises.readdir(base, { withFileTypes: true });
+    const candidates = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      try { if ((await fs.promises.stat(path.join(base, entry.name))).mtimeMs < cutoff) candidates.push(entry); } catch {}
     }
-    logAction('archive_old_files', `Archived ${n} files older than ${days} days`);
-    return { ok: true, archived: n, archive };
-  } catch (e) { return { error: e.message }; }
+    if (!candidates.length) return { ok: true, archived: 0, archive };
+    const ok = await confirmAction('Archive old files?', `GemAir will move ${candidates.length} files older than ${ageDays} days from:\n${base}\ninto an "_archive" subfolder. Nothing is deleted.`);
+    if (!ok) return { error: 'Cancelled by user.' };
+    await fs.promises.mkdir(archive, { recursive: true });
+    let archived = 0;
+    const failures = [];
+    for (const entry of candidates) {
+      try { await fs.promises.rename(path.join(base, entry.name), path.join(archive, entry.name)); archived++; }
+      catch (error) { failures.push({ file: entry.name, error: error.message }); }
+    }
+    logAction('archive_old_files', `Archived ${archived} files older than ${ageDays} days`);
+    return { ok: failures.length === 0, archived, archive, failures: failures.slice(0, 20) };
+  } catch (error) { return { error: error.message }; }
 }
+
 const CLOSEABLE_APPS = {
   browser: ['chrome', 'msedge', 'firefox', 'brave', 'opera', 'vivaldi', 'safari'],
   chrome: ['chrome'], edge: ['msedge'], firefox: ['firefox'], brave: ['brave'], safari: ['safari'],
@@ -1259,33 +1284,33 @@ function closeApp(name, keep) {
   logAction('close_app', `Closed ${closed.length} app(s): ${closed.join(', ')}`);
   return { ok: true, closed, note: closed.length ? `Asked ${closed.length} app(s) to close.` : 'Nothing closed.' };
 }
-function findLargeFiles(root, minMB, unusedMonths) {
+async function findLargeFiles(root, minMB, unusedMonths) {
   const base = resolveUserPath(root, os.homedir());
-  const minBytes = (Number(minMB) || 500) * 1024 * 1024;
-  const cutoff = unusedMonths ? Date.now() - Number(unusedMonths) * 30 * 86400000 : null;
+  const thresholdMB = Math.max(1, Number(minMB) || 500);
+  const minBytes = thresholdMB * 1024 * 1024;
+  const cutoff = unusedMonths ? Date.now() - Math.max(1, Number(unusedMonths)) * 30 * 86400000 : null;
   const hits = [];
-  const walk = (dir, depth) => {
+  const walk = async (directory, depth) => {
     if (depth > 6 || hits.length >= 40) return;
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (e.name.startsWith('.') || e.name === '_archive') continue;
-      const full = path.join(dir, e.name);
-      try {
-        if (e.isDirectory() && !e.isSymbolicLink()) walk(full, depth + 1);
-        else {
-          const st = fs.statSync(full);
-          if (st.size >= minBytes && (!cutoff || st.mtimeMs < cutoff)) {
-            hits.push({ path: full, sizeMB: Math.round(st.size / 1048576), modified: new Date(st.mtimeMs).toISOString().slice(0, 10) });
-          }
-        }
-      } catch {}
+    try { entries = await fs.promises.readdir(directory, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === '_archive' || hits.length >= 40) continue;
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory() && !entry.isSymbolicLink()) await walk(full, depth + 1);
+      else if (entry.isFile()) {
+        try {
+          const stat = await fs.promises.stat(full);
+          if (stat.size >= minBytes && (!cutoff || stat.mtimeMs < cutoff)) hits.push({ path: full, sizeMB: Math.round(stat.size / 1048576), modified: new Date(stat.mtimeMs).toISOString().slice(0, 10) });
+        } catch {}
+      }
     }
   };
-  walk(base, 0);
-  logAction('find_large_files', `Found ${hits.length} file(s) > ${minMB || 500}MB${unusedMonths ? ` unused ${unusedMonths}+ months` : ''} in ${base}`);
-  return { files: hits, count: hits.length, base, minMB: minMB || 500, unusedMonths: unusedMonths || null };
+  await walk(base, 0);
+  logAction('find_large_files', `Found ${hits.length} file(s) > ${thresholdMB}MB${unusedMonths ? ` unused ${unusedMonths}+ months` : ''} in ${base}`);
+  return { files: hits, count: hits.length, base, minMB: thresholdMB, unusedMonths: unusedMonths || null };
 }
+
 async function createFolderTree(root, folders) {
   const base = resolveUserPath(root, path.join(os.homedir(), 'Documents'));
   const list = Array.isArray(folders) ? folders : (String(folders || '').split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean));
@@ -1314,7 +1339,7 @@ async function createFolderTree(root, folders) {
     if (bad) { skipped.push(raw); continue; }
     const dest = path.join(baseResolved, ...segments);
     if (!withinBase(dest)) { skipped.push(raw); continue; }
-    try { fs.mkdirSync(dest, { recursive: true }); created.push(dest); } catch { skipped.push(raw); }
+    try { await fs.promises.mkdir(dest, { recursive: true }); created.push(dest); } catch { skipped.push(raw); }
   }
   logAction('create_folder_tree', `Created ${created.length} folder(s) under ${base}${skipped.length ? ` (${skipped.length} rejected as unsafe)` : ''}`);
   return { ok: true, base, created, count: created.length, skipped, rejected: skipped.length };
@@ -1322,27 +1347,33 @@ async function createFolderTree(root, folders) {
 async function moveFiles(source, dest, filter) {
   const from = resolveUserPath(source, path.join(os.homedir(), 'Downloads'));
   const to = resolveUserPath(dest, path.join(from, filter ? String(filter || '').replace(/\W+/g, '_').toLowerCase() : 'moved'));
-  const f = String(filter || '').toLowerCase();
+  const normalizedFilter = String(filter || '').toLowerCase();
   try {
-    const entries = fs.readdirSync(from, { withFileTypes: true }).filter((e) => e.isFile());
-    const candidates = entries.filter((e) => {
-      if (!f) return true;
-      if (f.startsWith('.')) return path.extname(e.name).toLowerCase() === f;
-      if (f === 'large') { try { return fs.statSync(path.join(from, e.name)).size > 100 * 1024 * 1024; } catch { return false; } }
-      return e.name.toLowerCase().includes(f) || categorizeFile(e.name) === f;
-    });
+    const entries = (await fs.promises.readdir(from, { withFileTypes: true })).filter((entry) => entry.isFile());
+    const candidates = [];
+    for (const entry of entries) {
+      let matches = !normalizedFilter || entry.name.toLowerCase().includes(normalizedFilter) || categorizeFile(entry.name) === normalizedFilter;
+      if (normalizedFilter.startsWith('.')) matches = path.extname(entry.name).toLowerCase() === normalizedFilter;
+      if (normalizedFilter === 'large') {
+        try { matches = (await fs.promises.stat(path.join(from, entry.name))).size > 100 * 1024 * 1024; } catch { matches = false; }
+      }
+      if (matches) candidates.push(entry);
+    }
     if (!candidates.length) return { ok: true, moved: 0, note: `No files matched "${filter || 'all'}" in ${from}.` };
     const ok = await confirmAction('Move files?', `GemAir will move ${candidates.length} file(s) from:\n${from}\ninto:\n${to}\n\nFiles are moved, not deleted.`);
     if (!ok) return { error: 'Cancelled by user.' };
-    if (!fs.existsSync(to)) fs.mkdirSync(to, { recursive: true });
-    let n = 0;
-    for (const e of candidates) {
-      try { fs.renameSync(path.join(from, e.name), path.join(to, e.name)); n++; } catch {}
+    await fs.promises.mkdir(to, { recursive: true });
+    let moved = 0;
+    const failures = [];
+    for (const entry of candidates) {
+      try { await fs.promises.rename(path.join(from, entry.name), path.join(to, entry.name)); moved++; }
+      catch (error) { failures.push({ file: entry.name, error: error.message }); }
     }
-    logAction('move_files', `Moved ${n} file(s) matching "${filter || 'all'}" to ${to}`);
-    return { ok: true, moved: n, to };
-  } catch (e) { return { error: e.message }; }
+    logAction('move_files', `Moved ${moved} file(s) matching "${filter || 'all'}" to ${to}`);
+    return { ok: failures.length === 0, moved, to, failures: failures.slice(0, 20) };
+  } catch (error) { return { error: error.message }; }
 }
+
 async function optimizeGaming(keep) {
   const ok = await confirmAction('Optimize for gaming?', 'GemAir will:\n• switch to the High Performance power plan\n• clear temporary files\n• close heavy non-essential apps (messengers, browser tabs except kept ones)\n\nNothing personal is deleted — temp caches only.');
   if (!ok) return { error: 'Cancelled by user.' };
@@ -1490,13 +1521,14 @@ async function getBattery() {
       if (pct) value = { percent: parseInt(pct[1], 10), charging: /AC Power/i.test(out) };
     } else {
       const base = '/sys/class/power_supply';
-      for (const d of fs.readdirSync(base)) {
-        if (!/^BAT/i.test(d)) continue;
-        const cap = parseInt(fs.readFileSync(path.join(base, d, 'capacity'), 'utf8').trim(), 10);
-        if (!isNaN(cap)) {
+      for (const directory of await fs.promises.readdir(base)) {
+        if (!/^BAT/i.test(directory)) continue;
+        const capacityText = await fs.promises.readFile(path.join(base, directory, 'capacity'), 'utf8');
+        const percent = parseInt(capacityText.trim(), 10);
+        if (!Number.isNaN(percent)) {
           let charging = false;
-          try { charging = /Charging|Full/i.test(fs.readFileSync(path.join(base, d, 'status'), 'utf8')); } catch {}
-          value = { percent: cap, charging };
+          try { charging = /Charging|Full/i.test(await fs.promises.readFile(path.join(base, directory, 'status'), 'utf8')); } catch {}
+          value = { percent, charging };
           break;
         }
       }
@@ -1557,7 +1589,7 @@ async function seeScreen() {
   const source = sources[0];
   if (!source || !source.thumbnail) return { error: 'No screen available' };
   const file = path.join(app.getPath('pictures'), `gemair-screen-${Date.now()}.png`);
-  fs.writeFileSync(file, source.thumbnail.toPNG());
+  await fs.promises.writeFile(file, source.thumbnail.toPNG());
   logAction('see_screen', `Captured screen to ${file}`);
   return { ok: true, file, note: 'Screen captured. If your AI model supports vision, it can analyze this image.' };
 }
@@ -1687,7 +1719,7 @@ async function takeScreenshot() {
   const source = sources[0];
   if (!source || !source.thumbnail) return { error: 'No screen available' };
   const file = path.join(app.getPath('pictures'), `gemair-screenshot-${Date.now()}.png`);
-  fs.writeFileSync(file, source.thumbnail.toPNG());
+  await fs.promises.writeFile(file, source.thumbnail.toPNG());
   return { ok: true, file };
 }
 const TOOL_RISK = {
@@ -2829,7 +2861,7 @@ ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
     filters: [{ name: 'All files', extensions: ['*'] }]
   });
   if (res.canceled || !res.filePath) return { ok: false };
-  try { fs.writeFileSync(res.filePath, content); return { ok: true, path: res.filePath }; }
+  try { await fs.promises.writeFile(res.filePath, content); return { ok: true, path: res.filePath }; }
   catch (err) { return { ok: false, error: err.message }; }
 });
 ipcMain.handle('news:get', (_e, limit, category) => getHeadlines(limit || 12, category || 'tech'));
