@@ -17,6 +17,7 @@ const userDataDir = app.getPath('userData');
 const PROFILE_FILE = path.join(userDataDir, 'gemair-profile.json');
 const MEMORY_FILE = path.join(userDataDir, 'gemair-memory.json');
 const WINDOW_STATE_FILE = path.join(userDataDir, 'gemair-window-state.json');
+const RECOVERY_FILE = path.join(userDataDir, 'gemair-recovery.json');
 
 (function migrateLegacyFiles() {
   try {
@@ -39,6 +40,8 @@ let isQuitting = false;
 let authWindow = null;
 let focusPollTimer = null;
 let lastFocused = { app: '', title: '', pid: 0 };
+let fatalCrashInProgress = false;
+let rendererCrashHistory = [];
 
 const DEFAULT_BOUNDS = { width: 1440, height: 900 };
 
@@ -50,12 +53,9 @@ function displaySetKey() {
       .join('|') || 'unknown';
   } catch (e) { return 'unknown'; }
 }
-function readWindowState() {
-  try { return JSON.parse(fs.readFileSync(WINDOW_STATE_FILE, 'utf8')) || {}; } catch (e) { return {}; }
-}
-function writeWindowState(state) {
-  try { fs.writeFileSync(WINDOW_STATE_FILE, JSON.stringify(state, null, 2)); } catch (e) {}
-}
+function readWindowState() { return readJSON(WINDOW_STATE_FILE, {}, 'windowState'); }
+function writeWindowState(state) { return writeJSON(WINDOW_STATE_FILE, state); }
+
 function clampToVisibleDisplay(bounds) {
   if (!bounds || !Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)) return null;
   let displays = [];
@@ -130,6 +130,18 @@ function createWindow() {
     screen.on('display-removed', queueSave);
     screen.on('display-metrics-changed', queueSave);
   } catch (e) {}
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (isQuitting || !details || details.reason === 'clean-exit') return;
+    saveEmergencyState('renderer:' + String(details.reason || 'crashed'), new Error('Renderer process stopped unexpectedly.'));
+    const now = Date.now();
+    rendererCrashHistory = rendererCrashHistory.filter((timestamp) => now - timestamp < 60000);
+    rendererCrashHistory.push(now);
+    if (rendererCrashHistory.length === 1 && mainWindow && !mainWindow.isDestroyed()) {
+      setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload(); }, 750);
+    } else {
+      try { dialog.showErrorBox('GemAir renderer stopped', 'Your state is safe, but the interface stopped more than once. Please restart GemAir.'); } catch {}
+    }
+  });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http')) shell.openExternal(url);
@@ -192,32 +204,144 @@ app.whenReady().then(() => {
     else mainWindow.show();
   });
 });
-app.on('before-quit', () => { isQuitting = true; if (focusPollTimer) clearInterval(focusPollTimer); });
+app.on('before-quit', () => {
+  isQuitting = true;
+  if (focusPollTimer) clearInterval(focusPollTimer);
+  if (!fatalCrashInProgress) clearNonfatalRecoveryCheckpoint();
+});
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// Persistent stores
-function readJSON(file, fallback) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
-}
-function writeJSON(file, data) {
+// Persistent stores — atomic replace + bounded backups. A crash can never
+// leave a half-written profile or memory file as the only copy.
+const MAX_STATE_FILE_BYTES = 20 * 1024 * 1024;
+const backupWriteAt = new Map();
+const recoveredSources = new Set();
+let writingEmergencyState = false;
+let lastEmergencyAt = 0;
+function safeReadJSONFile(file) {
   try {
-    fs.mkdirSync(userDataDir, { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(data, null, 2));
-    return true;
-  } catch { return false; }
+    const stat = fs.statSync(file);
+    if (!stat.isFile() || stat.size > MAX_STATE_FILE_BYTES) return null;
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch { return null; }
 }
-const readProfile = () => readJSON(PROFILE_FILE, {});
-const writeProfile = (d) => writeJSON(PROFILE_FILE, d);
+function atomicWriteJSON(file, data, { backup = true } = {}) {
+  const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    if (backup && fs.existsSync(file) && Date.now() - (backupWriteAt.get(file) || 0) > 5 * 60 * 1000) {
+      if (safeReadJSONFile(file)) {
+        try { fs.copyFileSync(file, file + '.bak'); backupWriteAt.set(file, Date.now()); } catch {}
+      }
+    }
+    const payload = JSON.stringify(data, null, 2);
+    if (Buffer.byteLength(payload, 'utf8') > MAX_STATE_FILE_BYTES) throw new Error('STATE_FILE_TOO_LARGE');
+    fs.writeFileSync(temporary, payload, { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(temporary, file);
+    return true;
+  } catch (error) {
+    try { fs.unlinkSync(temporary); } catch {}
+    console.error('[state-write]', path.basename(file), error.message);
+    return false;
+  }
+}
+function recoveryValue(key) {
+  const recovery = safeReadJSONFile(RECOVERY_FILE);
+  return recovery && recovery[key] && typeof recovery[key] === 'object' ? recovery[key] : null;
+}
+function readJSON(file, fallback, recoveryKey = null) {
+  const primary = safeReadJSONFile(file);
+  if (primary) return primary;
+  const backup = safeReadJSONFile(file + '.bak');
+  if (backup) {
+    recoveredSources.add(path.basename(file) + ':backup');
+    atomicWriteJSON(file, backup, { backup: false });
+    return backup;
+  }
+  const emergency = recoveryKey ? recoveryValue(recoveryKey) : null;
+  if (emergency) {
+    recoveredSources.add(path.basename(file) + ':emergency');
+    atomicWriteJSON(file, emergency, { backup: false });
+    return emergency;
+  }
+  return fallback;
+}
+function writeJSON(file, data) { return atomicWriteJSON(file, data); }
+const readProfile = () => readJSON(PROFILE_FILE, {}, 'profile');
+const writeProfile = (data) => writeJSON(PROFILE_FILE, data);
 const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
+const freshEmptyMemory = () => ({ facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' });
 const readMemory = () => {
-  const m = readJSON(MEMORY_FILE, EMPTY_MEMORY);
-  for (const k of Object.keys(EMPTY_MEMORY)) if (!Array.isArray(m[k])) m[k] = [];
-  return m;
+  const memory = readJSON(MEMORY_FILE, freshEmptyMemory(), 'memory');
+  for (const key of Object.keys(EMPTY_MEMORY)) {
+    if (key === 'summary') { if (typeof memory.summary !== 'string') memory.summary = ''; }
+    else if (!Array.isArray(memory[key])) memory[key] = [];
+  }
+  return memory;
 };
-const writeMemory = (m) => writeJSON(MEMORY_FILE, m);
+const writeMemory = (memory) => writeJSON(MEMORY_FILE, memory);
+function redactedRecoveryProfile(profile) {
+  const clean = { ...(profile || {}) };
+  if (clean.ai && typeof clean.ai === 'object') clean.ai = { ...clean.ai, apiKey: '' };
+  return clean;
+}
+function saveEmergencyState(kind, error) {
+  if (writingEmergencyState || Date.now() - lastEmergencyAt < 5000) return false;
+  writingEmergencyState = true;
+  lastEmergencyAt = Date.now();
+  try {
+    const reason = error instanceof Error ? error : new Error(String(error || kind));
+    const payload = {
+      version: 1,
+      createdAt: Date.now(),
+      kind: String(kind || 'unknown').slice(0, 80),
+      message: String(reason.message || reason).slice(0, 500),
+      stack: String(reason.stack || '').slice(0, 4000),
+      profile: redactedRecoveryProfile(readProfile()),
+      memory: readMemory(),
+      windowState: readWindowState()
+    };
+    return atomicWriteJSON(RECOVERY_FILE, payload, { backup: false });
+  } catch (recoveryError) {
+    console.error('[recovery-write]', recoveryError.message);
+    return false;
+  } finally { writingEmergencyState = false; }
+}
+function clearNonfatalRecoveryCheckpoint() {
+  const recovery = safeReadJSONFile(RECOVERY_FILE);
+  if (!recovery || recovery.kind !== 'unhandledRejection') return;
+  try { fs.unlinkSync(RECOVERY_FILE); } catch {}
+}
+function consumeRecoveryStatus() {
+  const recovery = safeReadJSONFile(RECOVERY_FILE);
+  if (!recovery) return { recovered: false, restored: Array.from(recoveredSources) };
+  const status = {
+    recovered: true,
+    createdAt: Number(recovery.createdAt) || null,
+    kind: String(recovery.kind || 'unexpected_shutdown').slice(0, 80),
+    message: String(recovery.message || 'GemAir recovered from an unexpected shutdown.').slice(0, 300),
+    restored: Array.from(recoveredSources)
+  };
+  try { fs.unlinkSync(RECOVERY_FILE); } catch {}
+  try { fs.unlinkSync(RECOVERY_FILE + '.bak'); } catch {}
+  return status;
+}
 function uid() { return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
+
+process.on('uncaughtException', (error) => {
+  fatalCrashInProgress = true;
+  console.error('[uncaughtException]', error && error.stack ? error.stack : error);
+  saveEmergencyState('uncaughtException', error);
+  try { dialog.showErrorBox('GemAir recovered your state', 'GemAir encountered an unexpected error. Your local state was checkpointed and will be restored on the next launch.'); } catch {}
+  try { app.exit(1); } catch { process.exitCode = 1; }
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+  saveEmergencyState('unhandledRejection', reason);
+});
 
 // Emotion + language + support (same as 2.2)
 const EMOTION_LEXICON = {
@@ -2848,6 +2972,7 @@ async function checkForUpdates(force = false) {
 ipcMain.handle('system:info', () => getSystemInfo());
 ipcMain.handle('audit:get', () => executeTool('get_action_log', {}));
 ipcMain.handle('screen:inspect', () => inspectScreenChange());
+ipcMain.handle('recovery:consume', () => consumeRecoveryStatus());
 ipcMain.handle('profile:get', () => readProfile());
 ipcMain.handle('profile:set', (_e, data) => writeProfile(data || {}));
 ipcMain.handle('ai:chat', async (_e, config, messages) => {

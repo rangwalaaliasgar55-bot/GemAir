@@ -12,7 +12,7 @@
     "preview": "electron . --dev --no-sandbox",
     "web": "npx serve renderer -l 8080",
     "serve": "node scripts/dev-server.js",
-    "check": "node scripts/selfcheck.js && node scripts/workflow-test.js && node scripts/security-test.js && node scripts/performance-test.js && node scripts/appearance-test.js && node scripts/quick-access-test.js && node scripts/progress-test.js && node scripts/context-test.js && node scripts/adaptive-personality-test.js && node scripts/update-test.js",
+    "check": "node scripts/selfcheck.js && node scripts/workflow-test.js && node scripts/security-test.js && node scripts/performance-test.js && node scripts/appearance-test.js && node scripts/quick-access-test.js && node scripts/progress-test.js && node scripts/context-test.js && node scripts/adaptive-personality-test.js && node scripts/update-test.js && node scripts/recovery-test.js",
     "test": "npm run check",
     "test:workflows": "node scripts/workflow-test.js",
     "dev:web": "vercel dev",

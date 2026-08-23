@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('gemair', {
   getSystemInfo: () => ipcRenderer.invoke('system:info'),
   getActionLog: () => ipcRenderer.invoke('audit:get'),
   screenInspect: () => ipcRenderer.invoke('screen:inspect'),
+  consumeRecovery: () => ipcRenderer.invoke('recovery:consume'),
   getProfile: () => ipcRenderer.invoke('profile:get'),
   setProfile: (data) => ipcRenderer.invoke('profile:set', data),
   aiChat: (config, messages) => ipcRenderer.invoke('ai:chat', config, messages),

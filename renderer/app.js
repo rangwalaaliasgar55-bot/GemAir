@@ -47,6 +47,7 @@ const api = {
     if (window.gemair && window.gemair.screenInspect) return window.gemair.screenInspect();
     return { changed: false, changePercent: 0, description: 'Browser screen capture is unavailable; desktop mode is required.' };
   },
+  async consumeRecovery() { return window.gemair && window.gemair.consumeRecovery ? window.gemair.consumeRecovery() : { recovered: false, restored: [] }; },
   async getProfile() { if (window.gemair) return window.gemair.getProfile(); return window.webStore ? window.webStore.getProfile() : {}; },
   async setProfile(d) { if (window.gemair) return window.gemair.setProfile(d); if (window.webStore) await window.webStore.setProfile(d); },
 
@@ -7163,6 +7164,15 @@ async function boot() {
   }
 
   toast('GEMAIR', 'GemAir is online — completely free out of the box!', '✨');
+
+  try {
+    const recovery = await api.consumeRecovery();
+    if (recovery && (recovery.recovered || (recovery.restored && recovery.restored.length))) {
+      const restored = recovery.restored && recovery.restored.length ? ` Restored: ${recovery.restored.join(', ')}.` : '';
+      addMessage('system-msg', `♻ GemAir recovered safely after an unexpected interruption.${restored} Your local profile and memory are available.`);
+      toast('STATE RECOVERED', 'Local profile and memory passed recovery checks.', '♻');
+    }
+  } catch (error) { console.warn('[recovery-status]', error); }
 
   pollSystem(); setInterval(pollSystem, 2500);
   recognition = initRecognition();
