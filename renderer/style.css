@@ -1008,6 +1008,13 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
 .tool-activity { margin-top: 12px; border-top: 1px dashed var(--panel-border); padding-top: 10px; }
 .tool-activity-title { font: 700 10px var(--font-mono); letter-spacing: 2px; color: var(--accent); margin-bottom: 8px; }
 .tool-activity-title .dim { letter-spacing: 1px; }
+.operation-progress { margin: 0 0 9px; padding: 8px 10px; border: 1px solid var(--panel-border); border-radius: 8px; background: var(--panel); }
+.operation-progress-head { display: flex; justify-content: space-between; gap: 10px; color: var(--text-dim); font: 600 9px var(--font-mono); letter-spacing: .08em; }
+.operation-progress-head b { color: var(--accent); }
+.operation-progress-track { height: 5px; margin-top: 7px; overflow: hidden; border-radius: 999px; background: rgba(0,0,0,.3); }
+.operation-progress-track i { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent-soft), var(--accent)); box-shadow: 0 0 9px var(--accent-glow); transition: width .25s ease; }
+.operation-progress-track.indeterminate i { width: 38%; animation: operationProgressSweep 1.15s ease-in-out infinite; }
+@keyframes operationProgressSweep { from { transform: translateX(-110%); } to { transform: translateX(290%); } }
 .tool-feed { display: flex; flex-direction: column; gap: 8px; max-height: 170px; overflow-y: auto; }
 .tool-card { border: 1px solid var(--panel-border); border-radius: 10px; background: rgba(0,0,0,0.4); padding: 9px 12px; animation: toolIn .25s ease; }
 @keyframes toolIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }

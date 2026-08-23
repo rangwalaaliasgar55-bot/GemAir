@@ -2406,6 +2406,51 @@ function setThinking(on) {
   if (pill) pill.classList.toggle('on', !!on);
 }
 
+let operationRequestActive = false;
+let operationHideTimer = null;
+const activeOperationTools = new Map();
+function showOperationProgress(label, percent = null) {
+  const panel = $('#operationProgress');
+  const track = $('#operationProgressTrack');
+  const bar = $('#operationProgressBar');
+  const value = $('#operationProgressValue');
+  if (!panel || !track || !bar || !value) return;
+  clearTimeout(operationHideTimer);
+  panel.hidden = false;
+  $('#operationProgressLabel').textContent = String(label || 'Working…');
+  if (Number.isFinite(percent)) {
+    const bounded = Math.max(0, Math.min(100, Math.round(percent)));
+    track.classList.remove('indeterminate');
+    track.setAttribute('aria-valuenow', String(bounded));
+    bar.style.width = bounded + '%';
+    bar.style.transform = '';
+    value.textContent = bounded + '%';
+  } else {
+    track.classList.add('indeterminate');
+    track.removeAttribute('aria-valuenow');
+    bar.style.width = '';
+    value.textContent = '';
+  }
+}
+function hideOperationProgress(delay = 0) {
+  clearTimeout(operationHideTimer);
+  operationHideTimer = setTimeout(() => {
+    const panel = $('#operationProgress');
+    if (panel) panel.hidden = true;
+  }, Math.max(0, delay));
+}
+function updateToolOperationProgress(name, state) {
+  const key = String(name || 'tool');
+  const count = activeOperationTools.get(key) || 0;
+  if (state === 'start') activeOperationTools.set(key, count + 1);
+  else if (count <= 1) activeOperationTools.delete(key);
+  else activeOperationTools.set(key, count - 1);
+  if (state === 'start') showOperationProgress('Executing ' + key.replace(/_/g, ' ') + '…');
+  else if (activeOperationTools.size) showOperationProgress(`Executing ${activeOperationTools.size} tool${activeOperationTools.size === 1 ? '' : 's'}…`);
+  else if (operationRequestActive) showOperationProgress('Generating response…');
+  else hideOperationProgress(500);
+}
+
 async function sendMessage(text) {
   text = (text || '').trim();
   if (!text) return;
@@ -2414,6 +2459,8 @@ async function sendMessage(text) {
   setCaption('user', text, { autoHide: 3200 });
   avatar({ thinking: true }); // Gem visibly starts reasoning
   setThinking(true);
+  operationRequestActive = true;
+  showOperationProgress('Understanding request…');
   try {
     return await handleMessage(text);
   } catch (error) {
@@ -2424,6 +2471,8 @@ async function sendMessage(text) {
     speak("I'm sorry, I encountered an error. Please try again.");
     return { error: error && error.message ? error.message : String(error) };
   } finally {
+    operationRequestActive = false;
+    if (!activeOperationTools.size) hideOperationProgress(450);
     avatar({ thinking: false });
     setThinking(false);
   }
@@ -2636,6 +2685,7 @@ async function handleMessage(text) {
     const task = agentMatch[2].trim();
     if (window.__assignAgentTask) window.__assignAgentTask(agentName, task);
     addActivity(agentName, 'working on: ' + task);
+    showOperationProgress(`${agentName} is working…`);
     chatHistory.push({ role: 'user', content: text });
     const replyEl = typing.querySelector('p');
     typewriterToken++;
@@ -4627,6 +4677,7 @@ window.__pushToolActivity = pushToolActivity;
 // column shows real-time cards:  web_search … → done ✓ / error ✗
 const toolFeedCards = new Map(); // tool name -> { el, t0 }
 function toolFeedUpdate({ name, state }) {
+  updateToolOperationProgress(name, state);
   const feed = $('#toolFeed');
   if (!feed) return;
   const empty = feed.querySelector('.empty');
@@ -7723,6 +7774,9 @@ function renderPlanAct(plan, state='preview') {
   if (showBtn) showBtn.textContent = state==='preview' ? 'SHOW PLAN' : 'PLAN';
   if (runBtn) runBtn.textContent = state==='running' ? 'RUNNING…' : 'RUN';
   if (runBtn) runBtn.disabled = state==='running';
+  const processed = plan.filter((step) => ['done', 'error', 'skipped'].includes(step.status)).length;
+  if (state === 'running') showOperationProgress(`Plan step ${Math.min(plan.length, processed + 1)} of ${plan.length}`, plan.length ? processed / plan.length * 100 : 0);
+  else if (state === 'done') { showOperationProgress('Plan complete', 100); hideOperationProgress(1800); }
 }
 
 async function executePlanAct(plan) {
