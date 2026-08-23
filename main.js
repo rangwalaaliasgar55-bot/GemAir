@@ -18,6 +18,7 @@ const PROFILE_FILE = path.join(userDataDir, 'gemair-profile.json');
 const MEMORY_FILE = path.join(userDataDir, 'gemair-memory.json');
 const WINDOW_STATE_FILE = path.join(userDataDir, 'gemair-window-state.json');
 const RECOVERY_FILE = path.join(userDataDir, 'gemair-recovery.json');
+const USAGE_STATS_FILE = path.join(userDataDir, 'gemair-usage-stats.json');
 
 (function migrateLegacyFiles() {
   try {
@@ -342,6 +343,49 @@ process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason);
   saveEmergencyState('unhandledRejection', reason);
 });
+
+// Consent-based, local-only aggregate usage counters. No prompts, arguments,
+// paths, URLs, message contents, hardware identifiers, or network upload.
+function freshUsageStats() { return { version: 1, total: 0, actions: {}, days: {}, updatedAt: 0 }; }
+function readUsageStats() {
+  const stats = readJSON(USAGE_STATS_FILE, freshUsageStats());
+  if (!Number.isFinite(stats.total) || stats.total < 0) stats.total = 0;
+  if (!stats.actions || typeof stats.actions !== 'object' || Array.isArray(stats.actions)) stats.actions = {};
+  if (!stats.days || typeof stats.days !== 'object' || Array.isArray(stats.days)) stats.days = {};
+  return stats;
+}
+function normalizeUsageAction(value) {
+  const action = String(value || '').toLowerCase().trim().replace(/[^a-z0-9._:-]/g, '_').slice(0, 64);
+  return action || 'unknown';
+}
+function trackUsage(action, metadata = {}) {
+  if (readProfile().usageStats !== true) return { recorded: false, reason: 'disabled' };
+  const key = normalizeUsageAction(action);
+  const ok = metadata.ok !== false;
+  const durationMs = Math.max(0, Math.min(60 * 60 * 1000, Number(metadata.durationMs) || 0));
+  const now = Date.now();
+  const day = new Date(now).toISOString().slice(0, 10);
+  const stats = readUsageStats();
+  const entry = stats.actions[key] && typeof stats.actions[key] === 'object' ? stats.actions[key] : {};
+  for (const field of ['count', 'success', 'error', 'totalMs']) if (!Number.isFinite(entry[field]) || entry[field] < 0) entry[field] = 0;
+  entry.count++; entry[ok ? 'success' : 'error']++; entry.totalMs += durationMs; entry.lastAt = now;
+  stats.actions[key] = entry;
+  const daily = stats.days[day] && typeof stats.days[day] === 'object' ? stats.days[day] : {};
+  for (const field of ['count', 'success', 'error']) if (!Number.isFinite(daily[field]) || daily[field] < 0) daily[field] = 0;
+  daily.count++; daily[ok ? 'success' : 'error']++;
+  stats.days[day] = daily;
+  stats.total++; stats.updatedAt = now;
+  const actionKeys = Object.keys(stats.actions).sort((a, b) => (stats.actions[b].lastAt || 0) - (stats.actions[a].lastAt || 0));
+  for (const stale of actionKeys.slice(100)) delete stats.actions[stale];
+  const dayKeys = Object.keys(stats.days).sort().reverse();
+  for (const stale of dayKeys.slice(30)) delete stats.days[stale];
+  return { recorded: writeJSON(USAGE_STATS_FILE, stats) };
+}
+function clearUsageStats() {
+  try { fs.unlinkSync(USAGE_STATS_FILE); } catch {}
+  try { fs.unlinkSync(USAGE_STATS_FILE + '.bak'); } catch {}
+  return { ok: true };
+}
 
 // Emotion + language + support (same as 2.2)
 const EMOTION_LEXICON = {
@@ -1911,7 +1955,10 @@ function executeTool(name, args) {
     const wait = TOOL_MIN_INTERVAL_MS - (Date.now() - (toolLastStarted.get(name) || 0));
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     toolLastStarted.set(name, Date.now());
-    return executeToolNow(name, validated.value);
+    const started = Date.now();
+    const result = await executeToolNow(name, validated.value);
+    trackUsage('tool.' + name, { ok: !(result && result.error), durationMs: Date.now() - started });
+    return result;
   });
   toolQueueTails.set(name, run);
   run.finally(() => {
@@ -2973,6 +3020,9 @@ ipcMain.handle('system:info', () => getSystemInfo());
 ipcMain.handle('audit:get', () => executeTool('get_action_log', {}));
 ipcMain.handle('screen:inspect', () => inspectScreenChange());
 ipcMain.handle('recovery:consume', () => consumeRecoveryStatus());
+ipcMain.handle('usage:get', () => readProfile().usageStats === true ? readUsageStats() : { ...freshUsageStats(), disabled: true });
+ipcMain.handle('usage:track', (_e, action, metadata) => trackUsage(action, metadata || {}));
+ipcMain.handle('usage:clear', () => clearUsageStats());
 ipcMain.handle('profile:get', () => readProfile());
 ipcMain.handle('profile:set', (_e, data) => writeProfile(data || {}));
 ipcMain.handle('ai:chat', async (_e, config, messages) => {

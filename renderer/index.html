@@ -1007,6 +1007,19 @@
             </div>
           </fieldset>
           <fieldset>
+            <legend>LOCAL USAGE STATISTICS</legend>
+            <label class="check-label">
+              <input type="checkbox" id="setUsageStats" /> Keep anonymous aggregate counters on this device
+            </label>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);">Off by default. Records action names, success/error counts, and duration only—never prompts, paths, URLs, or message content. Nothing is uploaded.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="mini-btn" id="refreshUsageBtn" type="button">Refresh</button>
+              <button class="mini-btn" id="exportUsageBtn" type="button">Export</button>
+              <button class="mini-btn" id="clearUsageBtn" type="button">Clear</button>
+              <span class="dim" id="usageStatsSummary" role="status" aria-live="polite">Disabled.</span>
+            </div>
+          </fieldset>
+          <fieldset>
             <legend>RATE GEMAIR</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
               Ratings are stored locally and never uploaded. Export them any time.

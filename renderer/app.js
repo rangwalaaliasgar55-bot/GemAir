@@ -48,6 +48,9 @@ const api = {
     return { changed: false, changePercent: 0, description: 'Browser screen capture is unavailable; desktop mode is required.' };
   },
   async consumeRecovery() { return window.gemair && window.gemair.consumeRecovery ? window.gemair.consumeRecovery() : { recovered: false, restored: [] }; },
+  async usageGet() { return window.gemair && window.gemair.usageGet ? window.gemair.usageGet() : { version: 1, total: 0, actions: {}, days: {}, disabled: true }; },
+  async trackUsage(action, metadata = {}) { return window.gemair && window.gemair.usageTrack ? window.gemair.usageTrack(action, metadata) : { recorded: false }; },
+  async usageClear() { return window.gemair && window.gemair.usageClear ? window.gemair.usageClear() : { ok: true }; },
   async getProfile() { if (window.gemair) return window.gemair.getProfile(); return window.webStore ? window.webStore.getProfile() : {}; },
   async setProfile(d) { if (window.gemair) return window.gemair.setProfile(d); if (window.webStore) await window.webStore.setProfile(d); },
 
@@ -557,7 +560,7 @@ function makeDefaultProfile() {
       sttLang: DEFAULTS.sttLang,
       name: ''
     },
-    memoryOn: true, allowShell: false, adaptivePersonality: true, autoUpdateChecks: DEFAULTS.autoUpdateChecks, wakeWord: false, wakeWordText: 'Hey Gem',
+    memoryOn: true, allowShell: false, adaptivePersonality: true, autoUpdateChecks: DEFAULTS.autoUpdateChecks, usageStats: false, wakeWord: false, wakeWordText: 'Hey Gem',
     ambientScore: false, ambientTrack: DEFAULTS.ambientTrack, ambientVolume: DEFAULTS.ambientVolume,
     screenAwareness: false,
     modes: {}
@@ -1608,6 +1611,7 @@ document.addEventListener('visibilitychange', () => {
 // ---------------------------------------------------------------------------
 function switchView(view) {
   playSfx('swoosh');
+  api.trackUsage('view.' + String(view || 'unknown'));
   $$('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
   resumeViewFrames(view);
@@ -2556,6 +2560,7 @@ function updateToolOperationProgress(name, state) {
 async function sendMessage(text) {
   text = (text || '').trim();
   if (!text) return;
+  api.trackUsage('message');
   addMessage('user', text);
   $('#chatInput').value = '';
   setCaption('user', text, { autoHide: 3200 });
@@ -5822,6 +5827,39 @@ function maybeCheckForUpdates() {
   setTimeout(() => checkForAppUpdates({ silent: true }).catch(() => {}), 2500);
 }
 
+let lastUsageStats = null;
+async function renderUsageStats() {
+  const summary = $('#usageStatsSummary');
+  if (!summary) return null;
+  if (!window.gemair || !window.gemair.usageGet) { summary.textContent = 'Desktop app only.'; return null; }
+  try {
+    const stats = await api.usageGet();
+    lastUsageStats = stats;
+    if (stats.disabled) { summary.textContent = 'Disabled.'; return stats; }
+    const today = new Date().toISOString().slice(0, 10);
+    const todayCount = stats.days && stats.days[today] ? Number(stats.days[today].count) || 0 : 0;
+    const actionCount = stats.actions ? Object.keys(stats.actions).length : 0;
+    summary.textContent = `${Number(stats.total) || 0} events · ${todayCount} today · ${actionCount} action types`;
+    return stats;
+  } catch {
+    summary.textContent = 'Statistics unavailable.';
+    return null;
+  }
+}
+async function exportUsageStats() {
+  const stats = await renderUsageStats();
+  if (!stats || stats.disabled) { toast('USAGE STATS', 'Enable local statistics and save Settings first.', 'ℹ'); return; }
+  downloadText(JSON.stringify(stats, null, 2), `gemair-usage-${new Date().toISOString().slice(0, 10)}.json`);
+  toast('USAGE STATS', 'Local aggregate counters exported.', '⇩');
+}
+async function clearLocalUsageStats() {
+  if (!window.confirm('Clear all local usage counters? This cannot be undone.')) return;
+  await api.usageClear();
+  lastUsageStats = null;
+  await renderUsageStats();
+  toast('USAGE STATS', 'Local counters cleared.', '✓');
+}
+
 function openSettings() {
   $('#setUserName').value = profile.name || '';
   $('#setBaseURL').value = (profile.ai?.baseURL) || '';
@@ -5840,6 +5878,7 @@ function openSettings() {
   $('#setContextStrategy').value = CONTEXT_STRATEGIES[profile.contextStrategy] ? profile.contextStrategy : DEFAULTS.contextStrategy;
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setAutoUpdateChecks').checked = profile.autoUpdateChecks !== false;
+  $('#setUsageStats').checked = profile.usageStats === true;
   $('#setAmbientScore').checked = !!profile.ambientScore;
   // T5 — ambient track + volume
   const trackSel = $('#setAmbientTrack');
@@ -5860,6 +5899,7 @@ function openSettings() {
   populateVoices(); populateNeuralVoices(); populateEdgeVoices(); updateAiHint();
   syncVoicePresetUi(profile.voice?.preset || 'gem');
   renderCostPanel();
+  renderUsageStats();
   $('#settingsModal').classList.add('open');
 }
 function closeSettings() { $('#settingsModal').classList.remove('open'); }
@@ -6331,6 +6371,9 @@ function bindEvents() {
   $('#settingsClose').addEventListener('click', closeSettings);
   $('#settingsModal').addEventListener('click', (e) => { if (e.target === $('#settingsModal')) closeSettings(); });
   $('#appearanceToggle').addEventListener('click', toggleAppearance);
+  $('#refreshUsageBtn').addEventListener('click', renderUsageStats);
+  $('#exportUsageBtn').addEventListener('click', exportUsageStats);
+  $('#clearUsageBtn').addEventListener('click', clearLocalUsageStats);
   $('#saveBtn').addEventListener('click', () => {
     profile.name = $('#setUserName').value.trim() || 'Commander';
     profile.ai = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
@@ -6350,13 +6393,14 @@ function bindEvents() {
     profile.contextStrategy = CONTEXT_STRATEGIES[$('#setContextStrategy').value] ? $('#setContextStrategy').value : DEFAULTS.contextStrategy;
     profile.allowShell = $('#setAllowShell').checked;
     profile.autoUpdateChecks = $('#setAutoUpdateChecks').checked;
+    profile.usageStats = $('#setUsageStats').checked;
     profile.ambientScore = $('#setAmbientScore').checked;
     profile.ambientTrack = $('#setAmbientTrack')?.value || profile.ambientTrack || DEFAULTS.ambientTrack;
     profile.ambientVolume = Number($('#setAmbientVolume')?.value ?? ambientVolume());
     profile.screenAwareness = $('#setScreenAwareness').checked;
     profile.wakeWord = $('#setWakeWord').checked;
     profile.wakeWordText = ($('#setWakeWordText').value || 'Hey Gem').trim().replace(/\s+/g, ' ').slice(0, 40) || 'Hey Gem';
-    persistProfile().then(() => { updateLinkMode(); closeSettings(); });
+    persistProfile().then(() => { updateLinkMode(); renderUsageStats(); closeSettings(); });
     setAmbientScore(profile.ambientScore);
     configureScreenAwareness(profile.screenAwareness);
     updateSttLanguageUi();
