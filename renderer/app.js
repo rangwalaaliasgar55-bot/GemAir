@@ -550,7 +550,7 @@ function makeDefaultProfile() {
       sttLang: DEFAULTS.sttLang,
       name: ''
     },
-    memoryOn: true, allowShell: false, wakeWord: false,
+    memoryOn: true, allowShell: false, wakeWord: false, wakeWordText: 'Hey Gem',
     ambientScore: false, ambientTrack: DEFAULTS.ambientTrack, ambientVolume: DEFAULTS.ambientVolume,
     screenAwareness: false,
     modes: {}
@@ -584,10 +584,17 @@ function estimateContextTokens(extraText = '') {
   return Math.ceil(chars / 4);
 }
 
+const contextElements = { chip: null, value: null, bar: null };
+function getContextElements() {
+  contextElements.chip ||= $('#contextChip');
+  contextElements.value ||= $('#contextValue');
+  contextElements.bar ||= $('#contextBar');
+  return contextElements;
+}
 function updateContextMeter(extraText = '') {
   const tokens = estimateContextTokens(extraText);
   const percent = Math.min(100, Math.round(tokens / CONTEXT_TOKEN_LIMIT * 100));
-  const chip = $('#contextChip'), value = $('#contextValue'), bar = $('#contextBar');
+  const { chip, value, bar } = getContextElements();
   if (value) value.textContent = tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'K' : String(tokens);
   if (bar) bar.style.width = percent + '%';
   if (chip) { chip.classList.toggle('warn', percent >= 70 && percent < 90); chip.classList.toggle('danger', percent >= 90); chip.title = `${tokens.toLocaleString()} estimated tokens · ${percent}% of ${CONTEXT_TOKEN_LIMIT.toLocaleString()}`; }
@@ -2374,6 +2381,13 @@ async function sendMessage(text) {
   setThinking(true);
   try {
     return await handleMessage(text);
+  } catch (error) {
+    console.error('[sendMessage]', error);
+    const message = `I couldn't complete that request: ${error && error.message ? error.message : 'Something went wrong. Please try again.'}`;
+    addMessage('ai', message);
+    toast('REQUEST FAILED', 'The operation did not complete. You can safely try again.', '⚠️');
+    speak("I'm sorry, I encountered an error. Please try again.");
+    return { error: error && error.message ? error.message : String(error) };
   } finally {
     avatar({ thinking: false });
     setThinking(false);
@@ -5598,6 +5612,7 @@ function openSettings() {
   if (localBrain) localBrain.checked = !!(window.aiClient && window.aiClient.isLocalReady());
   $('#setScreenAwareness').checked = !!profile.screenAwareness;
   $('#setWakeWord').checked = !!profile.wakeWord;
+  $('#setWakeWordText').value = profile.wakeWordText || 'Hey Gem';
   populateVoices(); populateNeuralVoices(); populateEdgeVoices(); updateAiHint();
   syncVoicePresetUi(profile.voice?.preset || 'gem');
   renderCostPanel();
@@ -6088,6 +6103,7 @@ function bindEvents() {
     profile.ambientVolume = Number($('#setAmbientVolume')?.value ?? ambientVolume());
     profile.screenAwareness = $('#setScreenAwareness').checked;
     profile.wakeWord = $('#setWakeWord').checked;
+    profile.wakeWordText = ($('#setWakeWordText').value || 'Hey Gem').trim().replace(/\s+/g, ' ').slice(0, 40) || 'Hey Gem';
     persistProfile().then(() => { updateLinkMode(); closeSettings(); });
     setAmbientScore(profile.ambientScore);
     configureScreenAwareness(profile.screenAwareness);
@@ -6179,7 +6195,7 @@ function bindEvents() {
       { id: 'panel-system', name: 'Live Telemetry Panel', detail: 'HUD panel', icon: '⌁', type: 'PANEL', action: () => openHudDock('system') },
       { id: 'panel-news', name: 'Headlines Panel', detail: 'HUD panel', icon: '◎', type: 'PANEL', action: () => openHudDock('news') },
       { id: 'toggle-memory', name: `${profile.memoryOn === false ? 'Enable' : 'Disable'} Auto Memory`, detail: 'settings toggle', icon: '🧠', type: 'TOGGLE', action: () => { profile.memoryOn = profile.memoryOn === false; persistProfile(); toast('MEMORY', profile.memoryOn ? 'Auto memory enabled.' : 'Auto memory disabled.', '🧠'); } },
-      { id: 'toggle-wake', name: `${profile.wakeWord ? 'Disable' : 'Enable'} Wake Word`, detail: 'say “Hey Gem”', icon: '🎙', type: 'TOGGLE', action: () => { profile.wakeWord = !profile.wakeWord; persistProfile(); configureWakeWord(profile.wakeWord); } },
+      { id: 'toggle-wake', name: `${profile.wakeWord ? 'Disable' : 'Enable'} Wake Word`, detail: `say “${profile.wakeWordText || 'Hey Gem'}”`, icon: '🎙', type: 'TOGGLE', action: () => { profile.wakeWord = !profile.wakeWord; persistProfile(); configureWakeWord(profile.wakeWord); } },
       { id: 'toggle-score', name: `${profile.ambientScore ? 'Disable' : 'Enable'} Ambient Score`, detail: 'local synthesized audio', icon: '♫', type: 'TOGGLE', action: () => { profile.ambientScore = !profile.ambientScore; setAmbientScore(profile.ambientScore); persistProfile(); } },
       ...AGENTS.map((a) => ({ id: 'agent-' + a.name.toLowerCase(), name: 'Assign ' + a.name, detail: a.role, icon: a.emoji, type: 'AGENT', action: () => { switchView('assistant'); $('#chatInput').value = '@' + a.name + ' '; $('#chatInput').focus(); } })),
       ...WORKFLOWS.map((w) => ({ id: w.id, name: w.name, detail: w.detail, icon: w.icon, type: 'WORKFLOW', action: () => { switchView('assistant'); sendMessage(w.prompt); } })),
@@ -6448,8 +6464,10 @@ function configureWakeWord(enabled) {
       for (let i = event.resultIndex || 0; i < event.results.length; i++) {
         const transcript = (event.results[i][0].transcript || '').toLowerCase().trim();
         if (transcript) { stopSpeaking(); wakeBackoff = 250; } // barge-in wins; healthy loop resets backoff
-        if (/\bhey\s+gem(?:air)?\b|\bhi\s+gem(?:air)?\b/.test(transcript)) {
-          addMessage('system-msg', 'Wake word “Hey Gem” detected — listening.');
+        const wakePhrase = String(profile.wakeWordText || 'Hey Gem').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+        const normalizedTranscript = transcript.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+        if (wakePhrase && (` ${normalizedTranscript} `).includes(` ${wakePhrase} `)) {
+          addMessage('system-msg', `Wake phrase “${profile.wakeWordText || 'Hey Gem'}” detected — listening.`);
           startAiLoop();
           setCaption('user', transcript, { autoHide: 1600 });
           break;
@@ -6475,7 +6493,7 @@ function configureWakeWord(enabled) {
   if (wakeArmed) return;
   wakeArmed = true;
   try { wakeRecognition.start(); } catch (e) {}
-  addMessage('system-msg', 'Wake word armed — say “Hey Gem” anytime.');
+  addMessage('system-msg', `Wake word armed — say “${profile.wakeWordText || 'Hey Gem'}” anytime.`);
 }
 
 function stopListening() {

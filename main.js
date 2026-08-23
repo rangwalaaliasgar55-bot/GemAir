@@ -4,7 +4,7 @@ const { app, BrowserWindow, ipcMain, shell, dialog, Notification, desktopCapture
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 
 const connections = require('./lib/connections');
 const windowTools = require('./lib/window-tools');
@@ -470,6 +470,7 @@ const TOOLS = [
   // Modes
   { type: 'function', function: { name: 'apply_mode', description: 'Apply a desktop mode by name (WORK, GAMING, CHILL, STUDY, or custom). Arranges apps, sites, volume, theme, DND, playlist.', parameters: { type: 'object', properties: { name: { type: 'string', description: 'Mode name' } }, required: ['name'] } } },
   { type: 'function', function: { name: 'list_modes', description: 'List all available desktop modes.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'add_calendar_event', description: 'Create an iCalendar event and open it in the system calendar.', parameters: { type: 'object', properties: { title: { type: 'string' }, start: { type: 'string', description: 'ISO 8601 date/time' }, end: { type: 'string', description: 'Optional ISO 8601 date/time' }, description: { type: 'string' }, location: { type: 'string' } }, required: ['title', 'start'] } } },
   { type: 'function', function: { name: 'create_mode', description: 'Create or update a custom mode bundle.', parameters: { type: 'object', properties: { name: { type: 'string' }, apps: { type: 'array', items: { type: 'string' } }, sites: { type: 'array', items: { type: 'object' } }, volume: { type: 'number' }, theme: { type: 'string' }, dnd: { type: 'boolean' }, playlist: { type: 'string' } }, required: ['name'] } } }
 ];
 
@@ -578,9 +579,20 @@ async function webSearch(query) {
 function stripHtml(html) {
   return String(html || '').replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
 }
+function normalizeHttpUrl(value, { publicOnly = false } = {}) {
+  let text = String(value || '').trim();
+  if (!/^https?:\/\//i.test(text)) text = 'https://' + text;
+  try {
+    const parsed = new URL(text);
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || text.length > 2048) return null;
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (publicOnly && (host === 'localhost' || host.endsWith('.localhost') || host === '::1' || host === '0.0.0.0' || host === '127.0.0.1' || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host))) return null;
+    return parsed.toString();
+  } catch { return null; }
+}
 async function fetchWebpage(url) {
-  let u = String(url).trim();
-  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  const u = normalizeHttpUrl(url, { publicOnly: true });
+  if (!u) return { error: 'Provide a valid public HTTP(S) URL.' };
   const res = await fetchDeadline(u, { redirect: 'follow', headers: { 'User-Agent': BROWSER_UA } }, 12000);
   if (!res.ok) return { error: 'HTTP ' + res.status };
   const html = await res.text();
@@ -594,67 +606,146 @@ async function searchWikipedia(query) {
 function searchYouTube(query) {
   return { url: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query), note: 'Open this URL to see video results.' };
 }
-function listDirectory(dir) {
-  const base = dir || os.homedir();
-  try {
-    const entries = fs.readdirSync(base, { withFileTypes: true });
-    return entries.slice(0, 100).map((e) => ({ name: e.name, type: e.isDirectory() ? 'folder' : 'file' }));
-  } catch (e) { return { error: e.message }; }
+function pathInside(base, target) {
+  const rel = path.relative(base, target);
+  return rel === '' || (!rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel));
 }
-function readFile(path_) {
+
+function resolveUserPath(input, fallback = os.homedir()) {
+  const raw = input == null || input === '' ? fallback : String(input);
+  if (!raw || raw.length > 4096 || /\0/.test(raw)) throw new Error('Invalid path.');
+  const home = path.resolve(os.homedir());
+  const target = path.resolve(path.isAbsolute(raw) ? raw : path.join(home, raw));
+  if (!pathInside(home, target)) throw new Error('Path must stay inside your home folder.');
+  // Defend against an existing symlink redirecting an apparently safe path.
+  let probe = target;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) break;
+    probe = parent;
+  }
+  const realProbe = fs.realpathSync(probe);
+  if (!pathInside(fs.realpathSync(home), realProbe)) throw new Error('Path resolves outside your home folder.');
+  return target;
+}
+
+async function listDirectory(dir) {
   try {
-    const stat = fs.statSync(path_);
+    const base = resolveUserPath(dir, os.homedir());
+    const entries = await fs.promises.readdir(base, { withFileTypes: true });
+    return entries.slice(0, 100).map((entry) => ({ name: entry.name, type: entry.isDirectory() ? 'folder' : 'file' }));
+  } catch (error) { return { error: error.message }; }
+}
+async function readFile(path_) {
+  try {
+    const safePath = resolveUserPath(path_);
+    const stat = await fs.promises.stat(safePath);
+    if (!stat.isFile()) return { error: 'Path is not a file.' };
     if (stat.size > 200 * 1024) return { error: 'File too large to read (' + Math.round(stat.size / 1024) + ' KB).' };
-    const content = fs.readFileSync(path_, 'utf8');
-    return { path: path_, content: content.slice(0, 20000) };
-  } catch (e) { return { error: e.message }; }
+    const content = await fs.promises.readFile(safePath, 'utf8');
+    return { path: safePath, content: content.slice(0, 20000) };
+  } catch (error) { return { error: error.message }; }
 }
-function writeFile(path_, content) {
+async function writeFile(path_, content) {
   try {
-    fs.mkdirSync(path.dirname(path_), { recursive: true });
-    fs.writeFileSync(path_, String(content));
-    return { ok: true, path: path_ };
-  } catch (e) { return { error: e.message }; }
+    const safePath = resolveUserPath(path_);
+    const text = String(content);
+    if (Buffer.byteLength(text, 'utf8') > 1024 * 1024) return { error: 'File content exceeds the 1 MB tool limit.' };
+    await fs.promises.mkdir(path.dirname(safePath), { recursive: true });
+    await fs.promises.writeFile(safePath, text, { encoding: 'utf8', mode: 0o600 });
+    return { ok: true, path: safePath };
+  } catch (error) { return { error: error.message }; }
 }
-function searchFiles(root, query) {
-  const base = root || os.homedir();
-  const q = (query || '').toLowerCase();
+async function searchFiles(root, query) {
+  let base;
+  try { base = resolveUserPath(root, os.homedir()); } catch (error) { return { error: error.message }; }
+  const q = String(query || '').toLowerCase().trim();
   if (!q) return { error: 'Provide a search query.' };
   const results = [];
-  const walk = (dir, depth) => {
+  const walk = async (dir, depth) => {
     if (depth > 4 || results.length >= 30) return;
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      try {
-        if (e.name.startsWith('.')) continue;
-        const full = path.join(dir, e.name);
-        if (e.name.toLowerCase().includes(q)) results.push(full);
-        if (e.isDirectory()) walk(full, depth + 1);
-      } catch {}
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || results.length >= 30) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.name.toLowerCase().includes(q)) results.push(full);
+      if (entry.isDirectory() && !entry.isSymbolicLink()) await walk(full, depth + 1);
     }
   };
-  walk(base, 0);
+  await walk(base, 0);
   return results.slice(0, 30);
 }
+
+const SAFE_COMMANDS = new Set(['ls', 'pwd', 'echo', 'date', 'time', 'whoami', 'hostname', 'uname', 'df', 'du', 'ps', 'tasklist', 'ipconfig', 'ifconfig', 'ping', 'git', 'node', 'npm']);
+const SAFE_GIT_SUBCOMMANDS = new Set(['status', 'diff', 'log', 'show', 'branch', 'rev-parse']);
+function parseSafeCommand(command) {
+  const source = String(command || '').trim();
+  if (!source) throw new Error('Empty command.');
+  if (source.length > 400 || /[\0\r\n;&|<>`$]/.test(source)) throw new Error('Command contains blocked shell syntax.');
+  const tokens = source.match(/"(?:[^"\\]|\\.)*"|'[^']*'|[^\s]+/g) || [];
+  const argv = tokens.map((token) => {
+    if ((token[0] === '"' && token.at(-1) === '"') || (token[0] === "'" && token.at(-1) === "'")) return token.slice(1, -1).replace(/\\"/g, '"');
+    return token;
+  });
+  const file = String(argv.shift() || '').toLowerCase();
+  if (!SAFE_COMMANDS.has(file)) throw new Error(`Command "${file}" is not in the diagnostics allow-list.`);
+  if (file === 'git' && (!argv[0] || !SAFE_GIT_SUBCOMMANDS.has(argv[0].toLowerCase()))) throw new Error('Only read-only git commands are allowed.');
+  if ((file === 'node' || file === 'npm') && !argv.every((arg) => ['--version', '-v'].includes(arg))) throw new Error(`${file} is limited to version checks.`);
+  return { file, argv, display: source };
+}
 function runCommand(command) {
-  const p = readProfile();
-  if (!p.allowShell) return { error: 'Shell commands are disabled. Enable "Advanced: allow shell commands" in Settings.' };
-  const cmd = String(command || '').trim();
-  if (!cmd) return { error: 'Empty command.' };
-  if (/rm\s+(-rf|fr)\s*\//.test(cmd) || /format\s+[a-z]:/i.test(cmd) || />\s*\/dev\//.test(cmd)) return { error: 'Command blocked for safety.' };
+  const profile = readProfile();
+  if (!profile.allowShell) return { error: 'Shell commands are disabled. Enable "Advanced: allow shell commands" in Settings.' };
+  let parsed;
+  try { parsed = parseSafeCommand(command); } catch (error) { return { error: error.message }; }
   return dialog.showMessageBox(mainWindow, {
     type: 'warning', buttons: ['Run', 'Cancel'], defaultId: 1, cancelId: 1,
-    title: 'GemAir shell command', message: 'Run this command?', detail: cmd
-  }).then((r) => {
-    if (r.response !== 0) return { error: 'Cancelled by user.' };
+    title: 'GemAir diagnostic command', message: 'Run this allow-listed command?', detail: parsed.display
+  }).then((response) => {
+    if (response.response !== 0) return { error: 'Cancelled by user.' };
     return new Promise((resolve) => {
-      exec(cmd, { timeout: 20000 }, (err, stdout, stderr) => {
-        resolve({ stdout: (stdout || '').slice(0, 4000), stderr: (stderr || '').slice(0, 1000), code: err ? err.code : 0 });
+      execFile(parsed.file, parsed.argv, { timeout: 20000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
+        resolve({ stdout: String(stdout || '').slice(0, 4000), stderr: String(stderr || '').slice(0, 1000), code: error ? (error.code || 1) : 0 });
       });
     });
   });
 }
+
+function escapeIcsText(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
+}
+function icsTimestamp(date) {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+async function addCalendarEvent(args) {
+  const title = String(args.title || '').trim();
+  const start = new Date(args.start);
+  const end = args.end ? new Date(args.end) : new Date(start.getTime() + 60 * 60 * 1000);
+  if (!title || title.length > 200) return { error: 'Event title must be 1-200 characters.' };
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return { error: 'Start and end must be valid ISO 8601 dates.' };
+  if (end <= start) return { error: 'Event end must be after its start.' };
+  const ok = await confirmAction('Add calendar event?', `${title}\n${start.toLocaleString()} – ${end.toLocaleString()}\n\nGemAir will create an .ics file and open it in your calendar app for final review.`);
+  if (!ok) return { error: 'Cancelled by user.' };
+  const directory = resolveUserPath(path.join(os.homedir(), 'Documents', 'GemAir Calendar'));
+  await fs.promises.mkdir(directory, { recursive: true });
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'event';
+  const file = path.join(directory, `${slug}-${Date.now()}.ics`);
+  const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@gemair.local`;
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//GemAir//Calendar Event//EN', 'CALSCALE:GREGORIAN',
+    'BEGIN:VEVENT', `UID:${uid}`, `DTSTAMP:${icsTimestamp(new Date())}`, `DTSTART:${icsTimestamp(start)}`, `DTEND:${icsTimestamp(end)}`,
+    `SUMMARY:${escapeIcsText(title)}`,
+    ...(args.description ? [`DESCRIPTION:${escapeIcsText(String(args.description).slice(0, 5000))}`] : []),
+    ...(args.location ? [`LOCATION:${escapeIcsText(String(args.location).slice(0, 500))}`] : []),
+    'END:VEVENT', 'END:VCALENDAR', ''
+  ];
+  await fs.promises.writeFile(file, lines.join('\r\n'), { encoding: 'utf8', mode: 0o600 });
+  const openError = await shell.openPath(file);
+  logAction('add_calendar_event', `Created calendar event "${title}" at ${file}`);
+  return { ok: true, file, title, start: start.toISOString(), end: end.toISOString(), opened: !openError, ...(openError ? { note: `Event saved; calendar app did not open: ${openError}` } : {}) };
+}
+
 const CITY_TZ = {
   london: 'Europe/London', newyork: 'America/New_York', nyc: 'America/New_York', losangeles: 'America/Los_Angeles',
   sanfrancisco: 'America/Los_Angeles', chicago: 'America/Chicago', toronto: 'America/Toronto', tokyo: 'Asia/Tokyo',
@@ -928,7 +1019,7 @@ async function confirmAction(title, detail) {
   return r.response === 0;
 }
 async function organizeFolder(dir) {
-  const base = dir || path.join(os.homedir(), 'Downloads');
+  const base = resolveUserPath(dir, path.join(os.homedir(), 'Downloads'));
   try {
     const entries = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
     if (!entries.length) return { ok: true, total: 0, categories: {}, base, note: 'Nothing to organize.' };
@@ -947,7 +1038,7 @@ async function organizeFolder(dir) {
   } catch (e) { return { error: e.message }; }
 }
 function findDuplicates(dir) {
-  const base = dir || os.homedir();
+  const base = resolveUserPath(dir, os.homedir());
   try {
     const map = {};
     const walk = (d, depth) => {
@@ -957,7 +1048,7 @@ function findDuplicates(dir) {
       for (const e of entries) {
         if (e.name.startsWith('.')) continue;
         const full = path.join(d, e.name);
-        if (e.isDirectory()) walk(full, depth + 1);
+        if (e.isDirectory() && !e.isSymbolicLink()) walk(full, depth + 1);
         else {
           let key;
           try {
@@ -975,7 +1066,7 @@ function findDuplicates(dir) {
   } catch (e) { return { error: e.message }; }
 }
 async function renameFiles(dir, pattern) {
-  const base = dir || os.homedir();
+  const base = resolveUserPath(dir, os.homedir());
   const pat = String(pattern || 'file').replace(/[^\w\- ]/g, '');
   try {
     const files = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
@@ -994,7 +1085,7 @@ async function renameFiles(dir, pattern) {
   } catch (e) { return { error: e.message }; }
 }
 async function archiveOldFiles(dir, days) {
-  const base = dir || os.homedir();
+  const base = resolveUserPath(dir, os.homedir());
   const cutoff = Date.now() - days * 86400000;
   try {
     const archive = path.join(base, '_archive');
@@ -1046,7 +1137,7 @@ function closeApp(name, keep) {
   return { ok: true, closed, note: closed.length ? `Asked ${closed.length} app(s) to close.` : 'Nothing closed.' };
 }
 function findLargeFiles(root, minMB, unusedMonths) {
-  const base = root || os.homedir();
+  const base = resolveUserPath(root, os.homedir());
   const minBytes = (Number(minMB) || 500) * 1024 * 1024;
   const cutoff = unusedMonths ? Date.now() - Number(unusedMonths) * 30 * 86400000 : null;
   const hits = [];
@@ -1058,7 +1149,7 @@ function findLargeFiles(root, minMB, unusedMonths) {
       if (e.name.startsWith('.') || e.name === '_archive') continue;
       const full = path.join(dir, e.name);
       try {
-        if (e.isDirectory()) walk(full, depth + 1);
+        if (e.isDirectory() && !e.isSymbolicLink()) walk(full, depth + 1);
         else {
           const st = fs.statSync(full);
           if (st.size >= minBytes && (!cutoff || st.mtimeMs < cutoff)) {
@@ -1073,7 +1164,7 @@ function findLargeFiles(root, minMB, unusedMonths) {
   return { files: hits, count: hits.length, base, minMB: minMB || 500, unusedMonths: unusedMonths || null };
 }
 async function createFolderTree(root, folders) {
-  const base = root || path.join(os.homedir(), 'Documents');
+  const base = resolveUserPath(root, path.join(os.homedir(), 'Documents'));
   const list = Array.isArray(folders) ? folders : (String(folders || '').split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean));
   const tree = list.length ? list : ['src', 'src/components', 'src/assets', 'docs', 'tests', 'scripts', 'public'];
   if (!tree.length) return { error: 'Provide folders to create.' };
@@ -1106,8 +1197,8 @@ async function createFolderTree(root, folders) {
   return { ok: true, base, created, count: created.length, skipped, rejected: skipped.length };
 }
 async function moveFiles(source, dest, filter) {
-  const from = source || path.join(os.homedir(), 'Downloads');
-  const to = dest || path.join(from, filter ? String(filter || '').replace(/\W+/g, '_').toLowerCase() : 'moved');
+  const from = resolveUserPath(source, path.join(os.homedir(), 'Downloads'));
+  const to = resolveUserPath(dest, path.join(from, filter ? String(filter || '').replace(/\W+/g, '_').toLowerCase() : 'moved'));
   const f = String(filter || '').toLowerCase();
   try {
     const entries = fs.readdirSync(from, { withFileTypes: true }).filter((e) => e.isFile());
@@ -1492,10 +1583,66 @@ const TOOL_RISK = {
   show_panel: 'safe', hide_panel: 'safe',
   launch_app: 'safe', focus_app: 'safe', snap_window: 'safe', minimize_all: 'safe',
   next_virtual_desktop: 'safe', open_site: 'safe', list_windows: 'safe',
-  apply_mode: 'safe', list_modes: 'safe', create_mode: 'safe'
+  apply_mode: 'safe', list_modes: 'safe', create_mode: 'safe',
+  add_calendar_event: 'sensitive'
 };
 
-async function executeTool(name, args) {
+const TOOL_SCHEMAS = new Map(TOOLS.map((tool) => [tool.function.name, tool.function.parameters || { type: 'object', properties: {} }]));
+const TOOL_DEFAULT_STRING_LIMIT = 20000;
+const TOOL_STRING_LIMITS = { path: 4096, content: 1024 * 1024, query: 2000, prompt: 10000, text: 20000, command: 400, url: 2048 };
+function validateToolInput(name, input) {
+  const schema = TOOL_SCHEMAS.get(name);
+  if (!schema) return { error: `Unknown tool: ${name}` };
+  if (input == null) input = {};
+  if (typeof input !== 'object' || Array.isArray(input)) return { error: 'Tool arguments must be an object.' };
+  const properties = schema.properties || {};
+  for (const required of schema.required || []) {
+    if (!(required in input) || input[required] == null || input[required] === '') return { error: `Missing required parameter: ${required}` };
+  }
+  for (const [key, value] of Object.entries(input)) {
+    const property = properties[key];
+    if (!property) return { error: `Unknown parameter: ${key}` };
+    if (property.type === 'string') {
+      if (typeof value !== 'string') return { error: `Parameter ${key} must be a string.` };
+      const limit = TOOL_STRING_LIMITS[key] || TOOL_DEFAULT_STRING_LIMIT;
+      if (value.length > limit) return { error: `Parameter ${key} exceeds ${limit} characters.` };
+    } else if (property.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) {
+      return { error: `Parameter ${key} must be a finite number.` };
+    } else if (property.type === 'boolean' && typeof value !== 'boolean') {
+      return { error: `Parameter ${key} must be a boolean.` };
+    } else if (property.type === 'array') {
+      if (!Array.isArray(value)) return { error: `Parameter ${key} must be an array.` };
+      if (value.length > 100) return { error: `Parameter ${key} has too many items.` };
+      if (property.items && property.items.type === 'string' && value.some((item) => typeof item !== 'string' || item.length > 500)) return { error: `Parameter ${key} contains an invalid item.` };
+      if (property.items && property.items.type === 'object' && value.some((item) => !item || typeof item !== 'object' || Array.isArray(item))) return { error: `Parameter ${key} contains an invalid item.` };
+    }
+    if (property.enum && !property.enum.includes(value)) return { error: `Parameter ${key} must be one of: ${property.enum.join(', ')}.` };
+  }
+  return { value: input };
+}
+
+const toolQueueTails = new Map();
+const toolLastStarted = new Map();
+const TOOL_MIN_INTERVAL_MS = 100;
+function executeTool(name, args) {
+  const validated = validateToolInput(name, args);
+  if (validated.error) return Promise.resolve({ error: validated.error });
+  const previous = toolQueueTails.get(name) || Promise.resolve();
+  const run = previous.catch(() => {}).then(async () => {
+    const wait = TOOL_MIN_INTERVAL_MS - (Date.now() - (toolLastStarted.get(name) || 0));
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    toolLastStarted.set(name, Date.now());
+    return executeToolNow(name, validated.value);
+  });
+  toolQueueTails.set(name, run);
+  run.finally(() => {
+    if (toolQueueTails.get(name) === run) toolQueueTails.delete(name);
+    if (!toolQueueTails.has(name) && Date.now() - (toolLastStarted.get(name) || 0) > 60000) toolLastStarted.delete(name);
+  }).catch(() => {});
+  return run;
+}
+
+async function executeToolNow(name, args) {
   try {
     const risk = TOOL_RISK[name] || 'safe';
     const profile = readProfile();
@@ -1530,16 +1677,14 @@ async function executeTool(name, args) {
         return await webSearch(args.query);
       case 'open_application': {
         const n = String(args.name || '');
-        const mapped = windowTools.launchApp(n);
-        if (mapped) return mapped;
-        const p = process.platform;
-        const generic = p === 'darwin' ? `open -a "${n}"` : p === 'win32' ? `start "" "${n}"` : `xdg-open "${n}"`;
-        exec(generic, () => {});
-        return { ok: true, app: n, note: 'Attempted generic launch.' };
+        return await windowTools.launchApp(n);
       }
-      case 'open_url':
-        shell.openExternal(String(args.url));
-        return { ok: true };
+      case 'open_url': {
+        const url = normalizeHttpUrl(args.url);
+        if (!url) return { error: 'Provide a valid HTTP(S) URL.' };
+        await shell.openExternal(url);
+        return { ok: true, url };
+      }
       case 'fetch_webpage':
         return await fetchWebpage(args.url);
       case 'search_wikipedia':
@@ -1547,13 +1692,13 @@ async function executeTool(name, args) {
       case 'search_youtube':
         return searchYouTube(args.query);
       case 'list_directory':
-        return listDirectory(args.path);
+        return await listDirectory(args.path);
       case 'read_file':
-        return readFile(args.path);
+        return await readFile(args.path);
       case 'write_file':
-        return writeFile(args.path, args.content);
+        return await writeFile(args.path, args.content);
       case 'search_files':
-        return searchFiles(args.path, args.query);
+        return await searchFiles(args.path, args.query);
       case 'get_clipboard':
         return { text: clipboard.readText() };
       case 'set_clipboard':
@@ -1715,6 +1860,8 @@ async function executeTool(name, args) {
       }
       case 'list_modes':
         return { modes: modesLib.listModes() };
+      case 'add_calendar_event':
+        return await addCalendarEvent(args);
       case 'create_mode': {
         const res = modesLib.saveMode(args);
         if (res.error) return res;
@@ -2347,7 +2494,7 @@ async function captureChatGPTSession() {
   const email = (sessionData.user && sessionData.user.email) || (sessionData.user && sessionData.user.id) || 'chatgpt_user';
   const plan = (sessionData.user && sessionData.user.plan) || 'free';
   // Store encrypted
-  connections.setChatGPTConnection({
+  const stored = connections.setChatGPTConnection({
     email,
     plan,
     sessionToken: sessionCookie ? sessionCookie.value : '',
@@ -2355,6 +2502,7 @@ async function captureChatGPTSession() {
     refreshToken: sessionData.refreshToken || '',
     expiresAt: Date.now() + 14*24*3600000
   });
+  if (stored && stored.error) return stored;
   try { authWindow.close(); } catch {}
   authWindow = null;
   return { ok: true, email, plan };
@@ -2389,7 +2537,8 @@ async function captureGeminiSession(isAIStudioFallback=false) {
         `);
         if (keyData) {
           // Store as psid for fallback handling? Actually store as Gemini connection with fallback flag
-          connections.setGeminiConnection({ email: 'aistudio_user@gmail.com', plan: 'ai-studio', psid: keyData, psidts: 'fallback' });
+          const stored = connections.setGeminiConnection({ email: 'aistudio_user@gmail.com', plan: 'ai-studio', psid: keyData, psidts: '' });
+          if (stored && stored.error) return stored;
           try { authWindow.close(); } catch {}
           authWindow = null;
           return { ok: true, email: 'aistudio_user@gmail.com', plan: 'ai-studio', fallback: true };
@@ -2413,7 +2562,8 @@ async function captureGeminiSession(isAIStudioFallback=false) {
     const m = em.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
     if (m) email = m[0];
   } catch {}
-  connections.setGeminiConnection({ email, plan: 'free', psid: psid.value, psidts: psidts.value });
+  const stored = connections.setGeminiConnection({ email, plan: 'free', psid: psid.value, psidts: psidts.value });
+  if (stored && stored.error) return stored;
   try { authWindow.close(); } catch {}
   authWindow = null;
   return { ok: true, email, plan: 'free' };
