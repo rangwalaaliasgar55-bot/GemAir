@@ -2784,6 +2784,65 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
 }
 
 // ---------------------------------------------------------------------------
+// Release update checks — metadata only. GemAir never downloads or installs
+// code automatically; opening the verified GitHub release page requires a
+// separate user action in the renderer.
+// ---------------------------------------------------------------------------
+const RELEASE_API_URL = 'https://api.github.com/repos/rangwalaaliasgar55-bot/GemAir/releases/latest';
+const RELEASE_PATH_PREFIX = '/rangwalaaliasgar55-bot/GemAir/releases/';
+let releaseCheckCache = { at: 0, result: null };
+function parseSemver(value) {
+  const match = String(value || '').trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/i);
+  return match ? match.slice(1).map(Number) : null;
+}
+function isVersionNewer(candidate, current) {
+  const next = parseSemver(candidate), installed = parseSemver(current);
+  if (!next || !installed) return false;
+  for (let index = 0; index < 3; index++) {
+    if (next[index] !== installed[index]) return next[index] > installed[index];
+  }
+  return false;
+}
+function verifiedReleaseUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' && url.hostname === 'github.com' && url.pathname.startsWith(RELEASE_PATH_PREFIX) ? url.toString() : null;
+  } catch { return null; }
+}
+async function checkForUpdates(force = false) {
+  if (!force && releaseCheckCache.result && Date.now() - releaseCheckCache.at < 6 * 60 * 60 * 1000) return releaseCheckCache.result;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(RELEASE_API_URL, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': `GemAir/${app.getVersion()}` },
+      signal: controller.signal
+    });
+    if (!response.ok) return { ok: false, error: `UPDATE_CHECK_HTTP_${response.status}` };
+    const release = await response.json();
+    const latest = String(release.tag_name || '').replace(/^v/i, '');
+    const url = verifiedReleaseUrl(release.html_url);
+    if (!parseSemver(latest) || !url || release.draft || release.prerelease) return { ok: false, error: 'INVALID_RELEASE_METADATA' };
+    const current = app.getVersion();
+    const result = {
+      ok: true,
+      current,
+      latest,
+      available: isVersionNewer(latest, current),
+      url,
+      name: String(release.name || `GemAir ${latest}`).slice(0, 120),
+      notes: String(release.body || '').slice(0, 4000),
+      publishedAt: release.published_at || null,
+      checkedAt: Date.now()
+    };
+    releaseCheckCache = { at: Date.now(), result };
+    return result;
+  } catch (error) {
+    return { ok: false, error: error && error.name === 'AbortError' ? 'UPDATE_CHECK_TIMEOUT' : 'UPDATE_CHECK_FAILED' };
+  } finally { clearTimeout(timer); }
+}
+
+// ---------------------------------------------------------------------------
 // IPC handlers
 // ---------------------------------------------------------------------------
 ipcMain.handle('system:info', () => getSystemInfo());
@@ -2887,6 +2946,7 @@ ipcMain.handle('memory:addTodo', (_e, text) => addTodo(text));
 ipcMain.handle('memory:toggleTodo', (_e, id) => toggleTodoById(id));
 ipcMain.handle('memory:deleteTodo', (_e, id) => deleteTodoById(id));
 ipcMain.handle('win:saveBounds', () => saveWindowBounds());
+ipcMain.handle('app:checkForUpdates', (_e, force) => checkForUpdates(!!force));
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:platform', () => process.platform);
 

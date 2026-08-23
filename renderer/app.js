@@ -216,6 +216,7 @@ const api = {
     try { const r = await fetch('/api/headlines?limit=' + (limit || 14) + '&category=' + encodeURIComponent(category || 'tech')); return await r.json(); } catch { return []; }
   },
   openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
+  async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async version() { return window.gemair ? window.gemair.version() : '2.1.0'; },
   onReminder(cb) { if (window.gemair) window.gemair.onReminder(cb); },
   onWakeToggle(cb) { if (window.gemair) window.gemair.onWakeToggle(cb); },
@@ -524,6 +525,7 @@ const DEFAULTS = Object.freeze({
   lang: 'en',
   appearance: 'dark',
   contextStrategy: 'balanced',
+  autoUpdateChecks: true,
   ambientTrack: 'deep',
   ambientVolume: 0.35,
   currentMode: '',
@@ -554,7 +556,7 @@ function makeDefaultProfile() {
       sttLang: DEFAULTS.sttLang,
       name: ''
     },
-    memoryOn: true, allowShell: false, adaptivePersonality: true, wakeWord: false, wakeWordText: 'Hey Gem',
+    memoryOn: true, allowShell: false, adaptivePersonality: true, autoUpdateChecks: DEFAULTS.autoUpdateChecks, wakeWord: false, wakeWordText: 'Hey Gem',
     ambientScore: false, ambientTrack: DEFAULTS.ambientTrack, ambientVolume: DEFAULTS.ambientVolume,
     screenAwareness: false,
     modes: {}
@@ -5767,6 +5769,58 @@ function renderCostPanel() {
   ).join('');
 }
 
+const UPDATE_CHECK_KEY = 'gemair:last-update-check';
+function trustedReleasePage(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' && url.hostname === 'github.com' && url.pathname.startsWith('/rangwalaaliasgar55-bot/GemAir/releases/') ? url.toString() : null;
+  } catch { return null; }
+}
+async function checkForAppUpdates({ force = false, silent = false } = {}) {
+  const status = $('#updateStatus');
+  const checkButton = $('#checkUpdatesBtn');
+  const viewButton = $('#viewUpdateBtn');
+  if (!window.gemair || !window.gemair.checkForUpdates) {
+    if (status) status.textContent = 'Update checks are available in the desktop app.';
+    return { ok: false, error: 'DESKTOP_ONLY' };
+  }
+  if (status) status.textContent = 'Checking GitHub…';
+  if (checkButton) checkButton.disabled = true;
+  try {
+    const result = await api.checkForUpdates(force);
+    if (!result || !result.ok) {
+      if (status) status.textContent = result && result.error === 'UPDATE_CHECK_TIMEOUT' ? 'Check timed out. Try again later.' : 'Could not check for updates.';
+      if (!silent) toast('UPDATE CHECK', 'GitHub release information is unavailable right now.', '⚠');
+      return result || { ok: false, error: 'UPDATE_CHECK_FAILED' };
+    }
+    const releaseUrl = trustedReleasePage(result.url);
+    if (result.available && !releaseUrl) {
+      if (status) status.textContent = 'Release metadata failed verification.';
+      return { ok: false, error: 'INVALID_RELEASE_URL' };
+    }
+    if (result.available) {
+      if (status) status.textContent = `GemAir ${result.latest} is available (installed: ${result.current}).`;
+      if (viewButton) { viewButton.hidden = false; viewButton.dataset.url = releaseUrl; }
+      toast('UPDATE AVAILABLE', `GemAir ${result.latest} is ready on GitHub.`, '⬆');
+    } else {
+      if (status) status.textContent = `GemAir ${result.current} is up to date.`;
+      if (viewButton) { viewButton.hidden = true; delete viewButton.dataset.url; }
+      if (!silent) toast('UP TO DATE', `GemAir ${result.current} is the latest stable release.`, '✓');
+    }
+    return result;
+  } finally {
+    if (checkButton) checkButton.disabled = false;
+  }
+}
+function maybeCheckForUpdates() {
+  if (!window.gemair || profile.autoUpdateChecks === false) return;
+  let last = 0;
+  try { last = Number(localStorage.getItem(UPDATE_CHECK_KEY)) || 0; } catch {}
+  if (Date.now() - last < 24 * 60 * 60 * 1000) return;
+  try { localStorage.setItem(UPDATE_CHECK_KEY, String(Date.now())); } catch {}
+  setTimeout(() => checkForAppUpdates({ silent: true }).catch(() => {}), 2500);
+}
+
 function openSettings() {
   $('#setUserName').value = profile.name || '';
   $('#setBaseURL').value = (profile.ai?.baseURL) || '';
@@ -5784,6 +5838,7 @@ function openSettings() {
   $('#setMemoryOn').checked = profile.memoryOn !== false;
   $('#setContextStrategy').value = CONTEXT_STRATEGIES[profile.contextStrategy] ? profile.contextStrategy : DEFAULTS.contextStrategy;
   $('#setAllowShell').checked = !!profile.allowShell;
+  $('#setAutoUpdateChecks').checked = profile.autoUpdateChecks !== false;
   $('#setAmbientScore').checked = !!profile.ambientScore;
   // T5 — ambient track + volume
   const trackSel = $('#setAmbientTrack');
@@ -6250,6 +6305,11 @@ function bindEvents() {
   $('#downloadClose').addEventListener('click', closeDownload);
   $('#downloadClose2').addEventListener('click', closeDownload);
   $('#settingsDownloadBtn')?.addEventListener('click', openDownload);
+  $('#checkUpdatesBtn')?.addEventListener('click', () => checkForAppUpdates({ force: true }));
+  $('#viewUpdateBtn')?.addEventListener('click', () => {
+    const url = trustedReleasePage($('#viewUpdateBtn').dataset.url);
+    if (url) api.openExternal(url);
+  });
   $('#downloadModal').addEventListener('click', (e) => { if (e.target === $('#downloadModal')) closeDownload(); });
   // let the OS links open in the user's real browser when running in Electron
   $$('#dlGrid .dl-card').forEach((c) => c.addEventListener('click', (e) => {
@@ -6288,6 +6348,7 @@ function bindEvents() {
     profile.memoryOn = $('#setMemoryOn').checked;
     profile.contextStrategy = CONTEXT_STRATEGIES[$('#setContextStrategy').value] ? $('#setContextStrategy').value : DEFAULTS.contextStrategy;
     profile.allowShell = $('#setAllowShell').checked;
+    profile.autoUpdateChecks = $('#setAutoUpdateChecks').checked;
     profile.ambientScore = $('#setAmbientScore').checked;
     profile.ambientTrack = $('#setAmbientTrack')?.value || profile.ambientTrack || DEFAULTS.ambientTrack;
     profile.ambientVolume = Number($('#setAmbientVolume')?.value ?? ambientVolume());
@@ -7107,6 +7168,7 @@ async function boot() {
   recognition = initRecognition();
   if (speechSynthesis) speechSynthesis.onvoiceschanged = populateVoices;
   try { $('#verTag').textContent = 'v' + (await api.version()); } catch (e) {}
+  maybeCheckForUpdates();
 
   if (profile.wakeWord) configureWakeWord(true);
   configureScreenAwareness(!!profile.screenAwareness);
