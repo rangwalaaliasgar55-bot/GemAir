@@ -4,7 +4,9 @@ const { app, BrowserWindow, ipcMain, shell, dialog, Notification, desktopCapture
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-const { exec } = require('child_process');
+const dns = require('dns');
+const net = require('net');
+const { exec, execFile } = require('child_process');
 
 const connections = require('./lib/connections');
 const windowTools = require('./lib/window-tools');
@@ -15,6 +17,8 @@ const userDataDir = app.getPath('userData');
 const PROFILE_FILE = path.join(userDataDir, 'gemair-profile.json');
 const MEMORY_FILE = path.join(userDataDir, 'gemair-memory.json');
 const WINDOW_STATE_FILE = path.join(userDataDir, 'gemair-window-state.json');
+const RECOVERY_FILE = path.join(userDataDir, 'gemair-recovery.json');
+const USAGE_STATS_FILE = path.join(userDataDir, 'gemair-usage-stats.json');
 
 (function migrateLegacyFiles() {
   try {
@@ -37,6 +41,8 @@ let isQuitting = false;
 let authWindow = null;
 let focusPollTimer = null;
 let lastFocused = { app: '', title: '', pid: 0 };
+let fatalCrashInProgress = false;
+let rendererCrashHistory = [];
 
 const DEFAULT_BOUNDS = { width: 1440, height: 900 };
 
@@ -48,12 +54,9 @@ function displaySetKey() {
       .join('|') || 'unknown';
   } catch (e) { return 'unknown'; }
 }
-function readWindowState() {
-  try { return JSON.parse(fs.readFileSync(WINDOW_STATE_FILE, 'utf8')) || {}; } catch (e) { return {}; }
-}
-function writeWindowState(state) {
-  try { fs.writeFileSync(WINDOW_STATE_FILE, JSON.stringify(state, null, 2)); } catch (e) {}
-}
+function readWindowState() { return readJSON(WINDOW_STATE_FILE, {}, 'windowState'); }
+function writeWindowState(state) { return writeJSON(WINDOW_STATE_FILE, state); }
+
 function clampToVisibleDisplay(bounds) {
   if (!bounds || !Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)) return null;
   let displays = [];
@@ -96,6 +99,68 @@ function saveWindowBounds() {
   } catch (e) { return false; }
 }
 
+function trustedExternalUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && url.toString().length <= 4096 ? url.toString() : null;
+  } catch { return null; }
+}
+function openExternalSafely(value) {
+  const external = trustedExternalUrl(value);
+  if (!external) return false;
+  Promise.resolve(shell.openExternal(external)).catch((error) => console.error('[open-external]', error.message));
+  return true;
+}
+function isAppFileUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'file:' && decodeURIComponent(url.pathname).replace(/\\/g, '/').endsWith('/renderer/index.html');
+  } catch { return false; }
+}
+function isLocalFileOrigin(value) {
+  try { return new URL(String(value || '')).protocol === 'file:'; } catch { return false; }
+}
+function sameAppDocument(target, current) {
+  try {
+    const next = new URL(target), active = new URL(current);
+    return isAppFileUrl(next.toString()) && isAppFileUrl(active.toString()) && next.pathname === active.pathname;
+  } catch { return false; }
+}
+function authHostAllowed(value, provider) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:' || url.username || url.password) return false;
+    const common = ['accounts.google.com', 'appleid.apple.com', 'login.microsoftonline.com'];
+    const providerHosts = provider === 'chatgpt'
+      ? ['chatgpt.com', 'openai.com']
+      : ['google.com', 'gemini.google.com', 'aistudio.google.com', 'googleusercontent.com'];
+    return [...common, ...providerHosts].some((host) => url.hostname === host || url.hostname.endsWith('.' + host));
+  } catch { return false; }
+}
+function configureAuthWindowSecurity(window, provider) {
+  if (!window || window.isDestroyed()) return;
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!authHostAllowed(url, provider)) {
+      event.preventDefault();
+      openExternalSafely(url);
+    }
+  });
+  window.webContents.on('did-create-window', (child) => configureAuthWindowSecurity(child, provider));
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (!authHostAllowed(url, provider)) {
+      openExternalSafely(url);
+      return { action: 'deny' };
+    }
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        autoHideMenuBar: true,
+        webPreferences: { partition: provider === 'chatgpt' ? 'persist:chatgpt' : 'persist:gemini', nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, navigateOnDragDrop: false, safeDialogs: true }
+      }
+    };
+  });
+}
+
 function createWindow() {
   const start = restoredBounds();
   mainWindow = new BrowserWindow({
@@ -112,6 +177,12 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      navigateOnDragDrop: false,
+      safeDialogs: true,
       spellcheck: false
     }
   });
@@ -128,11 +199,36 @@ function createWindow() {
     screen.on('display-removed', queueSave);
     screen.on('display-metrics-changed', queueSave);
   } catch (e) {}
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (isQuitting || !details || details.reason === 'clean-exit') return;
+    saveEmergencyState('renderer:' + String(details.reason || 'crashed'), new Error('Renderer process stopped unexpectedly.'));
+    const now = Date.now();
+    rendererCrashHistory = rendererCrashHistory.filter((timestamp) => now - timestamp < 60000);
+    rendererCrashHistory.push(now);
+    if (rendererCrashHistory.length === 1 && mainWindow && !mainWindow.isDestroyed()) {
+      setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload(); }, 750);
+    } else {
+      try { dialog.showErrorBox('GemAir renderer stopped', 'Your state is safe, but the interface stopped more than once. Please restart GemAir.'); } catch {}
+    }
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (sameAppDocument(url, mainWindow.webContents.getURL())) return;
+    event.preventDefault();
+    openExternalSafely(url);
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http')) shell.openExternal(url);
+    openExternalSafely(url);
     return { action: 'deny' };
   });
+  const mainSession = mainWindow.webContents.session;
+  mainSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const requestingUrl = details && (details.requestingUrl || details.securityOrigin);
+    callback(webContents === mainWindow.webContents && permission === 'media' && isLocalFileOrigin(requestingUrl || mainWindow.webContents.getURL()));
+  });
+  mainSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+    return webContents === mainWindow.webContents && permission === 'media' && isLocalFileOrigin(requestingOrigin || mainWindow.webContents.getURL());
+  });
+  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.on('close', (e) => {
     saveWindowBounds();
     if (!isQuitting && tray) {
@@ -190,32 +286,187 @@ app.whenReady().then(() => {
     else mainWindow.show();
   });
 });
-app.on('before-quit', () => { isQuitting = true; if (focusPollTimer) clearInterval(focusPollTimer); });
+app.on('before-quit', () => {
+  isQuitting = true;
+  if (focusPollTimer) clearInterval(focusPollTimer);
+  if (!fatalCrashInProgress) clearNonfatalRecoveryCheckpoint();
+});
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// Persistent stores
-function readJSON(file, fallback) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
-}
-function writeJSON(file, data) {
+// Persistent stores — atomic replace + bounded backups. A crash can never
+// leave a half-written profile or memory file as the only copy.
+const MAX_STATE_FILE_BYTES = 20 * 1024 * 1024;
+const backupWriteAt = new Map();
+const recoveredSources = new Set();
+let writingEmergencyState = false;
+let lastEmergencyAt = 0;
+function safeReadJSONFile(file) {
   try {
-    fs.mkdirSync(userDataDir, { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(data, null, 2));
-    return true;
-  } catch { return false; }
+    const stat = fs.statSync(file);
+    if (!stat.isFile() || stat.size > MAX_STATE_FILE_BYTES) return null;
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch { return null; }
 }
-const readProfile = () => readJSON(PROFILE_FILE, {});
-const writeProfile = (d) => writeJSON(PROFILE_FILE, d);
+function atomicWriteJSON(file, data, { backup = true } = {}) {
+  const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    if (backup && fs.existsSync(file) && Date.now() - (backupWriteAt.get(file) || 0) > 5 * 60 * 1000) {
+      if (safeReadJSONFile(file)) {
+        try { fs.copyFileSync(file, file + '.bak'); backupWriteAt.set(file, Date.now()); } catch {}
+      }
+    }
+    const payload = JSON.stringify(data, null, 2);
+    if (Buffer.byteLength(payload, 'utf8') > MAX_STATE_FILE_BYTES) throw new Error('STATE_FILE_TOO_LARGE');
+    fs.writeFileSync(temporary, payload, { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(temporary, file);
+    return true;
+  } catch (error) {
+    try { fs.unlinkSync(temporary); } catch {}
+    console.error('[state-write]', path.basename(file), error.message);
+    return false;
+  }
+}
+function recoveryValue(key) {
+  const recovery = safeReadJSONFile(RECOVERY_FILE);
+  return recovery && recovery[key] && typeof recovery[key] === 'object' ? recovery[key] : null;
+}
+function readJSON(file, fallback, recoveryKey = null) {
+  const primary = safeReadJSONFile(file);
+  if (primary) return primary;
+  const backup = safeReadJSONFile(file + '.bak');
+  if (backup) {
+    recoveredSources.add(path.basename(file) + ':backup');
+    atomicWriteJSON(file, backup, { backup: false });
+    return backup;
+  }
+  const emergency = recoveryKey ? recoveryValue(recoveryKey) : null;
+  if (emergency) {
+    recoveredSources.add(path.basename(file) + ':emergency');
+    atomicWriteJSON(file, emergency, { backup: false });
+    return emergency;
+  }
+  return fallback;
+}
+function writeJSON(file, data) { return atomicWriteJSON(file, data); }
+const readProfile = () => readJSON(PROFILE_FILE, {}, 'profile');
+const writeProfile = (data) => writeJSON(PROFILE_FILE, data);
 const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
+const freshEmptyMemory = () => ({ facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' });
 const readMemory = () => {
-  const m = readJSON(MEMORY_FILE, EMPTY_MEMORY);
-  for (const k of Object.keys(EMPTY_MEMORY)) if (!Array.isArray(m[k])) m[k] = [];
-  return m;
+  const memory = readJSON(MEMORY_FILE, freshEmptyMemory(), 'memory');
+  for (const key of Object.keys(EMPTY_MEMORY)) {
+    if (key === 'summary') { if (typeof memory.summary !== 'string') memory.summary = ''; }
+    else if (!Array.isArray(memory[key])) memory[key] = [];
+  }
+  return memory;
 };
-const writeMemory = (m) => writeJSON(MEMORY_FILE, m);
+const writeMemory = (memory) => writeJSON(MEMORY_FILE, memory);
+function redactedRecoveryProfile(profile) {
+  const clean = { ...(profile || {}) };
+  if (clean.ai && typeof clean.ai === 'object') clean.ai = { ...clean.ai, apiKey: '' };
+  return clean;
+}
+function saveEmergencyState(kind, error) {
+  if (writingEmergencyState || Date.now() - lastEmergencyAt < 5000) return false;
+  writingEmergencyState = true;
+  lastEmergencyAt = Date.now();
+  try {
+    const reason = error instanceof Error ? error : new Error(String(error || kind));
+    const payload = {
+      version: 1,
+      createdAt: Date.now(),
+      kind: String(kind || 'unknown').slice(0, 80),
+      message: String(reason.message || reason).slice(0, 500),
+      stack: String(reason.stack || '').slice(0, 4000),
+      profile: redactedRecoveryProfile(readProfile()),
+      memory: readMemory(),
+      windowState: readWindowState()
+    };
+    return atomicWriteJSON(RECOVERY_FILE, payload, { backup: false });
+  } catch (recoveryError) {
+    console.error('[recovery-write]', recoveryError.message);
+    return false;
+  } finally { writingEmergencyState = false; }
+}
+function clearNonfatalRecoveryCheckpoint() {
+  const recovery = safeReadJSONFile(RECOVERY_FILE);
+  if (!recovery || recovery.kind !== 'unhandledRejection') return;
+  try { fs.unlinkSync(RECOVERY_FILE); } catch {}
+}
+function consumeRecoveryStatus() {
+  const recovery = safeReadJSONFile(RECOVERY_FILE);
+  if (!recovery) return { recovered: false, restored: Array.from(recoveredSources) };
+  const status = {
+    recovered: true,
+    createdAt: Number(recovery.createdAt) || null,
+    kind: String(recovery.kind || 'unexpected_shutdown').slice(0, 80),
+    message: String(recovery.message || 'GemAir recovered from an unexpected shutdown.').slice(0, 300),
+    restored: Array.from(recoveredSources)
+  };
+  try { fs.unlinkSync(RECOVERY_FILE); } catch {}
+  try { fs.unlinkSync(RECOVERY_FILE + '.bak'); } catch {}
+  return status;
+}
 function uid() { return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
+
+process.on('uncaughtException', (error) => {
+  fatalCrashInProgress = true;
+  console.error('[uncaughtException]', error && error.stack ? error.stack : error);
+  saveEmergencyState('uncaughtException', error);
+  try { dialog.showErrorBox('GemAir recovered your state', 'GemAir encountered an unexpected error. Your local state was checkpointed and will be restored on the next launch.'); } catch {}
+  try { app.exit(1); } catch { process.exitCode = 1; }
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+  saveEmergencyState('unhandledRejection', reason);
+});
+
+// Consent-based, local-only aggregate usage counters. No prompts, arguments,
+// paths, URLs, message contents, hardware identifiers, or network upload.
+function freshUsageStats() { return { version: 1, total: 0, actions: {}, days: {}, updatedAt: 0 }; }
+function readUsageStats() {
+  const stats = readJSON(USAGE_STATS_FILE, freshUsageStats());
+  if (!Number.isFinite(stats.total) || stats.total < 0) stats.total = 0;
+  if (!stats.actions || typeof stats.actions !== 'object' || Array.isArray(stats.actions)) stats.actions = {};
+  if (!stats.days || typeof stats.days !== 'object' || Array.isArray(stats.days)) stats.days = {};
+  return stats;
+}
+function normalizeUsageAction(value) {
+  const action = String(value || '').toLowerCase().trim().replace(/[^a-z0-9._:-]/g, '_').slice(0, 64);
+  return action || 'unknown';
+}
+function trackUsage(action, metadata = {}) {
+  if (readProfile().usageStats !== true) return { recorded: false, reason: 'disabled' };
+  const key = normalizeUsageAction(action);
+  const ok = metadata.ok !== false;
+  const durationMs = Math.max(0, Math.min(60 * 60 * 1000, Number(metadata.durationMs) || 0));
+  const now = Date.now();
+  const day = new Date(now).toISOString().slice(0, 10);
+  const stats = readUsageStats();
+  const entry = stats.actions[key] && typeof stats.actions[key] === 'object' ? stats.actions[key] : {};
+  for (const field of ['count', 'success', 'error', 'totalMs']) if (!Number.isFinite(entry[field]) || entry[field] < 0) entry[field] = 0;
+  entry.count++; entry[ok ? 'success' : 'error']++; entry.totalMs += durationMs; entry.lastAt = now;
+  stats.actions[key] = entry;
+  const daily = stats.days[day] && typeof stats.days[day] === 'object' ? stats.days[day] : {};
+  for (const field of ['count', 'success', 'error']) if (!Number.isFinite(daily[field]) || daily[field] < 0) daily[field] = 0;
+  daily.count++; daily[ok ? 'success' : 'error']++;
+  stats.days[day] = daily;
+  stats.total++; stats.updatedAt = now;
+  const actionKeys = Object.keys(stats.actions).sort((a, b) => (stats.actions[b].lastAt || 0) - (stats.actions[a].lastAt || 0));
+  for (const stale of actionKeys.slice(100)) delete stats.actions[stale];
+  const dayKeys = Object.keys(stats.days).sort().reverse();
+  for (const stale of dayKeys.slice(30)) delete stats.days[stale];
+  return { recorded: writeJSON(USAGE_STATS_FILE, stats) };
+}
+function clearUsageStats() {
+  try { fs.unlinkSync(USAGE_STATS_FILE); } catch {}
+  try { fs.unlinkSync(USAGE_STATS_FILE + '.bak'); } catch {}
+  return { ok: true };
+}
 
 // Emotion + language + support (same as 2.2)
 const EMOTION_LEXICON = {
@@ -470,6 +721,9 @@ const TOOLS = [
   // Modes
   { type: 'function', function: { name: 'apply_mode', description: 'Apply a desktop mode by name (WORK, GAMING, CHILL, STUDY, or custom). Arranges apps, sites, volume, theme, DND, playlist.', parameters: { type: 'object', properties: { name: { type: 'string', description: 'Mode name' } }, required: ['name'] } } },
   { type: 'function', function: { name: 'list_modes', description: 'List all available desktop modes.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'upload_file', description: 'Upload a local file (maximum 25 MB) to an HTTPS signed or public PUT URL.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Local file inside the user home folder' }, destination: { type: 'string', description: 'HTTPS upload URL' } }, required: ['path', 'destination'] } } },
+  { type: 'function', function: { name: 'download_file', description: 'Download a public HTTP(S) file (maximum 25 MB) into the user home folder.', parameters: { type: 'object', properties: { url: { type: 'string' }, destination: { type: 'string', description: 'Optional local output path inside the user home folder' } }, required: ['url'] } } },
+  { type: 'function', function: { name: 'add_calendar_event', description: 'Create an iCalendar event and open it in the system calendar.', parameters: { type: 'object', properties: { title: { type: 'string' }, start: { type: 'string', description: 'ISO 8601 date/time' }, end: { type: 'string', description: 'Optional ISO 8601 date/time' }, description: { type: 'string' }, location: { type: 'string' } }, required: ['title', 'start'] } } },
   { type: 'function', function: { name: 'create_mode', description: 'Create or update a custom mode bundle.', parameters: { type: 'object', properties: { name: { type: 'string' }, apps: { type: 'array', items: { type: 'string' } }, sites: { type: 'array', items: { type: 'object' } }, volume: { type: 'number' }, theme: { type: 'string' }, dnd: { type: 'boolean' }, playlist: { type: 'string' } }, required: ['name'] } } }
 ];
 
@@ -578,15 +832,66 @@ async function webSearch(query) {
 function stripHtml(html) {
   return String(html || '').replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
 }
-async function fetchWebpage(url) {
-  let u = String(url).trim();
-  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-  const res = await fetchDeadline(u, { redirect: 'follow', headers: { 'User-Agent': BROWSER_UA } }, 12000);
-  if (!res.ok) return { error: 'HTTP ' + res.status };
-  const html = await res.text();
-  const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
-  return { title: title.trim(), url: res.url, excerpt: stripHtml(html).slice(0, 4000) };
+function normalizeHttpUrl(value, { publicOnly = false } = {}) {
+  let text = String(value || '').trim();
+  if (!/^https?:\/\//i.test(text)) text = 'https://' + text;
+  try {
+    const parsed = new URL(text);
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || text.length > 2048) return null;
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (publicOnly && (host === 'localhost' || host.endsWith('.localhost') || host === '::1' || host === '0.0.0.0' || host === '127.0.0.1' || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host))) return null;
+    return parsed.toString();
+  } catch { return null; }
 }
+const MAX_WEBPAGE_BYTES = 2 * 1024 * 1024;
+async function readResponseTextLimited(response, maxBytes = MAX_WEBPAGE_BYTES) {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    try { if (response.body) await response.body.cancel(); } catch {}
+    throw new Error('WEBPAGE_TOO_LARGE');
+  }
+  if (!response.body) {
+    const buffer = new Uint8Array(await response.arrayBuffer());
+    if (buffer.byteLength > maxBytes) throw new Error('WEBPAGE_TOO_LARGE');
+    return new TextDecoder().decode(buffer);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0, text = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > maxBytes) { await reader.cancel(); throw new Error('WEBPAGE_TOO_LARGE'); }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+async function fetchWebpage(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetchPublicWithRedirects(url, {
+      method: 'GET',
+      headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html,application/xhtml+xml,text/plain,application/json,application/xml;q=0.8' },
+      signal: controller.signal
+    });
+    if (!response.ok) return { error: 'HTTP ' + response.status };
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    if (contentType && !/^(text\/|application\/(?:xhtml\+xml|json|xml))/.test(contentType)) {
+      try { if (response.body) await response.body.cancel(); } catch {}
+      return { error: 'Unsupported webpage content type.' };
+    }
+    const html = await readResponseTextLimited(response);
+    const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
+    return { title: stripHtml(title).slice(0, 300), url: response.url, excerpt: stripHtml(html).slice(0, 4000) };
+  } catch (error) {
+    if (error && error.name === 'AbortError') return { error: 'Webpage request timed out.' };
+    if (error && error.message === 'WEBPAGE_TOO_LARGE') return { error: 'Webpage exceeds the 2 MB safety limit.' };
+    return { error: error && error.message ? error.message : 'Webpage request failed.' };
+  } finally { clearTimeout(timer); }
+}
+
 async function searchWikipedia(query) {
   const res = await fetchDeadline('https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=6&search=' + encodeURIComponent(query)).then(r => r.json());
   return { titles: res[1] || [], descriptions: res[2] || [], urls: res[3] || [] };
@@ -594,67 +899,277 @@ async function searchWikipedia(query) {
 function searchYouTube(query) {
   return { url: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query), note: 'Open this URL to see video results.' };
 }
-function listDirectory(dir) {
-  const base = dir || os.homedir();
-  try {
-    const entries = fs.readdirSync(base, { withFileTypes: true });
-    return entries.slice(0, 100).map((e) => ({ name: e.name, type: e.isDirectory() ? 'folder' : 'file' }));
-  } catch (e) { return { error: e.message }; }
+function pathInside(base, target) {
+  const rel = path.relative(base, target);
+  return rel === '' || (!rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel));
 }
-function readFile(path_) {
+
+function resolveUserPath(input, fallback = os.homedir()) {
+  const raw = input == null || input === '' ? fallback : String(input);
+  if (!raw || raw.length > 4096 || /\0/.test(raw)) throw new Error('Invalid path.');
+  const home = path.resolve(os.homedir());
+  const target = path.resolve(path.isAbsolute(raw) ? raw : path.join(home, raw));
+  if (!pathInside(home, target)) throw new Error('Path must stay inside your home folder.');
+  // Defend against an existing symlink redirecting an apparently safe path.
+  let probe = target;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) break;
+    probe = parent;
+  }
+  const realProbe = fs.realpathSync(probe);
+  if (!pathInside(fs.realpathSync(home), realProbe)) throw new Error('Path resolves outside your home folder.');
+  return target;
+}
+
+async function listDirectory(dir) {
   try {
-    const stat = fs.statSync(path_);
+    const base = resolveUserPath(dir, os.homedir());
+    const entries = await fs.promises.readdir(base, { withFileTypes: true });
+    return entries.slice(0, 100).map((entry) => ({ name: entry.name, type: entry.isDirectory() ? 'folder' : 'file' }));
+  } catch (error) { return { error: error.message }; }
+}
+async function readFile(path_) {
+  try {
+    const safePath = resolveUserPath(path_);
+    const stat = await fs.promises.stat(safePath);
+    if (!stat.isFile()) return { error: 'Path is not a file.' };
     if (stat.size > 200 * 1024) return { error: 'File too large to read (' + Math.round(stat.size / 1024) + ' KB).' };
-    const content = fs.readFileSync(path_, 'utf8');
-    return { path: path_, content: content.slice(0, 20000) };
-  } catch (e) { return { error: e.message }; }
+    const content = await fs.promises.readFile(safePath, 'utf8');
+    return { path: safePath, content: content.slice(0, 20000) };
+  } catch (error) { return { error: error.message }; }
 }
-function writeFile(path_, content) {
+async function writeFile(path_, content) {
   try {
-    fs.mkdirSync(path.dirname(path_), { recursive: true });
-    fs.writeFileSync(path_, String(content));
-    return { ok: true, path: path_ };
-  } catch (e) { return { error: e.message }; }
+    const safePath = resolveUserPath(path_);
+    const text = String(content);
+    if (Buffer.byteLength(text, 'utf8') > 1024 * 1024) return { error: 'File content exceeds the 1 MB tool limit.' };
+    await fs.promises.mkdir(path.dirname(safePath), { recursive: true });
+    await fs.promises.writeFile(safePath, text, { encoding: 'utf8', mode: 0o600 });
+    return { ok: true, path: safePath };
+  } catch (error) { return { error: error.message }; }
 }
-function searchFiles(root, query) {
-  const base = root || os.homedir();
-  const q = (query || '').toLowerCase();
+async function searchFiles(root, query) {
+  let base;
+  try { base = resolveUserPath(root, os.homedir()); } catch (error) { return { error: error.message }; }
+  const q = String(query || '').toLowerCase().trim();
   if (!q) return { error: 'Provide a search query.' };
   const results = [];
-  const walk = (dir, depth) => {
+  const walk = async (dir, depth) => {
     if (depth > 4 || results.length >= 30) return;
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      try {
-        if (e.name.startsWith('.')) continue;
-        const full = path.join(dir, e.name);
-        if (e.name.toLowerCase().includes(q)) results.push(full);
-        if (e.isDirectory()) walk(full, depth + 1);
-      } catch {}
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || results.length >= 30) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.name.toLowerCase().includes(q)) results.push(full);
+      if (entry.isDirectory() && !entry.isSymbolicLink()) await walk(full, depth + 1);
     }
   };
-  walk(base, 0);
+  await walk(base, 0);
   return results.slice(0, 30);
 }
+
+const SAFE_COMMANDS = new Set(['ls', 'pwd', 'echo', 'date', 'time', 'whoami', 'hostname', 'uname', 'df', 'du', 'ps', 'tasklist', 'ipconfig', 'ifconfig', 'ping', 'git', 'node', 'npm']);
+const SAFE_GIT_SUBCOMMANDS = new Set(['status', 'diff', 'log', 'show', 'branch', 'rev-parse']);
+function parseSafeCommand(command) {
+  const source = String(command || '').trim();
+  if (!source) throw new Error('Empty command.');
+  if (source.length > 400 || /[\0\r\n;&|<>`$]/.test(source)) throw new Error('Command contains blocked shell syntax.');
+  const tokens = source.match(/"(?:[^"\\]|\\.)*"|'[^']*'|[^\s]+/g) || [];
+  const argv = tokens.map((token) => {
+    if ((token[0] === '"' && token.at(-1) === '"') || (token[0] === "'" && token.at(-1) === "'")) return token.slice(1, -1).replace(/\\"/g, '"');
+    return token;
+  });
+  const file = String(argv.shift() || '').toLowerCase();
+  if (!SAFE_COMMANDS.has(file)) throw new Error(`Command "${file}" is not in the diagnostics allow-list.`);
+  if (file === 'git' && (!argv[0] || !SAFE_GIT_SUBCOMMANDS.has(argv[0].toLowerCase()))) throw new Error('Only read-only git commands are allowed.');
+  if ((file === 'node' || file === 'npm') && !argv.every((arg) => ['--version', '-v'].includes(arg))) throw new Error(`${file} is limited to version checks.`);
+  return { file, argv, display: source };
+}
 function runCommand(command) {
-  const p = readProfile();
-  if (!p.allowShell) return { error: 'Shell commands are disabled. Enable "Advanced: allow shell commands" in Settings.' };
-  const cmd = String(command || '').trim();
-  if (!cmd) return { error: 'Empty command.' };
-  if (/rm\s+(-rf|fr)\s*\//.test(cmd) || /format\s+[a-z]:/i.test(cmd) || />\s*\/dev\//.test(cmd)) return { error: 'Command blocked for safety.' };
+  const profile = readProfile();
+  if (!profile.allowShell) return { error: 'Shell commands are disabled. Enable "Advanced: allow shell commands" in Settings.' };
+  let parsed;
+  try { parsed = parseSafeCommand(command); } catch (error) { return { error: error.message }; }
   return dialog.showMessageBox(mainWindow, {
     type: 'warning', buttons: ['Run', 'Cancel'], defaultId: 1, cancelId: 1,
-    title: 'GemAir shell command', message: 'Run this command?', detail: cmd
-  }).then((r) => {
-    if (r.response !== 0) return { error: 'Cancelled by user.' };
+    title: 'GemAir diagnostic command', message: 'Run this allow-listed command?', detail: parsed.display
+  }).then((response) => {
+    if (response.response !== 0) return { error: 'Cancelled by user.' };
     return new Promise((resolve) => {
-      exec(cmd, { timeout: 20000 }, (err, stdout, stderr) => {
-        resolve({ stdout: (stdout || '').slice(0, 4000), stderr: (stderr || '').slice(0, 1000), code: err ? err.code : 0 });
+      execFile(parsed.file, parsed.argv, { timeout: 20000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
+        resolve({ stdout: String(stdout || '').slice(0, 4000), stderr: String(stderr || '').slice(0, 1000), code: error ? (error.code || 1) : 0 });
       });
     });
   });
 }
+
+const MAX_FILE_TRANSFER_BYTES = 25 * 1024 * 1024;
+function isPrivateNetworkAddress(address) {
+  let value = String(address || '').toLowerCase();
+  if (value.startsWith('::ffff:')) value = value.slice(7);
+  if (net.isIPv4(value)) {
+    const parts = value.split('.').map(Number);
+    return parts[0] === 0 || parts[0] === 10 || parts[0] === 127 ||
+      (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
+      (parts[0] === 169 && parts[1] === 254) || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+      (parts[0] === 192 && (parts[1] === 0 || parts[1] === 168)) ||
+      (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19 || (parts[1] === 51 && parts[2] === 100))) ||
+      (parts[0] === 203 && parts[1] === 0 && parts[2] === 113) || parts[0] >= 224;
+  }
+  if (net.isIPv6(value)) return value === '::' || value === '::1' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb') || value.startsWith('ff') || value.startsWith('2001:db8:');
+  return true;
+}
+async function requirePublicHttpUrl(value, { httpsOnly = false, signal = null } = {}) {
+  const normalized = normalizeHttpUrl(value, { publicOnly: true });
+  if (!normalized) throw new Error('A valid public HTTP(S) URL is required.');
+  const parsed = new URL(normalized);
+  if (httpsOnly && parsed.protocol !== 'https:') throw new Error('Uploads require HTTPS.');
+  if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  let addresses;
+  let dnsTimer, abortHandler;
+  try {
+    const races = [
+      dns.promises.lookup(parsed.hostname, { all: true, verbatim: true }),
+      new Promise((_, reject) => { dnsTimer = setTimeout(() => reject(new Error('DNS timeout')), 5000); })
+    ];
+    if (signal) races.push(new Promise((_, reject) => {
+      abortHandler = () => reject(new DOMException('Aborted', 'AbortError'));
+      signal.addEventListener('abort', abortHandler, { once: true });
+    }));
+    addresses = await Promise.race(races);
+  } catch (error) {
+    if (error && error.name === 'AbortError') throw error;
+    throw new Error('Could not resolve the destination host.');
+  } finally {
+    if (dnsTimer) clearTimeout(dnsTimer);
+    if (signal && abortHandler) signal.removeEventListener('abort', abortHandler);
+  }
+  if (!addresses.length || addresses.some((entry) => isPrivateNetworkAddress(entry.address))) throw new Error('Private, local, and reserved network destinations are blocked.');
+  return normalized;
+}
+
+async function fetchPublicWithRedirects(initialUrl, options, { httpsOnly = false, upload = false } = {}) {
+  let current = initialUrl;
+  for (let redirect = 0; redirect <= 4; redirect++) {
+    current = await requirePublicHttpUrl(current, { httpsOnly, signal: options && options.signal });
+    const response = await fetch(current, { ...options, redirect: 'manual' });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    const location = response.headers.get('location');
+    try { if (response.body) await response.body.cancel(); } catch {}
+    if (!location || redirect === 4) throw new Error('Too many or invalid redirects.');
+    if (upload && ![307, 308].includes(response.status)) throw new Error('Upload redirect must preserve the PUT method.');
+    current = new URL(location, current).toString();
+  }
+  throw new Error('Too many redirects.');
+}
+function safeDownloadName(url) {
+  let name = 'download-' + Date.now();
+  try { name = decodeURIComponent(path.basename(new URL(url).pathname)) || name; } catch {}
+  name = name.replace(/[^\p{L}\p{N}._() +#-]/gu, '_').replace(/^\.+/, '').slice(0, 120);
+  return name || `download-${Date.now()}`;
+}
+async function uploadFile(localPath, destination) {
+  const source = resolveUserPath(localPath);
+  const stat = await fs.promises.stat(source);
+  if (!stat.isFile()) return { error: 'Upload path is not a file.' };
+  if (stat.size > MAX_FILE_TRANSFER_BYTES) return { error: 'Upload exceeds the 25 MB limit.' };
+  let uploadUrl;
+  try { uploadUrl = await requirePublicHttpUrl(destination, { httpsOnly: true }); } catch (error) { return { error: error.message }; }
+  const host = new URL(uploadUrl).hostname;
+  const ok = await confirmAction('Upload file?', `GemAir will upload:\n${source}\n\nSize: ${(stat.size / 1048576).toFixed(2)} MB\nDestination host: ${host}\n\nOnly continue if you trust this destination.`);
+  if (!ok) return { error: 'Cancelled by user.' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  try {
+    const body = await fs.promises.readFile(source);
+    const response = await fetchPublicWithRedirects(uploadUrl, {
+      method: 'PUT', headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(body.length) }, body, signal: controller.signal
+    }, { httpsOnly: true, upload: true });
+    if (!response.ok) return { error: `Upload failed with HTTP ${response.status}.` };
+    logAction('upload_file', `Uploaded ${source} (${stat.size} bytes) to ${host}`);
+    return { ok: true, path: source, destinationHost: host, bytes: stat.size, status: response.status };
+  } catch (error) {
+    return { error: error && error.name === 'AbortError' ? 'Upload timed out.' : error.message };
+  } finally { clearTimeout(timer); }
+}
+async function downloadFile(url, destination) {
+  let downloadUrl;
+  try { downloadUrl = await requirePublicHttpUrl(url); } catch (error) { return { error: error.message }; }
+  const fallback = path.join(os.homedir(), 'Downloads', safeDownloadName(downloadUrl));
+  let target;
+  try { target = resolveUserPath(destination, fallback); } catch (error) { return { error: error.message }; }
+  if (fs.existsSync(target)) return { error: 'Download destination already exists. Choose a new filename.' };
+  const ok = await confirmAction('Download file?', `GemAir will download from:\n${new URL(downloadUrl).hostname}\n\nand save it to:\n${target}\n\nMaximum size: 25 MB.`);
+  if (!ok) return { error: 'Cancelled by user.' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  const temporary = `${target}.part-${process.pid}-${Date.now()}`;
+  let handle = null;
+  try {
+    const response = await fetchPublicWithRedirects(downloadUrl, { method: 'GET', signal: controller.signal });
+    if (!response.ok || !response.body) return { error: `Download failed with HTTP ${response.status}.` };
+    const declared = Number(response.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > MAX_FILE_TRANSFER_BYTES) { await response.body.cancel(); return { error: 'Download exceeds the 25 MB limit.' }; }
+    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+    handle = await fs.promises.open(temporary, 'wx', 0o600);
+    const reader = response.body.getReader();
+    let bytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_FILE_TRANSFER_BYTES) { await reader.cancel(); throw new Error('Download exceeds the 25 MB limit.'); }
+      await handle.write(value);
+    }
+    await handle.close(); handle = null;
+    await fs.promises.rename(temporary, target);
+    logAction('download_file', `Downloaded ${bytes} bytes from ${new URL(downloadUrl).hostname} to ${target}`);
+    return { ok: true, path: target, bytes, sourceHost: new URL(downloadUrl).hostname };
+  } catch (error) {
+    return { error: error && error.name === 'AbortError' ? 'Download timed out.' : error.message };
+  } finally {
+    clearTimeout(timer);
+    if (handle) try { await handle.close(); } catch {}
+    try { await fs.promises.unlink(temporary); } catch {}
+  }
+}
+
+function escapeIcsText(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
+}
+function icsTimestamp(date) {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+async function addCalendarEvent(args) {
+  const title = String(args.title || '').trim();
+  const start = new Date(args.start);
+  const end = args.end ? new Date(args.end) : new Date(start.getTime() + 60 * 60 * 1000);
+  if (!title || title.length > 200) return { error: 'Event title must be 1-200 characters.' };
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return { error: 'Start and end must be valid ISO 8601 dates.' };
+  if (end <= start) return { error: 'Event end must be after its start.' };
+  const ok = await confirmAction('Add calendar event?', `${title}\n${start.toLocaleString()} – ${end.toLocaleString()}\n\nGemAir will create an .ics file and open it in your calendar app for final review.`);
+  if (!ok) return { error: 'Cancelled by user.' };
+  const directory = resolveUserPath(path.join(os.homedir(), 'Documents', 'GemAir Calendar'));
+  await fs.promises.mkdir(directory, { recursive: true });
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'event';
+  const file = path.join(directory, `${slug}-${Date.now()}.ics`);
+  const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@gemair.local`;
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//GemAir//Calendar Event//EN', 'CALSCALE:GREGORIAN',
+    'BEGIN:VEVENT', `UID:${uid}`, `DTSTAMP:${icsTimestamp(new Date())}`, `DTSTART:${icsTimestamp(start)}`, `DTEND:${icsTimestamp(end)}`,
+    `SUMMARY:${escapeIcsText(title)}`,
+    ...(args.description ? [`DESCRIPTION:${escapeIcsText(String(args.description).slice(0, 5000))}`] : []),
+    ...(args.location ? [`LOCATION:${escapeIcsText(String(args.location).slice(0, 500))}`] : []),
+    'END:VEVENT', 'END:VCALENDAR', ''
+  ];
+  await fs.promises.writeFile(file, lines.join('\r\n'), { encoding: 'utf8', mode: 0o600 });
+  const openError = await shell.openPath(file);
+  logAction('add_calendar_event', `Created calendar event "${title}" at ${file}`);
+  return { ok: true, file, title, start: start.toISOString(), end: end.toISOString(), opened: !openError, ...(openError ? { note: `Event saved; calendar app did not open: ${openError}` } : {}) };
+}
+
 const CITY_TZ = {
   london: 'Europe/London', newyork: 'America/New_York', nyc: 'America/New_York', losangeles: 'America/Los_Angeles',
   sanfrancisco: 'America/Los_Angeles', chicago: 'America/Chicago', toronto: 'America/Toronto', tokyo: 'Asia/Tokyo',
@@ -928,89 +1443,114 @@ async function confirmAction(title, detail) {
   return r.response === 0;
 }
 async function organizeFolder(dir) {
-  const base = dir || path.join(os.homedir(), 'Downloads');
+  const base = resolveUserPath(dir, path.join(os.homedir(), 'Downloads'));
   try {
-    const entries = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
+    const entries = (await fs.promises.readdir(base, { withFileTypes: true })).filter((entry) => entry.isFile());
     if (!entries.length) return { ok: true, total: 0, categories: {}, base, note: 'Nothing to organize.' };
     const ok = await confirmAction('Organize folder?', `GemAir will sort ${entries.length} files in:\n${base}\n\ninto subfolders by type (images, documents, videos, etc.). Files are moved, not deleted.`);
     if (!ok) return { error: 'Cancelled by user.' };
-    const moved = {}, total = entries.length;
-    for (const e of entries) {
-      const cat = categorizeFile(e.name);
-      const dest = path.join(base, cat);
-      if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-      fs.renameSync(path.join(base, e.name), path.join(dest, e.name));
-      moved[cat] = (moved[cat] || 0) + 1;
+    const moved = {}, failures = [];
+    for (const entry of entries) {
+      const category = categorizeFile(entry.name);
+      const destination = path.join(base, category);
+      try {
+        await fs.promises.mkdir(destination, { recursive: true });
+        await fs.promises.rename(path.join(base, entry.name), path.join(destination, entry.name));
+        moved[category] = (moved[category] || 0) + 1;
+      } catch (error) { failures.push({ file: entry.name, error: error.message }); }
     }
+    const total = Object.values(moved).reduce((sum, count) => sum + count, 0);
     logAction('organize_folder', `Organized ${total} files into ${Object.keys(moved).length} categories in ${base}`);
-    return { ok: true, total, categories: moved, base };
-  } catch (e) { return { error: e.message }; }
+    return { ok: failures.length === 0, total, categories: moved, base, failures: failures.slice(0, 20) };
+  } catch (error) { return { error: error.message }; }
 }
-function findDuplicates(dir) {
-  const base = dir || os.homedir();
+async function findDuplicates(dir) {
+  const base = resolveUserPath(dir, os.homedir());
   try {
-    const map = {};
-    const walk = (d, depth) => {
+    const filesBySignature = {};
+    const walk = async (current, depth) => {
       if (depth > 4) return;
       let entries;
-      try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-      for (const e of entries) {
-        if (e.name.startsWith('.')) continue;
-        const full = path.join(d, e.name);
-        if (e.isDirectory()) walk(full, depth + 1);
-        else {
-          let key;
+      try { entries = await fs.promises.readdir(current, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue;
+        const full = path.join(current, entry.name);
+        if (entry.isDirectory() && !entry.isSymbolicLink()) await walk(full, depth + 1);
+        else if (entry.isFile()) {
           try {
-            const st = fs.statSync(full);
-            key = e.name.toLowerCase() + ':' + st.size;
-          } catch { key = e.name.toLowerCase(); }
-          (map[key] = map[key] || []).push(full);
+            const stat = await fs.promises.stat(full);
+            const signature = entry.name.toLowerCase() + ':' + stat.size;
+            (filesBySignature[signature] = filesBySignature[signature] || []).push(full);
+          } catch {}
         }
       }
     };
-    walk(base, 0);
-    const dups = Object.values(map).filter((arr) => arr.length > 1).slice(0, 20);
-    logAction('find_duplicates', `Found ${dups.length} duplicate groups in ${base}`);
-    return { duplicates: dups, count: dups.length };
-  } catch (e) { return { error: e.message }; }
+    await walk(base, 0);
+    const duplicates = Object.values(filesBySignature).filter((paths) => paths.length > 1).slice(0, 20);
+    logAction('find_duplicates', `Found ${duplicates.length} duplicate groups in ${base}`);
+    return { duplicates, count: duplicates.length };
+  } catch (error) { return { error: error.message }; }
 }
 async function renameFiles(dir, pattern) {
-  const base = dir || os.homedir();
-  const pat = String(pattern || 'file').replace(/[^\w\- ]/g, '');
+  const base = resolveUserPath(dir, os.homedir());
+  const safePattern = String(pattern || 'file').replace(/[^\w\- ]/g, '').trim() || 'file';
   try {
-    const files = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile());
-    if (!files.length) return { ok: true, renamed: 0, pattern: pat };
-    const ok = await confirmAction('Rename files?', `GemAir will rename ${files.length} files in:\n${base}\nto "${pat}-001", "${pat}-002", … (extensions kept).`);
+    const files = (await fs.promises.readdir(base, { withFileTypes: true })).filter((entry) => entry.isFile());
+    if (!files.length) return { ok: true, renamed: 0, pattern: safePattern };
+    const ok = await confirmAction('Rename files?', `GemAir will rename ${files.length} files in:\n${base}\nto "${safePattern}-001", "${safePattern}-002", … (extensions kept).`);
     if (!ok) return { error: 'Cancelled by user.' };
-    let n = 0;
-    for (const e of files) {
-      const ext = path.extname(e.name);
-      const newName = pat + '-' + String(n + 1).padStart(3, '0') + ext;
-      fs.renameSync(path.join(base, e.name), path.join(base, newName));
-      n++;
+    const nonce = `.gemair-rename-${process.pid}-${Date.now()}-`;
+    const staged = [];
+    try {
+      for (let index = 0; index < files.length; index++) {
+        const entry = files[index];
+        const source = path.join(base, entry.name);
+        const temporary = path.join(base, nonce + index);
+        await fs.promises.rename(source, temporary);
+        staged.push({ source, temporary, final: path.join(base, safePattern + '-' + String(index + 1).padStart(3, '0') + path.extname(entry.name)) });
+      }
+    } catch (error) {
+      for (const item of staged.reverse()) try { await fs.promises.rename(item.temporary, item.source); } catch {}
+      return { error: `Could not stage files safely: ${error.message}` };
     }
-    logAction('rename_files', `Renamed ${n} files with pattern "${pat}"`);
-    return { ok: true, renamed: n, pattern: pat };
-  } catch (e) { return { error: e.message }; }
+    let renamed = 0;
+    const failures = [];
+    for (const item of staged) {
+      try { await fs.promises.rename(item.temporary, item.final); renamed++; }
+      catch (error) { failures.push({ file: path.basename(item.source), temporary: item.temporary, error: error.message }); }
+    }
+    logAction('rename_files', `Renamed ${renamed} files with pattern "${safePattern}"`);
+    return { ok: failures.length === 0, renamed, pattern: safePattern, failures: failures.slice(0, 20) };
+  } catch (error) { return { error: error.message }; }
 }
+
 async function archiveOldFiles(dir, days) {
-  const base = dir || os.homedir();
-  const cutoff = Date.now() - days * 86400000;
+  const base = resolveUserPath(dir, os.homedir());
+  const ageDays = Math.max(1, Math.min(36500, Number(days) || 30));
+  const cutoff = Date.now() - ageDays * 86400000;
   try {
     const archive = path.join(base, '_archive');
-    const candidates = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isFile() && (() => { try { return fs.statSync(path.join(base, e.name)).mtimeMs < cutoff; } catch { return false; } })());
-    if (!candidates.length) return { ok: true, archived: 0, archive };
-    const ok = await confirmAction('Archive old files?', `GemAir will move ${candidates.length} files older than ${days} days from:\n${base}\ninto an "_archive" subfolder. Nothing is deleted.`);
-    if (!ok) return { error: 'Cancelled by user.' };
-    if (!fs.existsSync(archive)) fs.mkdirSync(archive, { recursive: true });
-    let n = 0;
-    for (const e of candidates) {
-      try { fs.renameSync(path.join(base, e.name), path.join(archive, e.name)); n++; } catch {}
+    const entries = await fs.promises.readdir(base, { withFileTypes: true });
+    const candidates = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      try { if ((await fs.promises.stat(path.join(base, entry.name))).mtimeMs < cutoff) candidates.push(entry); } catch {}
     }
-    logAction('archive_old_files', `Archived ${n} files older than ${days} days`);
-    return { ok: true, archived: n, archive };
-  } catch (e) { return { error: e.message }; }
+    if (!candidates.length) return { ok: true, archived: 0, archive };
+    const ok = await confirmAction('Archive old files?', `GemAir will move ${candidates.length} files older than ${ageDays} days from:\n${base}\ninto an "_archive" subfolder. Nothing is deleted.`);
+    if (!ok) return { error: 'Cancelled by user.' };
+    await fs.promises.mkdir(archive, { recursive: true });
+    let archived = 0;
+    const failures = [];
+    for (const entry of candidates) {
+      try { await fs.promises.rename(path.join(base, entry.name), path.join(archive, entry.name)); archived++; }
+      catch (error) { failures.push({ file: entry.name, error: error.message }); }
+    }
+    logAction('archive_old_files', `Archived ${archived} files older than ${ageDays} days`);
+    return { ok: failures.length === 0, archived, archive, failures: failures.slice(0, 20) };
+  } catch (error) { return { error: error.message }; }
 }
+
 const CLOSEABLE_APPS = {
   browser: ['chrome', 'msedge', 'firefox', 'brave', 'opera', 'vivaldi', 'safari'],
   chrome: ['chrome'], edge: ['msedge'], firefox: ['firefox'], brave: ['brave'], safari: ['safari'],
@@ -1027,53 +1567,76 @@ function resolveCloseTargets(name, keep) {
   }
   return CLOSEABLE_APPS[q] || [q];
 }
-function closeApp(name, keep) {
-  const targets = resolveCloseTargets(name, keep);
-  if (!targets.length) return { ok: true, closed: [], note: 'Nothing matched to close.' };
-  const p = process.platform;
-  const closed = [];
-  for (const proc of targets) {
-    const safe = String(proc).replace(/[^a-zA-Z0-9 _.-]/g, '');
-    if (!safe) continue;
-    try {
-      if (p === 'win32') exec(`taskkill /IM "${safe}.exe" /F 2>nul || taskkill /IM "${safe}" /F 2>nul`, () => {});
-      else if (p === 'darwin') exec(`osascript -e 'quit app "${safe}"'`, () => {});
-      else exec(`pkill -f "${safe}"`, () => {});
-      closed.push(safe);
-    } catch (e) {}
-  }
-  logAction('close_app', `Closed ${closed.length} app(s): ${closed.join(', ')}`);
-  return { ok: true, closed, note: closed.length ? `Asked ${closed.length} app(s) to close.` : 'Nothing closed.' };
+function execFileCapture(file, args, timeout = 8000) {
+  return new Promise((resolve) => {
+    execFile(file, args, { timeout, windowsHide: true, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      resolve({
+        ok: !error,
+        code: error ? (error.code || 1) : 0,
+        stdout: String(stdout || '').slice(0, 2000),
+        stderr: String(stderr || '').slice(0, 1000)
+      });
+    });
+  });
 }
-function findLargeFiles(root, minMB, unusedMonths) {
-  const base = root || os.homedir();
-  const minBytes = (Number(minMB) || 500) * 1024 * 1024;
-  const cutoff = unusedMonths ? Date.now() - Number(unusedMonths) * 30 * 86400000 : null;
+async function terminateAppProcess(processName) {
+  const safe = String(processName || '').trim();
+  if (!safe || safe.length > 80 || !/^[a-zA-Z0-9 _.-]+$/.test(safe)) return { ok: false, name: safe.slice(0, 80), error: 'Invalid process name.' };
+  if (process.platform === 'win32') {
+    const names = /\.exe$/i.test(safe) ? [safe] : [safe + '.exe', safe];
+    for (const image of names) {
+      const result = await execFileCapture('taskkill', ['/IM', image, '/T', '/F']);
+      if (result.ok) return { ok: true, name: safe };
+    }
+    return { ok: false, name: safe, error: 'Process not found or permission denied.' };
+  }
+  if (process.platform === 'darwin') {
+    const result = await execFileCapture('osascript', ['-e', `quit app "${safe}"`]);
+    return result.ok ? { ok: true, name: safe } : { ok: false, name: safe, error: 'Application not found or refused to quit.' };
+  }
+  const result = await execFileCapture('pkill', ['-f', '--', safe]);
+  return result.ok ? { ok: true, name: safe } : { ok: false, name: safe, error: 'Process not found or permission denied.' };
+}
+async function closeApp(name, keep) {
+  const targets = [...new Set(resolveCloseTargets(name, keep))];
+  if (!targets.length) return { ok: true, closed: [], failures: [], note: 'Nothing matched to close.' };
+  const outcomes = await Promise.all(targets.map(terminateAppProcess));
+  const closed = outcomes.filter((outcome) => outcome.ok).map((outcome) => outcome.name);
+  const failures = outcomes.filter((outcome) => !outcome.ok).map((outcome) => ({ name: outcome.name, error: outcome.error }));
+  logAction('close_app', `Closed ${closed.length}/${targets.length} app process(es): ${closed.join(', ')}`);
+  if (!closed.length && failures.length) return { error: 'No matching applications could be closed.', closed, failures };
+  return { ok: failures.length === 0, closed, failures, note: `Closed ${closed.length}/${targets.length} matching app process(es).` };
+}
+
+async function findLargeFiles(root, minMB, unusedMonths) {
+  const base = resolveUserPath(root, os.homedir());
+  const thresholdMB = Math.max(1, Number(minMB) || 500);
+  const minBytes = thresholdMB * 1024 * 1024;
+  const cutoff = unusedMonths ? Date.now() - Math.max(1, Number(unusedMonths)) * 30 * 86400000 : null;
   const hits = [];
-  const walk = (dir, depth) => {
+  const walk = async (directory, depth) => {
     if (depth > 6 || hits.length >= 40) return;
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (e.name.startsWith('.') || e.name === '_archive') continue;
-      const full = path.join(dir, e.name);
-      try {
-        if (e.isDirectory()) walk(full, depth + 1);
-        else {
-          const st = fs.statSync(full);
-          if (st.size >= minBytes && (!cutoff || st.mtimeMs < cutoff)) {
-            hits.push({ path: full, sizeMB: Math.round(st.size / 1048576), modified: new Date(st.mtimeMs).toISOString().slice(0, 10) });
-          }
-        }
-      } catch {}
+    try { entries = await fs.promises.readdir(directory, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === '_archive' || hits.length >= 40) continue;
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory() && !entry.isSymbolicLink()) await walk(full, depth + 1);
+      else if (entry.isFile()) {
+        try {
+          const stat = await fs.promises.stat(full);
+          if (stat.size >= minBytes && (!cutoff || stat.mtimeMs < cutoff)) hits.push({ path: full, sizeMB: Math.round(stat.size / 1048576), modified: new Date(stat.mtimeMs).toISOString().slice(0, 10) });
+        } catch {}
+      }
     }
   };
-  walk(base, 0);
-  logAction('find_large_files', `Found ${hits.length} file(s) > ${minMB || 500}MB${unusedMonths ? ` unused ${unusedMonths}+ months` : ''} in ${base}`);
-  return { files: hits, count: hits.length, base, minMB: minMB || 500, unusedMonths: unusedMonths || null };
+  await walk(base, 0);
+  logAction('find_large_files', `Found ${hits.length} file(s) > ${thresholdMB}MB${unusedMonths ? ` unused ${unusedMonths}+ months` : ''} in ${base}`);
+  return { files: hits, count: hits.length, base, minMB: thresholdMB, unusedMonths: unusedMonths || null };
 }
+
 async function createFolderTree(root, folders) {
-  const base = root || path.join(os.homedir(), 'Documents');
+  const base = resolveUserPath(root, path.join(os.homedir(), 'Documents'));
   const list = Array.isArray(folders) ? folders : (String(folders || '').split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean));
   const tree = list.length ? list : ['src', 'src/components', 'src/assets', 'docs', 'tests', 'scripts', 'public'];
   if (!tree.length) return { error: 'Provide folders to create.' };
@@ -1100,56 +1663,75 @@ async function createFolderTree(root, folders) {
     if (bad) { skipped.push(raw); continue; }
     const dest = path.join(baseResolved, ...segments);
     if (!withinBase(dest)) { skipped.push(raw); continue; }
-    try { fs.mkdirSync(dest, { recursive: true }); created.push(dest); } catch { skipped.push(raw); }
+    try { await fs.promises.mkdir(dest, { recursive: true }); created.push(dest); } catch { skipped.push(raw); }
   }
   logAction('create_folder_tree', `Created ${created.length} folder(s) under ${base}${skipped.length ? ` (${skipped.length} rejected as unsafe)` : ''}`);
   return { ok: true, base, created, count: created.length, skipped, rejected: skipped.length };
 }
 async function moveFiles(source, dest, filter) {
-  const from = source || path.join(os.homedir(), 'Downloads');
-  const to = dest || path.join(from, filter ? String(filter || '').replace(/\W+/g, '_').toLowerCase() : 'moved');
-  const f = String(filter || '').toLowerCase();
+  const from = resolveUserPath(source, path.join(os.homedir(), 'Downloads'));
+  const to = resolveUserPath(dest, path.join(from, filter ? String(filter || '').replace(/\W+/g, '_').toLowerCase() : 'moved'));
+  const normalizedFilter = String(filter || '').toLowerCase();
   try {
-    const entries = fs.readdirSync(from, { withFileTypes: true }).filter((e) => e.isFile());
-    const candidates = entries.filter((e) => {
-      if (!f) return true;
-      if (f.startsWith('.')) return path.extname(e.name).toLowerCase() === f;
-      if (f === 'large') { try { return fs.statSync(path.join(from, e.name)).size > 100 * 1024 * 1024; } catch { return false; } }
-      return e.name.toLowerCase().includes(f) || categorizeFile(e.name) === f;
-    });
+    const entries = (await fs.promises.readdir(from, { withFileTypes: true })).filter((entry) => entry.isFile());
+    const candidates = [];
+    for (const entry of entries) {
+      let matches = !normalizedFilter || entry.name.toLowerCase().includes(normalizedFilter) || categorizeFile(entry.name) === normalizedFilter;
+      if (normalizedFilter.startsWith('.')) matches = path.extname(entry.name).toLowerCase() === normalizedFilter;
+      if (normalizedFilter === 'large') {
+        try { matches = (await fs.promises.stat(path.join(from, entry.name))).size > 100 * 1024 * 1024; } catch { matches = false; }
+      }
+      if (matches) candidates.push(entry);
+    }
     if (!candidates.length) return { ok: true, moved: 0, note: `No files matched "${filter || 'all'}" in ${from}.` };
     const ok = await confirmAction('Move files?', `GemAir will move ${candidates.length} file(s) from:\n${from}\ninto:\n${to}\n\nFiles are moved, not deleted.`);
     if (!ok) return { error: 'Cancelled by user.' };
-    if (!fs.existsSync(to)) fs.mkdirSync(to, { recursive: true });
-    let n = 0;
-    for (const e of candidates) {
-      try { fs.renameSync(path.join(from, e.name), path.join(to, e.name)); n++; } catch {}
+    await fs.promises.mkdir(to, { recursive: true });
+    let moved = 0;
+    const failures = [];
+    for (const entry of candidates) {
+      try { await fs.promises.rename(path.join(from, entry.name), path.join(to, entry.name)); moved++; }
+      catch (error) { failures.push({ file: entry.name, error: error.message }); }
     }
-    logAction('move_files', `Moved ${n} file(s) matching "${filter || 'all'}" to ${to}`);
-    return { ok: true, moved: n, to };
-  } catch (e) { return { error: e.message }; }
+    logAction('move_files', `Moved ${moved} file(s) matching "${filter || 'all'}" to ${to}`);
+    return { ok: failures.length === 0, moved, to, failures: failures.slice(0, 20) };
+  } catch (error) { return { error: error.message }; }
+}
+
+async function clearGemAirTempFiles() {
+  const tempRoot = os.tmpdir();
+  let entries = [];
+  try { entries = await fs.promises.readdir(tempRoot, { withFileTypes: true }); } catch { return 0; }
+  let cleared = 0;
+  for (const entry of entries) {
+    if (!/^\.?gemair[-_.]/i.test(entry.name)) continue;
+    try { await fs.promises.rm(path.join(tempRoot, entry.name), { recursive: true, force: true }); cleared++; } catch {}
+  }
+  return cleared;
+}
+async function setPerformancePowerMode() {
+  if (process.platform === 'win32') {
+    let result = await execFileCapture('powercfg', ['/setactive', 'SCHEME_MAX']);
+    if (!result.ok) result = await execFileCapture('powercfg', ['/setactive', 'e9a42b02-d5df-448d-aa00-03f14749eb61']);
+    return result.ok ? { ok: true, note: 'High-performance power plan enabled' } : { ok: false, note: 'Power plan unchanged (not supported or permission denied)' };
+  }
+  if (process.platform === 'linux') {
+    const result = await execFileCapture('powerprofilesctl', ['set', 'performance']);
+    return result.ok ? { ok: true, note: 'Performance power profile enabled' } : { ok: false, note: 'Power profile unchanged (powerprofilesctl unavailable)' };
+  }
+  return { ok: false, note: 'Power profile unchanged on macOS' };
 }
 async function optimizeGaming(keep) {
-  const ok = await confirmAction('Optimize for gaming?', 'GemAir will:\n• switch to the High Performance power plan\n• clear temporary files\n• close heavy non-essential apps (messengers, browser tabs except kept ones)\n\nNothing personal is deleted — temp caches only.');
+  const ok = await confirmAction('Optimize for gaming?', 'GemAir will:\n• request the operating system performance power profile\n• clear GemAir-owned temporary caches only\n• close mapped non-essential apps except those you keep\n\nNo personal files or unrelated system temp files are deleted.');
   if (!ok) return { error: 'Cancelled by user.' };
-  const done = [];
-  const p = process.platform;
-  if (p === 'win32') {
-    exec('powercfg /setactive SCHEME_MAX', (err) => {
-      if (err) exec('powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61', () => {});
-    });
-    done.push('High-performance power plan');
-    exec('del /q /s %TEMP%\\* 2>nul', () => {}); done.push('Temp files cleared');
-  } else if (p === 'darwin') {
-    exec('sudo pmset -a powernap 0 2>/dev/null', () => {}); done.push('Power settings tuned');
-  } else {
-    exec('rm -rf /tmp/* 2>/dev/null', () => {}); done.push('Temp files cleared');
-  }
-  const closed = closeApp('all', keep || ['gemair']);
-  done.push(`Closed ${closed.closed.length} non-essential app(s)`);
-  logAction('optimize_gaming', `Gaming optimization: ${done.join('; ')}`);
-  return { ok: true, steps: done, closed: closed.closed };
+  const power = await setPerformancePowerMode();
+  const tempEntries = await clearGemAirTempFiles();
+  const closed = await closeApp('all', keep || ['gemair']);
+  const steps = [power.note, `Cleared ${tempEntries} GemAir temporary cache entr${tempEntries === 1 ? 'y' : 'ies'}`, closed.error || closed.note];
+  logAction('optimize_gaming', `Gaming optimization: ${steps.join('; ')}`);
+  return { ok: !closed.error, steps, power, closed: closed.closed || [], closeFailures: closed.failures || [] };
 }
+
 function listTopProcesses() {
   const p = process.platform;
   if (p === 'win32') {
@@ -1241,14 +1823,12 @@ async function killProcess(pid, name) {
     `GemAir will terminate:\n\n  ${label || 'PID ' + id}  (PID ${id})\n\nUnsaved work in that program will be lost.`
   );
   if (!ok) return { error: 'Cancelled by user.' };
-  return new Promise((resolve) => {
-    const cmd = process.platform === 'win32' ? `taskkill /PID ${id} /T /F` : `kill -TERM ${id}`;
-    exec(cmd, { timeout: 8000 }, (err) => {
-      if (err) { resolve({ error: 'Could not end that process (permission denied or already gone).' }); return; }
-      logAction('kill_process', `Ended process ${label || ''} (PID ${id})`);
-      resolve({ ok: true, pid: id, name: label });
-    });
-  });
+  const result = process.platform === 'win32'
+    ? await execFileCapture('taskkill', ['/PID', String(id), '/T', '/F'])
+    : await execFileCapture('kill', ['-TERM', String(id)]);
+  if (!result.ok) return { error: 'Could not end that process (permission denied or already gone).' };
+  logAction('kill_process', `Ended process ${label || ''} (PID ${id})`);
+  return { ok: true, pid: id, name: label };
 }
 function getStorage() {
   const total = os.totalmem(), free = os.freemem();
@@ -1276,13 +1856,14 @@ async function getBattery() {
       if (pct) value = { percent: parseInt(pct[1], 10), charging: /AC Power/i.test(out) };
     } else {
       const base = '/sys/class/power_supply';
-      for (const d of fs.readdirSync(base)) {
-        if (!/^BAT/i.test(d)) continue;
-        const cap = parseInt(fs.readFileSync(path.join(base, d, 'capacity'), 'utf8').trim(), 10);
-        if (!isNaN(cap)) {
+      for (const directory of await fs.promises.readdir(base)) {
+        if (!/^BAT/i.test(directory)) continue;
+        const capacityText = await fs.promises.readFile(path.join(base, directory, 'capacity'), 'utf8');
+        const percent = parseInt(capacityText.trim(), 10);
+        if (!Number.isNaN(percent)) {
           let charging = false;
-          try { charging = /Charging|Full/i.test(fs.readFileSync(path.join(base, d, 'status'), 'utf8')); } catch {}
-          value = { percent: cap, charging };
+          try { charging = /Charging|Full/i.test(await fs.promises.readFile(path.join(base, directory, 'status'), 'utf8')); } catch {}
+          value = { percent, charging };
           break;
         }
       }
@@ -1343,7 +1924,7 @@ async function seeScreen() {
   const source = sources[0];
   if (!source || !source.thumbnail) return { error: 'No screen available' };
   const file = path.join(app.getPath('pictures'), `gemair-screen-${Date.now()}.png`);
-  fs.writeFileSync(file, source.thumbnail.toPNG());
+  await fs.promises.writeFile(file, source.thumbnail.toPNG());
   logAction('see_screen', `Captured screen to ${file}`);
   return { ok: true, file, note: 'Screen captured. If your AI model supports vision, it can analyze this image.' };
 }
@@ -1473,7 +2054,7 @@ async function takeScreenshot() {
   const source = sources[0];
   if (!source || !source.thumbnail) return { error: 'No screen available' };
   const file = path.join(app.getPath('pictures'), `gemair-screenshot-${Date.now()}.png`);
-  fs.writeFileSync(file, source.thumbnail.toPNG());
+  await fs.promises.writeFile(file, source.thumbnail.toPNG());
   return { ok: true, file };
 }
 const TOOL_RISK = {
@@ -1492,10 +2073,69 @@ const TOOL_RISK = {
   show_panel: 'safe', hide_panel: 'safe',
   launch_app: 'safe', focus_app: 'safe', snap_window: 'safe', minimize_all: 'safe',
   next_virtual_desktop: 'safe', open_site: 'safe', list_windows: 'safe',
-  apply_mode: 'safe', list_modes: 'safe', create_mode: 'safe'
+  apply_mode: 'safe', list_modes: 'safe', create_mode: 'safe',
+  add_calendar_event: 'sensitive', upload_file: 'sensitive', download_file: 'sensitive'
 };
 
-async function executeTool(name, args) {
+const TOOL_SCHEMAS = new Map(TOOLS.map((tool) => [tool.function.name, tool.function.parameters || { type: 'object', properties: {} }]));
+const TOOL_DEFAULT_STRING_LIMIT = 20000;
+const TOOL_STRING_LIMITS = { path: 4096, content: 1024 * 1024, query: 2000, prompt: 10000, text: 20000, command: 400, url: 2048 };
+function validateToolInput(name, input) {
+  const schema = TOOL_SCHEMAS.get(name);
+  if (!schema) return { error: `Unknown tool: ${name}` };
+  if (input == null) input = {};
+  if (typeof input !== 'object' || Array.isArray(input)) return { error: 'Tool arguments must be an object.' };
+  const properties = schema.properties || {};
+  for (const required of schema.required || []) {
+    if (!(required in input) || input[required] == null || input[required] === '') return { error: `Missing required parameter: ${required}` };
+  }
+  for (const [key, value] of Object.entries(input)) {
+    const property = properties[key];
+    if (!property) return { error: `Unknown parameter: ${key}` };
+    if (property.type === 'string') {
+      if (typeof value !== 'string') return { error: `Parameter ${key} must be a string.` };
+      const limit = TOOL_STRING_LIMITS[key] || TOOL_DEFAULT_STRING_LIMIT;
+      if (value.length > limit) return { error: `Parameter ${key} exceeds ${limit} characters.` };
+    } else if (property.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) {
+      return { error: `Parameter ${key} must be a finite number.` };
+    } else if (property.type === 'boolean' && typeof value !== 'boolean') {
+      return { error: `Parameter ${key} must be a boolean.` };
+    } else if (property.type === 'array') {
+      if (!Array.isArray(value)) return { error: `Parameter ${key} must be an array.` };
+      if (value.length > 100) return { error: `Parameter ${key} has too many items.` };
+      if (property.items && property.items.type === 'string' && value.some((item) => typeof item !== 'string' || item.length > 500)) return { error: `Parameter ${key} contains an invalid item.` };
+      if (property.items && property.items.type === 'object' && value.some((item) => !item || typeof item !== 'object' || Array.isArray(item))) return { error: `Parameter ${key} contains an invalid item.` };
+    }
+    if (property.enum && !property.enum.includes(value)) return { error: `Parameter ${key} must be one of: ${property.enum.join(', ')}.` };
+  }
+  return { value: input };
+}
+
+const toolQueueTails = new Map();
+const toolLastStarted = new Map();
+const TOOL_MIN_INTERVAL_MS = 100;
+function executeTool(name, args) {
+  const validated = validateToolInput(name, args);
+  if (validated.error) return Promise.resolve({ error: validated.error });
+  const previous = toolQueueTails.get(name) || Promise.resolve();
+  const run = previous.catch(() => {}).then(async () => {
+    const wait = TOOL_MIN_INTERVAL_MS - (Date.now() - (toolLastStarted.get(name) || 0));
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    toolLastStarted.set(name, Date.now());
+    const started = Date.now();
+    const result = await executeToolNow(name, validated.value);
+    trackUsage('tool.' + name, { ok: !(result && result.error), durationMs: Date.now() - started });
+    return result;
+  });
+  toolQueueTails.set(name, run);
+  run.finally(() => {
+    if (toolQueueTails.get(name) === run) toolQueueTails.delete(name);
+    if (!toolQueueTails.has(name) && Date.now() - (toolLastStarted.get(name) || 0) > 60000) toolLastStarted.delete(name);
+  }).catch(() => {});
+  return run;
+}
+
+async function executeToolNow(name, args) {
   try {
     const risk = TOOL_RISK[name] || 'safe';
     const profile = readProfile();
@@ -1530,16 +2170,14 @@ async function executeTool(name, args) {
         return await webSearch(args.query);
       case 'open_application': {
         const n = String(args.name || '');
-        const mapped = windowTools.launchApp(n);
-        if (mapped) return mapped;
-        const p = process.platform;
-        const generic = p === 'darwin' ? `open -a "${n}"` : p === 'win32' ? `start "" "${n}"` : `xdg-open "${n}"`;
-        exec(generic, () => {});
-        return { ok: true, app: n, note: 'Attempted generic launch.' };
+        return await windowTools.launchApp(n);
       }
-      case 'open_url':
-        shell.openExternal(String(args.url));
-        return { ok: true };
+      case 'open_url': {
+        const url = normalizeHttpUrl(args.url);
+        if (!url) return { error: 'Provide a valid HTTP(S) URL.' };
+        await shell.openExternal(url);
+        return { ok: true, url };
+      }
       case 'fetch_webpage':
         return await fetchWebpage(args.url);
       case 'search_wikipedia':
@@ -1547,13 +2185,13 @@ async function executeTool(name, args) {
       case 'search_youtube':
         return searchYouTube(args.query);
       case 'list_directory':
-        return listDirectory(args.path);
+        return await listDirectory(args.path);
       case 'read_file':
-        return readFile(args.path);
+        return await readFile(args.path);
       case 'write_file':
-        return writeFile(args.path, args.content);
+        return await writeFile(args.path, args.content);
       case 'search_files':
-        return searchFiles(args.path, args.query);
+        return await searchFiles(args.path, args.query);
       case 'get_clipboard':
         return { text: clipboard.readText() };
       case 'set_clipboard':
@@ -1611,10 +2249,10 @@ async function executeTool(name, args) {
         const target = String(args.name || '').slice(0, 80);
         const ok = await confirmAction('Close application?', `GemAir wants to close: ${target === 'all' ? 'all non-essential applications' : target}${args.keep ? ' (keeping: ' + args.keep.join(', ') + ')' : ''}.\n\nUnsaved work in those apps may be lost. Proceed?`);
         if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
-        return closeApp(args.name, args.keep);
+        return await closeApp(args.name, args.keep);
       }
       case 'find_large_files':
-        return findLargeFiles(args.path, args.minMB, args.unusedMonths);
+        return await findLargeFiles(args.path, args.minMB, args.unusedMonths);
       case 'create_folder_tree':
         return await createFolderTree(args.path, args.folders);
       case 'move_files':
@@ -1715,6 +2353,12 @@ async function executeTool(name, args) {
       }
       case 'list_modes':
         return { modes: modesLib.listModes() };
+      case 'upload_file':
+        return await uploadFile(args.path, args.destination);
+      case 'download_file':
+        return await downloadFile(args.url, args.destination);
+      case 'add_calendar_event':
+        return await addCalendarEvent(args);
       case 'create_mode': {
         const res = modesLib.saveMode(args);
         if (res.error) return res;
@@ -2057,13 +2701,13 @@ async function offlineBrain(text) {
     return r.error || `Organized ${r.total} files into ${Object.keys(r.categories || {}).length} category folders.`;
   }
   if (/close everything|close all|close.*except/.test(q)) {
-    closeApp('all');
-    return 'Closing every non-essential application except GemAir.';
+    const closed = await closeApp('all', ['gemair']);
+    return closed.error || closed.note;
   }
   if (/large file|huge file|big file|free up space/.test(q)) {
     const m = q.match(/(\d+)\s*(gb|mb)/) || q.match(/over\s*(\d+)\s*(gb|mb)?/);
     const minMB = m ? (m[2] === 'gb' ? Number(m[1]) * 1024 : Number(m[1])) : 500;
-    const r = findLargeFiles(os.homedir(), minMB, /month/.test(q) ? 6 : null);
+    const r = await findLargeFiles(os.homedir(), minMB, /month/.test(q) ? 6 : null);
     return r.count
       ? `Found ${r.count} file(s) over ${minMB}MB: ${r.files.slice(0, 5).map((f) => `${f.path} (${f.sizeMB}MB)`).join(', ')}`
       : `No files over ${minMB}MB found in your home folder.`;
@@ -2154,9 +2798,9 @@ function startFocusPolling() {
 // Multi-agent brains
 const AGENT_BRAINS = {
   Alice: { role: 'Web Research', tools: ['web_search', 'fetch_webpage'], prompt: 'You are Alice, GemAir’s web researcher. Find current, verifiable information, inspect primary pages, summarize evidence, and cite the returned URLs. Never invent a source.' },
-  Bob: { role: 'File Operations', tools: ['list_directory', 'read_file', 'write_file', 'organize_folder', 'launch_app', 'open_site', 'list_windows'], prompt: 'You are Bob, GemAir’s file operator and desktop manager. Inspect before changing anything, use precise paths, preserve user data, and report exactly what was read, written, or organized. You can launch apps and open sites.' },
+  Bob: { role: 'File Operations', tools: ['list_directory', 'read_file', 'write_file', 'upload_file', 'download_file', 'organize_folder', 'launch_app', 'open_site', 'list_windows'], prompt: 'You are Bob, GemAir’s file operator and desktop manager. Inspect before changing anything, use precise paths, preserve user data, and report exactly what was read, written, transferred, or organized. You can launch apps and open sites.' },
   Carol: { role: 'System Verification', tools: ['system_scan', 'get_power_storage', 'get_system_status', 'list_windows'], prompt: 'You are Carol, GemAir’s system verifier. Read live CPU, memory, battery, and disk sensors, identify risks, and verify that a mission can run safely. You can see desktop state via list_windows.' },
-  Dave: { role: 'Communications', tools: ['send_email', 'open_whatsapp'], prompt: 'You are Dave, GemAir’s communications operator. Prepare clear email or WhatsApp drafts, confirm the destination, and leave the final send action to the user.' }
+  Dave: { role: 'Communications', tools: ['send_email', 'open_whatsapp', 'add_calendar_event'], prompt: 'You are Dave, GemAir’s communications operator. Prepare clear email, WhatsApp, and calendar drafts, confirm the destination or schedule, and leave the final send/import action to the user.' }
 };
 function agentSystemPrompt(name) {
   const b = AGENT_BRAINS[name] || AGENT_BRAINS.Alice;
@@ -2297,9 +2941,13 @@ function createAuthWindow(provider) {
       partition,
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false
+      sandbox: true,
+      webSecurity: true,
+      navigateOnDragDrop: false,
+      safeDialogs: true
     }
   });
+  configureAuthWindowSecurity(authWindow, provider);
   // Clear previous session? Keep persist so user doesn't re-login each time
   const url = provider === 'chatgpt' ? 'https://chatgpt.com/auth/login' : 'https://accounts.google.com/signin/v2/identifier?service=gemini&continue=https://gemini.google.com/app';
   authWindow.loadURL(url);
@@ -2347,7 +2995,7 @@ async function captureChatGPTSession() {
   const email = (sessionData.user && sessionData.user.email) || (sessionData.user && sessionData.user.id) || 'chatgpt_user';
   const plan = (sessionData.user && sessionData.user.plan) || 'free';
   // Store encrypted
-  connections.setChatGPTConnection({
+  const stored = connections.setChatGPTConnection({
     email,
     plan,
     sessionToken: sessionCookie ? sessionCookie.value : '',
@@ -2355,6 +3003,7 @@ async function captureChatGPTSession() {
     refreshToken: sessionData.refreshToken || '',
     expiresAt: Date.now() + 14*24*3600000
   });
+  if (stored && stored.error) return stored;
   try { authWindow.close(); } catch {}
   authWindow = null;
   return { ok: true, email, plan };
@@ -2389,7 +3038,8 @@ async function captureGeminiSession(isAIStudioFallback=false) {
         `);
         if (keyData) {
           // Store as psid for fallback handling? Actually store as Gemini connection with fallback flag
-          connections.setGeminiConnection({ email: 'aistudio_user@gmail.com', plan: 'ai-studio', psid: keyData, psidts: 'fallback' });
+          const stored = connections.setGeminiConnection({ email: 'aistudio_user@gmail.com', plan: 'ai-studio', psid: keyData, psidts: '' });
+          if (stored && stored.error) return stored;
           try { authWindow.close(); } catch {}
           authWindow = null;
           return { ok: true, email: 'aistudio_user@gmail.com', plan: 'ai-studio', fallback: true };
@@ -2413,7 +3063,8 @@ async function captureGeminiSession(isAIStudioFallback=false) {
     const m = em.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
     if (m) email = m[0];
   } catch {}
-  connections.setGeminiConnection({ email, plan: 'free', psid: psid.value, psidts: psidts.value });
+  const stored = connections.setGeminiConnection({ email, plan: 'free', psid: psid.value, psidts: psidts.value });
+  if (stored && stored.error) return stored;
   try { authWindow.close(); } catch {}
   authWindow = null;
   return { ok: true, email, plan: 'free' };
@@ -2475,11 +3126,74 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
 }
 
 // ---------------------------------------------------------------------------
+// Release update checks — metadata only. GemAir never downloads or installs
+// code automatically; opening the verified GitHub release page requires a
+// separate user action in the renderer.
+// ---------------------------------------------------------------------------
+const RELEASE_API_URL = 'https://api.github.com/repos/rangwalaaliasgar55-bot/GemAir/releases/latest';
+const RELEASE_PATH_PREFIX = '/rangwalaaliasgar55-bot/GemAir/releases/';
+let releaseCheckCache = { at: 0, result: null };
+function parseSemver(value) {
+  const match = String(value || '').trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/i);
+  return match ? match.slice(1).map(Number) : null;
+}
+function isVersionNewer(candidate, current) {
+  const next = parseSemver(candidate), installed = parseSemver(current);
+  if (!next || !installed) return false;
+  for (let index = 0; index < 3; index++) {
+    if (next[index] !== installed[index]) return next[index] > installed[index];
+  }
+  return false;
+}
+function verifiedReleaseUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' && url.hostname === 'github.com' && url.pathname.startsWith(RELEASE_PATH_PREFIX) ? url.toString() : null;
+  } catch { return null; }
+}
+async function checkForUpdates(force = false) {
+  if (!force && releaseCheckCache.result && Date.now() - releaseCheckCache.at < 6 * 60 * 60 * 1000) return releaseCheckCache.result;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(RELEASE_API_URL, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': `GemAir/${app.getVersion()}` },
+      signal: controller.signal
+    });
+    if (!response.ok) return { ok: false, error: `UPDATE_CHECK_HTTP_${response.status}` };
+    const release = await response.json();
+    const latest = String(release.tag_name || '').replace(/^v/i, '');
+    const url = verifiedReleaseUrl(release.html_url);
+    if (!parseSemver(latest) || !url || release.draft || release.prerelease) return { ok: false, error: 'INVALID_RELEASE_METADATA' };
+    const current = app.getVersion();
+    const result = {
+      ok: true,
+      current,
+      latest,
+      available: isVersionNewer(latest, current),
+      url,
+      name: String(release.name || `GemAir ${latest}`).slice(0, 120),
+      notes: String(release.body || '').slice(0, 4000),
+      publishedAt: release.published_at || null,
+      checkedAt: Date.now()
+    };
+    releaseCheckCache = { at: Date.now(), result };
+    return result;
+  } catch (error) {
+    return { ok: false, error: error && error.name === 'AbortError' ? 'UPDATE_CHECK_TIMEOUT' : 'UPDATE_CHECK_FAILED' };
+  } finally { clearTimeout(timer); }
+}
+
+// ---------------------------------------------------------------------------
 // IPC handlers
 // ---------------------------------------------------------------------------
 ipcMain.handle('system:info', () => getSystemInfo());
 ipcMain.handle('audit:get', () => executeTool('get_action_log', {}));
 ipcMain.handle('screen:inspect', () => inspectScreenChange());
+ipcMain.handle('recovery:consume', () => consumeRecoveryStatus());
+ipcMain.handle('usage:get', () => readProfile().usageStats === true ? readUsageStats() : { ...freshUsageStats(), disabled: true });
+ipcMain.handle('usage:track', (_e, action, metadata) => trackUsage(action, metadata || {}));
+ipcMain.handle('usage:clear', () => clearUsageStats());
 ipcMain.handle('profile:get', () => readProfile());
 ipcMain.handle('profile:set', (_e, data) => writeProfile(data || {}));
 ipcMain.handle('ai:chat', async (_e, config, messages) => {
@@ -2552,11 +3266,11 @@ ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
     filters: [{ name: 'All files', extensions: ['*'] }]
   });
   if (res.canceled || !res.filePath) return { ok: false };
-  try { fs.writeFileSync(res.filePath, content); return { ok: true, path: res.filePath }; }
+  try { await fs.promises.writeFile(res.filePath, content); return { ok: true, path: res.filePath }; }
   catch (err) { return { ok: false, error: err.message }; }
 });
 ipcMain.handle('news:get', (_e, limit, category) => getHeadlines(limit || 12, category || 'tech'));
-ipcMain.handle('app:openExternal', (_e, url) => { if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url); });
+ipcMain.handle('app:openExternal', (_e, url) => openExternalSafely(url));
 ipcMain.handle('report:generate', () => generateReport());
 ipcMain.handle('report:needsCheckIn', () => moodNeedsCheckIn());
 ipcMain.handle('memory:export', () => ({ memory: readMemory(), profile: readProfile() }));
@@ -2578,6 +3292,7 @@ ipcMain.handle('memory:addTodo', (_e, text) => addTodo(text));
 ipcMain.handle('memory:toggleTodo', (_e, id) => toggleTodoById(id));
 ipcMain.handle('memory:deleteTodo', (_e, id) => deleteTodoById(id));
 ipcMain.handle('win:saveBounds', () => saveWindowBounds());
+ipcMain.handle('app:checkForUpdates', (_e, force) => checkForUpdates(!!force));
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:platform', () => process.platform);
 
@@ -2606,8 +3321,9 @@ ipcMain.handle('connections:openAIStudio', async () => {
   authWindow = new BrowserWindow({
     width: 1100, height: 800, show: true, autoHideMenuBar: false,
     title: 'AI Studio — Sign in with Google (zero key copy-paste)',
-    webPreferences: { partition: 'persist:gemini', nodeIntegration: false, contextIsolation: true }
+    webPreferences: { partition: 'persist:gemini', nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, navigateOnDragDrop: false, safeDialogs: true }
   });
+  configureAuthWindowSecurity(authWindow, 'gemini');
   authWindow.loadURL('https://aistudio.google.com/');
   return { ok: true };
 });

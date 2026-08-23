@@ -406,12 +406,37 @@ async function streamPassthrough(req, res, providers, messages) {
   res.end();
 }
 
+const MAX_REQUEST_BYTES = 1024 * 1024;
+const MAX_MESSAGES_COUNT = 50;
+const MAX_MESSAGE_LENGTH = 10000;
+const MAX_TOTAL_MESSAGE_CHARS = 128000;
+const VALID_MESSAGE_ROLES = new Set(['system', 'user', 'assistant']);
+
+function validateMessages(value) {
+  if (!Array.isArray(value) || value.length === 0) return { error: 'messages must be a non-empty array' };
+  if (value.length > MAX_MESSAGES_COUNT) return { error: `too many messages (maximum ${MAX_MESSAGES_COUNT})` };
+  let total = 0;
+  const messages = [];
+  for (const message of value) {
+    if (!message || typeof message !== 'object' || Array.isArray(message)) return { error: 'each message must be an object' };
+    if (!VALID_MESSAGE_ROLES.has(message.role) || typeof message.content !== 'string') return { error: 'each message requires a valid role and string content' };
+    if (message.content.length > MAX_MESSAGE_LENGTH) return { error: `message exceeds ${MAX_MESSAGE_LENGTH} characters` };
+    total += message.content.length;
+    if (total > MAX_TOTAL_MESSAGE_CHARS) return { error: 'combined message content is too large' };
+    messages.push({ role: message.role, content: message.content });
+  }
+  if (!messages.some((message) => message.role === 'user' && message.content.trim())) return { error: 'at least one non-empty user message is required' };
+  return { messages };
+}
+
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') {
     applyCors(req, res);
     return res.status(204).end();
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  const declaredLength = Number(req.headers && req.headers['content-length']);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) return res.status(413).json({ error: 'request too large' });
   res.setHeader('Cache-Control', 'no-store');
   applyCors(req, res); // precise CORS on real responses too (vercel.json no longer sends a wildcard)
 
@@ -435,9 +460,13 @@ module.exports = async (req, res) => {
 
   let body = {};
   try { body = req.body || {}; } catch {}
-
-  const messages = Array.isArray(body.messages) ? body.messages : [];
-  if (!messages.length) return res.status(400).json({ error: 'messages required' });
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return res.status(400).json({ error: 'invalid request body' });
+  let actualBytes = 0;
+  try { actualBytes = Buffer.byteLength(JSON.stringify(body), 'utf8'); } catch { return res.status(400).json({ error: 'request body must be serializable' }); }
+  if (actualBytes > MAX_REQUEST_BYTES) return res.status(413).json({ error: 'request too large' });
+  const validated = validateMessages(body.messages);
+  if (validated.error) return res.status(400).json({ error: validated.error });
+  const messages = validated.messages;
 
   const lastUser = [...messages].reverse().find((m) => m && m.role === 'user');
   const prompt = lastUser && lastUser.content ? String(lastUser.content).trim() : '';

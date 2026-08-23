@@ -487,6 +487,11 @@ body.rgb-recording #micVuCanvas, body.wake-armed #micVuCanvas { opacity: 1; bord
   transition: all .18s; font-family: inherit;
 }
 .qc:hover { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); transform: translateY(-1px); }
+.qc:focus-visible { color: var(--accent); border-color: var(--accent); outline: 2px solid var(--accent-glow); outline-offset: 2px; }
+@media (max-width: 1000px) {
+  .quick-commands { flex-wrap: nowrap; overflow-x: auto; padding: 3px 2px 8px; scrollbar-width: thin; scroll-snap-type: x proximity; }
+  .quick-commands .qc { flex: 0 0 auto; scroll-snap-align: start; }
+}
 
 /* ============ SYSTEM CORE VIEW ============ */
 /* U5: the fixed 360px first column only collapsed at 1100px, so between ~900px
@@ -508,6 +513,7 @@ body.rgb-recording #micVuCanvas, body.wake-armed #micVuCanvas { opacity: 1; bord
 
 .skills-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .skill-chip { padding: 6px 12px; border-radius: 8px; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); font-size: 11.5px; color: var(--text-dim); }
+.adaptive-personality-state { padding: 8px 11px; border: 1px solid var(--accent-soft); border-radius: 8px; background: var(--accent-dim); color: var(--accent); font: 600 10px var(--font-mono); letter-spacing: .08em; }
 
 .core-tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--panel-border); padding-bottom: 12px; overflow-x: auto; }
 .core-tab {
@@ -1003,6 +1009,13 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 12px va
 .tool-activity { margin-top: 12px; border-top: 1px dashed var(--panel-border); padding-top: 10px; }
 .tool-activity-title { font: 700 10px var(--font-mono); letter-spacing: 2px; color: var(--accent); margin-bottom: 8px; }
 .tool-activity-title .dim { letter-spacing: 1px; }
+.operation-progress { margin: 0 0 9px; padding: 8px 10px; border: 1px solid var(--panel-border); border-radius: 8px; background: var(--panel); }
+.operation-progress-head { display: flex; justify-content: space-between; gap: 10px; color: var(--text-dim); font: 600 9px var(--font-mono); letter-spacing: .08em; }
+.operation-progress-head b { color: var(--accent); }
+.operation-progress-track { height: 5px; margin-top: 7px; overflow: hidden; border-radius: 999px; background: rgba(0,0,0,.3); }
+.operation-progress-track i { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent-soft), var(--accent)); box-shadow: 0 0 9px var(--accent-glow); transition: width .25s ease; }
+.operation-progress-track.indeterminate i { width: 38%; animation: operationProgressSweep 1.15s ease-in-out infinite; }
+@keyframes operationProgressSweep { from { transform: translateX(-110%); } to { transform: translateX(290%); } }
 .tool-feed { display: flex; flex-direction: column; gap: 8px; max-height: 170px; overflow-y: auto; }
 .tool-card { border: 1px solid var(--panel-border); border-radius: 10px; background: rgba(0,0,0,0.4); padding: 9px 12px; animation: toolIn .25s ease; }
 @keyframes toolIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://vercel.live https://*.vercel.live; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://vercel.live; img-src 'self' data: blob: https:; font-src 'self' data: https: https://fonts.gstatic.com; connect-src 'self' https: wss:; media-src 'self' blob: data: https:; frame-src 'self' https://vercel.live; worker-src 'self' blob:" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://vercel.live https://*.vercel.live; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://vercel.live; img-src 'self' data: blob: https:; font-src 'self' data: https: https://fonts.gstatic.com; connect-src 'self' https: wss:; media-src 'self' blob: data: https:; frame-src 'self' https://vercel.live; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>GemAir — Mission Control AI Center</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="apple-touch-icon" href="assets/gemair-512.png" />
@@ -15,6 +15,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="GemAir" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="light-mode.css" />
   <link rel="stylesheet" href="reduced-motion.css" />
 </head>
 <body>
@@ -267,6 +268,10 @@
                     </div>
                     <div class="tool-activity">
                       <h4 class="tool-activity-title">STONIC AI <span class="dim">— TOOL ACTIVITY</span></h4>
+                      <div class="operation-progress" id="operationProgress" role="status" aria-live="polite" hidden>
+                        <div class="operation-progress-head"><span id="operationProgressLabel">Working…</span><b id="operationProgressValue"></b></div>
+                        <div class="operation-progress-track" id="operationProgressTrack" role="progressbar" aria-label="Operation progress" aria-valuemin="0" aria-valuemax="100"><i id="operationProgressBar"></i></div>
+                      </div>
                       <div class="tool-feed" id="toolFeed">
                         <div class="empty">No tool calls yet — when Gem acts (weather, search, files…), the calls show up here with their input &amp; output.</div>
                       </div>
@@ -278,17 +283,17 @@
                       <input type="text" id="chatInput" placeholder="Type instruction or / command for Gem…" autocomplete="off" />
                       <button class="send-btn" id="sendBtn" title="Send message">➤</button>
                     </div>
-                    <div class="quick-commands" id="quickCommands">
-                      <button class="qc" data-cmd="What's the weather?">🌦 Weather</button>
-                      <button class="qc" data-cmd="Search the web for ">🔎 Search</button>
-                      <button class="qc" data-cmd="Open calculator">🚀 Calculator</button>
-                      <button class="qc" data-cmd="Remind me to ">⏰ Reminder</button>
-                      <button class="qc" data-cmd="Write a note: ">📝 Note</button>
-                      <button class="qc" data-cmd="Tell me a joke">😄 Joke</button>
-                      <button class="qc" data-cmd="Show system status">📊 Telemetry</button>
-                      <button class="qc" data-cmd="chill mode">🌙 Chill</button>
-                      <button class="qc" data-cmd="gaming setup">🎮 Gaming</button>
-                      <button class="qc" data-cmd="list windows">🖥 Windows</button>
+                    <div class="quick-commands" id="quickCommands" role="toolbar" aria-label="Quick assistant actions">
+                      <button type="button" class="qc" data-cmd="Search the web for " data-shortcut="1" aria-keyshortcuts="Alt+1" title="Search the web (Alt+1)">🔎 Search</button>
+                      <button type="button" class="qc" data-cmd="What's the weather?" data-shortcut="2" aria-keyshortcuts="Alt+2" title="Check weather (Alt+2)">🌦 Weather</button>
+                      <button type="button" class="qc" data-cmd="Write a note: " data-shortcut="3" aria-keyshortcuts="Alt+3" title="Write a note (Alt+3)">📝 Note</button>
+                      <button type="button" class="qc" data-cmd="Remind me to " data-shortcut="4" aria-keyshortcuts="Alt+4" title="Set a reminder (Alt+4)">⏰ Reminder</button>
+                      <button type="button" class="qc" data-cmd="Open calculator">🚀 Calculator</button>
+                      <button type="button" class="qc" data-cmd="Tell me a joke">😄 Joke</button>
+                      <button type="button" class="qc" data-cmd="Show system status">📊 Telemetry</button>
+                      <button type="button" class="qc" data-cmd="chill mode">🌙 Chill</button>
+                      <button type="button" class="qc" data-cmd="gaming setup">🎮 Gaming</button>
+                      <button type="button" class="qc" data-cmd="list windows">🖥 Windows</button>
                     </div>
                   </div>
                 </div>
@@ -505,6 +510,10 @@
                 <div class="soul-slider">
                   <span>BREVITY</span><input type="range" id="soulBrevity" min="0" max="100" value="70" /><b id="soulBrevityVal">70</b>
                 </div>
+                <label class="check-label" style="margin-top:12px">
+                  <input type="checkbox" id="soulAdaptive" checked /> Adapt warmth, wit, and brevity to recent mood
+                </label>
+                <div class="adaptive-personality-state" id="adaptivePersonalityState" role="status" aria-live="polite">STEADY · W 60 · WIT 40 · B 70</div>
                 <div class="memory-count-line dim" style="margin-top:14px;font-size:11px">
                   Conversations saved: <b id="transcriptCount">0</b> messages
                   <button class="link-btn" id="clearTranscript">clear transcript</button>
@@ -942,6 +951,15 @@
             <label class="check-label" style="margin-bottom:6px">
               <input type="checkbox" id="setMemoryOn" checked /> Auto memory — remember facts across conversations
             </label>
+            <label>Conversation context
+              <select id="setContextStrategy" aria-describedby="contextStrategyHint">
+                <option value="full">Full — retain up to 100 messages</option>
+                <option value="balanced">Balanced — summarize at 70%</option>
+                <option value="recent">Recent — prioritize the latest 20 messages</option>
+                <option value="minimal">Minimal — fastest, latest 10 messages</option>
+              </select>
+              <span class="hint" id="contextStrategyHint" style="font-size:11px;color:var(--text-dim)">Controls how much conversation Gem sends to the AI and when older turns are compressed.</span>
+            </label>
             <details class="power-user">
               <summary>⚙ Power user — optional: connect your own AI provider</summary>
               <div class="power-user-body">
@@ -989,6 +1007,19 @@
             </div>
           </fieldset>
           <fieldset>
+            <legend>LOCAL USAGE STATISTICS</legend>
+            <label class="check-label">
+              <input type="checkbox" id="setUsageStats" /> Keep anonymous aggregate counters on this device
+            </label>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);">Off by default. Records action names, success/error counts, and duration only—never prompts, paths, URLs, or message content. Nothing is uploaded.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="mini-btn" id="refreshUsageBtn" type="button">Refresh</button>
+              <button class="mini-btn" id="exportUsageBtn" type="button">Export</button>
+              <button class="mini-btn" id="clearUsageBtn" type="button">Clear</button>
+              <span class="dim" id="usageStatsSummary" role="status" aria-live="polite">Disabled.</span>
+            </div>
+          </fieldset>
+          <fieldset>
             <legend>RATE GEMAIR</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
               Ratings are stored locally and never uploaded. Export them any time.
@@ -1018,7 +1049,10 @@
               </select>
             </label>
             <label class="check-label" style="margin-bottom:12px">
-              <input type="checkbox" id="setWakeWord" /> Wake word loop — listen for “Hey Gem”
+              <input type="checkbox" id="setWakeWord" /> Wake word loop
+            </label>
+            <label>Wake phrase
+              <input id="setWakeWordText" type="text" maxlength="40" placeholder="Hey Gem" aria-label="Custom wake phrase" />
             </label>
             <div class="voice-presets" id="voicePresets" role="group" aria-label="Voice preset">
               <button type="button" class="voice-preset active" data-voice-preset="gem"><b>GEM</b><span>warm · balanced</span></button>
@@ -1178,6 +1212,18 @@
             </div>
           </fieldset>
           <fieldset>
+            <legend>APP UPDATES</legend>
+            <label class="check-label">
+              <input type="checkbox" id="setAutoUpdateChecks" checked /> Check GitHub once daily for stable releases
+            </label>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);">GemAir only checks release metadata. It never downloads or installs an update without you.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="ghost-btn" id="checkUpdatesBtn" type="button">⟳ CHECK NOW</button>
+              <button class="primary-btn" id="viewUpdateBtn" type="button" hidden>VIEW RELEASE</button>
+              <span class="dim" id="updateStatus" role="status" aria-live="polite">Not checked yet.</span>
+            </div>
+          </fieldset>
+          <fieldset>
             <legend>GET DESKTOP APP</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">Download GemAir for Windows, macOS, or Linux. Full voice control, 79 tools, ChatGPT sign-in.</p>
             <button class="primary-btn" id="settingsDownloadBtn" style="width:100%;">⬇ DOWNLOAD GEMAIR</button>
@@ -1186,6 +1232,13 @@
 
         <!-- APPEARANCE SECTION -->
         <div class="settings-section" data-section="appearance">
+          <fieldset>
+            <legend>LIGHT / DARK MODE</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
+              Switch interface brightness without changing your selected HUD accent theme.
+            </p>
+            <button class="ghost-btn" id="appearanceToggle" type="button" aria-pressed="false">☀ SWITCH TO LIGHT</button>
+          </fieldset>
           <fieldset>
             <legend>HUD THEMES</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">
@@ -1311,7 +1364,7 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0"></script>
   <script src="themes.js"></script>
   <script src="i18n.js"></script>
   <script src="store.js"></script>

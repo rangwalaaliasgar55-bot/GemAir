@@ -1,0 +1,43 @@
+/* GemAir light appearance overrides. Accent themes still come from themes.js. */
+body[data-appearance='light'] {
+  color-scheme: light;
+}
+body[data-appearance='light'] .scanlines { opacity: 0.1; }
+body[data-appearance='light'] .vignette { opacity: 0.18; }
+body[data-appearance='light'] #bgCanvas { opacity: 0.24; }
+body[data-appearance='light'] .footer,
+body[data-appearance='light'] .topbar {
+  background: rgba(255, 255, 255, 0.78);
+}
+body[data-appearance='light'] .msg.ai,
+body[data-appearance='light'] .msg.system-msg,
+body[data-appearance='light'] .tele-row,
+body[data-appearance='light'] .memory-browser-entry,
+body[data-appearance='light'] .plan-checklist,
+body[data-appearance='light'] .news-item,
+body[data-appearance='light'] .voice-preset,
+body[data-appearance='light'] .qc,
+body[data-appearance='light'] .spark-card,
+body[data-appearance='light'] .palette-item,
+body[data-appearance='light'] .tool-card,
+body[data-appearance='light'] .vh-card,
+body[data-appearance='light'] .notes-mini .note-item {
+  background: rgba(255, 255, 255, 0.68);
+}
+body[data-appearance='light'] input[type='text'],
+body[data-appearance='light'] input[type='password'],
+body[data-appearance='light'] select,
+body[data-appearance='light'] .palette input,
+body[data-appearance='light'] textarea {
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--text);
+}
+body[data-appearance='light'] .primary-btn { color: #fff; }
+body[data-appearance='light'][data-theme='rgb'] .msg.user,
+body[data-appearance='light'][data-theme='rgb'] .msg.ai {
+  background-image: linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)), conic-gradient(from 0deg, #d60035, #b65f00, #8a7400, #087f5b, #066a9c, #7048a8, #9c2c9c, #d60035);
+}
+body[data-appearance='light'] .modal-backdrop,
+body[data-appearance='light'] .palette-backdrop {
+  background: rgba(35, 45, 65, 0.38);
+}

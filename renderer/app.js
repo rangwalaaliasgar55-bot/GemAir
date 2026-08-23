@@ -47,6 +47,10 @@ const api = {
     if (window.gemair && window.gemair.screenInspect) return window.gemair.screenInspect();
     return { changed: false, changePercent: 0, description: 'Browser screen capture is unavailable; desktop mode is required.' };
   },
+  async consumeRecovery() { return window.gemair && window.gemair.consumeRecovery ? window.gemair.consumeRecovery() : { recovered: false, restored: [] }; },
+  async usageGet() { return window.gemair && window.gemair.usageGet ? window.gemair.usageGet() : { version: 1, total: 0, actions: {}, days: {}, disabled: true }; },
+  async trackUsage(action, metadata = {}) { return window.gemair && window.gemair.usageTrack ? window.gemair.usageTrack(action, metadata) : { recorded: false }; },
+  async usageClear() { return window.gemair && window.gemair.usageClear ? window.gemair.usageClear() : { ok: true }; },
   async getProfile() { if (window.gemair) return window.gemair.getProfile(); return window.webStore ? window.webStore.getProfile() : {}; },
   async setProfile(d) { if (window.gemair) return window.gemair.setProfile(d); if (window.webStore) await window.webStore.setProfile(d); },
 
@@ -216,10 +220,11 @@ const api = {
     try { const r = await fetch('/api/headlines?limit=' + (limit || 14) + '&category=' + encodeURIComponent(category || 'tech')); return await r.json(); } catch { return []; }
   },
   openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
+  async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async version() { return window.gemair ? window.gemair.version() : '2.1.0'; },
-  onReminder(cb) { if (window.gemair) window.gemair.onReminder(cb); },
-  onWakeToggle(cb) { if (window.gemair) window.gemair.onWakeToggle(cb); },
-  onActivity(cb) { if (window.gemair && window.gemair.onActivity) window.gemair.onActivity(cb); },
+  onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
+  onWakeToggle(cb) { return registerRendererDisposer(window.gemair && window.gemair.onWakeToggle ? window.gemair.onWakeToggle(cb) : null); },
+  onActivity(cb) { return registerRendererDisposer(window.gemair && window.gemair.onActivity ? window.gemair.onActivity(cb) : null); },
   async collaborateAgents(task) {
     if (window.gemair && window.gemair.collaborateAgents) return window.gemair.collaborateAgents(task);
     const research = await webGet('search', { q: task });
@@ -232,7 +237,7 @@ const api = {
       { agent: 'Carol', tool: 'system_scan', args: {}, result: system, ok: true, ms: 0 }
     ] };
   },
-  onHudPanel(cb) { if (window.gemair && window.gemair.onHudPanel) window.gemair.onHudPanel(cb); },
+  onHudPanel(cb) { return registerRendererDisposer(window.gemair && window.gemair.onHudPanel ? window.gemair.onHudPanel(cb) : null); },
   // 2.4 Connections
   async connectionsGetStatus() { if (window.gemair && window.gemair.connectionsGetStatus) return window.gemair.connectionsGetStatus(); return { chatgpt: { connected: false, dot: 'DISCONNECTED' }, gemini: { connected: false, dot: 'DISCONNECTED' }, freeCore: { connected: true, dot: 'FALLBACK' }, meta: { priority: 'free' } }; },
   async connectionsSetPriority(p) { if (window.gemair) return window.gemair.connectionsSetPriority(p); },
@@ -258,13 +263,13 @@ const api = {
   async desktopMinimizeAll() { if (window.gemair) return window.gemair.desktopMinimizeAll(); },
   async desktopNextDesktop() { if (window.gemair) return window.gemair.desktopNextDesktop(); },
   async desktopOpenSite(url, browser) { if (window.gemair) return window.gemair.desktopOpenSite(url, browser); return { ok: true }; },
-  onConnectionsUpdated(cb) { if (window.gemair && window.gemair.onConnectionsUpdated) window.gemair.onConnectionsUpdated(cb); },
-  onConnectionsExpired(cb) { if (window.gemair && window.gemair.onConnectionsExpired) window.gemair.onConnectionsExpired(cb); },
-  onDesktopFocus(cb) { if (window.gemair && window.gemair.onDesktopFocus) window.gemair.onDesktopFocus(cb); },
-  onDesktopVolume(cb) { if (window.gemair && window.gemair.onDesktopVolume) window.gemair.onDesktopVolume(cb); },
-  onDesktopTheme(cb) { if (window.gemair && window.gemair.onDesktopTheme) window.gemair.onDesktopTheme(cb); },
-  onDesktopDnd(cb) { if (window.gemair && window.gemair.onDesktopDnd) window.gemair.onDesktopDnd(cb); },
-  onModeChanged(cb) { if (window.gemair && window.gemair.onModeChanged) window.gemair.onModeChanged(cb); },
+  onConnectionsUpdated(cb) { return registerRendererDisposer(window.gemair && window.gemair.onConnectionsUpdated ? window.gemair.onConnectionsUpdated(cb) : null); },
+  onConnectionsExpired(cb) { return registerRendererDisposer(window.gemair && window.gemair.onConnectionsExpired ? window.gemair.onConnectionsExpired(cb) : null); },
+  onDesktopFocus(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDesktopFocus ? window.gemair.onDesktopFocus(cb) : null); },
+  onDesktopVolume(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDesktopVolume ? window.gemair.onDesktopVolume(cb) : null); },
+  onDesktopTheme(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDesktopTheme ? window.gemair.onDesktopTheme(cb) : null); },
+  onDesktopDnd(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDesktopDnd ? window.gemair.onDesktopDnd(cb) : null); },
+  onModeChanged(cb) { return registerRendererDisposer(window.gemair && window.gemair.onModeChanged ? window.gemair.onModeChanged(cb) : null); },
 
   // report & backup
   async generateReport() {
@@ -522,6 +527,9 @@ const DEFAULTS = Object.freeze({
   edgeVoice: 'en-US-AriaNeural',
   sttLang: 'en-US',
   lang: 'en',
+  appearance: 'dark',
+  contextStrategy: 'balanced',
+  autoUpdateChecks: true,
   ambientTrack: 'deep',
   ambientVolume: 0.35,
   currentMode: '',
@@ -536,6 +544,8 @@ function makeDefaultProfile() {
     theme: DEFAULTS.theme,
     city: DEFAULTS.city,
     lang: DEFAULTS.lang,
+    appearance: DEFAULTS.appearance,
+    contextStrategy: DEFAULTS.contextStrategy,
     currentMode: DEFAULTS.currentMode,
     brainPriority: DEFAULTS.brainPriority,
     connectionsWarningAcknowledged: DEFAULTS.connectionsWarningAcknowledged,
@@ -550,7 +560,7 @@ function makeDefaultProfile() {
       sttLang: DEFAULTS.sttLang,
       name: ''
     },
-    memoryOn: true, allowShell: false, wakeWord: false,
+    memoryOn: true, allowShell: false, adaptivePersonality: true, autoUpdateChecks: DEFAULTS.autoUpdateChecks, usageStats: false, wakeWord: false, wakeWordText: 'Hey Gem',
     ambientScore: false, ambientTrack: DEFAULTS.ambientTrack, ambientVolume: DEFAULTS.ambientVolume,
     screenAwareness: false,
     modes: {}
@@ -576,44 +586,81 @@ let planActQueue = null;
 let listening = false, recognition = null, isRunning = false;
 const chatHistory = []; // working context window
 const CONTEXT_TOKEN_LIMIT = 16000;
+const CONTEXT_STRATEGIES = Object.freeze({
+  full: { label: 'Full', keep: 100, send: 48, threshold: 90, summarize: false },
+  recent: { label: 'Recent', keep: 20, send: 20, threshold: 60, summarize: true },
+  balanced: { label: 'Balanced', keep: 40, send: 32, threshold: 70, summarize: true },
+  minimal: { label: 'Minimal', keep: 10, send: 10, threshold: 45, summarize: true }
+});
 let contextCompacting = false;
 let activePlan = null;
 
+function getContextStrategy() {
+  return CONTEXT_STRATEGIES[profile.contextStrategy] || CONTEXT_STRATEGIES.balanced;
+}
+function getContextMessages(maximum = 48) {
+  const strategy = getContextStrategy();
+  const count = Math.max(1, Math.min(maximum, strategy.send));
+  return chatHistory.slice(-count);
+}
 function estimateContextTokens(extraText = '') {
   const chars = chatHistory.reduce((sum, message) => sum + String(message.content || '').length + String(message.role || '').length + 4, 0) + String(extraText || '').length;
   return Math.ceil(chars / 4);
 }
 
+const contextElements = { chip: null, value: null, bar: null };
+function getContextElements() {
+  contextElements.chip ||= $('#contextChip');
+  contextElements.value ||= $('#contextValue');
+  contextElements.bar ||= $('#contextBar');
+  return contextElements;
+}
 function updateContextMeter(extraText = '') {
   const tokens = estimateContextTokens(extraText);
   const percent = Math.min(100, Math.round(tokens / CONTEXT_TOKEN_LIMIT * 100));
-  const chip = $('#contextChip'), value = $('#contextValue'), bar = $('#contextBar');
+  const strategy = getContextStrategy();
+  const { chip, value, bar } = getContextElements();
   if (value) value.textContent = tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'K' : String(tokens);
   if (bar) bar.style.width = percent + '%';
-  if (chip) { chip.classList.toggle('warn', percent >= 70 && percent < 90); chip.classList.toggle('danger', percent >= 90); chip.title = `${tokens.toLocaleString()} estimated tokens · ${percent}% of ${CONTEXT_TOKEN_LIMIT.toLocaleString()}`; }
+  if (chip) {
+    chip.classList.toggle('warn', percent >= strategy.threshold && percent < 90);
+    chip.classList.toggle('danger', percent >= 90);
+    chip.title = `${tokens.toLocaleString()} estimated tokens · ${percent}% of ${CONTEXT_TOKEN_LIMIT.toLocaleString()} · ${strategy.label} strategy`;
+  }
   [['#townCtx', percent], ['#townCtxMini', percent]].forEach(([selector, pct]) => { const meter = $(selector); if (meter) meter.style.width = pct + '%'; });
   return { tokens, percent };
 }
 
 async function compactChatContextIfNeeded(extraText = '') {
   const usage = updateContextMeter(extraText);
-  if (usage.percent < 70 || contextCompacting || chatHistory.length < 10) return false;
+  const strategy = getContextStrategy();
+  const underPressure = usage.percent >= strategy.threshold;
+  const storedLimit = strategy.keep + (strategy.summarize ? Math.max(4, Math.floor(strategy.keep * 0.25)) : 0);
+  if ((!underPressure && chatHistory.length <= storedLimit) || contextCompacting || chatHistory.length < 4) return false;
   contextCompacting = true;
   try {
-    const keep = chatHistory.slice(-8);
-    const old = chatHistory.slice(0, -8);
-    const transcript = old.map((message) => `${message.role}: ${message.content}`).join('\n');
+    const keepCount = underPressure ? Math.min(strategy.keep, Math.max(2, Math.floor(chatHistory.length * 0.6))) : strategy.keep;
+    const keep = chatHistory.slice(-keepCount);
+    const old = chatHistory.slice(0, -keepCount);
+    if (!old.length) return false;
+    if (!strategy.summarize) {
+      chatHistory.splice(0, chatHistory.length, ...keep);
+      updateContextMeter(extraText);
+      toast('CTX TRIMMED', `Full strategy retained the latest ${keep.length} messages.`, '◫');
+      return true;
+    }
+    const transcript = old.map((message) => `${message.role}: ${message.content}`).join('\n').slice(-60000);
     let summary = null;
     try {
       const result = await api.aiSummarize(profile.ai || {}, transcript);
-      if (result && result.ok) summary = result.summary;
+      if (result && result.ok && result.summary) summary = String(result.summary).slice(0, 12000);
     } catch (e) {}
     if (!summary) {
-      summary = old.slice(-8).map((message) => `• ${message.role}: ${String(message.content || '').replace(/\s+/g, ' ').slice(0, 180)}`).join('\n');
+      summary = old.slice(-12).map((message) => `• ${message.role}: ${String(message.content || '').replace(/\s+/g, ' ').slice(0, 220)}`).join('\n');
     }
-    chatHistory.splice(0, chatHistory.length, { role: 'system', content: `Compacted conversation context:\n${summary}` }, ...keep);
+    chatHistory.splice(0, chatHistory.length, { role: 'system', content: `Conversation summary (${strategy.label} strategy):\n${summary}` }, ...keep);
     updateContextMeter(extraText);
-    toast('CTX COMPACTED', 'Older turns summarized; the conversation continues seamlessly.', '◫');
+    toast('CTX COMPRESSED', `${old.length} older messages summarized; ${keep.length} recent messages retained.`, '◫');
     return true;
   } finally { contextCompacting = false; }
 }
@@ -976,7 +1023,6 @@ window.addEventListener('unhandledrejection', (e) => {
 let _eventsBound = false;
 function ensureInteractive() {
   if (_eventsBound) return;
-  _eventsBound = true;
   try {
     bindEvents();
     console.warn('[GemAir] recovered: events bound by the safety net.');
@@ -1189,6 +1235,27 @@ function normaliseInput(text) {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const rendererLifecycle = typeof AbortController === 'function' ? new AbortController() : null;
+const rendererDisposers = new Set();
+function addLifecycleListener(target, type, handler, options = {}) {
+  if (!target || typeof target.addEventListener !== 'function') return handler;
+  const normalized = typeof options === 'boolean' ? { capture: options } : { ...options };
+  if (rendererLifecycle) normalized.signal = rendererLifecycle.signal;
+  target.addEventListener(type, handler, normalized);
+  return handler;
+}
+function registerRendererDisposer(disposer) {
+  if (typeof disposer === 'function') rendererDisposers.add(disposer);
+  return disposer;
+}
+function disposeRendererLifecycle() {
+  if (rendererLifecycle && !rendererLifecycle.signal.aborted) rendererLifecycle.abort();
+  for (const dispose of rendererDisposers) {
+    try { dispose(); } catch {}
+  }
+  rendererDisposers.clear();
+}
+window.addEventListener('beforeunload', disposeRendererLifecycle, { once: true });
 
 // ---------------------------------------------------------------------------
 // Theme (with RGB / rainbow mode) & Synthetic Web Audio SFX
@@ -1370,10 +1437,12 @@ function getAccent() { return currentAccent; }
 
 function setAccentFromHue(hue) {
   const h = ((hue % 360) + 360) % 360;
-  const accent = `hsl(${h}, 92%, 60%)`;
-  const soft = `hsla(${h}, 92%, 60%, 0.55)`;
-  const glow = `hsla(${h}, 92%, 60%, 0.35)`;
-  const dim = `hsla(${h}, 92%, 60%, 0.14)`;
+  const lightAppearance = profile.appearance === 'light';
+  const lightness = lightAppearance ? 38 : 60;
+  const accent = `hsl(${h}, 92%, ${lightness}%)`;
+  const soft = `hsla(${h}, 92%, ${lightness}%, ${lightAppearance ? 0.7 : 0.55})`;
+  const glow = `hsla(${h}, 92%, ${lightness}%, ${lightAppearance ? 0.2 : 0.35})`;
+  const dim = `hsla(${h}, 92%, ${lightness}%, ${lightAppearance ? 0.1 : 0.14})`;
   currentAccent = accent;
   const root = document.body.style;
   root.setProperty('--accent', accent);
@@ -1408,11 +1477,35 @@ function triggerRgbBurst() {
   }, REDUCED_MOTION ? 900 : 8000);
 }
 
+function applyAppearance(mode, { notify = false } = {}) {
+  const appearance = mode === 'light' ? 'light' : 'dark';
+  profile.appearance = appearance;
+  let appliedTheme = null;
+  if (window.GemAirThemes && typeof window.GemAirThemes.setAppearance === 'function') appliedTheme = window.GemAirThemes.setAppearance(appearance);
+  else document.body.dataset.appearance = appearance;
+  if (appliedTheme && profile.theme !== 'rgb') currentAccent = appliedTheme.accent;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = appearance === 'light' ? '#f4f7fb' : '#04060c';
+  const toggle = $('#appearanceToggle');
+  if (toggle) {
+    const light = appearance === 'light';
+    toggle.setAttribute('aria-pressed', String(light));
+    toggle.textContent = light ? '🌙 SWITCH TO DARK' : '☀ SWITCH TO LIGHT';
+  }
+  if (notify) toast('APPEARANCE', appearance.toUpperCase() + ' mode enabled.', appearance === 'light' ? '☀' : '🌙');
+  return appearance;
+}
+function toggleAppearance() {
+  applyAppearance(profile.appearance === 'light' ? 'dark' : 'light', { notify: true });
+  persistProfile();
+}
+
 function applyTheme(t) {
   // String-driven theme engine (renderer/themes.js) is the single source
   // of truth: it writes all color tokens out as CSS variables and fires
   // `gemair:theme`, so the DOM and every canvas re-skin together.
   if (window.GemAirThemes) {
+    if (typeof window.GemAirThemes.setAppearance === 'function') window.GemAirThemes.setAppearance(profile.appearance || DEFAULTS.appearance);
     const theme = window.GemAirThemes.apply(t);
     if (t !== 'rgb') currentAccent = theme.accent; // string token → all canvases
   }
@@ -1525,7 +1618,7 @@ function resumeViewFrames(view) {
   viewFrameWaiters.delete(view);
   waiting.forEach((callback) => requestAnimationFrame(callback));
 }
-document.addEventListener('visibilitychange', () => {
+addLifecycleListener(document, 'visibilitychange', () => {
   if (!document.hidden) {
     const active = $$('.view').find((view) => view.classList.contains('active'));
     if (active) resumeViewFrames(active.id.replace('view-', ''));
@@ -1538,6 +1631,7 @@ document.addEventListener('visibilitychange', () => {
 // ---------------------------------------------------------------------------
 function switchView(view) {
   playSfx('swoosh');
+  api.trackUsage('view.' + String(view || 'unknown'));
   $$('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
   resumeViewFrames(view);
@@ -1679,6 +1773,13 @@ function fmtUptime(s) {
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   return (d ? d + 'd ' : '') + h + 'h ' + m + 'm';
 }
+function debounce(fn, wait = 120) {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), wait);
+  };
+}
 async function pollSystem() {
   try {
     const i = await api.getSystemInfo();
@@ -1707,10 +1808,14 @@ async function pollSystem() {
 // ---------------------------------------------------------------------------
 // 3D background scene (starfield + rotating wireframe polyhedron + parallax)
 // ---------------------------------------------------------------------------
+let background3DStarted = false, orbStarted = false, globeStarted = false;
 function startBackground3D() {
+  if (background3DStarted) return;
   const canvas = $('#bgCanvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  background3DStarted = true;
   let accent = getAccent();
   let w, h, dpr, mx = 0, my = 0;
   function resize() {
@@ -1727,8 +1832,8 @@ function startBackground3D() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   resize();
-  window.addEventListener('resize', resize);
-  window.addEventListener('mousemove', (e) => { mx = (e.clientX / w - 0.5) * 2; my = (e.clientY / h - 0.5) * 2; });
+  addLifecycleListener(window, 'resize', debounce(resize), { passive: true });
+  addLifecycleListener(window, 'mousemove', (e) => { mx = (e.clientX / w - 0.5) * 2; my = (e.clientY / h - 0.5) * 2; }, { passive: true });
 
   // stars
   const stars = [];
@@ -1794,8 +1899,11 @@ function startBackground3D() {
 // Orb particle animation
 // ---------------------------------------------------------------------------
 function startOrb() {
+  if (orbStarted) return;
   const canvas = $('#orbCanvas'); if (!canvas) return;
   const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  orbStarted = true;
   let accent = getAccent();
   let w, h, dpr;
   function resize() {
@@ -1804,7 +1912,7 @@ function startOrb() {
     canvas.width = w * dpr; canvas.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-  resize(); window.addEventListener('resize', resize);
+  resize(); addLifecycleListener(window, 'resize', debounce(resize), { passive: true });
   const parts = [];
   for (let i = 0; i < 110; i++) parts.push({ ang: Math.random() * Math.PI * 2, rad: Math.random(), spd: 0.002 + Math.random() * 0.006, size: 1 + Math.random() * 2.2, phase: Math.random() * Math.PI * 2 });
   function draw(t) {
@@ -1832,8 +1940,11 @@ function startOrb() {
 // Globe
 // ---------------------------------------------------------------------------
 function startGlobe() {
+  if (globeStarted) return;
   const canvas = $('#globeCanvas'); if (!canvas) return;
   const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  globeStarted = true;
   let w, h, dpr, visibleMarkers = [];
   const hotspots = [
     { lat: 40.7, lon: -74, label: 'NYC' }, { lat: 51.5, lon: -0.1, label: 'LON' },
@@ -1873,18 +1984,18 @@ function startGlobe() {
     panel.onclick = () => api.openExternal(marker.headline.url);
     $$('#newsList .news-item').forEach((item) => item.classList.toggle('selected', item.dataset.newsId === String(marker.headline.id)));
   }
-  canvas.addEventListener('pointermove', (event) => {
+  addLifecycleListener(canvas, 'pointermove', (event) => {
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * (w / rect.width), y = (event.clientY - rect.top) * (h / rect.height);
     canvas.style.cursor = visibleMarkers.some((marker) => Math.hypot(marker.x - x, marker.y - y) < 15) ? 'pointer' : 'crosshair';
   });
-  canvas.addEventListener('click', (event) => {
+  addLifecycleListener(canvas, 'click', (event) => {
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * (w / rect.width), y = (event.clientY - rect.top) * (h / rect.height);
     const marker = visibleMarkers.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
     if (marker && Math.hypot(marker.x - x, marker.y - y) < 18) selectHotspot(marker);
   });
-  resize(); window.addEventListener('resize', resize);
+  resize(); addLifecycleListener(window, 'resize', debounce(resize), { passive: true });
 
   function draw(time) {
     const accent = getAccent();
@@ -2015,7 +2126,7 @@ function loadMermaid() {
       s.src = 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js';
       s.onload = () => {
         try {
-          window.mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+          window.mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' });
         } catch (e) {}
         resolve(window.mermaid);
       };
@@ -2192,11 +2303,77 @@ function updateLinkMode() {
 // LEFT column — MEDIA LINK panel (Stonic-style system status card)
 function updateMediaLink() { /* panel removed */ }
 
+function clampPersonalityScore(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+}
+function getRecentMoodAverage() {
+  const entries = (memory.mood || []).slice(-14);
+  if (!entries.length) return null;
+  let total = 0, weights = 0;
+  entries.forEach((entry, index) => {
+    const weight = index + 1;
+    total += Math.max(-1, Math.min(1, Number(entry.valence) || 0)) * weight;
+    weights += weight;
+  });
+  return weights ? total / weights : null;
+}
+function getPersonalityAdjustments() {
+  const soul = profile.soul || {};
+  const base = {
+    warmth: clampPersonalityScore(soul.warmth ?? 60),
+    wit: clampPersonalityScore(soul.wit ?? 40),
+    brevity: clampPersonalityScore(soul.brevity ?? 70)
+  };
+  if (profile.adaptivePersonality === false) return { ...base, base, mode: 'custom', adaptive: false };
+  const recent = getRecentMoodAverage();
+  const currentValence = Math.max(-1, Math.min(1, Number(currentEmotion.valence) || 0));
+  const signal = recent == null ? currentValence : recent * 0.45 + currentValence * 0.55;
+  const intensity = Math.max(Math.abs(signal), Math.min(1, Number(currentEmotion.intensity ?? currentEmotion.arousal) || 0.3));
+  const distress = ['sadness', 'guilt', 'anxiety', 'anger', 'fear', 'embarrassment'].includes(currentEmotion.emotion);
+  const lowEnergy = ['tired', 'boredom'].includes(currentEmotion.emotion);
+  let warmth = base.warmth, wit = base.wit, brevity = base.brevity, mode = 'steady';
+  if (distress || signal <= -0.25) {
+    mode = 'supportive';
+    warmth += 14 + intensity * 12;
+    wit -= 18 + intensity * 18;
+    brevity += 6 + intensity * 10;
+  } else if (lowEnergy) {
+    mode = 'gentle';
+    warmth += 10;
+    wit -= 8;
+    brevity += 12;
+  } else if (signal >= 0.45 || ['joy', 'excitement', 'confident'].includes(currentEmotion.emotion)) {
+    mode = 'celebratory';
+    warmth += 5;
+    wit += 6 + intensity * 10;
+    brevity += 3;
+  }
+  return {
+    warmth: clampPersonalityScore(warmth),
+    wit: clampPersonalityScore(wit),
+    brevity: clampPersonalityScore(brevity),
+    base,
+    mode,
+    adaptive: true,
+    moodSignal: Math.round(signal * 100) / 100
+  };
+}
+function renderAdaptivePersonalityState() {
+  const state = $('#adaptivePersonalityState');
+  const toggle = $('#soulAdaptive');
+  if (toggle) toggle.checked = profile.adaptivePersonality !== false;
+  if (!state) return;
+  const effective = getPersonalityAdjustments();
+  state.textContent = effective.adaptive
+    ? `${effective.mode.toUpperCase()} · W ${effective.warmth} · WIT ${effective.wit} · B ${effective.brevity}`
+    : 'OFF · USING MANUAL SLIDERS';
+}
+
 function buildSystemPrompt() {
-  const s = profile.soul || {};
+  const personality = getPersonalityAdjustments();
   const facts = (memory.facts || []).slice(0, 60).map((f) => `- ${f.text}`).join('\n');
-  const mood = (memory.mood || []).slice(-14);
-  const moodAvg = mood.length ? Math.round((mood.reduce((a, b) => a + (b.valence || 0), 0) / mood.length) * 100) : null;
+  const recentMood = getRecentMoodAverage();
+  const moodAvg = recentMood == null ? null : Math.round(recentMood * 100);
   const goals = (memory.goals || []).filter((g) => !g.done).map((g) => `- [${g.category}] ${g.text}`).join('\n');
   const skills = (memory.skills || []).slice(0, 40).map((s) => `- ${s.name ? s.name + ': ' : ''}${s.text}`).join('\n');
   const instructions = (memory.instructions || []).slice(0, 40).map((i) => `- ${i.text}`).join('\n');
@@ -2211,7 +2388,8 @@ function buildSystemPrompt() {
       `Always refer to yourself as Gem, never as GemAir (GemAir is the app you live in). ` +
       `You are the user's friend, mentor, life coach and career advisor — genuinely caring, perceptive and wise. ` +
       `The user's name is ${profile.name || 'Commander'}. Address them by their name naturally — at the start of a greeting, when reassuring them, or when something matters. Do not repeat it in every sentence; roughly once per reply at most. ` +
-      `Personality — warmth ${s.warmth ?? 60}/100, wit ${s.wit ?? 40}/100, brevity ${s.brevity ?? 70}/100. ` +
+      `Personality baseline — warmth ${personality.base.warmth}/100, wit ${personality.base.wit}/100, brevity ${personality.base.brevity}/100. ` +
+      `Effective tone — ${personality.mode}: warmth ${personality.warmth}/100, wit ${personality.wit}/100, brevity ${personality.brevity}/100 (higher brevity means a shorter answer). ${personality.adaptive ? 'This is a bounded mood-based adjustment; the user sliders remain the baseline.' : 'Adaptive personality is disabled; follow the manual sliders exactly.'} ` +
       `LANGUAGE: Respond in the user's language. They are currently writing in ${currentLang === 'hi' ? 'Hindi' : currentLang === 'ur' ? 'Urdu' : currentLang === 'hinglish' ? 'Hinglish (Roman Hindi/Urdu)' : 'English'} — mirror it, including for Hindi/Urdu speakers. ` +
       `TRUTH & ACCURACY (non-negotiable): Always be truthful. Never fabricate facts, citations, quotes, statistics or events. ` +
       `For anything factual, current or uncertain, verify with web_search / verify_claim / fetch_webpage and CITE your sources inline. ` +
@@ -2364,17 +2542,74 @@ function setThinking(on) {
   if (pill) pill.classList.toggle('on', !!on);
 }
 
+let operationRequestActive = false;
+let operationHideTimer = null;
+const activeOperationTools = new Map();
+function showOperationProgress(label, percent = null) {
+  const panel = $('#operationProgress');
+  const track = $('#operationProgressTrack');
+  const bar = $('#operationProgressBar');
+  const value = $('#operationProgressValue');
+  if (!panel || !track || !bar || !value) return;
+  clearTimeout(operationHideTimer);
+  panel.hidden = false;
+  $('#operationProgressLabel').textContent = String(label || 'Working…');
+  if (Number.isFinite(percent)) {
+    const bounded = Math.max(0, Math.min(100, Math.round(percent)));
+    track.classList.remove('indeterminate');
+    track.setAttribute('aria-valuenow', String(bounded));
+    bar.style.width = bounded + '%';
+    bar.style.transform = '';
+    value.textContent = bounded + '%';
+  } else {
+    track.classList.add('indeterminate');
+    track.removeAttribute('aria-valuenow');
+    bar.style.width = '';
+    value.textContent = '';
+  }
+}
+function hideOperationProgress(delay = 0) {
+  clearTimeout(operationHideTimer);
+  operationHideTimer = setTimeout(() => {
+    const panel = $('#operationProgress');
+    if (panel) panel.hidden = true;
+  }, Math.max(0, delay));
+}
+function updateToolOperationProgress(name, state) {
+  const key = String(name || 'tool');
+  const count = activeOperationTools.get(key) || 0;
+  if (state === 'start') activeOperationTools.set(key, count + 1);
+  else if (count <= 1) activeOperationTools.delete(key);
+  else activeOperationTools.set(key, count - 1);
+  if (state === 'start') showOperationProgress('Executing ' + key.replace(/_/g, ' ') + '…');
+  else if (activeOperationTools.size) showOperationProgress(`Executing ${activeOperationTools.size} tool${activeOperationTools.size === 1 ? '' : 's'}…`);
+  else if (operationRequestActive) showOperationProgress('Generating response…');
+  else hideOperationProgress(500);
+}
+
 async function sendMessage(text) {
   text = (text || '').trim();
   if (!text) return;
+  api.trackUsage('message');
   addMessage('user', text);
   $('#chatInput').value = '';
   setCaption('user', text, { autoHide: 3200 });
   avatar({ thinking: true }); // Gem visibly starts reasoning
   setThinking(true);
+  operationRequestActive = true;
+  showOperationProgress('Understanding request…');
   try {
     return await handleMessage(text);
+  } catch (error) {
+    console.error('[sendMessage]', error);
+    const message = `I couldn't complete that request: ${error && error.message ? error.message : 'Something went wrong. Please try again.'}`;
+    addMessage('ai', message);
+    toast('REQUEST FAILED', 'The operation did not complete. You can safely try again.', '⚠️');
+    speak("I'm sorry, I encountered an error. Please try again.");
+    return { error: error && error.message ? error.message : String(error) };
   } finally {
+    operationRequestActive = false;
+    if (!activeOperationTools.size) hideOperationProgress(450);
     avatar({ thinking: false });
     setThinking(false);
   }
@@ -2587,12 +2822,13 @@ async function handleMessage(text) {
     const task = agentMatch[2].trim();
     if (window.__assignAgentTask) window.__assignAgentTask(agentName, task);
     addActivity(agentName, 'working on: ' + task);
+    showOperationProgress(`${agentName} is working…`);
     chatHistory.push({ role: 'user', content: text });
     const replyEl = typing.querySelector('p');
     typewriterToken++;
     if (window.gemair) {
       const sys = buildSystemPrompt();
-      const res = await window.gemair.aiAgentChat(agentName, cfg, chatHistory.slice(-16));
+      const res = await window.gemair.aiAgentChat(agentName, cfg, getContextMessages(24));
       agentToolRuns = res.toolRuns || [];
       if (res.ok) { reply = res.reply; chatHistory.push({ role: 'assistant', content: reply }); }
       else { reply = '⚠ ' + humanError(res.error); }
@@ -2602,7 +2838,7 @@ async function handleMessage(text) {
       const toolRun = await runBrowserAgentTool(agentName, task);
       agentToolRuns = [toolRun];
       reply = await (async () => {
-        const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a GemAir resident agent. Report this REAL tool result truthfully and concisely: ${JSON.stringify(toolRun.result)}` }, ...chatHistory.slice(-14)]);
+        const res = await api._webChat([{ role: 'system', content: `You are ${agentName}, a GemAir resident agent. Report this REAL tool result truthfully and concisely: ${JSON.stringify(toolRun.result)}` }, ...getContextMessages(24)]);
         if (res.ok) return res.reply;
         return `[${agentName}] ${toolRun.ok ? '✓' : '✗'} ${toolRun.name}: ${JSON.stringify(toolRun.result)}`;
       })();
@@ -2626,7 +2862,7 @@ async function handleMessage(text) {
     const streamingVoice = (streamVoiceMode === 'edge' || streamVoiceMode === 'neural') && !!window.ttsEngine;
     if (streamingVoice) resetStreamSpeech();
     usedConnectedBrain = useConnected;
-    const res = await api.connectionsChatStream(useConnected, [sys, ...chatHistory.slice(-16)], (delta)=>{
+    const res = await api.connectionsChatStream(useConnected, [sys, ...getContextMessages(48)], (delta)=>{
       if (!streamed) { replyEl.innerHTML = ''; streamed = true; }
       acc += delta;
       replyEl.textContent = acc;
@@ -2649,7 +2885,7 @@ async function handleMessage(text) {
       // C4 resilience: session dies mid-chat -> instant FREE CORE fallback, never dead air
       toast('BRAIN FALLBACK', (useConnected||'').toUpperCase() + ' failed (' + (res.error||'') + ') — switching to FREE CORE', '🔄');
       // try free core
-      const freeRes = await api.aiChatStream(cfg, [sys, ...chatHistory.slice(-16)], (delta)=>{
+      const freeRes = await api.aiChatStream(cfg, [sys, ...getContextMessages(48)], (delta)=>{
         if (!streamed) { replyEl.innerHTML = ''; streamed = true; }
         acc += delta;
         replyEl.textContent = acc;
@@ -2681,7 +2917,7 @@ async function handleMessage(text) {
     const streamVoiceMode = profile.voice?.mode || DEFAULTS.voiceMode;
     const streamingVoice = (streamVoiceMode === 'edge' || streamVoiceMode === 'neural') && !!window.ttsEngine;
     if (streamingVoice) resetStreamSpeech();
-    const res = await api.aiChatStream(cfg, [sys, ...chatHistory.slice(-16)], (delta) => {
+    const res = await api.aiChatStream(cfg, [sys, ...getContextMessages(48)], (delta) => {
       if (!streamed) { replyEl.innerHTML = ''; streamed = true; }
       acc += delta;
       replyEl.textContent = acc;
@@ -3184,7 +3420,7 @@ function startAgentTown() {
   }
 
   // click -> assign task (routes to the agent's own brain)
-  canvas.addEventListener('click', (e) => {
+  addLifecycleListener(canvas, 'click', (e) => {
     const rect = canvas.getBoundingClientRect();
     const sx = W / rect.width, sy = H / rect.height;
     const mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy;
@@ -3815,7 +4051,7 @@ function initTownChrome() {
   const canvas = $('#townCanvas'), tag = $('#pressE');
   let hovered = null;
   if (canvas && tag) {
-    canvas.addEventListener('mousemove', (e) => {
+    addLifecycleListener(canvas, 'mousemove', (e) => {
       const rect = canvas.getBoundingClientRect();
       const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
       const mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy;
@@ -3833,9 +4069,9 @@ function initTownChrome() {
         canvas.style.cursor = '';
       }
     });
-    canvas.addEventListener('mouseleave', () => { hovered = null; tag.classList.remove('show'); });
+    addLifecycleListener(canvas, 'mouseleave', () => { hovered = null; tag.classList.remove('show'); });
   }
-  window.addEventListener('keydown', (e) => {
+  addLifecycleListener(window, 'keydown', (e) => {
     if (e.key.toLowerCase() !== 'e' || e.ctrlKey || e.metaKey || e.altKey) return;
     const ae = document.activeElement;
     if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
@@ -3899,7 +4135,7 @@ function startTownPreview() {
     scheduleViewFrame('assistant', loop);
   }
   scheduleViewFrame('assistant', loop);
-  canvas.addEventListener('click', () => { playSfx('swoosh'); switchView('town'); });
+  addLifecycleListener(canvas, 'click', () => { playSfx('swoosh'); switchView('town'); });
 }
 
 // ---------------------------------------------------------------------------
@@ -3932,7 +4168,7 @@ function renderAccountState() {
 }
 
 function setupAccountControls() {
-  document.addEventListener('gemair:auth', () => { renderAccountState(); updateFairUseIdentity(); });
+  addLifecycleListener(document, 'gemair:auth', () => { renderAccountState(); updateFairUseIdentity(); });
   $('#signInGoogleBtn')?.addEventListener('click', async () => {
     if (!window.webStore || !window.webStore.signInWithGoogle) return;
     const ok = await window.webStore.signInWithGoogle(window.location.origin);
@@ -4578,6 +4814,7 @@ window.__pushToolActivity = pushToolActivity;
 // column shows real-time cards:  web_search … → done ✓ / error ✗
 const toolFeedCards = new Map(); // tool name -> { el, t0 }
 function toolFeedUpdate({ name, state }) {
+  updateToolOperationProgress(name, state);
   const feed = $('#toolFeed');
   if (!feed) return;
   const empty = feed.querySelector('.empty');
@@ -4932,6 +5169,7 @@ function updateMoodIndicator(emo) {
   const names = { joy: 'Joyful', excitement: 'Excited', love: 'Loving', gratitude: 'Grateful', confident: 'Confident', hope: 'Hopeful', relief: 'Relieved', curiosity: 'Curious', neutral: 'Neutral', boredom: 'Bored', tired: 'Tired', anxiety: 'Anxious', sadness: 'Down', fear: 'Afraid', anger: 'Frustrated', guilt: 'Regretful', embarrassment: 'Embarrassed' };
   labelEl.textContent = names[e.emotion] || 'Neutral';
   subEl.textContent = e.confidence > 0.5 ? 'I can feel it — tell me more.' : 'Your current emotional state';
+  renderAdaptivePersonalityState();
 }
 
 function renderMood() {
@@ -5567,6 +5805,91 @@ function renderCostPanel() {
   ).join('');
 }
 
+const UPDATE_CHECK_KEY = 'gemair:last-update-check';
+function trustedReleasePage(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' && url.hostname === 'github.com' && url.pathname.startsWith('/rangwalaaliasgar55-bot/GemAir/releases/') ? url.toString() : null;
+  } catch { return null; }
+}
+async function checkForAppUpdates({ force = false, silent = false } = {}) {
+  const status = $('#updateStatus');
+  const checkButton = $('#checkUpdatesBtn');
+  const viewButton = $('#viewUpdateBtn');
+  if (!window.gemair || !window.gemair.checkForUpdates) {
+    if (status) status.textContent = 'Update checks are available in the desktop app.';
+    return { ok: false, error: 'DESKTOP_ONLY' };
+  }
+  if (status) status.textContent = 'Checking GitHub…';
+  if (checkButton) checkButton.disabled = true;
+  try {
+    const result = await api.checkForUpdates(force);
+    if (!result || !result.ok) {
+      if (status) status.textContent = result && result.error === 'UPDATE_CHECK_TIMEOUT' ? 'Check timed out. Try again later.' : 'Could not check for updates.';
+      if (!silent) toast('UPDATE CHECK', 'GitHub release information is unavailable right now.', '⚠');
+      return result || { ok: false, error: 'UPDATE_CHECK_FAILED' };
+    }
+    const releaseUrl = trustedReleasePage(result.url);
+    if (result.available && !releaseUrl) {
+      if (status) status.textContent = 'Release metadata failed verification.';
+      return { ok: false, error: 'INVALID_RELEASE_URL' };
+    }
+    if (result.available) {
+      if (status) status.textContent = `GemAir ${result.latest} is available (installed: ${result.current}).`;
+      if (viewButton) { viewButton.hidden = false; viewButton.dataset.url = releaseUrl; }
+      toast('UPDATE AVAILABLE', `GemAir ${result.latest} is ready on GitHub.`, '⬆');
+    } else {
+      if (status) status.textContent = `GemAir ${result.current} is up to date.`;
+      if (viewButton) { viewButton.hidden = true; delete viewButton.dataset.url; }
+      if (!silent) toast('UP TO DATE', `GemAir ${result.current} is the latest stable release.`, '✓');
+    }
+    return result;
+  } finally {
+    if (checkButton) checkButton.disabled = false;
+  }
+}
+function maybeCheckForUpdates() {
+  if (!window.gemair || profile.autoUpdateChecks === false) return;
+  let last = 0;
+  try { last = Number(localStorage.getItem(UPDATE_CHECK_KEY)) || 0; } catch {}
+  if (Date.now() - last < 24 * 60 * 60 * 1000) return;
+  try { localStorage.setItem(UPDATE_CHECK_KEY, String(Date.now())); } catch {}
+  setTimeout(() => checkForAppUpdates({ silent: true }).catch(() => {}), 2500);
+}
+
+let lastUsageStats = null;
+async function renderUsageStats() {
+  const summary = $('#usageStatsSummary');
+  if (!summary) return null;
+  if (!window.gemair || !window.gemair.usageGet) { summary.textContent = 'Desktop app only.'; return null; }
+  try {
+    const stats = await api.usageGet();
+    lastUsageStats = stats;
+    if (stats.disabled) { summary.textContent = 'Disabled.'; return stats; }
+    const today = new Date().toISOString().slice(0, 10);
+    const todayCount = stats.days && stats.days[today] ? Number(stats.days[today].count) || 0 : 0;
+    const actionCount = stats.actions ? Object.keys(stats.actions).length : 0;
+    summary.textContent = `${Number(stats.total) || 0} events · ${todayCount} today · ${actionCount} action types`;
+    return stats;
+  } catch {
+    summary.textContent = 'Statistics unavailable.';
+    return null;
+  }
+}
+async function exportUsageStats() {
+  const stats = await renderUsageStats();
+  if (!stats || stats.disabled) { toast('USAGE STATS', 'Enable local statistics and save Settings first.', 'ℹ'); return; }
+  downloadText(JSON.stringify(stats, null, 2), `gemair-usage-${new Date().toISOString().slice(0, 10)}.json`);
+  toast('USAGE STATS', 'Local aggregate counters exported.', '⇩');
+}
+async function clearLocalUsageStats() {
+  if (!window.confirm('Clear all local usage counters? This cannot be undone.')) return;
+  await api.usageClear();
+  lastUsageStats = null;
+  await renderUsageStats();
+  toast('USAGE STATS', 'Local counters cleared.', '✓');
+}
+
 function openSettings() {
   $('#setUserName').value = profile.name || '';
   $('#setBaseURL').value = (profile.ai?.baseURL) || '';
@@ -5582,7 +5905,10 @@ function openSettings() {
   $('#setNeuralVoice').value = profile.voice?.neuralVoice || 'en';
   $('#setSttLang').value = profile.voice?.sttLang || DEFAULTS.sttLang;
   $('#setMemoryOn').checked = profile.memoryOn !== false;
+  $('#setContextStrategy').value = CONTEXT_STRATEGIES[profile.contextStrategy] ? profile.contextStrategy : DEFAULTS.contextStrategy;
   $('#setAllowShell').checked = !!profile.allowShell;
+  $('#setAutoUpdateChecks').checked = profile.autoUpdateChecks !== false;
+  $('#setUsageStats').checked = profile.usageStats === true;
   $('#setAmbientScore').checked = !!profile.ambientScore;
   // T5 — ambient track + volume
   const trackSel = $('#setAmbientTrack');
@@ -5597,10 +5923,13 @@ function openSettings() {
   const localBrain = $('#setLocalBrain');
   if (localBrain) localBrain.checked = !!(window.aiClient && window.aiClient.isLocalReady());
   $('#setScreenAwareness').checked = !!profile.screenAwareness;
+  applyAppearance(profile.appearance || DEFAULTS.appearance);
   $('#setWakeWord').checked = !!profile.wakeWord;
+  $('#setWakeWordText').value = profile.wakeWordText || 'Hey Gem';
   populateVoices(); populateNeuralVoices(); populateEdgeVoices(); updateAiHint();
   syncVoicePresetUi(profile.voice?.preset || 'gem');
   renderCostPanel();
+  renderUsageStats();
   $('#settingsModal').classList.add('open');
 }
 function closeSettings() { $('#settingsModal').classList.remove('open'); }
@@ -6047,6 +6376,11 @@ function bindEvents() {
   $('#downloadClose').addEventListener('click', closeDownload);
   $('#downloadClose2').addEventListener('click', closeDownload);
   $('#settingsDownloadBtn')?.addEventListener('click', openDownload);
+  $('#checkUpdatesBtn')?.addEventListener('click', () => checkForAppUpdates({ force: true }));
+  $('#viewUpdateBtn')?.addEventListener('click', () => {
+    const url = trustedReleasePage($('#viewUpdateBtn').dataset.url);
+    if (url) api.openExternal(url);
+  });
   $('#downloadModal').addEventListener('click', (e) => { if (e.target === $('#downloadModal')) closeDownload(); });
   // let the OS links open in the user's real browser when running in Electron
   $$('#dlGrid .dl-card').forEach((c) => c.addEventListener('click', (e) => {
@@ -6066,6 +6400,10 @@ function bindEvents() {
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#settingsClose').addEventListener('click', closeSettings);
   $('#settingsModal').addEventListener('click', (e) => { if (e.target === $('#settingsModal')) closeSettings(); });
+  $('#appearanceToggle').addEventListener('click', toggleAppearance);
+  $('#refreshUsageBtn').addEventListener('click', renderUsageStats);
+  $('#exportUsageBtn').addEventListener('click', exportUsageStats);
+  $('#clearUsageBtn').addEventListener('click', clearLocalUsageStats);
   $('#saveBtn').addEventListener('click', () => {
     profile.name = $('#setUserName').value.trim() || 'Commander';
     profile.ai = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
@@ -6082,33 +6420,61 @@ function bindEvents() {
     profile.voice.name = $('#setVoice').value;
     profile.voice.sttLang = $('#setSttLang').value;
     profile.memoryOn = $('#setMemoryOn').checked;
+    profile.contextStrategy = CONTEXT_STRATEGIES[$('#setContextStrategy').value] ? $('#setContextStrategy').value : DEFAULTS.contextStrategy;
     profile.allowShell = $('#setAllowShell').checked;
+    profile.autoUpdateChecks = $('#setAutoUpdateChecks').checked;
+    profile.usageStats = $('#setUsageStats').checked;
     profile.ambientScore = $('#setAmbientScore').checked;
     profile.ambientTrack = $('#setAmbientTrack')?.value || profile.ambientTrack || DEFAULTS.ambientTrack;
     profile.ambientVolume = Number($('#setAmbientVolume')?.value ?? ambientVolume());
     profile.screenAwareness = $('#setScreenAwareness').checked;
     profile.wakeWord = $('#setWakeWord').checked;
-    persistProfile().then(() => { updateLinkMode(); closeSettings(); });
+    profile.wakeWordText = ($('#setWakeWordText').value || 'Hey Gem').trim().replace(/\s+/g, ' ').slice(0, 40) || 'Hey Gem';
+    persistProfile().then(() => { updateLinkMode(); renderUsageStats(); closeSettings(); });
     setAmbientScore(profile.ambientScore);
     configureScreenAwareness(profile.screenAwareness);
     updateSttLanguageUi();
+    updateContextMeter();
     configureWakeWord(profile.wakeWord);
   });
   $('#resetBtn').addEventListener('click', async () => {
     profile = makeDefaultProfile();
     setAmbientScore(false);
-    await persistProfile(); applyTheme(DEFAULTS.theme); updateLinkMode(); openSettings();
+    await persistProfile(); applyAppearance(DEFAULTS.appearance); applyTheme(DEFAULTS.theme); updateLinkMode(); openSettings();
   });
   $$('.preset').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
   $('#setBaseURL').addEventListener('input', updateAiHint);
   $('#setApiKey').addEventListener('input', updateAiHint);
 
-  // quick commands
-  $$('.qc').forEach((b) => b.addEventListener('click', () => {
+  // Accessible quick-action toolbar. Arrow keys move within the toolbar;
+  // Alt+1…4 invoke Search, Weather, Note, and Reminder from any view.
+  const quickToolbar = $('#quickCommands');
+  const quickButtons = quickToolbar ? Array.from(quickToolbar.querySelectorAll('.qc')) : [];
+  function activateQuickButton(button) {
+    if (!button) return;
     switchView('assistant');
-    $('#chatInput').value = b.dataset.cmd;
-    $('#chatInput').focus();
-  }));
+    const agentTab = $('.expert-tab[data-etab="agent"]');
+    if (agentTab && !agentTab.classList.contains('active')) agentTab.click();
+    const input = $('#chatInput');
+    input.value = button.dataset.cmd || '';
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    quickButtons.forEach((candidate) => { candidate.tabIndex = candidate === button ? 0 : -1; });
+    playSfx('click');
+  }
+  quickButtons.forEach((button, index) => {
+    button.tabIndex = index === 0 ? 0 : -1;
+    button.addEventListener('click', () => activateQuickButton(button));
+  });
+  quickToolbar?.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const current = Math.max(0, quickButtons.indexOf(document.activeElement));
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? quickButtons.length - 1
+      : (current + (event.key === 'ArrowRight' ? 1 : -1) + quickButtons.length) % quickButtons.length;
+    quickButtons.forEach((button, index) => { button.tabIndex = index === next ? 0 : -1; });
+    quickButtons[next]?.focus();
+  });
 
   // test AI connection
   $('#testConn').addEventListener('click', async () => {
@@ -6171,6 +6537,7 @@ function bindEvents() {
       { id: 'view-town', name: 'Agent Town', detail: 'resident agent office', icon: '▦', type: 'VIEW', action: () => switchView('town') },
       { id: 'view-world', name: 'Global Intel', detail: 'globe, map and headlines', icon: '◍', type: 'VIEW', action: () => switchView('world') },
       { id: 'settings', name: 'Open Settings', detail: 'AI, voice, themes and privacy', icon: '⚙', type: 'ACTION', action: openSettings },
+      { id: 'toggle-appearance', name: `Switch to ${profile.appearance === 'light' ? 'Dark' : 'Light'} Mode`, detail: 'persistent interface appearance', icon: profile.appearance === 'light' ? '🌙' : '☀', type: 'TOGGLE', action: toggleAppearance },
       { id: 'breathing', name: 'Guided Breathing', detail: '4-7-8 calm session', icon: '◌', type: 'ACTION', action: () => $('#breatheModal').classList.add('open') },
       { id: 'weekly-report', name: 'Weekly Report', detail: 'mood, goals and task trends', icon: '▥', type: 'ACTION', action: () => $('#weeklyReportBtn').click() },
       { id: 'panel-weather', name: 'Weather Panel', detail: 'HUD panel', icon: '☁', type: 'PANEL', action: () => openHudDock('weather') },
@@ -6179,7 +6546,7 @@ function bindEvents() {
       { id: 'panel-system', name: 'Live Telemetry Panel', detail: 'HUD panel', icon: '⌁', type: 'PANEL', action: () => openHudDock('system') },
       { id: 'panel-news', name: 'Headlines Panel', detail: 'HUD panel', icon: '◎', type: 'PANEL', action: () => openHudDock('news') },
       { id: 'toggle-memory', name: `${profile.memoryOn === false ? 'Enable' : 'Disable'} Auto Memory`, detail: 'settings toggle', icon: '🧠', type: 'TOGGLE', action: () => { profile.memoryOn = profile.memoryOn === false; persistProfile(); toast('MEMORY', profile.memoryOn ? 'Auto memory enabled.' : 'Auto memory disabled.', '🧠'); } },
-      { id: 'toggle-wake', name: `${profile.wakeWord ? 'Disable' : 'Enable'} Wake Word`, detail: 'say “Hey Gem”', icon: '🎙', type: 'TOGGLE', action: () => { profile.wakeWord = !profile.wakeWord; persistProfile(); configureWakeWord(profile.wakeWord); } },
+      { id: 'toggle-wake', name: `${profile.wakeWord ? 'Disable' : 'Enable'} Wake Word`, detail: `say “${profile.wakeWordText || 'Hey Gem'}”`, icon: '🎙', type: 'TOGGLE', action: () => { profile.wakeWord = !profile.wakeWord; persistProfile(); configureWakeWord(profile.wakeWord); } },
       { id: 'toggle-score', name: `${profile.ambientScore ? 'Disable' : 'Enable'} Ambient Score`, detail: 'local synthesized audio', icon: '♫', type: 'TOGGLE', action: () => { profile.ambientScore = !profile.ambientScore; setAmbientScore(profile.ambientScore); persistProfile(); } },
       ...AGENTS.map((a) => ({ id: 'agent-' + a.name.toLowerCase(), name: 'Assign ' + a.name, detail: a.role, icon: a.emoji, type: 'AGENT', action: () => { switchView('assistant'); $('#chatInput').value = '@' + a.name + ' '; $('#chatInput').focus(); } })),
       ...WORKFLOWS.map((w) => ({ id: w.id, name: w.name, detail: w.detail, icon: w.icon, type: 'WORKFLOW', action: () => { switchView('assistant'); sendMessage(w.prompt); } })),
@@ -6270,11 +6637,15 @@ function bindEvents() {
   // keyboard shortcuts + Konami easter egg
   const konami = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
   let konamiIndex = 0;
-  window.addEventListener('keydown', (e) => {
+  addLifecycleListener(window, 'keydown', (e) => {
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     konamiIndex = key === konami[konamiIndex] ? konamiIndex + 1 : (key === konami[0] ? 1 : 0);
     if (konamiIndex === konami.length) { konamiIndex = 0; triggerRgbBurst(); }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
+    if (e.altKey && !e.ctrlKey && !e.metaKey && /^[1-4]$/.test(e.key)) {
+      const quickButton = quickButtons.find((button) => button.dataset.shortcut === e.key);
+      if (quickButton) { e.preventDefault(); activateQuickButton(quickButton); }
+    }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') { $('#chatInput').focus(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === ',') { openSettings(); }
     // U4: Escape now closes EVERY modal (breathe / report / theme included),
@@ -6448,8 +6819,10 @@ function configureWakeWord(enabled) {
       for (let i = event.resultIndex || 0; i < event.results.length; i++) {
         const transcript = (event.results[i][0].transcript || '').toLowerCase().trim();
         if (transcript) { stopSpeaking(); wakeBackoff = 250; } // barge-in wins; healthy loop resets backoff
-        if (/\bhey\s+gem(?:air)?\b|\bhi\s+gem(?:air)?\b/.test(transcript)) {
-          addMessage('system-msg', 'Wake word “Hey Gem” detected — listening.');
+        const wakePhrase = String(profile.wakeWordText || 'Hey Gem').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+        const normalizedTranscript = transcript.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+        if (wakePhrase && (` ${normalizedTranscript} `).includes(` ${wakePhrase} `)) {
+          addMessage('system-msg', `Wake phrase “${profile.wakeWordText || 'Hey Gem'}” detected — listening.`);
           startAiLoop();
           setCaption('user', transcript, { autoHide: 1600 });
           break;
@@ -6475,7 +6848,7 @@ function configureWakeWord(enabled) {
   if (wakeArmed) return;
   wakeArmed = true;
   try { wakeRecognition.start(); } catch (e) {}
-  addMessage('system-msg', 'Wake word armed — say “Hey Gem” anytime.');
+  addMessage('system-msg', `Wake word armed — say “${profile.wakeWordText || 'Hey Gem'}” anytime.`);
 }
 
 function stopListening() {
@@ -6866,10 +7239,20 @@ async function boot() {
 
   toast('GEMAIR', 'GemAir is online — completely free out of the box!', '✨');
 
+  try {
+    const recovery = await api.consumeRecovery();
+    if (recovery && (recovery.recovered || (recovery.restored && recovery.restored.length))) {
+      const restored = recovery.restored && recovery.restored.length ? ` Restored: ${recovery.restored.join(', ')}.` : '';
+      addMessage('system-msg', `♻ GemAir recovered safely after an unexpected interruption.${restored} Your local profile and memory are available.`);
+      toast('STATE RECOVERED', 'Local profile and memory passed recovery checks.', '♻');
+    }
+  } catch (error) { console.warn('[recovery-status]', error); }
+
   pollSystem(); setInterval(pollSystem, 2500);
   recognition = initRecognition();
   if (speechSynthesis) speechSynthesis.onvoiceschanged = populateVoices;
   try { $('#verTag').textContent = 'v' + (await api.version()); } catch (e) {}
+  maybeCheckForUpdates();
 
   if (profile.wakeWord) configureWakeWord(true);
   configureScreenAwareness(!!profile.screenAwareness);
@@ -6921,8 +7304,8 @@ function runBootSequence() {
       if (event && event.type === 'keydown' && ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) return;
       finish();
     };
-    window.addEventListener('keydown', skip, true);
-    window.addEventListener('pointerdown', skip, true);
+    addLifecycleListener(window, 'keydown', skip, true);
+    addLifecycleListener(window, 'pointerdown', skip, true);
 
     trace.forEach(([text, cls], i) => later(() => {
       if (!bios || finished) return;
@@ -6956,9 +7339,20 @@ function bindSoulSliders() {
   pairs.forEach(([sel, key, valSel]) => {
     const el = $(sel); if (!el) return;
     el.value = profile.soul?.[key] ?? el.value;
-    const update = () => { $(valSel).textContent = el.value; profile.soul = profile.soul || {}; profile.soul[key] = Number(el.value); persistProfile(); animateCircuits(); };
+    const update = () => { $(valSel).textContent = el.value; profile.soul = profile.soul || {}; profile.soul[key] = Number(el.value); persistProfile(); animateCircuits(); renderAdaptivePersonalityState(); };
     el.addEventListener('input', update); update();
   });
+  const adaptive = $('#soulAdaptive');
+  if (adaptive) {
+    adaptive.checked = profile.adaptivePersonality !== false;
+    adaptive.addEventListener('change', () => {
+      profile.adaptivePersonality = adaptive.checked;
+      persistProfile();
+      renderAdaptivePersonalityState();
+      toast('SOUL', adaptive.checked ? 'Mood-adaptive personality enabled.' : 'Using manual personality sliders only.', '◇');
+    });
+  }
+  renderAdaptivePersonalityState();
 }
 
 
@@ -7640,6 +8034,9 @@ function renderPlanAct(plan, state='preview') {
   if (showBtn) showBtn.textContent = state==='preview' ? 'SHOW PLAN' : 'PLAN';
   if (runBtn) runBtn.textContent = state==='running' ? 'RUNNING…' : 'RUN';
   if (runBtn) runBtn.disabled = state==='running';
+  const processed = plan.filter((step) => ['done', 'error', 'skipped'].includes(step.status)).length;
+  if (state === 'running') showOperationProgress(`Plan step ${Math.min(plan.length, processed + 1)} of ${plan.length}`, plan.length ? processed / plan.length * 100 : 0);
+  else if (state === 'done') { showOperationProgress('Plan complete', 100); hideOperationProgress(1800); }
 }
 
 async function executePlanAct(plan) {
@@ -7797,7 +8194,7 @@ function updateNowCard() {
 // fake-DOM selfcheck both skip this safely.
 try {
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-    window.addEventListener('load', () => { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch {} });
+    addLifecycleListener(window, 'load', () => { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch {} });
   }
 } catch {}
 
