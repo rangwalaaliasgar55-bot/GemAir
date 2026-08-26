@@ -42,7 +42,6 @@ contextBridge.exposeInMainWorld('gemair', {
   checkForUpdates: (force = false) => ipcRenderer.invoke('app:checkForUpdates', !!force),
   version: () => ipcRenderer.invoke('app:version'),
 
-  // memory
   memoryGet: () => ipcRenderer.invoke('memory:get'),
   memoryAppend: (role, content) => ipcRenderer.invoke('memory:append', role, content),
   memoryClearTranscript: () => ipcRenderer.invoke('memory:clearTranscript'),
@@ -64,29 +63,24 @@ contextBridge.exposeInMainWorld('gemair', {
   memoryAddInstruction: (text) => ipcRenderer.invoke('memory:addInstruction', text),
   memoryDeleteInstruction: (id) => ipcRenderer.invoke('memory:deleteInstruction', id),
 
-  // processes (S2) — read-only scan + guarded kill
   listProcesses: (limit) => ipcRenderer.invoke('proc:list', limit),
   killProcess: (pid, name) => ipcRenderer.invoke('proc:kill', pid, name),
 
-  // tasks (S3)
   memoryListTodos: () => ipcRenderer.invoke('memory:listTodos'),
   memoryAddTodo: (text) => ipcRenderer.invoke('memory:addTodo', text),
   memoryToggleTodo: (id) => ipcRenderer.invoke('memory:toggleTodo', id),
   memoryDeleteTodo: (id) => ipcRenderer.invoke('memory:deleteTodo', id),
 
-  // window bounds memory (T4)
   saveWindowBounds: () => ipcRenderer.invoke('win:saveBounds'),
-
-  // files
   saveCode: (content, suggestedName) => ipcRenderer.invoke('file:saveCode', content, suggestedName),
 
-  // report & backup
   generateReport: () => ipcRenderer.invoke('report:generate'),
   needsCheckIn: () => ipcRenderer.invoke('report:needsCheckIn'),
   exportMemory: () => ipcRenderer.invoke('memory:export'),
   importMemory: (data) => ipcRenderer.invoke('memory:import', data),
 
-  // 2.4 Connections (C, D, H)
+  connectionsOauthChatGPT: () => ipcRenderer.invoke('connections:oauthChatGPT'),
+  connectionsOauthGemini: () => ipcRenderer.invoke('connections:oauthGemini'),
   connectionsGetStatus: () => ipcRenderer.invoke('connections:getStatus'),
   connectionsSetPriority: (p) => ipcRenderer.invoke('connections:setPriority', p),
   connectionsAcknowledgeWarning: () => ipcRenderer.invoke('connections:acknowledgeWarning'),
@@ -111,14 +105,12 @@ contextBridge.exposeInMainWorld('gemair', {
     });
   },
 
-  // Modes (M)
   modesList: () => ipcRenderer.invoke('modes:list'),
   modesGet: (name) => ipcRenderer.invoke('modes:get', name),
   modesSave: (mode) => ipcRenderer.invoke('modes:save', mode),
   modesDelete: (name) => ipcRenderer.invoke('modes:delete', name),
   modesApply: (name) => ipcRenderer.invoke('modes:apply', name),
 
-  // Desktop tools (A)
   desktopListWindows: () => ipcRenderer.invoke('desktop:listWindows'),
   desktopGetFocused: () => ipcRenderer.invoke('desktop:getFocused'),
   desktopLaunchApp: (name, args) => ipcRenderer.invoke('desktop:launchApp', name, args),
@@ -129,7 +121,6 @@ contextBridge.exposeInMainWorld('gemair', {
   desktopOpenSite: (url, browser) => ipcRenderer.invoke('desktop:openSite', url, browser),
   desktopSetVolume: (args) => ipcRenderer.invoke('desktop:setVolume', args),
 
-  // events (main -> renderer)
   onReminder: (cb) => subscribeIpc('reminder:due', cb),
   onWakeToggle: (cb) => subscribeIpc('wake:toggle', cb),
   onActivity: (cb) => subscribeIpc('ai:activity', cb),
