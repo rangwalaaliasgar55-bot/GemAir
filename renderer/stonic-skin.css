@@ -1,0 +1,43 @@
+/* GemAir — Stonic-inspired HUD skin layer
+   Load after style.css. Works with themes.js tokens. */
+body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(0, 229, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+body > * { position: relative; z-index: 1; }
+
+.panel, .card, [class*="panel"], [class*="hud"] {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #3bc9ff) 25%, transparent),
+              0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.stonic-status-strip {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 14px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim, #8a9bb2);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent, #3bc9ff) 30%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #3bc9ff) 12%, transparent), transparent);
+}
+.stonic-status-strip .led {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent, #3bc9ff);
+  box-shadow: 0 0 10px var(--accent, #3bc9ff);
+  animation: stonic-pulse 2s ease-in-out infinite;
+}
+@keyframes stonic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

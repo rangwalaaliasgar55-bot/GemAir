@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Download GemAir — JARVIS-style desktop AI</title>
+  <style>
+    :root { --bg:#050a12; --accent:#00e5ff; --text:#e8f4ff; --muted:#6b9bb8; --card:#0a1220; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:16px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--text);
+      min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:48px 20px; }
+    h1 { font-size:2rem; letter-spacing:.06em; margin:0 0 8px; color:var(--accent); }
+    p { color:var(--muted); max-width:520px; text-align:center; }
+    .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); width:min(720px,100%); margin-top:32px; }
+    a.card { display:block; padding:20px; background:var(--card); border:1px solid #1a3a5c; border-radius:12px;
+      color:var(--text); text-decoration:none; text-align:center; transition:.2s; }
+    a.card:hover { border-color:var(--accent); box-shadow:0 0 24px rgba(0,229,255,.25); }
+    a.card strong { display:block; color:var(--accent); margin-bottom:6px; }
+    footer { margin-top:40px; color:var(--muted); font-size:13px; }
+    code { background:#0f1a2e; padding:2px 6px; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <h1>GEMAIR</h1>
+  <p>Free open-source sci-fi desktop AI. Voice, Agent Town, System Core, HUD themes. No subscription.</p>
+  <div class="grid">
+    <a class="card" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
+      <strong>Windows</strong>
+      GemAir-Setup.exe
+    </a>
+    <a class="card" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
+      <strong>macOS</strong>
+      GemAir.dmg
+    </a>
+    <a class="card" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
+      <strong>Linux</strong>
+      AppImage / .deb
+    </a>
+  </div>
+  <p style="margin-top:28px">Or from source:</p>
+  <p><code>git clone https://github.com/rangwalaaliasgar55-bot/GemAir.git && cd GemAir && npm i && npm start</code></p>
+  <footer>
+    Releases: <a href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases" style="color:var(--accent)">github.com/…/GemAir/releases</a>
+    · MIT · Not affiliated with Stonic AI
+  </footer>
+</body>
+</html>
