@@ -5496,13 +5496,13 @@ function setupOnboarding() {
   $('#onboardSkip')?.addEventListener('click', () => onboardingFinish(true));
   $('#onboardName')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onboardingAdvance(); } });
   overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') onboardingFinish(true); });
-  $('.onboard-voice').forEach((b) => b.addEventListener('click', () => {
+  $$('.onboard-voice').forEach((b) => b.addEventListener('click', () => {
     playSfx('click');
     const g = b.dataset.gender === 'male' ? 'male' : 'female';
     profile.voiceGender = g;
     profile.avatarGender = g;
     if (window.ttsEngine) window.ttsEngine.gender = g;
-    $('.onboard-voice').forEach((x) => x.classList.toggle('active', x === b));
+    $$('.onboard-voice').forEach((x) => x.classList.toggle('active', x === b));
     try { speak(g === 'male' ? 'Male voice online. I am Gem.' : 'Female voice online. I am Gem.'); } catch (e) {}
   }));
   $('#replayOnboardBtn')?.addEventListener('click', () => { playSfx('click'); launchOnboarding(); });
@@ -5523,7 +5523,7 @@ function launchOnboarding() {
 
 function onboardingPaint() {
   if (!onboard) return;
-  $('.onboard-step').forEach((s) => s.classList.toggle('active', s.dataset.ostep === ONBOARD_STEPS[onboard.step]));
+  $$('.onboard-step').forEach((s) => s.classList.toggle('active', s.dataset.ostep === ONBOARD_STEPS[onboard.step]));
   const dots = $('#onboardDots');
   if (dots) dots.innerHTML = ONBOARD_STEPS.map((s, i) => '<i class="' + (i <= onboard.step ? 'on' : '') + '"></i>').join('');
   const back = $('#onboardBack');
@@ -7763,7 +7763,7 @@ async function saveModeFromDesigner() {
   const appsRaw = ($('#modeAppsInput')?.value||'').trim();
   const apps = appsRaw ? appsRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
   const sites = [];
-  $('#modeSitesList [data-site-url]').forEach((input)=>{
+  $$('#modeSitesList [data-site-url]').forEach((input)=>{
     const url = input.value.trim();
     if (!url) return;
     const row = input.closest('.mode-site-row');
