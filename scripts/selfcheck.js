@@ -16,6 +16,7 @@
      5. no $('#id') that resolves to null
      6. no dead $$() selectors
      7. the app boots AND the controls actually get wired
+     8. no $().forEach multi-element loops (querySelector returns ONE element; use $$())
    ============================================================ */
 'use strict';
 
@@ -180,6 +181,13 @@ for (const sel of new Set([...appJs.matchAll(/\$\$\(\s*['"]([^'"]+)['"]\s*\)/g)]
 }
 if (dead.length) fail(`dead $$() selectors: ${dead.join(', ')}`);
 else ok('all $$() selectors match something');
+
+// No $(sel).forEach loops — querySelector returns ONE element, so chaining
+// .forEach() throws at runtime. This bug twice shipped a dead control
+// (first-run wizard, mode designer) without breaking the boot.
+const singleForEach = [...new Set([...appJs.matchAll(/(?<!\$)\$\(\s*['"`]([^'"`]+)['"`]\s*\)\.forEach/g)].map((m) => m[1]))];
+if (singleForEach.length) fail(`$() chained with .forEach — use $$(): ${singleForEach.join(', ')}`);
+else ok('no $().forEach multi-element loops');
 
 // ---------------------------------------------------------------------------
 // V2 — 2.2 surface checks. Every feature added this round has at least one
