@@ -154,6 +154,7 @@ const api = {
     if (window.gemair) return window.gemair.aiOffline(text);
     return { ok: true, reply: await offlineBrain(text) };
   },
+  async listLocalModels() { if (window.gemair && window.gemair.listLocalModels) return window.gemair.listLocalModels(); return { models: [] }; },
 
   // memory (Electron IPC | browser localStorage + optional Supabase)
   async memoryGet() { if (window.gemair) return window.gemair.memoryGet(); return window.webStore ? window.webStore.get() : JSON.parse(JSON.stringify(MOCK_MEMORY)); },
@@ -238,6 +239,16 @@ const api = {
     ] };
   },
   onHudPanel(cb) { return registerRendererDisposer(window.gemair && window.gemair.onHudPanel ? window.gemair.onHudPanel(cb) : null); },
+  // 2.5 Computer-Use Agent (keyless)
+  async computerUse(task, config) { if (window.gemair && window.gemair.computerUse) return window.gemair.computerUse(task, config || {}); return { ok: false, error: 'Desktop app with a local model is required for computer control.' }; },
+  async computerUseStop() { if (window.gemair && window.gemair.computerUseStop) return window.gemair.computerUseStop(); return { ok: true }; },
+  async computerUseStatus() { if (window.gemair && window.gemair.computerUseStatus) return window.gemair.computerUseStatus(); return { active: false }; },
+  async computerUseScreen() { if (window.gemair && window.gemair.computerUseScreen) return window.gemair.computerUseScreen(); return { error: 'desktop_only' }; },
+  onComputerUseEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onComputerUseEvent ? window.gemair.onComputerUseEvent(cb) : null); },
+  async codingUse(task, workingDir, config) { if (window.gemair && window.gemair.codingUse) return window.gemair.codingUse(task, workingDir, config || {}); return { ok: false, error: 'Desktop app with a local model is required for the Coding Agent.' }; },
+  async codingUseStop() { if (window.gemair && window.gemair.codingUseStop) return window.gemair.codingUseStop(); return { ok: true }; },
+  async codingUseStatus() { if (window.gemair && window.gemair.codingUseStatus) return window.gemair.codingUseStatus(); return { active: false }; },
+  onCodingUseEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onCodingUseEvent ? window.gemair.onCodingUseEvent(cb) : null); },
   // 2.4 Connections
   async connectionsGetStatus() { if (window.gemair && window.gemair.connectionsGetStatus) return window.gemair.connectionsGetStatus(); return { chatgpt: { connected: false, dot: 'DISCONNECTED' }, gemini: { connected: false, dot: 'DISCONNECTED' }, freeCore: { connected: true, dot: 'FALLBACK' }, meta: { priority: 'free' } }; },
   async connectionsSetPriority(p) { if (window.gemair) return window.gemair.connectionsSetPriority(p); },
@@ -1521,25 +1532,62 @@ function applyTheme(t) {
 
 // ---------------------------------------------------------------------------
 // AI provider detection — which brain is the endpoint talking to?
+// Uses the shared catalog in providers.js (single source of truth) with a
+// small legacy fallback for older detection strings.
 // ---------------------------------------------------------------------------
 function detectProvider(base) {
+  if (window.GemAirProviders && window.GemAirProviders.detect) {
+    const id = window.GemAirProviders.detect(base);
+    // normalize legacy ids used by older call sites
+    if (id === 'chatgpt') return 'openai';
+    if (id === 'local') return 'ollama';
+    return id;
+  }
   const b = (base || '').toLowerCase();
   if (!b) return 'free';
   if (b.includes('generativelanguage.googleapis.com')) return 'gemini';
-  if (b.includes('api.openai.com')) return 'chatgpt';
+  if (b.includes('api.openai.com')) return 'openai';
   if (b.includes('api.anthropic.com')) return 'claude';
   if (b.includes('api.deepseek.com')) return 'deepseek';
   if (b.includes('api.mistral.ai')) return 'mistral';
   if (b.includes('api.groq.com')) return 'groq';
   if (b.includes('openrouter.ai')) return 'openrouter';
-  if (/localhost|127\.0\.0\.1/.test(b)) return 'local';
+  if (b.includes('cerebras.ai')) return 'cerebras';
+  if (b.includes('sambanova.ai')) return 'sambanova';
+  if (b.includes('api.together.xyz')) return 'together';
+  if (b.includes('api.x.ai')) return 'xai';
+  if (b.includes('api.z.ai')) return 'zai';
+  if (b.includes('hyperbolic.xyz')) return 'hyperbolic';
+  if (b.includes('deepinfra.com')) return 'deepinfra';
+  if (b.includes('siliconflow.com')) return 'siliconflow';
+  if (b.includes('novita.ai')) return 'novita';
+  if (b.includes('fireworks.ai')) return 'fireworks';
+  if (b.includes('integrate.api.nvidia.com')) return 'nvidia';
+  if (b.includes('router.huggingface.co')) return 'hf';
+  if (/localhost|127\.0\.0\.1/.test(b)) return 'ollama';
   return 'custom';
 }
 
+function providerNameOf(prov) {
+  if (window.GemAirProviders && window.GemAirProviders.name) return window.GemAirProviders.name(prov);
+  const legacy = {
+    gemini: 'Google Gemini', openai: 'ChatGPT / OpenAI', chatgpt: 'ChatGPT / OpenAI', claude: 'Anthropic Claude',
+    deepseek: 'DeepSeek', mistral: 'Mistral', groq: 'Groq', openrouter: 'OpenRouter',
+    cerebras: 'Cerebras', sambanova: 'SambaNova', together: 'Together AI', xai: 'xAI (Grok)',
+    zai: 'Z.AI (GLM)', hyperbolic: 'Hyperbolic', deepinfra: 'DeepInfra', siliconflow: 'SiliconFlow',
+    novita: 'Novita AI', fireworks: 'Fireworks AI', nvidia: 'NVIDIA NIM', hf: 'Hugging Face',
+    ollama: 'Local model', local: 'Local model', custom: 'Custom endpoint', free: 'Free Core'
+  };
+  return legacy[prov] || prov || '—';
+}
+
 const PROVIDER_NAMES = {
-  gemini: 'Google Gemini', chatgpt: 'ChatGPT / OpenAI', claude: 'Anthropic Claude',
-  deepseek: 'DeepSeek', mistral: 'Mistral',
-  groq: 'Groq', openrouter: 'OpenRouter', local: 'Local model', custom: 'Custom endpoint'
+  gemini: 'Google Gemini', openai: 'ChatGPT / OpenAI', chatgpt: 'ChatGPT / OpenAI', claude: 'Anthropic Claude',
+  deepseek: 'DeepSeek', mistral: 'Mistral', groq: 'Groq', openrouter: 'OpenRouter',
+  cerebras: 'Cerebras', sambanova: 'SambaNova', together: 'Together AI', xai: 'xAI (Grok)',
+  zai: 'Z.AI (GLM)', hyperbolic: 'Hyperbolic', deepinfra: 'DeepInfra', siliconflow: 'SiliconFlow',
+  novita: 'Novita AI', fireworks: 'Fireworks AI', nvidia: 'NVIDIA NIM', hf: 'Hugging Face',
+  local: 'Local model', ollama: 'Local model', custom: 'Custom endpoint', free: 'Free Core'
 };
 
 // Settings → HUD THEMES picker, generated from the string theme table.
@@ -2292,8 +2340,10 @@ function updateLinkMode() {
   const hasKey = !!(cfg.apiKey && cfg.baseURL);
   const isLocal = !!(cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL));
   const prov = detectProvider(cfg.baseURL);
+  const provId = prov === 'chatgpt' ? 'openai' : prov;
   if (isLocal) el.textContent = '— LOCAL';
-  else if (hasKey && ['gemini', 'chatgpt', 'claude', 'deepseek', 'mistral', 'groq', 'openrouter'].includes(prov)) el.textContent = '— ' + prov.toUpperCase();
+  else if (hasKey && window.GemAirProviders && window.GemAirProviders.byId(provId)) el.textContent = '— ' + (window.GemAirProviders.name(provId) || provId).toUpperCase();
+  else if (hasKey && ['gemini', 'openai', 'chatgpt', 'claude', 'deepseek', 'mistral', 'groq', 'openrouter'].includes(prov)) el.textContent = '— ' + prov.toUpperCase();
   else if (hasKey) el.textContent = '— LINK ONLINE';
   else if (!isElectron) el.textContent = '— FREE CORE';
   else el.textContent = '— OFFLINE BRAIN';
@@ -2587,6 +2637,60 @@ function updateToolOperationProgress(name, state) {
   else hideOperationProgress(500);
 }
 
+// GemAir slash commands — /models, /providers, /use <model>, /local
+async function handleSlashCommand(text) {
+  if (!text || !text.startsWith('/')) return null;
+  const cmd = text.toLowerCase().trim();
+  const replyLine = (msg, ico = '💡') => { addMessage('ai', msg); speak(msg.replace(/[🚀🆓⚡👨‍💻🤖🧠🪶📄]/g, '')); };
+
+  if (cmd === '/models' || cmd.startsWith('/models ')) {
+    const q = (text.split(/\s+/).slice(1).join(' ') || '').toLowerCase();
+    const rows = (window.GemAirProviders && window.GemAirProviders.FREE_MODELS) || [];
+    const list = rows.filter((m) => !q || m.model.toLowerCase().includes(q) || m.providerName.toLowerCase().includes(q));
+    const lines = list.slice(0, 18).map((m) => `• ${m.providerName} — ${m.model}  [FREE]`);
+    replyLine('/models  (free, OpenAI-compatible)\n' + (lines.length ? lines.join('\n') : 'No free models match that filter.') + '\n\nType /use <model> to activate one, or open Settings → AI BRAIN for the full picker.');
+    return true;
+  }
+
+  if (cmd === '/providers') {
+    const rows = (window.GemAirProviders && window.GemAirProviders.PROVIDERS) || [];
+    replyLine('/providers  (all, free first)\n' + rows.map((p) => `• ${p.name}${p.free ? '  [FREE]' : ''}${p.local ? '  [LOCAL]' : ''}`).join('\n') + '\n\nFree models: type /models. Local keyless: /local.');
+    return true;
+  }
+
+  if (cmd.startsWith('/use ')) {
+    const model = text.slice(5).trim();
+    if (!model) { replyLine('Usage: /use <model>  e.g. /use meta-llama/llama-3.3-70b-instruct'); return true; }
+    // Find the free model to get its baseURL; else guess.
+    const rows = (window.GemAirProviders && window.GemAirProviders.FREE_MODELS) || [];
+    let entry = rows.find((m) => m.model.toLowerCase() === model.toLowerCase() || m.model.toLowerCase().includes(model.toLowerCase()));
+    if (entry) {
+      applyFreeModel(entry);
+      replyLine(`Activated ${entry.providerName} · ${entry.model} (free). It may need a free key from the provider — check Settings → AI BRAIN.`);
+    } else {
+      $('#setModel').value = model;
+      renderModelSelect();
+      replyLine(`Model set to "${model}". If you need a specific provider's base URL, use /models to pick a free one.`);
+    }
+    return true;
+  }
+
+  if (cmd === '/local') {
+    const box = await api.listLocalModels().catch(() => ({ models: [] }));
+    const local = (box && box.models) || [];
+    if (!local.length) { replyLine('No local model detected. Start Ollama and `ollama pull llama3` for a fully keyless local brain — no key, no vendor.'); return true; }
+    const names = local.map((m) => m.name).join(', ');
+    $('#setBaseURL').value = 'http://localhost:11434/v1';
+    $('#setModel').value = local[0].name;
+    $('#setApiKey').value = '';
+    updateAiHint(); renderModelSelect();
+    replyLine('Local models found: ' + names + '\nActivated ' + local[0].name + ' — fully keyless & offline.');
+    return true;
+  }
+
+  return null;
+}
+
 async function sendMessage(text) {
   text = (text || '').trim();
   if (!text) return;
@@ -2616,6 +2720,10 @@ async function sendMessage(text) {
 }
 
 async function handleMessage(text) {
+  // GemAir slash commands (no AI needed)
+  const slash = await handleSlashCommand(text);
+  if (slash) return slash;
+
   // First run: Gem asked for a name, so this reply IS the name — unless it's
   // just a greeting ("hey", "hi", …), which is never saved as a name: answer
   // it naturally and keep waiting for the real name.
@@ -4323,7 +4431,7 @@ function showRatingPrompt(missions) {
 // mouse. Every modal now announces itself, traps Tab, restores focus on close
 // and answers Escape.
 // ---------------------------------------------------------------------------
-const MODAL_IDS = ['themeModal', 'settingsModal', 'downloadModal', 'breatheModal', 'reportModal', 'experimentalWarningModal', 'reconnectModal'];
+const MODAL_IDS = ['themeModal', 'settingsModal', 'downloadModal', 'breatheModal', 'reportModal', 'experimentalWarningModal', 'reconnectModal', 'agentModal', 'codingAgentModal'];
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 let lastFocusedBeforeModal = null;
 
@@ -5923,6 +6031,20 @@ function openSettings() {
   const localBrain = $('#setLocalBrain');
   if (localBrain) localBrain.checked = !!(window.aiClient && window.aiClient.isLocalReady());
   $('#setScreenAwareness').checked = !!profile.screenAwareness;
+  // 2.5 Desktop Agent (computer control)
+  const setComputerUse = $('#setComputerUse');
+  if (setComputerUse) setComputerUse.checked = !!profile.allowComputerUse;
+  const setComputerUseAuto = $('#setComputerUseAuto');
+  if (setComputerUseAuto) setComputerUseAuto.checked = profile.computerUseAuto === true;
+  const setComputerUseSteps = $('#setComputerUseSteps');
+  if (setComputerUseSteps) setComputerUseSteps.value = String(Math.max(1, Math.min(20, Number(profile.computerUseMaxSteps) || 8)));
+  // 2.5 Coding Agent
+  const setCodingAgent = $('#setCodingAgent');
+  if (setCodingAgent) setCodingAgent.checked = !!profile.allowCodingAgent;
+  const setCodingAgentAuto = $('#setCodingAgentAuto');
+  if (setCodingAgentAuto) setCodingAgentAuto.checked = profile.codingAgentAuto === true;
+  const setCodingAgentSteps = $('#setCodingAgentSteps');
+  if (setCodingAgentSteps) setCodingAgentSteps.value = String(Math.max(1, Math.min(20, Number(profile.codingAgentMaxSteps) || 10)));
   applyAppearance(profile.appearance || DEFAULTS.appearance);
   $('#setWakeWord').checked = !!profile.wakeWord;
   $('#setWakeWordText').value = profile.wakeWordText || 'Hey Gem';
@@ -5930,9 +6052,148 @@ function openSettings() {
   syncVoicePresetUi(profile.voice?.preset || 'gem');
   renderCostPanel();
   renderUsageStats();
+  // 5.x — AI provider catalog: free-model picker + local Ollama list + model select
+  renderFreeModelsList();
+  renderModelSelect();
+  refreshOllamaModels();
   $('#settingsModal').classList.add('open');
 }
 function closeSettings() { $('#settingsModal').classList.remove('open'); }
+
+// ---------------------------------------------------------------------------
+// 2.5 Desktop Agent — Computer Use (keyless)
+// ---------------------------------------------------------------------------
+function openAgentModal() {
+  const modal = $('#agentModal');
+  if (!modal) return;
+  modal.classList.add('open');
+  if (profile.allowComputerUse) {
+    agentSetStatusLine('Desktop Agent is ON. Describe a task and hit RUN.', 'ok');
+  } else {
+    agentSetStatusLine('Desktop Agent is OFF — enable it in Settings (DESKTOP & MODES). I can still capture the screen.', 'warn');
+  }
+  refreshAgentBrainChip();
+}
+function closeAgentModal() { $('#agentModal').classList.remove('open'); }
+function logAgentLine(cls, text) {
+  const log = $('#agentLog');
+  if (!log) return;
+  const div = log.querySelector('.empty, .agent-entry:last-child');
+  const entry = document.createElement('div');
+  entry.className = 'agent-entry ' + (cls || '');
+  entry.textContent = text;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+function agentSetStatusLine(text, kind) {
+  const line = $('#agentStatusLine');
+  if (!line) return;
+  line.innerHTML = `<div class="empty" style="color:var(--text-${kind === 'ok' ? 'ok' : 'warn'},inherit)">${escapeHtml(text)}</div>`;
+}
+async function refreshAgentBrainChip() {
+  const chip = $('#agentBrainChip');
+  if (!chip) return;
+  const cfg = profile.ai || {};
+  if (cfg.apiKey && cfg.baseURL) chip.textContent = 'User key (' + (cfg.model || 'model') + ')';
+  else if (cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL)) chip.textContent = 'Local (Ollama) — keyless';
+  else chip.textContent = 'Auto: local Ollama → free';
+  chip.classList.add('fallback');
+}
+let agentRunning = false;
+function setAgentRunning(running) {
+  agentRunning = running;
+  const runBtn = $('#agentRunBtn');
+  const stopBtn = $('#agentStopBtn');
+  if (runBtn) runBtn.disabled = running;
+  if (stopBtn) stopBtn.disabled = !running;
+}
+async function runDesktopAgent() {
+  const task = ($('#agentTaskInput')?.value || '').trim();
+  if (!task) { logAgentLine('warn', '→ Enter a task first.'); $('#agentTaskInput')?.focus(); return; }
+  const auto = $('#agentAutoApprove')?.checked;
+  // Persist the auto-approve preference immediately (await so the main process reads it).
+  if (auto) profile.computerUseAuto = true; else profile.computerUseAuto = false;
+  await persistProfile().catch(() => {});
+  const status = await api.computerUseStatus().catch(() => ({ active: false }));
+  if (status.active) { logAgentLine('warn', '→ A desktop agent run is already in progress.'); return; }
+  logAgentLine('', '▶ TASK: ' + task);
+  logAgentLine('', 'Agent starting…');
+  setAgentRunning(true);
+  try {
+    const res = await api.computerUse(task, {});
+    logAgentLine(res.ok ? 'ok' : 'warn', res.ok ? '✔ DONE: ' + (res.reply || 'completed the requested steps.') : '✖ ' + (res.error || 'Failed.'));
+    if (res.steps && res.steps.length) {
+      logAgentLine('', '— performed ' + res.steps.length + ' action(s):');
+      res.steps.forEach((s) => logAgentLine('step', `  ${s.step + 1}. ${s.tool} ${JSON.stringify(s.args)} → ${JSON.stringify(s.result).slice(0, 220)}`));
+    }
+  } catch (e) {
+    logAgentLine('warn', '✖ ' + (e && e.message ? e.message : String(e)));
+  } finally {
+    setAgentRunning(false);
+  }
+}
+
+function openCodingAgentModal() {
+  const modal = $('#codingAgentModal');
+  if (!modal) return;
+  modal.classList.add('open');
+  if (profile.allowCodingAgent) {
+    codingSetStatusLine('Coding Agent is ON. Pick a folder + task and hit RUN.', 'ok');
+  } else {
+    codingSetStatusLine('Coding Agent is OFF — enable it in Settings (DESKTOP & MODES).', 'warn');
+  }
+}
+function closeCodingAgentModal() { $('#codingAgentModal').classList.remove('open'); }
+function logCodingLine(cls, text) {
+  const log = $('#codingLog');
+  if (!log) return;
+  const entry = document.createElement('div');
+  entry.className = 'agent-entry ' + (cls || '');
+  entry.textContent = text;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+function codingSetStatusLine(text, kind) {
+  const line = $('#codingAgentStatusLine');
+  if (!line) return;
+  const col = kind === 'ok' ? 'var(--good)' : 'var(--warn)';
+  line.innerHTML = `<div class="empty" style="color:${col}">${escapeHtml(text)}</div>`;
+}
+let codingRunning = false;
+function setCodingRunning(running) {
+  codingRunning = running;
+  const runBtn = $('#codingRunBtn');
+  const stopBtn = $('#codingStopBtn');
+  if (runBtn) runBtn.disabled = running;
+  if (stopBtn) stopBtn.disabled = !running;
+}
+async function runCodingAgent() {
+  const task = ($('#codingTaskInput')?.value || '').trim();
+  const dir = ($('#codingDirInput')?.value || '').trim() || '~';
+  if (!task) { logCodingLine('warn', '→ Enter a task first.'); $('#codingTaskInput')?.focus(); return; }
+  const auto = $('#codingAutoApprove')?.checked;
+  if (auto) profile.codingAgentAuto = true; else profile.codingAgentAuto = false;
+  await persistProfile().catch(() => {});
+  const status = await api.codingUseStatus().catch(() => ({ active: false }));
+  if (status.active) { logCodingLine('warn', '→ A coding agent run is already in progress.'); return; }
+  logCodingLine('', '▶ PROJECT: ' + dir);
+  logCodingLine('', '▶ TASK: ' + task);
+  logCodingLine('', 'Coding Agent starting…');
+  setCodingRunning(true);
+  try {
+    const res = await api.codingUse(task, dir, {});
+    logCodingLine(res.ok ? 'ok' : 'warn', res.ok ? '✔ DONE: ' + (res.reply || 'completed the requested change.') : '✖ ' + (res.error || 'Failed.'));
+    if (res.steps && res.steps.length) {
+      logCodingLine('', '— performed ' + res.steps.length + ' action(s):');
+      res.steps.forEach((s) => logCodingLine('step', `  ${s.step + 1}. ${s.tool} ${JSON.stringify(s.args).slice(0, 160)} → ${JSON.stringify(s.result).slice(0, 160)}`));
+    }
+  } catch (e) {
+    logCodingLine('warn', '✖ ' + (e && e.message ? e.message : String(e)));
+  } finally {
+    setCodingRunning(false);
+  }
+}
+
 function populateVoices() {
   const sel = $('#setVoice');
   const voices = speechSynthesis.getVoices();
@@ -5984,19 +6245,32 @@ function updateAiHint() {
   const prov = detectProvider(base);
   if (key && base) el.textContent = '✓ ' + (PROVIDER_NAMES[prov] || 'Custom AI endpoint') + ' active — using your key only.';
   else if (base && /localhost|127\.0\.0\.1/.test(base)) el.textContent = '✓ Local model detected (no key needed).';
-  else el.textContent = '✔ FREE CORE CONNECTED — 100% free out of the box. Your own key is optional.';
+  else el.textContent = '✔ FREE CORE CONNECTED — 100% free out of the box. Pick a free model below or add your own key.';
 }
 function applyPreset(p) {
   // Provider presets — one click fills Base URL + Model. All of these speak
   // the OpenAI-compatible chat/completions protocol, so the SAME tool-calling
-  // engine drives Groq, ChatGPT, Gemini and Claude (see AI-FRAMEWORK.md).
+  // engine drives every provider (see AI-FRAMEWORK.md).
   const map = {
     groq: { baseURL: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
     openai: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
     gemini: { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
     claude: { baseURL: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-5' },
+    cerebras: { baseURL: 'https://api.cerebras.ai/v1', model: 'llama-3.3-70b' },
+    sambanova: { baseURL: 'https://api.sambanova.ai/v1', model: 'Meta-Llama-3.3-70B-Instruct' },
+    nvidia: { baseURL: 'https://integrate.api.nvidia.com/v1', model: 'meta/llama-3.3-70b-instruct' },
+    together: { baseURL: 'https://api.together.xyz/v1', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
+    fireworks: { baseURL: 'https://api.fireworks.ai/inference/v1', model: 'accounts/fireworks/models/llama-v3p3-70b-instruct' },
+    xai: { baseURL: 'https://api.x.ai/v1', model: 'grok-3-mini' },
+    zai: { baseURL: 'https://api.z.ai/api/paas/v4', model: 'glm-4-flash' },
+    cohere: { baseURL: 'https://api.cohere.ai/v1', model: 'command-r-plus' },
+    hf: { baseURL: 'https://router.huggingface.co/v1', model: 'meta-llama/Llama-3.3-70B-Instruct' },
     deepseek: { baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-    mistral: { baseURL: 'https://api.mistral.ai/v1', model: 'mistral-large-latest' },
+    hyperbolic: { baseURL: 'https://api.hyperbolic.xyz/v1', model: 'meta-llama/Llama-3.1-70B-Instruct' },
+    deepinfra: { baseURL: 'https://api.deepinfra.com/v1/openai', model: 'meta-llama/Llama-3.3-70B-Instruct' },
+    siliconflow: { baseURL: 'https://api.siliconflow.com/v1', model: 'Qwen/Qwen2.5-72B-Instruct' },
+    novita: { baseURL: 'https://api.novita.ai/v3/openai', model: 'meta-llama/llama-3.3-70b-instruct' },
+    mistral: { baseURL: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
     openrouter: { baseURL: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
     ollama: { baseURL: 'http://localhost:11434/v1', model: 'llama3', apiKey: '' },
     offline: { baseURL: '', apiKey: '', model: '' }
@@ -6006,6 +6280,90 @@ function applyPreset(p) {
   if (v.apiKey !== undefined) $('#setApiKey').value = v.apiKey;
   if (v.model !== undefined) $('#setModel').value = v.model;
   updateAiHint();
+}
+
+function applyFreeModel(entry) {
+  // One click from the FREE MODELS picker → fill the provider base URL + model.
+  if (!entry) return;
+  const p = window.GemAirProviders && window.GemAirProviders.byId(entry.provider);
+  const provider = p || { name: entry.providerName };
+  $('#setBaseURL').value = entry.baseURL;
+  $('#setModel').value = entry.model;
+  updateAiHint();
+  toast('FREE MODEL', 'Loaded ' + provider.name + ' · ' + entry.model, '🧠');
+  if (entry.keyUrl) {
+    window.open(entry.keyUrl, '_blank');
+  }
+  return entry.model;
+}
+
+// Render the FREE MODELS picker (all free+no-card providers, with Use buttons).
+function renderFreeModelsList() {
+  const list = $('#freeModelsList');
+  if (!list || !window.GemAirProviders) return;
+  const rows = window.GemAirProviders.FREE_MODELS;
+  if (!rows || !rows.length) { list.innerHTML = '<div class="empty">No free models found.</div>'; return; }
+  list.innerHTML = rows.map((m) => `
+    <div class="free-model-row" role="button" tabindex="0">
+      <div class="fm-info">
+        <span class="fm-provider">${escapeHtml(m.providerName)}</span>
+        <span class="fm-model">${escapeHtml(m.model)}</span>
+        <span class="fm-free">FREE</span>
+      </div>
+      <div class="fm-note">${escapeHtml(m.note || '')}</div>
+      <button class="mini-btn fm-use" data-provider="${escapeHtml(m.provider)}" data-model="${escapeHtml(m.model)}">USE</button>
+    </div>`).join('');
+  list.querySelectorAll('.fm-use').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const provider = btn.dataset.provider;
+      const model = btn.dataset.model;
+      const entry = rows.find((r) => r.provider === provider && r.model === model);
+      applyFreeModel(entry);
+    });
+  });
+  list.querySelectorAll('.free-model-row').forEach((row) => {
+    row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.querySelector('.fm-use')?.click(); } });
+  });
+}
+
+// Populate the model dropdown for the currently selected provider base URL.
+function renderModelSelect() {
+  const sel = $('#setModelSelect');
+  if (!sel) return;
+  const base = $('#setBaseURL').value.trim();
+  const prov = detectProvider(base);
+  const p = window.GemAirProviders && window.GemAirProviders.byId(prov);
+  if (!p) { sel.innerHTML = '<option value="">— custom model —</option>'; return; }
+  sel.innerHTML = p.models.map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.id)}${m.free ? ' · free' : ''}</option>`).join('');
+  sel.value = $('#setModel').value;
+}
+
+async function refreshOllamaModels() {
+  const box = $('#ollamaModels');
+  if (!box) return;
+  try {
+    const list = await api.listLocalModels().catch(() => ({ models: [] }));
+    const local = (list && list.models) || [];
+    if (!local || !local.length) {
+      box.innerHTML = '<div class="empty">No local model detected. Start Ollama (`ollama pull llama3`) for a fully keyless local brain.</div>';
+      return;
+    }
+    box.innerHTML = '<span class="dim" style="font:600 9px var(--font-mono);">LOCAL (OLLAMA) MODELS</span>' + local.slice(0, 20).map((m) => `
+      <div class="free-model-row" role="button" tabindex="0">
+        <div class="fm-info"><span class="fm-provider">Ollama</span><span class="fm-model">${escapeHtml(m.name)}</span><span class="fm-free">LOCAL · FREE</span></div>
+        <div class="fm-note">${escapeHtml(m.details || 'Runs entirely on your machine, no key, no vendor.')}</div>
+        <button class="mini-btn fm-use" data-model="${escapeHtml(m.name)}">USE</button>
+      </div>`).join('');
+    box.querySelectorAll('.fm-use').forEach((btn) => btn.addEventListener('click', () => {
+      $('#setBaseURL').value = 'http://localhost:11434/v1';
+      $('#setModel').value = btn.dataset.model;
+      $('#setApiKey').value = '';
+      updateAiHint();
+      toast('LOCAL MODEL', 'Using ' + btn.dataset.model + ' — keyless', '🪶');
+    }));
+  } catch (e) {
+    box.innerHTML = '<div class="empty">Could not reach Ollama.</div>';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -6400,6 +6758,27 @@ function bindEvents() {
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#settingsClose').addEventListener('click', closeSettings);
   $('#settingsModal').addEventListener('click', (e) => { if (e.target === $('#settingsModal')) closeSettings(); });
+  // 2.5 Desktop Agent — computer use controls
+  $('#openAgentBtn')?.addEventListener('click', () => { playSfx('swipe'); openAgentModal(); });
+  $('#agentModalClose')?.addEventListener('click', closeAgentModal);
+  $('#agentModal')?.addEventListener('click', (e) => { if (e.target === $('#agentModal')) closeAgentModal(); });
+  $('#agentRunBtn')?.addEventListener('click', runDesktopAgent);
+  $('#agentStopBtn')?.addEventListener('click', async () => { logAgentLine('warn', '⏹ STOP requested…'); await api.computerUseStop(); });
+  const agentScreenCapture = async () => {
+    const r = await api.computerUseScreen().catch(() => ({ error: 'desktop_only' }));
+    if (r && r.ok) logAgentLine('ok', '🖼 Screen saved: ' + r.file + ' (' + r.width + '×' + r.height + ')');
+    else logAgentLine('warn', '✖ ' + (r && r.error ? r.error : 'Capture unavailable in the browser.'));
+  };
+  $('#agentScreenBtn')?.addEventListener('click', agentScreenCapture);
+  $('#agentScreenBtn2')?.addEventListener('click', agentScreenCapture);
+  $('#agentTaskInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) runDesktopAgent(); });
+  // 2.5 Coding Agent — computer/code agent controls
+  $('#openCodingAgentBtn')?.addEventListener('click', () => { playSfx('swipe'); openCodingAgentModal(); });
+  $('#codingAgentModalClose')?.addEventListener('click', closeCodingAgentModal);
+  $('#codingAgentModal')?.addEventListener('click', (e) => { if (e.target === $('#codingAgentModal')) closeCodingAgentModal(); });
+  $('#codingRunBtn')?.addEventListener('click', runCodingAgent);
+  $('#codingStopBtn')?.addEventListener('click', async () => { logCodingLine('warn', '⏹ STOP requested…'); await api.codingUseStop(); });
+  $('#codingTaskInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) runCodingAgent(); });
   $('#appearanceToggle').addEventListener('click', toggleAppearance);
   $('#refreshUsageBtn').addEventListener('click', renderUsageStats);
   $('#exportUsageBtn').addEventListener('click', exportUsageStats);
@@ -6428,6 +6807,20 @@ function bindEvents() {
     profile.ambientTrack = $('#setAmbientTrack')?.value || profile.ambientTrack || DEFAULTS.ambientTrack;
     profile.ambientVolume = Number($('#setAmbientVolume')?.value ?? ambientVolume());
     profile.screenAwareness = $('#setScreenAwareness').checked;
+    // 2.5 Desktop Agent (computer control)
+    const setComputerUse = $('#setComputerUse');
+    const setComputerUseAuto = $('#setComputerUseAuto');
+    const setComputerUseSteps = $('#setComputerUseSteps');
+    if (setComputerUse) profile.allowComputerUse = setComputerUse.checked;
+    if (setComputerUseAuto) profile.computerUseAuto = setComputerUseAuto.checked;
+    if (setComputerUseSteps) profile.computerUseMaxSteps = Math.max(1, Math.min(20, Number(setComputerUseSteps.value) || 8));
+    // 2.5 Coding Agent
+    const setCodingAgent = $('#setCodingAgent');
+    const setCodingAgentAuto = $('#setCodingAgentAuto');
+    const setCodingAgentSteps = $('#setCodingAgentSteps');
+    if (setCodingAgent) profile.allowCodingAgent = setCodingAgent.checked;
+    if (setCodingAgentAuto) profile.codingAgentAuto = setCodingAgentAuto.checked;
+    if (setCodingAgentSteps) profile.codingAgentMaxSteps = Math.max(1, Math.min(20, Number(setCodingAgentSteps.value) || 10));
     profile.wakeWord = $('#setWakeWord').checked;
     profile.wakeWordText = ($('#setWakeWordText').value || 'Hey Gem').trim().replace(/\s+/g, ' ').slice(0, 40) || 'Hey Gem';
     persistProfile().then(() => { updateLinkMode(); renderUsageStats(); closeSettings(); });
@@ -6442,9 +6835,11 @@ function bindEvents() {
     setAmbientScore(false);
     await persistProfile(); applyAppearance(DEFAULTS.appearance); applyTheme(DEFAULTS.theme); updateLinkMode(); openSettings();
   });
-  $$('.preset').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
-  $('#setBaseURL').addEventListener('input', updateAiHint);
+  $$('.preset').forEach((b) => b.addEventListener('click', () => { applyPreset(b.dataset.preset); renderModelSelect(); }));
+  $('#setBaseURL').addEventListener('input', () => { updateAiHint(); renderModelSelect(); });
   $('#setApiKey').addEventListener('input', updateAiHint);
+  $('#setModel').addEventListener('input', () => { const s = $('#setModelSelect'); if (s) s.value = $('#setModel').value; });
+  $('#setModelSelect')?.addEventListener('change', () => { const m = $('#setModelSelect').value; if (m) $('#setModel').value = m; });
 
   // Accessible quick-action toolbar. Arrow keys move within the toolbar;
   // Alt+1…4 invoke Search, Weather, Note, and Reminder from any view.
@@ -6537,6 +6932,8 @@ function bindEvents() {
       { id: 'view-town', name: 'Agent Town', detail: 'resident agent office', icon: '▦', type: 'VIEW', action: () => switchView('town') },
       { id: 'view-world', name: 'Global Intel', detail: 'globe, map and headlines', icon: '◍', type: 'VIEW', action: () => switchView('world') },
       { id: 'settings', name: 'Open Settings', detail: 'AI, voice, themes and privacy', icon: '⚙', type: 'ACTION', action: openSettings },
+      { id: 'desktopAgent', name: 'Open Desktop Agent (Computer Use)', detail: 'Drive your mouse, keyboard & screen — keyless, no Claude', icon: '🤖', type: 'ACTION', action: openAgentModal },
+      { id: 'codingAgent', name: 'Open Coding Agent', detail: 'Point a project folder + task — Gem reads & edits code, keyless', icon: '👨‍💻', type: 'ACTION', action: openCodingAgentModal },
       { id: 'toggle-appearance', name: `Switch to ${profile.appearance === 'light' ? 'Dark' : 'Light'} Mode`, detail: 'persistent interface appearance', icon: profile.appearance === 'light' ? '🌙' : '☀', type: 'TOGGLE', action: toggleAppearance },
       { id: 'breathing', name: 'Guided Breathing', detail: '4-7-8 calm session', icon: '◌', type: 'ACTION', action: () => $('#breatheModal').classList.add('open') },
       { id: 'weekly-report', name: 'Weekly Report', detail: 'mood, goals and task trends', icon: '▥', type: 'ACTION', action: () => $('#weeklyReportBtn').click() },
@@ -6734,6 +7131,69 @@ function bindEvents() {
 
   // visible reasoning: live tool-activity chips (single global listener)
   if (api.onActivity) api.onActivity(toolChipUpdate);
+
+  // 2.5 Desktop Agent — live step events from the main process
+  if (api.onComputerUseEvent) api.onComputerUseEvent((ev) => {
+    if (!ev || typeof ev !== 'object') return;
+    switch (ev.type) {
+      case 'screen':
+        logAgentLine('', `[step ${ev.step + 1}] 🖼 screen captured (${ev.width}×${ev.height}) — ${ev.file || ''}`);
+        agentSetStatusLine(`Step ${ev.step + 1}: looking at the screen…`, 'ok');
+        break;
+      case 'tool':
+        if (ev.state === 'start') logAgentLine('step', `[step ${(ev.step ?? 0) + 1}] → ${ev.name} ${JSON.stringify(ev.args || {})}`);
+        else if (ev.state === 'error') logAgentLine('warn', `[step ${(ev.step ?? 0) + 1}] ✖ ${ev.name} failed: ${JSON.stringify(ev.result).slice(0, 200)}`);
+        else logAgentLine('ok', `[step ${(ev.step ?? 0) + 1}] ✔ ${ev.name}`);
+        break;
+      case 'text':
+        logAgentLine('', '💬 ' + (ev.text || ''));
+        break;
+      case 'stopped':
+        logAgentLine('warn', '⏹ Agent stopped by you.');
+        break;
+      case 'done':
+        logAgentLine('ok', '✔ AGENT FINISHED.');
+        break;
+      case 'done_timeout':
+        logAgentLine('warn', '⚠ Reached max steps.');
+        break;
+      case 'error':
+        logAgentLine('warn', '✖ ' + (ev.error || 'agent error'));
+        break;
+      default:
+        logAgentLine('', JSON.stringify(ev).slice(0, 200));
+    }
+  });
+
+  // 2.5 Coding Agent — live step events from the main process
+  if (api.onCodingUseEvent) api.onCodingUseEvent((ev) => {
+    if (!ev || typeof ev !== 'object') return;
+    switch (ev.type) {
+      case 'screen': break;
+      case 'tool':
+        if (ev.state === 'start') logCodingLine('step', `[step ${(ev.step ?? 0) + 1}] → ${ev.name} ${JSON.stringify(ev.args || {})}`);
+        else if (ev.state === 'error') logCodingLine('warn', `[step ${(ev.step ?? 0) + 1}] ✖ ${ev.name} failed`);
+        else logCodingLine('ok', `[step ${(ev.step ?? 0) + 1}] ✔ ${ev.name}`);
+        break;
+      case 'text':
+        logCodingLine('', '💬 ' + (ev.text || ''));
+        break;
+      case 'stopped':
+        logCodingLine('warn', '⏹ Coding Agent stopped by you.');
+        break;
+      case 'done':
+        logCodingLine('ok', '✔ CODING AGENT FINISHED.');
+        break;
+      case 'done_timeout':
+        logCodingLine('warn', '⚠ Reached max steps.');
+        break;
+      case 'error':
+        logCodingLine('warn', '✖ ' + (ev.error || 'agent error'));
+        break;
+      default:
+        logCodingLine('', JSON.stringify(ev).slice(0, 200));
+    }
+  });
 
   // dynamic HUD dock panels
   setupHudDock();

@@ -2,6 +2,35 @@
 
 All notable changes to GemAir are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added — Expanded AI providers + free-model catalog (model switching)
+
+- New **AI provider & free-model catalog** (`renderer/providers.js`, single source of truth): 21 providers, **38 free-tier OpenAI-compatible models** across Gemini, Groq, Cerebras, SambaNova, NVIDIA NIM, Together AI, Fireworks, xAI (Grok), Z.AI (GLM), Cohere, HuggingFace, DeepSeek, Mistral, OpenRouter, Hyperbolic, DeepInfra, SiliconFlow, Novita, plus local Ollama.
+- **FREE MODELS panel in Settings → AI BRAIN**: one-click setup (fills base URL + model), auto-opens the provider's key page, "FREE" badges, plus a live list of any **local Ollama models** (keyless).
+- **GemAir slash commands** in chat: `/providers`, `/models [filter]`, `/use <model>`, `/local` — switch the active model without opening settings.
+- `detectProvider()` / `PROVIDER_NAMES` upgraded to recognize all new providers; `applyPreset()` now covers all of them.
+- **Serverless FREE CORE fallback chain** (`api/chat.js`) broadened: it now tries Cerebras, SambaNova, Together, NVIDIA NIM, xAI, Z.AI, HuggingFace, DeepSeek, DeepInfra alongside Groq/Gemini/OpenRouter — so the cloud brain keeps answering even if a provider rate-limits.
+- New IPC/preload `ai:listLocalModels` to discover keyless local Ollama models.
+- `scripts/computer-agent-test.js` extended with catalog + wiring assertions.
+
+### Added — Vendored upstream + GemAir Coding Agent
+
+- **Vendored upstream source** — `vendor/computer-agent/` (suitedaces/computer-agent, Apache-2.0) and `vendor/opencode/` (sst/opencode, MIT) are now in-repo for auditability and extension. Both are reference-only and excluded from the packaged app (see `vendor/README.md`).
+- **Coding Agent (GemAir, keyless)** — a local repo-coding agent: point it at a project folder and it reads your repo, plans, edits files and validates, using the keyless brain (local Ollama first). New tool `run_coding_cli` (delegates to a user-installed local coding CLI, keyless via Ollama); the agent runs on the existing `list_directory`/`read_file`/`write_file`/`search_files`/`run_command` tools.
+- Coding Agent is gated on the new `allowCodingAgent` preference, with `codingAgentAuto` (skip per-edit confirms) and `codingAgentMaxSteps`. New `agent:codingUse*` IPC, preload bridge, renderer modal (folder + task + live step log) and command-palette entry.
+- `scripts/computer-agent-test.js` extended to verify the Coding Agent wiring.
+
+### Added — Desktop Agent / Computer Use (keyless)
+
+- **Computer-Use agent** — a real desktop agent that drives your mouse, keyboard, screenshots and terminal to carry out a task you describe. **No API key, no Claude, no vendor.**
+- New keyless input primitives in `lib/computer-agent.js`, all on-device via OS-native calls (PowerShell on Windows, AppleScript/cliclick on macOS, `xdotool` on Linux). No native Node addons, no rebuild.
+- New tools registered in `main.js` `TOOLS`: `get_screen_size`, `capture_agent_screen`, `describe_screen`, `move_mouse`, `mouse_click`, `type_text`, `press_key`, `scroll_mouse` — all gated on the new `allowComputerUse` preference and human-in-the-loop confirmation (or opt-in auto-approve).
+- `computerUseAgent` loop: screenshot → vision model decides → tool executes → re-look, up to N steps. Prefers a **keyless local Ollama** (auto-detected at `localhost:11434`), then the user's optional free-tier key, then a deterministic no-model `offlineComputerUse` fallback.
+- Safety: every mouse/keyboard action is OFF until enabled, confirmed per-action unless auto-approved, and `press_key` accepts only validated key tokens (no shell injection). The agent is instructed to never type secrets or perform destructive actions.
+- Renderer: new **Desktop Agent** modal (task input, run/stop, live step log, screen size chip, auto-approve toggle), Settings toggles, command-palette entry, and `agent:computerUse*` IPC bridge.
+- Test: `scripts/computer-agent-test.js` (auto-run in `npm run check`) verifies the module loads keyless, safe builders reject shell input, and the tool/IPC/preload/renderer wiring is intact.
+
 ## [2.5.0] — 2026-08-22
 
 Round 6 v2.5 "ANYWHERE & HARDENED" — the free core survives real scale, the web build installs anywhere as a PWA, and every API endpoint shares one guarded, timeouted HTTP layer.
@@ -79,7 +108,7 @@ Round 6 v2.5 "ANYWHERE & HARDENED" — the free core survives real scale, the we
 
 ## [2.4.0] — 2026-08-21
 
-Round 5 v2.4 "CONNECTED DESKTOP AGENT" — three leaps at once: true account connect like Stonic (no API keys ever), opencode-style agentic desktop management, user-defined MODES that arrange the whole desktop from one sentence.
+Round 5 v2.4 "CONNECTED DESKTOP AGENT" — three leaps at once: true account connect like Stonic (no API keys ever), agentic desktop management, user-defined MODES that arrange the whole desktop from one sentence.
 
 ### Added — Section 0 Recon
 

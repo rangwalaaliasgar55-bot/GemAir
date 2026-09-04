@@ -37,7 +37,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 // ---------------------------------------------------------------------------
 function walk(dir, out = []) {
   for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
-    if (['node_modules', '.git', 'release', 'dist', 'out', 'build'].includes(e.name)) continue;
+    if (['node_modules', '.git', 'release', 'dist', 'out', 'build', 'vendor'].includes(e.name)) continue;
     const rel = path.join(dir, e.name);
     if (e.isDirectory()) walk(rel, out);
     else out.push(rel);

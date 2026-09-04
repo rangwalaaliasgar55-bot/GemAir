@@ -164,6 +164,42 @@ case 'get_quote':
 For the **web version**, add a matching `/api/<tool>.js` and call it from
 `offlineBrain()` in `renderer/app.js` so it works keyless too.
 
+### AI providers & free models
+
+`renderer/providers.js` is the single source of truth for AI providers and their
+free-tier models (21 providers, 38 free OpenAI-compatible models + local Ollama).
+It's consumed by the Settings → AI BRAIN **FREE MODELS** panel (one-click setup), by
+`detectProvider()` / `applyPreset()`, and by the GemAir slash commands
+(`/providers`, `/models`, `/use <model>`, `/local`). Add a provider by appending an
+entry to `PROVIDERS` in `providers.js`; add its key env name to `FREE_PROVIDERS` in
+`api/chat.js` so the serverless FREE CORE can fall back to it too.
+
+### The Desktop Agent (Computer Use)
+
+The **keyless computer-use suite** is a set of input tools (`move_mouse`, `mouse_click`,
+`type_text`, `press_key`, `scroll_mouse`, `capture_agent_screen`, `describe_screen`,
+`get_screen_size`) implemented in `lib/computer-agent.js` using only OS-native calls
+(PowerShell / AppleScript / `xdotool`) — no native Node addon, no API key, no vendor.
+They live in the same `TOOLS` registry and the same `executeTool` switch as any other tool,
+but every mouse/keyboard action is gated behind the `allowComputerUse` preference and a
+human-in-the-loop confirmation (or opt-in auto-approve).
+
+The `computerUseAgent()` loop (in `main.js`) turns it into a real desktop agent:
+screenshot → ask a model to decide → act → re-look, up to N steps. It auto-picks a
+**keyless local Ollama** first, then the user's optional free-tier key, then the
+deterministic no-model `offlineComputerUse` fallback. Wire a new input primitive by
+adding it to `lib/computer-agent.js`, exporting it, registering it in `TOOLS`, and adding
+a `case` in `executeToolNow` (and to `COMPUTER_TOOL_NAMES` if it belongs in the agent loop).
+
+### The Coding Agent
+
+`codingAgent()` in `main.js` is the same picture for code: a keyless loop that uses the
+existing `list_directory` / `read_file` / `write_file` / `search_files` / `run_command`
+tools (plus a `run_coding_cli` tool that delegates to a local coding CLI when installed). It
+is gated on `allowCodingAgent` and supports `codingAgentAuto` (skip per-edit confirms).
+Upstream reference source for both the Desktop Agent and the Coding Agent is vendored in
+`vendor/` (see `vendor/README.md`).
+
 ### Adding an emotion
 Add a word list to `EMOTION_LEXICON`, a valence in `EMOTION_VALENCE`, an emoji in
 `MOOD_EMOJI`, a name in `updateMoodIndicator`, and (optionally) a support response

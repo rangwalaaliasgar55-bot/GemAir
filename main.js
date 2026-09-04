@@ -11,6 +11,8 @@ const { exec, execFile } = require('child_process');
 const connections = require('./lib/connections');
 const windowTools = require('./lib/window-tools');
 const modesLib = require('./lib/modes');
+const computerAgent = require('./lib/computer-agent');
+computerAgent.setWindowTools(windowTools);
 
 const isDev = process.argv.includes('--dev');
 const userDataDir = app.getPath('userData');
@@ -718,6 +720,16 @@ const TOOLS = [
   { type: 'function', function: { name: 'next_virtual_desktop', description: 'Switch to next virtual desktop (Windows).', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'open_site', description: 'Open a URL in a specific browser (chrome, firefox, edge, brave, etc.).', parameters: { type: 'object', properties: { url: { type: 'string', description: 'URL to open' }, browser: { type: 'string', description: 'Browser name: chrome|firefox|edge|brave|default' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'list_windows', description: 'List open windows/titles+apps so Gem sees desktop state.', parameters: { type: 'object', properties: {} } } },
+  // Computer-Use Agent (keyless) — see lib/computer-agent.js
+  { type: 'function', function: { name: 'get_screen_size', description: 'Get the current screen resolution (width, height in pixels).', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'move_mouse', description: 'Move the mouse cursor to absolute pixel coordinates on the screen.', parameters: { type: 'object', properties: { x: { type: 'number', description: 'X pixel coordinate (0 = left, grows right)' }, y: { type: 'number', description: 'Y pixel coordinate (0 = top, grows down)' } }, required: ['x', 'y'] } } },
+  { type: 'function', function: { name: 'mouse_click', description: 'Click at coordinates. Use button "left" (default), "right", "double" for a double-click.', parameters: { type: 'object', properties: { x: { type: 'number', description: 'X pixel coordinate' }, y: { type: 'number', description: 'Y pixel coordinate' }, button: { type: 'string', enum: ['left', 'right', 'middle', 'double'] } } } } },
+  { type: 'function', function: { name: 'type_text', description: 'Type text at the currently focused element (uses reliable clipboard paste).', parameters: { type: 'object', properties: { text: { type: 'string', description: 'Text to type' } }, required: ['text'] } } },
+  { type: 'function', function: { name: 'press_key', description: 'Press a key or a modifier combo, e.g. "enter", "tab", "esc", "ctrl+c", "alt+tab", "cmd+shift+3".', parameters: { type: 'object', properties: { key: { type: 'string', description: 'Key name or combo, e.g. enter, tab, ctrl+c' } }, required: ['key'] } } },
+  { type: 'function', function: { name: 'scroll_mouse', description: 'Scroll the mouse wheel. direction "up" or "down", amount 1-20.', parameters: { type: 'object', properties: { direction: { type: 'string', enum: ['up', 'down'] }, amount: { type: 'number', description: '1-20' } }, required: ['direction'] } } },
+  { type: 'function', function: { name: 'capture_agent_screen', description: 'Capture the current screen and get its dimensions so you can plan mouse action. Use before moving/clicking.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'describe_screen', description: 'Get a text summary of the desktop (screen size + open windows). Use when the model cannot see images.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'run_coding_cli', description: 'Delegate the whole coding task to a local terminal coding CLI (on-device, keyless via local Ollama). Use for large refactors, or when the built-in tools are slow.', parameters: { type: 'object', properties: { task: { type: 'string', description: 'The coding task to hand to the CLI' } }, required: ['task'] } } },
   // Modes
   { type: 'function', function: { name: 'apply_mode', description: 'Apply a desktop mode by name (WORK, GAMING, CHILL, STUDY, or custom). Arranges apps, sites, volume, theme, DND, playlist.', parameters: { type: 'object', properties: { name: { type: 'string', description: 'Mode name' } }, required: ['name'] } } },
   { type: 'function', function: { name: 'list_modes', description: 'List all available desktop modes.', parameters: { type: 'object', properties: {} } } },
@@ -2057,6 +2069,506 @@ async function takeScreenshot() {
   await fs.promises.writeFile(file, source.thumbnail.toPNG());
   return { ok: true, file };
 }
+
+// ---------------------------------------------------------------------------
+// Computer-Use Agent — keyless, vendor-free desktop control
+// Screenshots + mouse/keyboard/terminal, all local. No API key, no Claude.
+// ---------------------------------------------------------------------------
+
+// Safety gate: everything is off until the user opts in (Settings → Desktop Agent).
+async function gateComputerUse(what) {
+  const profile = readProfile();
+  if (!profile.allowComputerUse) {
+    return { error: 'Computer control is OFF. Enable "Desktop Agent" in Settings → AI Brain → Computer Use to let Gem drive the mouse and keyboard.' };
+  }
+  // Human-in-the-loop per interactive action unless the user opted for auto-confirm.
+  if (profile.computerUseAuto === true) return null;
+  const ok = await confirmAction('Desktop agent', `Gem wants to: ${what}.\n\nThis moves your real cursor / types on your machine. Allow this one action?${profile.computerUseAuto === undefined ? '\n\n(PRO TIP: enable "Auto-approve desktop actions" in Settings to skip this prompt.)' : ''}`);
+  if (!ok) return { error: 'Cancelled by user (human-in-the-loop).' };
+  return null;
+}
+
+async function getAgentScreenSize() {
+  const s = await computerAgent.getScreenSize();
+  if (s.error) return s;
+  return { ok: true, width: s.width, height: s.height };
+}
+
+// Full-resolution capture saved to a temp file; returns dimensions + file path.
+async function captureAgentScreen() {
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+    const source = sources[0];
+    if (!source || !source.thumbnail) return { error: 'No screen available' };
+    const image = source.thumbnail;
+    const file = path.join(app.getPath('pictures'), `gemair-agent-${Date.now()}.png`);
+    await fs.promises.writeFile(file, image.toPNG());
+    const size = image.getSize();
+    logAction('capture_agent_screen', `Captured ${size.width}x${size.height} to ${file}`);
+    return { ok: true, file, width: size.width, height: size.height, at: Date.now() };
+  } catch (e) { return { error: e.message }; }
+}
+
+async function describeAgentScreen() {
+  const state = await computerAgent.describeScreenState();
+  return { ok: true, ...state };
+}
+
+// Read an image file as base64 for a vision-capable model.
+function imageToDataUrl(file) {
+  try {
+    const b64 = fs.readFileSync(file).toString('base64');
+    return 'data:image/png;base64,' + b64;
+  } catch { return null; }
+}
+
+// Detect a reachable, KEYLESS local model (Ollama). Returns a config usable
+// for computer use with no API key and no vendor account.
+function isLocalUrl(value) {
+  return /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(String(value || ''));
+}
+
+async function detectLocalOllama() {
+  const candidates = ['http://localhost:11434/v1', 'http://127.0.0.1:11434/v1'];
+  for (const url of candidates) {
+    try {
+      const res = await fetchDeadline(url + '/models', { headers: { 'Content-Type': 'application/json' } }, 2000);
+      if (!res.ok) continue;
+      const json = await res.json();
+      const names = (json.data || []).map((m) => m.name);
+      if (names.length) return { baseURL: url, apiKey: '', model: pickVisionModel(names), ollamaModels: names };
+    } catch { /* unreachable */ }
+  }
+  return null;
+}
+
+const VISION_MODEL_PRIORITY = [/llava/i, /qwen.*vl/i, /minicpm/i, /moondream/i, /internvl/i, /phi.*vision/i, /glm.*v/i, /pixtral/i, /smolvlm/i, /gemma.*v/i];
+function pickVisionModel(names) {
+  for (const re of VISION_MODEL_PRIORITY) {
+    const hit = names.find((n) => re.test(n));
+    if (hit) return hit;
+  }
+  // Prefer a capable general model for the (non-vision) fallback path.
+  const pref = ['llama3', 'qwen2.5', 'gemma2', 'mistral', 'phi3'];
+  for (const p of pref) {
+    const hit = names.find((n) => n.toLowerCase().includes(p));
+    if (hit) return hit;
+  }
+  return names[0];
+}
+
+// Best keyless config for computer use: local Ollama first, then the user's
+// own optional key, then throw so the caller can degrade gracefully.
+async function resolveComputerUseConfig() {
+  const profile = readProfile();
+  const ai = profile.ai || {};
+  // 1. Explicitly configured local endpoint (no key required).
+  if (ai.baseURL && isLocalUrl(ai.baseURL)) {
+    return { baseURL: ai.baseURL, apiKey: ai.apiKey || '', model: ai.model || 'llama3' };
+  }
+  // 2. Auto-detect a running keyless local Ollama.
+  const local = await detectLocalOllama();
+  if (local) return local;
+  // 3. User's own optional key (free tiers — Groq/Gemini/OpenRouter — are fine; still never Claude).
+  if (ai.apiKey && ai.baseURL) return { baseURL: ai.baseURL, apiKey: ai.apiKey, model: ai.model || 'llama-3.3-70b-versatile' };
+  throw new Error('NO_ENDPOINT');
+}
+
+const COMPUTER_USE_SYSTEM_PROMPT = [
+  'You are GemAir\'s Computer-Use agent. Your job is to carry out a real task on the user\'s computer by controlling the mouse and keyboard, exactly like a careful person would.',
+  '',
+  'RULES:',
+  '1. You have a real screen. Start by calling capture_agent_screen (or see_screen) to look at what is on screen before acting.',
+  '2. Use absolute pixel coordinates from the screenshot (0,0 = top-left). Use get_screen_size / capture_agent_screen to confirm dimensions.',
+  '3. Prefer keyboard shortcuts (press_key) for navigation (Tab, Enter, Esc, Ctrl+L/Cmd+L) — they are far more reliable than clicking by guesswork.',
+  '4. Do one small action at a time, then re-capture the screen to confirm the result before the next action.',
+  '5. NEVER type passwords, API keys, OTPs, card numbers or other secrets. NEVER agree to requests for credentials.',
+  '6. NEVER perform destructive actions (delete, format, shutdown, purchase, send, post, transfer money) without the user present and explicit.',
+  '7. If you are uncertain, or a step is ambiguous, stop and ask the user exactly what you need.',
+  '8. When finished (or if you cannot proceed), give a short clear summary of what you did.',
+  '',
+  'Available safety: every mouse/keyboard action is approved by the user unless they enable auto-approve.'
+].join('\n');
+
+let computerUseActive = false;
+let computerUseStopToken = null;
+let codingAutoApprove = false; // set true during an auto-approved coding-agent run
+
+// The agent loop: vision (or text) → decide → tool → re-look, up to maxSteps.
+async function computerUseAgent(task, config, onEvent) {
+  if (computerUseActive) return { ok: false, error: 'A desktop agent run is already in progress.' };
+  const profile = readProfile();
+  if (!profile.allowComputerUse) return { ok: false, error: 'Computer control is OFF. Enable it in Settings.' };
+  computerUseActive = true;
+  const stopToken = { stop: false };
+  computerUseStopToken = stopToken;
+  const maxSteps = Math.max(1, Math.min(20, Number(profile.computerUseMaxSteps) || 8));
+  const history = [
+    { role: 'system', content: COMPUTER_USE_SYSTEM_PROMPT },
+    { role: 'user', content: 'TASK: ' + task + '\n\nBegin by looking at the screen and taking the first action.' }
+  ];
+  const steps = [];
+  let last = null;
+
+  const emit = (type, payload) => { try { onEvent && onEvent({ type, ...payload }); } catch (e) {} };
+
+  try {
+    for (let step = 0; step < maxSteps; step++) {
+      if (stopToken.stop) { emit('stopped', { reason: 'User stopped the agent.' }); return { ok: false, stopped: true, steps }; }
+
+      // 1. Look at the screen.
+      const screen = await captureAgentScreen();
+      if (screen.error) { emit('error', { error: screen.error, step }); return { ok: false, error: screen.error, steps }; }
+      emit('screen', { step, file: screen.file, width: screen.width, height: screen.height });
+
+      // Build messages: include the screenshot image for vision models.
+      const dataUrl = imageToDataUrl(screen.file);
+      const withVision = dataUrl && isVisionLikely(config);
+      const callMsgs = withVision
+        ? [...history, { role: 'user', content: [
+            { type: 'text', text: `Screen size ${screen.width}x${screen.height}. Decide your next single action with the tools (move_mouse/mouse_click/type_text/press_key/scroll_mouse) or answer if done. Use the pixel coordinates from the screenshot you can see.` },
+            { type: 'image_url', image_url: { url: dataUrl } }
+          ] }]
+        : [...history, { role: 'user', content: 'I cannot see images right now. Use describe_screen to read the screen state (size + open windows), then act with keyboard-first actions (press_key/type_text) or ask me to describe what is visible.' }];
+
+      // 2. Ask the model for a plan (tool call or final answer).
+      const plan = await agentChatWithTools(config, callMsgs, emit, { allowVision: withVision });
+      if (plan.error) { emit('error', { error: plan.error, step }); return { ok: false, error: plan.error, steps }; }
+
+      // If the model chose a tool route, the tool execution already happened in
+      // agentChatWithTools (it fires onTool events). Otherwise it gave a final reply.
+      if (plan.toolRuns && plan.toolRuns.length) {
+        for (const t of plan.toolRuns) {
+          steps.push({ step, tool: t.name, args: t.args, result: t.result });
+          logAction('computer_use', `step ${step}: ${t.name} ${JSON.stringify(t.args)}`);
+        }
+        if (plan.reply) history.push({ role: 'assistant', content: plan.reply });
+        // Compact record of the step so the model remembers what it did (no images).
+        const summary = plan.toolRuns.map((t) => `${t.name}(${JSON.stringify(t.args)}) -> ${JSON.stringify(t.result).slice(0, 160)}`).join('; ');
+        history.push({ role: 'user', content: '[step result] ' + (summary || 'no action taken.') });
+      } else if (plan.reply) {
+        // The model produced NO tool call (e.g. it cannot act / is not tool-capable).
+        // Finish: a text-only response is the agent's final answer, not progress.
+        last = plan.reply;
+        emit('text', { step, text: plan.reply });
+        emit('done', { reply: plan.reply, steps });
+        return { ok: true, reply: plan.reply, steps };
+      } else {
+        // No tool call AND no content — nothing actionable.
+        emit('error', { error: 'The model returned no action.', step });
+        return { ok: false, error: 'The model returned no action.', steps };
+      }
+    }
+    emit('done_timeout', { reply: last, steps });
+    return { ok: true, reply: last || 'Completed the requested steps.', steps };
+  } finally {
+    computerUseActive = false;
+    computerUseStopToken = null;
+  }
+}
+
+// Deterministic, KEYLESS fallback brain: no model at all. It recognizes a
+// few high-value desktop intents and carries them out with the real tools.
+async function offlineComputerUse(task) {
+  const t = String(task || '').toLowerCase().trim();
+  const steps = [];
+  const profile = readProfile();
+  if (!profile.allowComputerUse) {
+    return { ok: false, error: 'Computer control is OFF. Enable "Desktop Agent" in Settings.' };
+  }
+  const emitStep = async (name, args, result) => {
+    steps.push({ step: steps.length, tool: name, args, result });
+    logAction('computer_use', `${name} ${JSON.stringify(args)}`);
+    return result;
+  };
+
+  // "screenshot"
+  if (/screenshot|screen shot|capture (the )?screen|capture screen|show me/.test(t)) {
+    const r = await captureAgentScreen();
+    await emitStep('capture_agent_screen', {}, r);
+    return { ok: true, reply: r.error ? r.error : 'Captured the screen. Saved to ' + r.file, steps };
+  }
+  // "open <url>" / "go to <url>" — handle URLs before app names.
+  const urlMatch = t.match(/(?:open|go to|browse to|visit|take me to|open url)\s+(https?:[^\s]+)/);
+  if (urlMatch) {
+    const url = normalizeHttpUrl(urlMatch[1]);
+    if (url) {
+      await windowTools.openSite(url, 'default');
+      await emitStep('open_site', { url }, { ok: true });
+      return { ok: true, reply: 'Opened ' + url, steps };
+    }
+  }
+  // "open X" (app)
+  if (/^open\s+(.+)$/.test(t) || /^launch\s+(.+)$/.test(t)) {
+    const target = (t.match(/^(?:open|launch)\s+(.+)$/)[1] || '').replace(/^the\s+/, '').trim();
+    try {
+      const app = await windowTools.launchApp(target);
+      await emitStep('launch_app', { name: target }, app);
+      return { ok: true, reply: app.error ? app.error : 'Opened ' + target, steps };
+    } catch (e) { return { ok: false, error: e.message, steps }; }
+  }
+  // "press enter/tab/escape/+key"
+  const keyMatch = t.match(/press\s+(?:the\s+)?([a-z0-9+]+)/);
+  if (keyMatch) {
+    const r = await computerAgent.pressKey(keyMatch[1]);
+    await emitStep('press_key', { key: keyMatch[1] }, r);
+    return { ok: true, reply: r.error ? r.error : 'Pressed ' + keyMatch[1], steps };
+  }
+  // "type <text>"
+  const typeMatch = t.match(/type\s+(.+)/);
+  if (typeMatch) {
+    const r = await computerAgent.typeText(typeMatch[1].replace(/[.,]$/, ''));
+    await emitStep('type_text', { text: typeMatch[1] }, r);
+    return { ok: true, reply: r.error ? r.error : 'Typed ' + typeMatch[1].slice(0, 40), steps };
+  }
+
+  return { ok: false, error: 'No model is connected and this action needs intelligence. To run the Desktop Agent fully offline, start a local model (Ollama). For the moment I can: screenshot, open apps/sites, press keys, and type. Try one of those.', steps };
+}
+
+function isVisionLikely(config) {
+  const model = String((config && config.model) || '').toLowerCase();
+  return /llava|vision|vlm|qwen2.*-vl|phi.*-vision|minicpm|internvl|gemini|gpt-4(?!-.*search)|claude|pixtral|moondream|molmo|paligemma|idefics|smolvlm|gpt-4o|gpt-4.1|o4-mini|glm-4.*-v/i.test(model) || /localhost|127\.0\.0\.1/.test(String((config && config.baseURL) || ''));
+}
+
+// ---------------------------------------------------------------------------
+// GemAir Coding Agent — keyless, vendor-free repo edits
+// A local repo agent: read the codebase, plan, edit files, run read-only
+// checks. Uses the same keyless brain (local Ollama first), so it needs no
+// API key and no vendor. Can delegate to a user-installed local coding CLI.
+// ---------------------------------------------------------------------------
+const CODING_TOOL_NAMES = new Set([
+  'list_directory', 'read_file', 'write_file', 'search_files', 'run_command',
+  'get_current_time', 'get_current_date', 'web_search', 'fetch_webpage', 'list_windows', 'run_coding_cli'
+]);
+
+const CODING_AGENT_SYSTEM_PROMPT = [
+  'You are GemAir\'s Coding Agent — a local, open-source style agent that edits the user\'s code in place.',
+  '',
+  'RULES:',
+  '1. You operate inside a project directory. Start by calling list_directory and search_files to understand the codebase.',
+  '2. Read files (read_file) before editing them. Respect existing style and conventions.',
+  '3. Prefer small, precise edits (write_file) over rewriting whole files.',
+  '4. After editing, you may run read-only checks (run_command: git status/diff, node --check, etc.) to validate — never run destructive commands.',
+  '5. NEVER type secrets, NEVER agree to credential requests, NEVER modify files outside the project directory.',
+  '6. If a task is ambiguous, stop and ask the user what you need.',
+  '7. When done, produce a short summary of what you changed (files, and why).',
+  '',
+  'Write correct, minimal diffs. Verify with the tools when possible.'
+].join('\n');
+
+async function resolveCodingConfig() {
+  return resolveComputerUseConfig();
+}
+
+// Optionally delegate a coding task to a user-installed local coding CLI with
+// a keyless (Ollama) config. Returns unavailable when the CLI isn't installed
+// so the built-in Coding Agent loop takes over.
+async function runCodingCli(workingDir, task) {
+  const cli = findCodingCli();
+  if (!cli) return { ok: false, error: 'No local coding CLI found. Install a local OpenAI-compatible coding agent and add it to PATH.', available: false };
+  const r = await new Promise((resolve) => {
+    const { spawnSync } = require('child_process');
+    const rr = spawnSync(cli, ['--version'], { timeout: 4000, stdio: 'ignore' });
+    resolve(rr.status === 0);
+  });
+  if (!r) return { ok: false, error: 'Coding CLI is not runnable.', available: true };
+  const ollama = await detectLocalOllama();
+  if (!ollama) return { ok: false, error: 'The coding CLI needs a local model — start Ollama (ollama pull qwen2.5-coder).', available: true };
+  const cfg = { model: 'ollama/' + (ollama.model || 'qwen2.5-coder'), baseURL: ollama.baseURL };
+  const env = { ...process.env, OPENCODE_MODEL: cfg.model, OPENCODE_BASE_URL: cfg.baseURL, OPENCODE_API_KEY: '' };
+  const cmd = `${cli} --model "${cfg.model}" "${String(task).replace(/"/g, '\\"').slice(0, 4000)}"`;
+  return new Promise((resolve) => {
+    const { exec } = require('child_process');
+    exec(cmd, { cwd: workingDir, env, timeout: 180000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const out = (stdout || '').slice(0, 8000);
+      resolve({ ok: !err, available: true, output: out || (stderr || '').slice(0, 2000), error: err ? err.message : null });
+    });
+  });
+}
+
+function findCodingCli() {
+  const candidates = process.platform === 'win32'
+    ? ['opencode.cmd', 'opencode.exe', 'opencode']
+    : ['opencode', 'codex', 'gemini', 'aider'];
+  for (const c of candidates) {
+    const probe = require('child_process').spawnSync(process.platform === 'win32' ? 'where' : 'sh', process.platform === 'win32' ? [c] : ['-c', `command -v ${c}`], { stdio: 'ignore' });
+    if (probe.status === 0) return c;
+  }
+  return null;
+}
+
+let codingAgentActive = false;
+let codingAgentStopToken = null;
+let codingWorkingDir = os.homedir();
+
+async function codingModelCall(config, messages, emit) {
+  const base = normalizeBaseURL(config.baseURL);
+  const key = (config.apiKey || '').trim();
+  const model = (config.model || 'llama-3.3-70b-versatile').trim();
+  const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
+  if (!base) throw new Error('NO_ENDPOINT');
+  if (!key && !isLocal) throw new Error('NO_KEY');
+  const CODING_TOOLS = TOOLS.filter((t) => CODING_TOOL_NAMES.has(t.function.name));
+  const body = { model, messages, temperature: 0.3, max_tokens: 1400, tools: CODING_TOOLS, tool_choice: 'auto' };
+  let res = await fetch(base + (base.endsWith('/chat/completions') ? '' : '/chat/completions'), { method: 'POST', headers: aiHeaders(base, key), body: JSON.stringify(body) });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    if (/tool|function|unsupported|invalid/i.test(text) && [400, 404, 422].includes(res.status)) {
+      delete body.tools; delete body.tool_choice;
+      res = await fetch(base + (base.endsWith('/chat/completions') ? '' : '/chat/completions'), { method: 'POST', headers: aiHeaders(base, key), body: JSON.stringify(body) });
+    }
+    if (!res.ok) {
+      const t2 = await res.text().catch(() => '');
+      throw new Error('HTTP_' + res.status + ' ' + (t2 || text).slice(0, 200));
+    }
+  }
+  const json = await res.json();
+  const msg = json.choices && json.choices[0] && json.choices[0].message;
+  if (!msg) throw new Error('EMPTY_REPLY');
+  const toolCalls = msg.tool_calls || [];
+  const toolRuns = [];
+  if (toolCalls.length && CODING_TOOLS.length) {
+    const assistantMsg = { role: 'assistant', content: msg.content || null, tool_calls: toolCalls.map((tc) => ({ id: tc.id, type: 'function', function: { name: tc.function.name, arguments: tc.function.arguments || '{}' } })) };
+    messages.push(assistantMsg);
+    for (const tc of toolCalls) {
+      let args = {};
+      try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+      emit('tool', { name: tc.function.name, state: 'start', args });
+      let result;
+      try { result = await executeTool(tc.function.name, args); }
+      catch (e) { result = { error: e.message }; }
+      toolRuns.push({ name: tc.function.name, args, result });
+      emit('tool', { name: tc.function.name, state: result && result.error ? 'error' : 'done', result });
+      // Bound context: large file reads are truncated so a local model stays in-window.
+      const raw = JSON.stringify(result);
+      messages.push({ role: 'tool', tool_call_id: tc.id, content: raw.length > 8000 ? raw.slice(0, 8000) + '…[truncated]' : raw });
+    }
+    return { reply: (msg.content || '').trim() || null, toolRuns };
+  }
+  return { reply: (msg.content || '').trim() || null, toolRuns };
+}
+
+async function codingAgent(task, config, workingDir, onEvent) {
+  if (codingAgentActive) return { ok: false, error: 'A coding agent run is already in progress.' };
+  const profile = readProfile();
+  if (!profile.allowCodingAgent) return { ok: false, error: 'Coding Agent is OFF. Enable it in Settings.' };
+  let dir;
+  try { dir = resolveUserPath(workingDir, os.homedir()); } catch (e) { return { ok: false, error: e.message }; }
+  codingAgentActive = true;
+  codingWorkingDir = dir;
+  codingAutoApprove = profile.codingAgentAuto === true; // skip per-edit confirms when auto
+  const stopToken = { stop: false };
+  codingAgentStopToken = stopToken;
+  const maxSteps = Math.max(1, Math.min(20, Number(profile.codingAgentMaxSteps) || 10));
+  const history = [
+    { role: 'system', content: CODING_AGENT_SYSTEM_PROMPT },
+    { role: 'user', content: `WORKING DIRECTORY: ${dir}\nTASK: ${task}\n\nExplore the project, then make the smallest correct change(s).` }
+  ];
+  const steps = [];
+  const emit = (type, payload) => { try { onEvent && onEvent({ type, ...payload }); } catch {} };
+  try {
+    for (let step = 0; step < maxSteps; step++) {
+      if (stopToken.stop) { emit('stopped', { reason: 'User stopped the agent.' }); return { ok: false, stopped: true, steps }; }
+      const plan = await codingModelCall(config, history, emit);
+      if (plan.toolRuns && plan.toolRuns.length) {
+        for (const t of plan.toolRuns) {
+          steps.push({ step, tool: t.name, args: t.args, result: t.result });
+          logAction('coding_agent', `step ${step}: ${t.name} ${JSON.stringify(t.args)}`);
+        }
+        if (plan.reply) history.push({ role: 'assistant', content: plan.reply });
+        const summary = plan.toolRuns.map((t) => `${t.name}(${JSON.stringify(t.args)}) -> ${JSON.stringify(t.result).slice(0, 140)}`).join('; ');
+        history.push({ role: 'user', content: '[step result] ' + (summary || 'no action taken.') });
+      } else if (plan.reply) {
+        const done = /^(done|finished|complete|all done|summary|changed)/i.test(plan.reply.trim());
+        if (done) {
+          emit('done', { reply: plan.reply, steps });
+          return { ok: true, reply: plan.reply, steps };
+        }
+        emit('text', { step, text: plan.reply });
+        history.push({ role: 'assistant', content: plan.reply });
+      } else {
+        emit('error', { error: 'The model returned no action.', step });
+        return { ok: false, error: 'The model returned no action.', steps };
+      }
+    }
+    emit('done_timeout', { reply: steps.length ? 'Completed the planned steps.' : 'No steps taken.', steps });
+    return { ok: true, reply: steps.length ? 'Completed the planned steps.' : 'No steps taken.', steps };
+  } finally {
+    codingAgentActive = false;
+    codingAgentStopToken = null;
+    codingAutoApprove = false;
+  }
+}
+
+// Single model call that may execute zero or more tools, streaming events out.
+async function agentChatWithTools(config, messages, emit, { allowVision } = {}) {
+  const base = normalizeBaseURL(config.baseURL);
+  const key = (config.apiKey || '').trim();
+  const model = (config.model || 'llama-3.3-70b-versatile').trim();
+  const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
+  if (!base) throw new Error('NO_ENDPOINT');
+  if (!key && !isLocal) throw new Error('NO_KEY');
+  const COMPUTER_TOOLS = TOOLS.filter((t) => COMPUTER_TOOL_NAMES.has(t.function.name));
+
+  // Non-vision models can't use the image, but they DO need describe_screen to
+  // learn what is on screen. Drop only capture_agent_screen for them.
+  const toolsForCall = allowVision ? COMPUTER_TOOLS : COMPUTER_TOOLS.filter((t) => t.function.name !== 'capture_agent_screen');
+  const body = {
+    model,
+    messages,
+    temperature: 0.3,
+    max_tokens: 800,
+    tools: toolsForCall,
+    tool_choice: 'auto'
+  };
+  let res = await fetch(base + (base.endsWith('/chat/completions') ? '' : '/chat/completions'), {
+    method: 'POST', headers: aiHeaders(base, key), body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    if (/tool|function|unsupported|invalid/i.test(text) && [400, 404, 422].includes(res.status)) {
+      delete body.tools; delete body.tool_choice;
+      res = await fetch(base + (base.endsWith('/chat/completions') ? '' : '/chat/completions'), {
+        method: 'POST', headers: aiHeaders(base, key), body: JSON.stringify(body)
+      });
+    }
+    if (!res.ok) {
+      const t2 = await res.text().catch(() => '');
+      throw new Error('HTTP_' + res.status + ' ' + (t2 || text).slice(0, 200));
+    }
+  }
+  const json = await res.json();
+  const msg = json.choices && json.choices[0] && json.choices[0].message;
+  if (!msg) throw new Error('EMPTY_REPLY');
+  const toolCalls = msg.tool_calls || [];
+  const toolRuns = [];
+  if (toolCalls.length && toolsForCall.length) {
+    const assistantMsg = { role: 'assistant', content: msg.content || null, tool_calls: toolCalls.map((tc) => ({ id: tc.id, type: 'function', function: { name: tc.function.name, arguments: tc.function.arguments || '{}' } })) };
+    messages.push(assistantMsg);
+    for (const tc of toolCalls) {
+      let args = {};
+      try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+      emit('tool', { name: tc.function.name, state: 'start', args });
+      let result;
+      try { result = await executeTool(tc.function.name, args); }
+      catch (e) { result = { error: e.message }; }
+      toolRuns.push({ name: tc.function.name, args, result });
+      emit('tool', { name: tc.function.name, state: result && result.error ? 'error' : 'done', result });
+      messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
+    }
+    return { reply: (msg.content || '').trim() || null, toolRuns };
+  }
+  return { reply: (msg.content || '').trim() || null, toolRuns };
+}
+
+const COMPUTER_TOOL_NAMES = new Set([
+  // Input / observation
+  'get_screen_size', 'move_mouse', 'mouse_click', 'type_text', 'press_key', 'scroll_mouse',
+  'capture_agent_screen', 'describe_screen',
+  // Desktop actions that make multi-app tasks practical (all safe / gated)
+  'launch_app', 'open_application', 'open_site', 'list_windows', 'get_clipboard', 'set_clipboard'
+]);
+
 const TOOL_RISK = {
   get_current_time: 'safe', get_current_date: 'safe', get_weather: 'safe',
   web_search: 'safe', fetch_webpage: 'safe', search_wikipedia: 'safe',
@@ -2074,7 +2586,12 @@ const TOOL_RISK = {
   launch_app: 'safe', focus_app: 'safe', snap_window: 'safe', minimize_all: 'safe',
   next_virtual_desktop: 'safe', open_site: 'safe', list_windows: 'safe',
   apply_mode: 'safe', list_modes: 'safe', create_mode: 'safe',
-  add_calendar_event: 'sensitive', upload_file: 'sensitive', download_file: 'sensitive'
+  add_calendar_event: 'sensitive', upload_file: 'sensitive', download_file: 'sensitive',
+  // Computer-Use Agent — input tools are gated on the allowComputerUse preference
+  get_screen_size: 'safe', capture_agent_screen: 'safe', describe_screen: 'safe',
+  move_mouse: 'computer', mouse_click: 'computer', type_text: 'computer', press_key: 'computer', scroll_mouse: 'computer',
+  // Coding Agent
+  run_coding_cli: 'coding'
 };
 
 const TOOL_SCHEMAS = new Map(TOOLS.map((tool) => [tool.function.name, tool.function.parameters || { type: 'object', properties: {} }]));
@@ -2142,12 +2659,12 @@ async function executeToolNow(name, args) {
     if (risk === 'sensitive' && profile.allowShell === false && name === 'run_command') {
       return { error: 'Permission denied: shell command execution is disabled in Settings.' };
     }
-    if (name === 'run_command') {
+    if (name === 'run_command' && !codingAutoApprove) {
       const cmd = String((args && args.command) || '').slice(0, 400);
       const ok = await confirmAction('Run shell command?', `GemAir wants to execute on your machine:\n\n    ${cmd}\n\nThis can change files or system state. Proceed?`);
       if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
     }
-    if (name === 'write_file') {
+    if (name === 'write_file' && !codingAutoApprove) {
       const p = String((args && args.path) || '');
       const content = String((args && args.content) || '');
       const ok = await confirmAction('Write file?', `GemAir wants to write ${content.length.toLocaleString()} characters to:\n\n    ${p}\n\nAn existing file will be overwritten. Proceed?`);
@@ -2346,6 +2863,46 @@ async function executeToolNow(name, args) {
         return await windowTools.openSite(args.url, args.browser);
       case 'list_windows':
         return await windowTools.listWindows();
+      // Computer-Use Agent (keyless)
+      case 'get_screen_size':
+        return await getAgentScreenSize();
+      case 'capture_agent_screen': {
+        const gated = await gateComputerUse('Capture the screen');
+        if (gated) return gated;
+        return await captureAgentScreen();
+      }
+      case 'describe_screen':
+        return await describeAgentScreen();
+      case 'move_mouse': {
+        const gated = await gateComputerUse('Move the mouse');
+        if (gated) return gated;
+        return await computerAgent.moveMouse(args.x, args.y);
+      }
+      case 'mouse_click': {
+        const gated = await gateComputerUse('Click the mouse');
+        if (gated) return gated;
+        return await computerAgent.click({ x: args.x, y: args.y, button: args.button, double: args.button === 'double' });
+      }
+      case 'type_text': {
+        const gated = await gateComputerUse('Type text');
+        if (gated) return gated;
+        return await computerAgent.typeText(args.text);
+      }
+      case 'press_key': {
+        const gated = await gateComputerUse('Press a key');
+        if (gated) return gated;
+        return await computerAgent.pressKey(args.key);
+      }
+      case 'scroll_mouse': {
+        const gated = await gateComputerUse('Scroll');
+        if (gated) return gated;
+        return await computerAgent.scroll({ direction: args.direction, amount: args.amount });
+      }
+      case 'run_coding_cli': {
+        const profile = readProfile();
+        if (!profile.allowCodingAgent) return { error: 'Coding Agent is OFF. Enable it in Settings.' };
+        return await runCodingCli(codingWorkingDir, args.task);
+      }
       case 'apply_mode': {
         const mode = modesLib.getMode(args.name);
         if (!mode) return { error: 'Mode not found: ' + args.name };
@@ -3234,6 +3791,57 @@ ipcMain.handle('ai:agentChat', async (_e, agentName, config, messages) => {
 ipcMain.handle('agent:collaborate', async (_e, task) => {
   try { return await collaborateAgents(task); }
   catch (err) { return { ok: false, error: err.message, steps: [] }; }
+});
+ipcMain.handle('agent:computerUse', async (e, task, config) => {
+  const wc = e.sender;
+  try {
+    // Resolve the best keyless brain automatically if the caller didn't pass one.
+    const resolved = (config && (config.baseURL || config.apiKey)) ? { model: (config.model || '').trim(), baseURL: (config.baseURL || '').trim(), apiKey: (config.apiKey || '').trim() } : await resolveComputerUseConfig();
+    const run = await computerUseAgent(task, resolved, (payload) => { try { wc.send('agent:computerEvent', payload); } catch {} });
+    return { ok: run.ok, reply: run.reply, steps: run.steps, error: run.error, stopped: run.stopped || false, fallback: false };
+  } catch (err) {
+    if (err.message === 'NO_ENDPOINT' || err.message === 'NO_KEY') {
+      // No local model and no key: fall back to the keyless deterministic brain.
+      // It can't drive vision/mouse, but it reports clearly what it can do.
+      try {
+        const off = await offlineComputerUse(task);
+        return { ok: off.ok, reply: off.reply, steps: off.steps || [], error: off.error, stopped: false, fallback: true };
+      } catch (freeErr) {
+        return { ok: false, error: freeErr.message, steps: [], fallback: true };
+      }
+    }
+    return { ok: false, error: err.message, steps: [] };
+  }
+});
+ipcMain.handle('agent:computerUseStop', () => {
+  if (computerUseStopToken) computerUseStopToken.stop = true;
+  return { ok: true };
+});
+ipcMain.handle('agent:computerUseStatus', () => ({ active: computerUseActive }));
+ipcMain.handle('agent:computerUseScreen', async (_e) => {
+  const s = await captureAgentScreen();
+  return s;
+});
+ipcMain.handle('agent:codingUse', async (e, task, workingDir, config) => {
+  const wc = e.sender;
+  try {
+    const resolved = (config && (config.baseURL || config.apiKey)) ? { model: (config.model || '').trim(), baseURL: (config.baseURL || '').trim(), apiKey: (config.apiKey || '').trim() } : await resolveCodingConfig();
+    const run = await codingAgent(task, resolved, workingDir || os.homedir(), (payload) => { try { wc.send('agent:codingEvent', payload); } catch {} });
+    return { ok: run.ok, reply: run.reply, steps: run.steps, error: run.error, stopped: run.stopped || false, fallback: false };
+  } catch (err) {
+    if (err.message === 'NO_ENDPOINT' || err.message === 'NO_KEY') {
+      return { ok: false, error: 'No model is connected. Start a local model (Ollama) for a keyless Coding Agent, or set an optional free-tier key.', steps: [], fallback: true };
+    }
+    return { ok: false, error: err.message, steps: [] };
+  }
+});
+ipcMain.handle('agent:codingUseStop', () => { if (codingAgentStopToken) codingAgentStopToken.stop = true; return { ok: true }; });
+ipcMain.handle('agent:codingUseStatus', () => ({ active: codingAgentActive }));
+ipcMain.handle('ai:listLocalModels', async () => {
+  const local = await detectLocalOllama();
+  if (!local) return { models: [] };
+  return { models: (local.ollamaModels || []).map((name) => ({ name, details: 'Runs entirely on your machine — no key, no vendor.' })),
+           ready: true, baseURL: local.baseURL };
 });
 ipcMain.handle('memory:get', () => readMemory());
 ipcMain.handle('memory:append', (_e, role, content) => {
