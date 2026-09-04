@@ -1,0 +1,89 @@
+[package]
+name = "taskhomie"
+version = "0.1.0"
+description = "AI-powered computer control"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "taskhomie_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+tauri-plugin-shell = "2"
+tauri-plugin-positioner = { version = "2", features = ["tray-icon"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# http client
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
+futures-util = "0.3"
+
+# async runtime
+tokio = { version = "1", features = ["full", "sync"] }
+
+# mouse/keyboard control
+enigo = "0.6.1"
+
+# screenshot capture
+xcap = "0.8.0"
+
+# image processing
+image = "0.25.9"
+base64 = "0.22"
+
+# env vars
+dotenvy = "0.15"
+
+# error handling
+thiserror = "2"
+anyhow = "1"
+
+# storage
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+dirs = "5"
+
+# browser automation via CDP
+chromiumoxide = { version = "0.8", features = ["tokio-runtime"] }
+futures = "0.3"
+
+# voice mode - mic capture + deepgram STT
+cpal = "0.15"
+deepgram = "0.7"
+bytes = "1"
+
+# allocator
+mimalloc = "0.1"
+
+# global hotkey
+tauri-plugin-global-shortcut = "2"
+
+# macos panel support
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
+core-graphics = "0.24"
+core-foundation = "0.10"
+foreign-types = "0.5"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder", "NSScreen"] }
+objc2-foundation = { version = "0.3", features = ["NSGeometry"] }
+dispatch = "0.2"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+unused_lifetimes = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# allow common patterns
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+too_many_lines = "allow"
+

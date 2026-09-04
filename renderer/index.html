@@ -976,18 +976,45 @@
                 <label>Model
                   <input type="text" id="setModel" placeholder="llama-3.3-70b-versatile" />
                 </label>
+                <label>Or pick a model
+                  <select id="setModelSelect"></select>
+                </label>
                 <div class="quick-presets" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
                   <button class="preset mini-btn" data-preset="groq" title="Groq — fast Llama (free tier)">Groq</button>
-                  <button class="preset mini-btn" data-preset="openai" title="ChatGPT / OpenAI — use your OpenAI API key (platform.openai.com)">ChatGPT</button>
-                  <button class="preset mini-btn" data-preset="gemini" title="Google Gemini — use your Google AI Studio key (aistudio.google.com)">Gemini</button>
-                  <button class="preset mini-btn" data-preset="claude" title="Anthropic Claude — use your Anthropic key (console.anthropic.com)">Claude</button>
-                  <button class="preset mini-btn" data-preset="deepseek" title="DeepSeek — use your DeepSeek key (platform.deepseek.com)">DeepSeek</button>
-                  <button class="preset mini-btn" data-preset="mistral" title="Mistral — use your Mistral key (console.mistral.ai)">Mistral</button>
-                  <button class="preset mini-btn" data-preset="openrouter">OpenRouter</button>
-                  <button class="preset mini-btn" data-preset="ollama">Ollama</button>
-                  <button class="preset mini-btn" data-preset="offline">Offline</button>
+                  <button class="preset mini-btn" data-preset="gemini" title="Google Gemini — free tier (aistudio.google.com)">Gemini</button>
+                  <button class="preset mini-btn" data-preset="cerebras" title="Cerebras — ultra-fast, free tier">Cerebras</button>
+                  <button class="preset mini-btn" data-preset="sambanova" title="SambaNova — Llama to 405B, free tier">SambaNova</button>
+                  <button class="preset mini-btn" data-preset="nvidia" title="NVIDIA NIM — 90+ models, free credits">NVIDIA</button>
+                  <button class="preset mini-btn" data-preset="together" title="Together AI — 200+ open models">Together</button>
+                  <button class="preset mini-btn" data-preset="fireworks" title="Fireworks AI — fast Llama">Fireworks</button>
+                  <button class="preset mini-btn" data-preset="xai" title="xAI (Grok) — sign-up credits">Grok</button>
+                  <button class="preset mini-btn" data-preset="zai" title="Z.AI (GLM) — reasoning">GLM</button>
+                  <button class="preset mini-btn" data-preset="cohere" title="Cohere — Command R + R+">Cohere</button>
+                  <button class="preset mini-btn" data-preset="hf" title="Hugging Face — 3000+ open models">HuggingFace</button>
+                  <button class="preset mini-btn" data-preset="deepseek" title="DeepSeek — V3 / R1">DeepSeek</button>
+                  <button class="preset mini-btn" data-preset="hyperbolic" title="Hyperbolic — open models">Hyperbolic</button>
+                  <button class="preset mini-btn" data-preset="deepinfra" title="DeepInfra">DeepInfra</button>
+                  <button class="preset mini-btn" data-preset="siliconflow" title="SiliconFlow">SiliconFlow</button>
+                  <button class="preset mini-btn" data-preset="novita" title="Novita AI">Novita</button>
+                  <button class="preset mini-btn" data-preset="mistral" title="Mistral — free Experiment plan">Mistral</button>
+                  <button class="preset mini-btn" data-preset="openrouter" title="OpenRouter — one key, 300+ models">OpenRouter</button>
+                  <button class="preset mini-btn" data-preset="openai" title="ChatGPT / OpenAI — optional paid key">ChatGPT</button>
+                  <button class="preset mini-btn" data-preset="ollama" title="Ollama — fully local, keyless">Ollama</button>
+                  <button class="preset mini-btn" data-preset="offline" title="Offline brain">Offline</button>
                 </div>
                 <div class="hint" id="aiStatusHint" style="font-size:11px;margin-top:6px;">✨ Free AI Core connected — 100% free out of the box.</div>
+
+                <div class="free-model-panel" style="margin-top:12px;">
+                  <div class="fm-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                    <span class="dim" style="font:700 10px var(--font-mono);letter-spacing:.12em;">🆓 FREE MODELS — ONE-CLICK SETUP</span>
+                    <span class="free-badge">NO CARD · NO VENDOR LOCK-IN</span>
+                  </div>
+                  <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">These are free-tier OpenAI-compatible models. Pick one and it fills the Base URL + model for you; add the provider's free key when prompted, or run a fully keyless local one from Ollama below.</p>
+                  <div id="freeModelsList" style="max-height:280px;overflow:auto;display:flex;flex-direction:column;gap:6px;"></div>
+                  <div id="ollamaModels" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;">
+                    <div class="empty">Checking for a local Ollama model…</div>
+                  </div>
+                </div>
                 <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
                   <button class="test-btn" id="testConn" type="button">🔌 TEST CONNECTION</button>
                   <span class="test-result" id="testResult"></span>
@@ -1148,6 +1175,51 @@
             <span class="hint" id="localBrainHint">Optional. Downloads roughly 800 MB first time, then answers offline.</span>
           </fieldset>
 
+          <fieldset id="desktopAgentCard">
+            <legend>🤖 DESKTOP AGENT — COMPUTER USE (KEYLESS, NO CLAUDE)</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+              Like an agent that drives your real cursor, keyboard, screenshots and terminal — but <b>no API key, no Claude, no vendor</b>.
+              It runs on a <b>local model (Ollama)</b> when present (fully offline) or your optional free-tier key. Turn it on to let Gem take
+              screenshots, move the mouse, click, type and press keys to carry out a task you describe.
+            </p>
+            <label class="check-label">
+              <input type="checkbox" id="setComputerUse" /> Enable Desktop Agent (computer control) — lets Gem move your mouse &amp; keyboard
+            </label>
+            <label class="check-label">
+              <input type="checkbox" id="setComputerUseAuto" /> Auto-approve desktop actions (skips the per-action confirm prompt)
+            </label>
+            <label>Max agent steps (1–20)
+              <input type="number" id="setComputerUseSteps" min="1" max="20" value="8" style="width:90px;" />
+            </label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+              <button class="qc" id="openAgentBtn">🖥 Open Desktop Agent</button>
+              <button class="qc" id="agentScreenBtn">🖼 Capture Screen</button>
+            </div>
+            <div class="memory-list" id="agentStatusLine" style="margin-top:10px;max-height:90px;"><div class="empty">Desktop Agent awaits. Start a local model (Ollama) for full vision control, or just describe a task.</div></div>
+          </fieldset>
+
+          <fieldset id="codingAgentCard">
+            <legend>👨‍💻 CODING AGENT — KEYLESS, GEMAIR</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+              GemAir's own local coding agent — with <b>no API key, no Claude, no vendor</b>. Point it at a
+              project folder and describe a change — it reads your repo, plans, edits files and validates, using a <b>local model (Ollama)</b>.
+              It can also delegate to a user-installed terminal coding CLI (keyless via Ollama).
+            </p>
+            <label class="check-label">
+              <input type="checkbox" id="setCodingAgent" /> Enable Coding Agent (let Gem read &amp; edit code in a chosen project folder)
+            </label>
+            <label class="check-label">
+              <input type="checkbox" id="setCodingAgentAuto" /> Auto-approve file edits &amp; read-only commands (skips per-edit confirm)
+            </label>
+            <label>Max agent steps (1–20)
+              <input type="number" id="setCodingAgentSteps" min="1" max="20" value="10" style="width:90px;" />
+            </label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+              <button class="qc" id="openCodingAgentBtn">👨‍💻 Open Coding Agent</button>
+            </div>
+            <div class="memory-list" id="codingAgentStatusLine" style="margin-top:10px;max-height:90px;"><div class="empty">Coding Agent awaits a project folder + task.</div></div>
+          </fieldset>
+
           <fieldset id="modeDesignerCard">
             <legend>MODE DESIGNER — CREATE CUSTOM MODES</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
@@ -1273,6 +1345,65 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="agentModal" role="dialog" aria-modal="true" aria-labelledby="agentModalTitle">
+    <div class="modal agent-modal">
+      <div class="modal-head">
+        <h2 id="agentModalTitle">🤖 DESKTOP AGENT — COMPUTER USE</h2>
+        <button class="icon-btn" id="agentModalClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
+          Describe a task and Gem will drive your real mouse, keyboard, screenshots and terminal to do it.
+          <b>No API key, no Claude, no vendor.</b> It uses a local model (Ollama) first — or your optional free-tier key. Turn on
+          <b>Enable Desktop Agent</b> in Settings first. If no model is present, it still handles screenshots, opening apps, pressing keys and typing.
+        </p>
+        <textarea id="agentTaskInput" placeholder="e.g. Open Chrome, go to example.com, and take a screenshot. / Open the calculator and type 2+2=4." style="width:100%;min-height:60px;resize:vertical;"></textarea>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">
+          <button class="primary-btn" id="agentRunBtn">▶ RUN AGENT</button>
+          <button class="ghost-btn" id="agentStopBtn" disabled>⏹ STOP</button>
+          <label class="check-label"><input type="checkbox" id="agentAutoApprove" /> Auto-approve actions</label>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:12px;align-items:center;flex-wrap:wrap;">
+          <span class="dim" style="font:600 10px var(--font-mono);">BRAIN:</span>
+          <span class="conn-status-chip fallback" id="agentBrainChip">Auto (local Ollama)</span>
+          <button class="ghost-btn" id="agentScreenBtn2" style="padding:4px 10px;font-size:10px;">🖼 Capture Screen</button>
+        </div>
+        <div class="agent-log" id="agentLog" style="margin-top:14px;max-height:360px;overflow:auto;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:10px;padding:12px;font-family:var(--font-mono);font-size:11px;">
+          <div class="empty">Agent ready.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="codingAgentModal" role="dialog" aria-modal="true" aria-labelledby="codingAgentModalTitle">
+    <div class="modal agent-modal">
+      <div class="modal-head">
+        <h2 id="codingAgentModalTitle">👨‍💻 CODING AGENT — KEYLESS</h2>
+        <button class="icon-btn" id="codingAgentModalClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
+          Point GemAir at a project folder and describe a change. It reads the repo, plans, edits files and validates —
+          <b>no API key, no Claude, no vendor</b> (local Ollama). Enable <b>Coding Agent</b> in Settings first.
+        </p>
+        <label>Project folder
+          <input type="text" id="codingDirInput" placeholder="e.g. ~/my-project, /home/you/project" style="width:100%;" />
+        </label>
+        <label>Task
+          <textarea id="codingTaskInput" placeholder="e.g. Add a /healthz endpoint to the router and a test. / Refactor this module to use async/await." style="width:100%;min-height:60px;resize:vertical;"></textarea>
+        </label>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">
+          <button class="primary-btn" id="codingRunBtn">▶ RUN CODING AGENT</button>
+          <button class="ghost-btn" id="codingStopBtn" disabled>⏹ STOP</button>
+          <label class="check-label"><input type="checkbox" id="codingAutoApprove" /> Auto-approve edits</label>
+        </div>
+        <div class="agent-log" id="codingLog" style="margin-top:14px;max-height:360px;overflow:auto;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:10px;padding:12px;font-family:var(--font-mono);font-size:11px;">
+          <div class="empty">Coding Agent ready.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="downloadModal" role="dialog" aria-modal="true" aria-labelledby="downloadModalTitle">
     <div class="modal download-modal">
       <div class="modal-head">
@@ -1372,6 +1503,7 @@
   <script src="tts-engine.js"></script>
   <script src="edge-tts.js"></script>
   <script src="avatar.js"></script>
+  <script src="providers.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

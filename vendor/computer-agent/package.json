@@ -1,0 +1,37 @@
+{
+  "name": "taskhomie",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-shell": "^2",
+    "framer-motion": "^11",
+    "lucide-react": "^0.468",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "simplex-noise": "^4.0.3",
+    "streamdown": "^1.6.10",
+    "three": "^0.182.0",
+    "zustand": "^5"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.19",
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.182.0",
+    "@vitejs/plugin-react": "^4",
+    "autoprefixer": "^10",
+    "postcss": "^8",
+    "tailwindcss": "^3",
+    "typescript": "^5",
+    "vite": "^6"
+  }
+}

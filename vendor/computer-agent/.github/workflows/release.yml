@@ -1,0 +1,63 @@
+name: release
+
+# tag-driven. `git tag v0.1.1 && git push --tags` cuts a release.
+# also runnable by hand from the Actions tab.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "tag to build and release (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # macos-14 is apple silicon. the universal target covers intel too.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # signing + notarization. if these secrets are absent the build still
+          # succeeds, it just produces an unsigned bundle that gatekeeper blocks.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: taskhomie ${{ github.event.inputs.tag || github.ref_name }}
+          releaseBody: |
+            Download the `.dmg` below, drag taskhomie to Applications.
+
+            On first launch macOS asks for Accessibility permission:
+            System Settings → Privacy & Security → Accessibility.
+
+            You supply your own Anthropic API key in the app.
+          releaseDraft: true
+          prerelease: false
+          args: --target universal-apple-darwin

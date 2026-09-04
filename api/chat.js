@@ -26,6 +26,9 @@ const KEY_ENV_NAMES = ['GROQ_API_KEY', 'OPENAI_API_KEY', 'AI_KEY', 'GROQ_KEY', '
 // Free provider fallback chain. Each entry is an OpenAI-compatible endpoint;
 // a key under any of keyEnv makes it usable. `nativeHeader` is sent alongside
 // Bearer where a provider wants its own auth header (Gemini).
+// A much broader free fallback chain. Each entry is OpenAI-compatible; any key
+// under keyEnv makes it usable. Adding more providers here means the FREE CORE
+// is more resilient: if one rate-limits or goes down, the next answers.
 const FREE_PROVIDERS = [
   {
     id: 'groq', free: true,
@@ -44,7 +47,62 @@ const FREE_PROVIDERS = [
     id: 'openrouter', free: true,
     base: 'https://openrouter.ai/api/v1',
     keyEnv: ['OPENROUTER_API_KEY', 'OPENROUTER_KEY'],
-    models: ['meta-llama/llama-3.3-70b-instruct', 'meta-llama/llama-3.1-8b-instruct', 'mistralai/mistral-7b-instruct']
+    models: ['meta-llama/llama-3.3-70b-instruct', 'meta-llama/llama-3.1-8b-instruct', 'mistralai/mistral-7b-instruct', 'deepseek/deepseek-chat-v3-0324']
+  },
+  {
+    id: 'cerebras', free: true,
+    base: 'https://api.cerebras.ai/v1',
+    keyEnv: ['CEREBRAS_API_KEY', 'CEREBRAS_KEY'],
+    models: ['llama-3.3-70b', 'qwen-3-32b']
+  },
+  {
+    id: 'sambanova', free: true,
+    base: 'https://api.sambanova.ai/v1',
+    keyEnv: ['SAMBANOVA_API_KEY', 'SAMBANOVA_KEY'],
+    models: ['Meta-Llama-3.1-8B-Instruct', 'Meta-Llama-3.3-70B-Instruct']
+  },
+  {
+    id: 'together', free: true,
+    base: 'https://api.together.xyz/v1',
+    keyEnv: ['TOGETHER_API_KEY', 'TOGETHER_KEY'],
+    models: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'Qwen/Qwen2.5-72B-Instruct-Turbo']
+  },
+  {
+    id: 'nvidia', free: true,
+    base: 'https://integrate.api.nvidia.com/v1',
+    keyEnv: ['NVIDIA_API_KEY', 'NVIDIA_NIM_API_KEY'],
+    models: ['meta/llama-3.3-70b-instruct', 'deepseek-ai/deepseek-r1']
+  },
+  {
+    id: 'xai', free: true,
+    base: 'https://api.x.ai/v1',
+    keyEnv: ['XAI_API_KEY', 'GROK_API_KEY'],
+    models: ['grok-3-mini']
+  },
+  {
+    id: 'zai', free: true,
+    base: 'https://api.z.ai/api/paas/v4',
+    keyEnv: ['ZAI_API_KEY'],
+    nativeHeader: 'x-api-key',
+    models: ['glm-4-flash']
+  },
+  {
+    id: 'hf', free: true,
+    base: 'https://router.huggingface.co/v1',
+    keyEnv: ['HF_API_KEY', 'HF_TOKEN', 'HUGGINGFACE_API_KEY'],
+    models: ['meta-llama/Llama-3.3-70B-Instruct', 'Qwen/Qwen2.5-72B-Instruct']
+  },
+  {
+    id: 'deepseek', free: true,
+    base: 'https://api.deepseek.com/v1',
+    keyEnv: ['DEEPSEEK_API_KEY'],
+    models: ['deepseek-chat', 'deepseek-reasoner']
+  },
+  {
+    id: 'deepinfra', free: true,
+    base: 'https://api.deepinfra.com/v1/openai',
+    keyEnv: ['DEEPINFRA_API_KEY'],
+    models: ['meta-llama/Llama-3.3-70B-Instruct']
   },
   {
     id: 'openai', free: false,
