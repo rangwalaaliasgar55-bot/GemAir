@@ -540,6 +540,7 @@ const DEFAULTS = Object.freeze({
   appearance: 'dark',
   contextStrategy: 'balanced',
   autoUpdateChecks: true,
+  updateChannel: 'stable',
   ambientTrack: 'deep',
   ambientVolume: 0.35,
   currentMode: '',
@@ -570,7 +571,7 @@ function makeDefaultProfile() {
       sttLang: DEFAULTS.sttLang,
       name: ''
     },
-    memoryOn: true, allowShell: false, adaptivePersonality: true, autoUpdateChecks: DEFAULTS.autoUpdateChecks, usageStats: false, wakeWord: false, wakeWordText: 'Hey Gem',
+    memoryOn: true, allowShell: false, adaptivePersonality: true, autoUpdateChecks: DEFAULTS.autoUpdateChecks, updateChannel: DEFAULTS.updateChannel, usageStats: false, wakeWord: false, wakeWordText: 'Hey Gem',
     ambientScore: false, ambientTrack: DEFAULTS.ambientTrack, ambientVolume: DEFAULTS.ambientVolume,
     screenAwareness: false,
     modes: {}
@@ -6122,6 +6123,7 @@ function openSettings() {
   $('#setContextStrategy').value = CONTEXT_STRATEGIES[profile.contextStrategy] ? profile.contextStrategy : DEFAULTS.contextStrategy;
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setAutoUpdateChecks').checked = profile.autoUpdateChecks !== false;
+  { const channel = $('#setUpdateChannel'); if (channel) channel.value = profile.updateChannel === 'nightly' ? 'nightly' : 'stable'; }
   $('#setUsageStats').checked = profile.usageStats === true;
   $('#setAmbientScore').checked = !!profile.ambientScore;
   // T5 — ambient track + volume
@@ -6847,25 +6849,26 @@ function bindEvents() {
   $('#updatePill')?.addEventListener('click', () => { openSettings(); setTimeout(() => checkForAppUpdates({ force: true }).catch(() => {}), 150); });
   try {
     if (api.onUpdateAvailable) api.onUpdateAvailable((info) => {
+      const display = info.latest === 'nightly' ? 'Nightly build' : `GemAir ${info.latest}`;
       const pill = $('#updatePill');
       if (pill && info && info.latest) {
         pill.hidden = false;
-        pill.textContent = info.downloaded ? `⬆ Restart to update ${info.latest}` : `⬆ Update ${info.latest}`;
-        pill.title = `GemAir ${info.latest} is available (installed: ${info.current || 'unknown'})`;
+        pill.textContent = info.downloaded ? `⬆ Restart to update (${display})` : `⬆ Update (${display})`;
+        pill.title = `${display} is available (installed: ${info.current || 'unknown'})`;
       }
       const status = $('#updateStatus');
       const viewButton = $('#viewUpdateBtn');
       if (status && info && info.latest) {
         status.textContent = info.downloaded
-          ? `GemAir ${info.latest} is downloaded (installed: ${info.current || 'unknown'}). Click RESTART TO UPDATE.`
-          : `GemAir ${info.latest} is available (installed: ${info.current || 'unknown'}). The installer downloads in the background — then one click installs.`;
+          ? `${display} is downloaded (installed: ${info.current || 'unknown'}). Click RESTART TO UPDATE.`
+          : `${display} is available (installed: ${info.current || 'unknown'}). The installer downloads in the background — then one click installs.`;
       }
       if (viewButton && info && info.latest && info.url) {
         viewButton.hidden = false;
         viewButton.dataset.url = info.url;
         viewButton.textContent = info.downloaded ? 'RESTART TO UPDATE' : 'INSTALL UPDATE';
       }
-      try { toast('UPDATE AVAILABLE', info.downloaded ? `GemAir ${info.latest} downloaded — restart to install.` : `GemAir ${info.latest} published — downloading in the background.`, '⬆'); } catch {}
+      try { toast('UPDATE AVAILABLE', info.downloaded ? `${display} downloaded — restart to install.` : `${display} published — downloading in the background.`, '⬆'); } catch {}
     });
   } catch {}
   $('#viewUpdateBtn')?.addEventListener('click', async () => {
@@ -6948,6 +6951,7 @@ function bindEvents() {
     profile.contextStrategy = CONTEXT_STRATEGIES[$('#setContextStrategy').value] ? $('#setContextStrategy').value : DEFAULTS.contextStrategy;
     profile.allowShell = $('#setAllowShell').checked;
     profile.autoUpdateChecks = $('#setAutoUpdateChecks').checked;
+    profile.updateChannel = $('#setUpdateChannel')?.value === 'nightly' ? 'nightly' : 'stable';
     profile.usageStats = $('#setUsageStats').checked;
     profile.ambientScore = $('#setAmbientScore').checked;
     profile.ambientTrack = $('#setAmbientTrack')?.value || profile.ambientTrack || DEFAULTS.ambientTrack;

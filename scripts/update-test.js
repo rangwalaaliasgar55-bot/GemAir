@@ -30,7 +30,8 @@ console.log('  ok   semantic versions and release URLs are validated');
 
 assert(main.includes("const RELEASE_API_URL = 'https://api.github.com/repos/rangwalaaliasgar55-bot/GemAir/releases/latest'"), 'release endpoint is not fixed to the GemAir repository');
 assert(main.includes("setTimeout(() => controller.abort(), 8000)"), 'update request timeout is missing');
-assert(main.includes('release.draft || release.prerelease'), 'draft and prerelease builds are not rejected');
+assert(main.includes('release.draft'), 'draft builds are not rejected');
+assert(main.includes('release.prerelease'), 'prerelease builds are not accepted on the stable channel');
 assert(main.includes('String(release.body || \'\').slice(0, 4000)'), 'release notes are not bounded');
 assert(main.includes("ipcMain.handle('app:checkForUpdates'"), 'update IPC handler is missing');
 assert(preload.includes("ipcRenderer.invoke('app:checkForUpdates', !!force)"), 'update IPC is not exposed through the preload bridge');
@@ -42,6 +43,15 @@ assert(main.includes('verifiedWindowsAsset'), 'Windows installer URL is not veri
 assert(main.includes('UPDATE_CANCELLED'), 'update install cancellation is not handled');
 assert(main.includes('predownloadUpdate'), 'background pre-download is missing');
 assert(main.includes('pendingUpdate'), 'downloaded-update state is missing');
+assert(main.includes('RELEASE_NIGHTLY_API_URL'), 'nightly release endpoint is missing');
+assert(main.includes('getUpdateChannel'), 'update channel selection is missing');
+assert(main.includes('NIGHTLY_NOT_PUBLISHED'), 'missing nightly pre-release is not reported');
+assert(main.includes('writeNightlyState'), 'applied nightly builds are not recorded');
+assert(html.includes('id="setUpdateChannel"'), 'update channel selector is missing');
+assert(app.includes("profile.updateChannel = $('#setUpdateChannel')"), 'update channel is not persisted');
+const nightly = fs.readFileSync(path.join(ROOT, '.github/workflows/nightly.yml'), 'utf8');
+assert(nightly.includes('automatic_release_tag: nightly'), 'nightly workflow does not publish a rolling pre-release');
+assert(nightly.includes('branches:') && nightly.includes('- main'), 'nightly workflow does not build on pushes to main');
 assert(main.includes('startAutoUpdateWatcher'), 'background auto-update watcher is missing');
 assert(main.includes('AUTO_UPDATE_POLL_MS'), 'auto-update poll interval is missing');
 assert(main.includes("mainWindow.webContents.send('app:update-available'"), 'auto-update availability event is missing');

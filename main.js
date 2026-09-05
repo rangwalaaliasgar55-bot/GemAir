@@ -3690,8 +3690,21 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
 // separate user action in the renderer.
 // ---------------------------------------------------------------------------
 const RELEASE_API_URL = 'https://api.github.com/repos/rangwalaaliasgar55-bot/GemAir/releases/latest';
+const RELEASE_NIGHTLY_API_URL = 'https://api.github.com/repos/rangwalaaliasgar55-bot/GemAir/releases/tags/nightly';
 const RELEASE_PATH_PREFIX = '/rangwalaaliasgar55-bot/GemAir/releases/';
 const RELEASE_ASSET_PREFIX = 'https://github.com/rangwalaaliasgar55-bot/GemAir/releases/download/';
+const NIGHTLY_STATE_FILE = path.join(userDataDir, 'gemair-nightly.json');
+function getUpdateChannel() {
+  try {
+    return readProfile().updateChannel === 'nightly' ? 'nightly' : 'stable';
+  } catch { return 'stable'; }
+}
+function readNightlyState() {
+  return safeReadJSONFile(NIGHTLY_STATE_FILE) || {};
+}
+function writeNightlyState(state) {
+  try { atomicWriteJSON(NIGHTLY_STATE_FILE, state || {}, { backup: false }); } catch {}
+}
 let releaseCheckCache = { at: 0, result: null };
 function parseSemver(value) {
   const match = String(value || '').trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/i);
@@ -3718,33 +3731,62 @@ function verifiedWindowsAsset(value) {
   } catch { return null; }
 }
 async function checkForUpdates(force = false) {
-  if (!force && releaseCheckCache.result && Date.now() - releaseCheckCache.at < 6 * 60 * 60 * 1000) return releaseCheckCache.result;
+  const channel = getUpdateChannel();
+  if (!force && releaseCheckCache.result && releaseCheckCache.channel === channel && Date.now() - releaseCheckCache.at < 6 * 60 * 60 * 1000) return releaseCheckCache.result;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(RELEASE_API_URL, {
+    const apiUrl = channel === 'nightly' ? RELEASE_NIGHTLY_API_URL : RELEASE_API_URL;
+    const response = await fetch(apiUrl, {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': `GemAir/${app.getVersion()}` },
       signal: controller.signal
     });
-    if (!response.ok) return { ok: false, error: `UPDATE_CHECK_HTTP_${response.status}` };
+    if (!response.ok) {
+      if (channel === 'nightly' && response.status === 404) return { ok: false, error: 'NIGHTLY_NOT_PUBLISHED' };
+      return { ok: false, error: `UPDATE_CHECK_HTTP_${response.status}` };
+    }
     const release = await response.json();
-    const latest = String(release.tag_name || '').replace(/^v/i, '');
     const url = verifiedReleaseUrl(release.html_url);
-    if (!parseSemver(latest) || !url || release.draft || release.prerelease) return { ok: false, error: 'INVALID_RELEASE_METADATA' };
+    if (!url || release.draft) return { ok: false, error: 'INVALID_RELEASE_METADATA' };
     const current = app.getVersion();
-    const result = {
-      ok: true,
-      current,
-      latest,
-      available: isVersionNewer(latest, current),
-      url,
-      windowsAssetUrl: Array.isArray(release.assets) ? verifiedWindowsAsset((release.assets.find((asset) => /\.exe$/i.test(asset.name || '')) || {}).browser_download_url) : null,
-      name: String(release.name || `GemAir ${latest}`).slice(0, 120),
-      notes: String(release.body || '').slice(0, 4000),
-      publishedAt: release.published_at || null,
-      checkedAt: Date.now()
-    };
-    releaseCheckCache = { at: Date.now(), result };
+    const windowsAssetUrl = Array.isArray(release.assets) ? verifiedWindowsAsset((release.assets.find((asset) => /\.exe$/i.test(asset.name || '')) || {}).browser_download_url) : null;
+    let result;
+    if (channel === 'nightly') {
+      // Nightly builds have no semver tag; a build counts as new until this
+      // machine has installed/launched from it.
+      const publishedAt = release.published_at || release.created_at || null;
+      const appliedAt = readNightlyState().appliedPublishedAt || null;
+      result = {
+        ok: true,
+        channel,
+        current,
+        latest: 'nightly',
+        available: !!publishedAt && publishedAt !== appliedAt,
+        url,
+        windowsAssetUrl,
+        name: String(release.name || 'GemAir nightly').slice(0, 120),
+        notes: String(release.body || '').slice(0, 4000),
+        publishedAt,
+        checkedAt: Date.now()
+      };
+    } else {
+      const latest = String(release.tag_name || '').replace(/^v/i, '');
+      if (!parseSemver(latest) || release.prerelease) return { ok: false, error: 'INVALID_RELEASE_METADATA' };
+      result = {
+        ok: true,
+        channel,
+        current,
+        latest,
+        available: isVersionNewer(latest, current),
+        url,
+        windowsAssetUrl,
+        name: String(release.name || `GemAir ${latest}`).slice(0, 120),
+        notes: String(release.body || '').slice(0, 4000),
+        publishedAt: release.published_at || null,
+        checkedAt: Date.now()
+      };
+    }
+    releaseCheckCache = { at: Date.now(), result, channel };
     return result;
   } catch (error) {
     return { ok: false, error: error && error.name === 'AbortError' ? 'UPDATE_CHECK_TIMEOUT' : 'UPDATE_CHECK_FAILED' };
@@ -3773,17 +3815,19 @@ async function installUpdateFromRelease(releaseUrl) {
       chunks.push(chunk);
     }
     // Reuse a background pre-download when it already fetched this exact version.
+    const sameTag = (a, b) => String(a || '').replace(/^v/i, '').toLowerCase() === String(b || '').replace(/^v/i, '').toLowerCase();
     let installerPath = target;
     try {
-      if (pendingUpdate && pendingUpdate.version === release.tag_name && pendingUpdate.path && fs.existsSync(pendingUpdate.path)) {
+      if (pendingUpdate && sameTag(pendingUpdate.version, release.tag_name) && pendingUpdate.path && fs.existsSync(pendingUpdate.path)) {
         installerPath = pendingUpdate.path;
       } else {
         await fs.promises.writeFile(target, Buffer.concat(chunks));
       }
     } catch { await fs.promises.writeFile(target, Buffer.concat(chunks)); }
-    pendingUpdate = { version: release.tag_name, url: verifiedPage, path: installerPath, downloadedAt: Date.now() };
+    pendingUpdate = { version: release.tag_name, url: verifiedPage, path: installerPath, publishedAt: release.published_at || null, downloadedAt: Date.now() };
     const approved = await dialog.showMessageBox(mainWindow, { type: 'question', buttons: ['Install update', 'Cancel'], defaultId: 0, cancelId: 1, title: 'Install GemAir update?', message: `GemAir ${release.tag_name || ''} is ready. Close GemAir and run the downloaded installer now?`, detail: 'Your local profile and memory are preserved by the installer.' });
     if (approved.response !== 0) return { ok: false, error: 'UPDATE_CANCELLED' };
+    if (String(release.tag_name || '').toLowerCase() === 'nightly' && release.published_at) writeNightlyState({ appliedPublishedAt: release.published_at });
     const child = spawn(installerPath, [], { detached: true, stdio: 'ignore', windowsHide: false });
     child.unref();
     setTimeout(() => app.quit(), 250);
@@ -3825,7 +3869,8 @@ async function pollAutoUpdate(reason) {
         url: result.url,
         windowsAssetUrl: result.windowsAssetUrl || null,
         name: result.name,
-        downloaded: !!(pendingUpdate && pendingUpdate.version === ('v' + result.latest || result.latest)),
+        publishedAt: result.publishedAt || null,
+        downloaded: !!(pendingUpdate && pendingUpdate.path && fs.existsSync(pendingUpdate.path) && String(pendingUpdate.version || '').replace(/^v/i, '').toLowerCase() === String(result.latest || '').replace(/^v/i, '').toLowerCase()),
         reason: reason || 'poll'
       });
       // Pre-download the Windows installer in the background so the one-click
@@ -3858,7 +3903,7 @@ async function predownloadUpdate(result) {
       }
       const target = path.join(app.getPath('temp'), `GemAir-Setup-${tag.replace(/[^0-9A-Za-z.-]/g, '')}.exe`);
       await fs.promises.writeFile(target, Buffer.concat(chunks));
-      pendingUpdate = { version: tag, url: result.url, path: target, downloadedAt: Date.now() };
+      pendingUpdate = { version: tag, url: result.url, path: target, publishedAt: result.publishedAt || null, downloadedAt: Date.now() };
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('app:update-available', {
           current: result.current,
@@ -3879,6 +3924,7 @@ async function applyPendingUpdate() {
     if (!pendingUpdate || !pendingUpdate.path || !fs.existsSync(pendingUpdate.path)) return { ok: false, error: 'UPDATE_NOT_DOWNLOADED' };
     const approved = await dialog.showMessageBox(mainWindow, { type: 'question', buttons: ['Restart and update', 'Later'], defaultId: 0, cancelId: 1, title: 'Restart and update GemAir?', message: `GemAir ${pendingUpdate.version || ''} is downloaded. Restart now to install?`, detail: 'Your local profile and memory are preserved by the installer.' });
     if (approved.response !== 0) return { ok: false, error: 'UPDATE_CANCELLED' };
+    if (String(pendingUpdate.version || '').toLowerCase() === 'nightly' && pendingUpdate.publishedAt) writeNightlyState({ appliedPublishedAt: pendingUpdate.publishedAt });
     const child = spawn(pendingUpdate.path, [], { detached: true, stdio: 'ignore', windowsHide: false });
     child.unref();
     setTimeout(() => app.quit(), 250);

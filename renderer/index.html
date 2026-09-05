@@ -1289,7 +1289,13 @@
           <fieldset>
             <legend>APP UPDATES</legend>
             <label class="check-label">
-              <input type="checkbox" id="setAutoUpdateChecks" checked /> Check GitHub once daily for stable releases
+              <input type="checkbox" id="setAutoUpdateChecks" checked /> Check GitHub automatically for app updates
+            </label>
+            <label>Update channel
+              <select id="setUpdateChannel" aria-label="Update channel">
+                <option value="stable">Stable releases</option>
+                <option value="nightly">Nightly builds (every repo change)</option>
+              </select>
             </label>
               <p class="hint" style="font-size:11px;color:var(--text-dim);">GemAir checks for new releases automatically and downloads the installer in the background. Click INSTALL UPDATE once — no manual reinstall needed. Nothing installs without your click.</p>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
