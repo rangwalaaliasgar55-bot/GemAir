@@ -20,6 +20,8 @@ assert(preload.includes("connectionsOauthGemini: () => ipcRenderer.invoke('conne
 assert(renderer.includes('async connectionsOauthChatGPT()'), 'ChatGPT renderer bridge missing');
 assert(renderer.includes('async connectionsOauthGemini()'), 'Gemini renderer bridge missing');
 assert(renderer.includes('Opening secure OAuth sign-in'), 'renderer does not use secure OAuth flow');
+assert(bridge.includes('CHATGPT_OAUTH_CLIENT_REJECTED'), 'ChatGPT OAuth rejection is not explained');
+assert(bridge.includes('GEMINI_OAUTH_CLIENT_MISSING'), 'Gemini OAuth configuration failure is not explained');
 assert(bridge.includes('setChatGPTConnection') && bridge.includes('setGeminiConnection'), 'OAuth bridge does not persist both providers');
 assert(store.includes('safeStorage.encryptString'), 'connection store is not encrypted');
 assert(store.includes('generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'), 'Gemini official API route missing');
