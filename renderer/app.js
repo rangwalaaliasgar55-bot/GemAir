@@ -238,6 +238,8 @@ const api = {
   async codingUseStatus() { if (window.gemair && window.gemair.codingUseStatus) return window.gemair.codingUseStatus(); return { active: false }; },
   onCodingUseEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onCodingUseEvent ? window.gemair.onCodingUseEvent(cb) : null); },
   // 2.4 Connections
+  async connectionsOauthChatGPT() { if (window.gemair && window.gemair.connectionsOauthChatGPT) return window.gemair.connectionsOauthChatGPT(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'ChatGPT OAuth requires GemAir Desktop or a configured web callback.' }; },
+  async connectionsOauthGemini() { if (window.gemair && window.gemair.connectionsOauthGemini) return window.gemair.connectionsOauthGemini(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'Gemini OAuth requires GemAir Desktop or a configured web callback.' }; },
   async connectionsGetStatus() {
     if (window.gemair && window.gemair.connectionsGetStatus) return window.gemair.connectionsGetStatus();
     const status = { chatgpt: { connected: false, dot: 'BROWSER_OAUTH_REQUIRED', browser: true }, gemini: { connected: false, dot: 'BROWSER_OAUTH_REQUIRED', browser: true }, freeCore: { connected: false, dot: 'CHECKING', browser: true }, meta: { priority: 'free' } };
@@ -7956,13 +7958,14 @@ function showExperimentalWarning(provider, onContinue) {
 async function handleConnectChatGPT() {
   showExperimentalWarning('chatgpt', async () => {
     try {
-      toast('CHATGPT', 'Browser account connect is not configured on this deployment.', '⚠️');
-      const res = await api.connectionsOpenChatGPT();
-      if (res && !res.ok) { toast('CHATGPT', res.message || res.error, '⚠️'); return; }
-      // Show capture button
-      const cap = $('#captureChatGPTBtn');
-      if (cap) cap.hidden = false;
-      toast('CHATGPT', 'Sign in inside the opened window, then click Capture Session', '👁');
+      toast('CHATGPT', 'Opening secure OAuth sign-in…', '🔐');
+      const res = await api.connectionsOauthChatGPT();
+      if (res && !res.error) {
+        await loadConnectionsStatus();
+        toast('CHATGPT', 'Account connected securely.', '✅');
+        return;
+      }
+      toast('CHATGPT', res.message || res.error || 'OAuth sign-in failed', '⚠️');
     } catch (e) {
       toast('CHATGPT', e.message, '⚠️');
     }
@@ -7990,11 +7993,14 @@ async function handleCaptureChatGPT() {
 async function handleConnectGemini() {
   showExperimentalWarning('gemini', async () => {
     try {
-      const res = await api.connectionsOpenGemini();
-      if (res && !res.ok) { toast('GEMINI', res.message || res.error, '⚠️'); return; }
-      const cap = $('#captureGeminiBtn');
-      if (cap) cap.hidden = false;
-      toast('GEMINI', 'Sign in with Google inside opened window, then Capture', '👁');
+      toast('GEMINI', 'Opening secure Google OAuth sign-in…', '🔐');
+      const res = await api.connectionsOauthGemini();
+      if (res && !res.error) {
+        await loadConnectionsStatus();
+        toast('GEMINI', 'Account connected securely.', '✅');
+        return;
+      }
+      toast('GEMINI', res.message || res.error || 'OAuth sign-in failed. Set GEMAIR_GEMINI_CLIENT_ID.', '⚠️');
     } catch (e) {
       toast('GEMINI', e.message, '⚠️');
     }

@@ -189,6 +189,14 @@ body[data-appearance='light'] .modal { background: linear-gradient(145deg, rgba(
 #view-assistant .msg.system-msg { background: var(--depth-surface); }
 #view-assistant .msg pre { max-width: 100%; overflow-x: auto; }
 .response-source { margin-top: 10px; font: 11px/1.5 var(--font-mono); color: var(--depth-muted); overflow-wrap: anywhere; }
+.msg.ai { position: relative; }
+.msg.ai::before { content: 'GEM'; display: block; margin-bottom: 6px; color: var(--accent); font: 700 9px var(--font-mono); letter-spacing: .16em; opacity: .8; }
+.msg.user::before { content: 'YOU'; display: block; margin-bottom: 6px; color: var(--depth-muted); font: 700 9px var(--font-mono); letter-spacing: .16em; opacity: .7; }
+.orb-status { letter-spacing: .14em; }
+.thinking-pill.on { border-color: var(--accent); box-shadow: 0 0 18px var(--accent-dim); }
+.active-brain-chip, .sys-chip, .context-chip { border-color: rgba(255,255,255,.1); }
+.conn-row { transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+.conn-row:hover { border-color: var(--accent-soft); background: rgba(255,255,255,.035); transform: translateY(-1px); }
 #view-assistant .tool-feed { max-height: 120px; }
 #view-assistant .chat-input-row { min-width: 0; gap: 8px; padding-top: 12px; border-top: 1px solid var(--panel-border); }
 #view-assistant #chatInput { min-width: 0; width: 100%; font-size: 16px; min-height: 48px; background: var(--depth-well); border-color: var(--depth-edge); }

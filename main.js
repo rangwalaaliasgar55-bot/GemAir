@@ -3909,6 +3909,24 @@ ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:platform', () => process.platform);
 
 // 2.4 Connections
+ipcMain.handle('connections:oauthChatGPT', async () => {
+  try {
+    const { shell } = require('electron');
+    const { loginChatGPTViaPkce } = require('./lib/oauth-bridge');
+    const result = await loginChatGPTViaPkce((url) => shell.openExternal(url));
+    if (mainWindow && result && !result.error) mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
+    return result;
+  } catch (error) { return { error: error.message || String(error) }; }
+});
+ipcMain.handle('connections:oauthGemini', async () => {
+  try {
+    const { shell } = require('electron');
+    const { loginGeminiViaPkce } = require('./lib/oauth-bridge');
+    const result = await loginGeminiViaPkce((url) => shell.openExternal(url));
+    if (mainWindow && result && !result.error) mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
+    return result;
+  } catch (error) { return { error: error.message || String(error) }; }
+});
 ipcMain.handle('connections:getStatus', () => connections.getSanitizedStatus());
 ipcMain.handle('connections:setPriority', (_e, p) => connections.setPriority(p));
 ipcMain.handle('connections:acknowledgeWarning', () => { connections.acknowledgeWarning(); return true; });

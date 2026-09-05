@@ -67,7 +67,7 @@
   function chunk(text, max) {
     const out = [];
     let cur = '';
-    const parts = String(text).match(/[^.!?]+[.!?]+["')\]]?|[^.!?]+$/g) || [String(text)];
+      const parts = String(text).match(/[^.!?]+[.!?]+["')\]]?|[^.!?]+$/g) || [String(text)];
     for (let part of parts) {
       while (part.length > max) {
         const slice = part.slice(0, max);
@@ -188,7 +188,7 @@
         voice = preset || edge.voiceForLang(opts.edgeLang || opts.neuralVoice || 'en-US');
       }
 
-      const chunks = chunk(text, 450);
+       const chunks = chunk(text, 300);
       let played = 0;
       for (const part of chunks) {
         if (!this._alive(opts) || this._cancelled) break;

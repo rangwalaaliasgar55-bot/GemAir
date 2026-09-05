@@ -83,6 +83,28 @@
       panel: 'rgba(24, 18, 12, 0.76)', panelBorder: 'rgba(200, 160, 100, 0.18)',
       sweep: 'rgba(255, 183, 59, 0.32)'
     },
+    graphite: {
+      label: 'Graphite',
+      tagline: 'Quiet studio — focused and minimal',
+      accent: '#d9dee8', lightAccent: '#596579', hue: 218,
+      bg: '#08090c', bg2: '#11141a',
+      text: '#f1f3f6', dim: '#8d96a5',
+      good: '#73d9a4', warn: '#e4b86a',
+      error: '#ef8888', info: '#8db7e8',
+      panel: 'rgba(23, 26, 32, 0.86)', panelBorder: 'rgba(220, 228, 240, 0.14)',
+      sweep: 'rgba(220, 228, 240, 0.2)'
+    },
+    ocean: {
+      label: 'Ocean',
+      tagline: 'Deep blue — calm focus',
+      accent: '#75b9ff', lightAccent: '#24649b', hue: 210,
+      bg: '#060a11', bg2: '#0a1523',
+      text: '#edf6ff', dim: '#88a2bd',
+      good: '#7de0bb', warn: '#efc879',
+      error: '#ef8e9a', info: '#75b9ff',
+      panel: 'rgba(12, 24, 40, 0.82)', panelBorder: 'rgba(120, 180, 230, 0.16)',
+      sweep: 'rgba(117, 185, 255, 0.24)'
+    },
     rgb: {
       label: 'RGB',
       tagline: 'Rainbow cycle — full spectrum',
@@ -97,7 +119,7 @@
     }
   };
 
-  const ORDER = ['crimson', 'emerald', 'cyan', 'violet', 'amber', 'rgb'];
+  const ORDER = ['crimson', 'emerald', 'cyan', 'violet', 'amber', 'graphite', 'ocean', 'rgb'];
   const DEFAULT = 'crimson';
 
   // "#rrggbb" → "rgba(r, g, b, a)" (string in, string out)
