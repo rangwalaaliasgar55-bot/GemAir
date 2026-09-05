@@ -411,6 +411,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Di
 .dl-card.recommended { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 .dl-card.unavailable { opacity: .62; }
 .dl-status { border-radius: 10px; background: rgba(255,255,255,.04); padding: 10px 12px; }
+.dl-install-note { margin: 0; padding: 11px 12px; color: var(--depth-muted); font-size: 11px; line-height: 1.55; border-left: 2px solid var(--accent); background: rgba(255,255,255,.025); border-radius: 0 8px 8px 0; }
+.dl-install-note b { color: var(--text); }
 
 @media (max-width: 1250px) {
   .assistant-grid { grid-template-columns: 220px minmax(0,1fr) 350px; gap: 14px; }
