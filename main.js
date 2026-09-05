@@ -6,7 +6,7 @@ const os = require('os');
 const fs = require('fs');
 const dns = require('dns');
 const net = require('net');
-const { exec, execFile } = require('child_process');
+const { exec, execFile, spawn } = require('child_process');
 
 const connections = require('./lib/connections');
 const windowTools = require('./lib/window-tools');
@@ -3690,6 +3690,7 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
 // ---------------------------------------------------------------------------
 const RELEASE_API_URL = 'https://api.github.com/repos/rangwalaaliasgar55-bot/GemAir/releases/latest';
 const RELEASE_PATH_PREFIX = '/rangwalaaliasgar55-bot/GemAir/releases/';
+const RELEASE_ASSET_PREFIX = 'https://github.com/rangwalaaliasgar55-bot/GemAir/releases/download/';
 let releaseCheckCache = { at: 0, result: null };
 function parseSemver(value) {
   const match = String(value || '').trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/i);
@@ -3707,6 +3708,12 @@ function verifiedReleaseUrl(value) {
   try {
     const url = new URL(String(value || ''));
     return url.protocol === 'https:' && url.hostname === 'github.com' && url.pathname.startsWith(RELEASE_PATH_PREFIX) ? url.toString() : null;
+  } catch { return null; }
+}
+function verifiedWindowsAsset(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' && url.hostname === 'github.com' && url.pathname.startsWith(RELEASE_ASSET_PREFIX.replace('https://github.com', '')) && /\.exe$/i.test(url.pathname) ? url.toString() : null;
   } catch { return null; }
 }
 async function checkForUpdates(force = false) {
@@ -3730,6 +3737,7 @@ async function checkForUpdates(force = false) {
       latest,
       available: isVersionNewer(latest, current),
       url,
+      windowsAssetUrl: Array.isArray(release.assets) ? verifiedWindowsAsset((release.assets.find((asset) => /\.exe$/i.test(asset.name || '')) || {}).browser_download_url) : null,
       name: String(release.name || `GemAir ${latest}`).slice(0, 120),
       notes: String(release.body || '').slice(0, 4000),
       publishedAt: release.published_at || null,
@@ -3740,6 +3748,38 @@ async function checkForUpdates(force = false) {
   } catch (error) {
     return { ok: false, error: error && error.name === 'AbortError' ? 'UPDATE_CHECK_TIMEOUT' : 'UPDATE_CHECK_FAILED' };
   } finally { clearTimeout(timer); }
+}
+async function installUpdateFromRelease(releaseUrl) {
+  const verifiedPage = verifiedReleaseUrl(releaseUrl);
+  if (!verifiedPage) return { ok: false, error: 'INVALID_RELEASE_URL' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120000);
+  try {
+    const response = await fetch(RELEASE_API_URL, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': `GemAir/${app.getVersion()}` }, signal: controller.signal });
+    if (!response.ok) return { ok: false, error: `UPDATE_METADATA_HTTP_${response.status}` };
+    const release = await response.json();
+    const asset = (release.assets || []).find((item) => verifiedWindowsAsset(item.browser_download_url));
+    if (!asset) return { ok: false, error: 'WINDOWS_INSTALLER_NOT_FOUND' };
+    const target = path.join(app.getPath('temp'), `GemAir-Setup-${String(release.tag_name || 'latest').replace(/[^0-9A-Za-z.-]/g, '')}.exe`);
+    const download = await fetch(asset.browser_download_url, { headers: { Accept: 'application/octet-stream', 'User-Agent': `GemAir/${app.getVersion()}` }, signal: controller.signal });
+    if (!download.ok || !download.body) return { ok: false, error: `UPDATE_DOWNLOAD_HTTP_${download.status}` };
+    const maxBytes = 300 * 1024 * 1024;
+    let total = 0;
+    const chunks = [];
+    for await (const chunk of download.body) {
+      total += chunk.length;
+      if (total > maxBytes) return { ok: false, error: 'UPDATE_TOO_LARGE' };
+      chunks.push(chunk);
+    }
+    await fs.promises.writeFile(target, Buffer.concat(chunks));
+    const approved = await dialog.showMessageBox(mainWindow, { type: 'question', buttons: ['Install update', 'Cancel'], defaultId: 0, cancelId: 1, title: 'Install GemAir update?', message: `GemAir ${release.tag_name || ''} is ready. Close GemAir and run the downloaded installer now?`, detail: 'Your local profile and memory are preserved by the installer.' });
+    if (approved.response !== 0) return { ok: false, error: 'UPDATE_CANCELLED' };
+    const child = spawn(target, [], { detached: true, stdio: 'ignore', windowsHide: false });
+    child.unref();
+    setTimeout(() => app.quit(), 250);
+    return { ok: true, path: target, version: release.tag_name };
+  } catch (error) { return { ok: false, error: error.name === 'AbortError' ? 'UPDATE_TIMEOUT' : error.message }; }
+  finally { clearTimeout(timer); }
 }
 
 // ---------------------------------------------------------------------------
@@ -3910,6 +3950,7 @@ ipcMain.handle('memory:toggleTodo', (_e, id) => toggleTodoById(id));
 ipcMain.handle('memory:deleteTodo', (_e, id) => deleteTodoById(id));
 ipcMain.handle('win:saveBounds', () => saveWindowBounds());
 ipcMain.handle('app:checkForUpdates', (_e, force) => checkForUpdates(!!force));
+ipcMain.handle('app:installUpdate', (_e, url) => installUpdateFromRelease(url));
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:platform', () => process.platform);
 

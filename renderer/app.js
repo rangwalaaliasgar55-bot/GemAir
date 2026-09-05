@@ -210,6 +210,7 @@ const api = {
   },
   openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
+  async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async version() { return window.gemair ? window.gemair.version() : '2.1.0'; },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
   onWakeToggle(cb) { return registerRendererDisposer(window.gemair && window.gemair.onWakeToggle ? window.gemair.onWakeToggle(cb) : null); },
@@ -6047,7 +6048,7 @@ async function checkForAppUpdates({ force = false, silent = false } = {}) {
     }
     if (result.available) {
       if (status) status.textContent = `GemAir ${result.latest} is available (installed: ${result.current}). Download the installer, close GemAir, then run it to update.`;
-      if (viewButton) { viewButton.hidden = false; viewButton.dataset.url = releaseUrl; viewButton.textContent = 'DOWNLOAD UPDATE'; }
+      if (viewButton) { viewButton.hidden = false; viewButton.dataset.url = releaseUrl; viewButton.textContent = result.windowsAssetUrl ? 'INSTALL UPDATE' : 'VIEW RELEASE'; }
       toast('UPDATE AVAILABLE', `GemAir ${result.latest} is ready to download.`, '⬆');
     } else {
       if (status) status.textContent = `GemAir ${result.current} is up to date.`;
@@ -6841,9 +6842,13 @@ function bindEvents() {
   $('#settingsDownloadBtn')?.addEventListener('click', openDownload);
   $('#topbarDownloadBtn')?.addEventListener('click', openDownload);
   $('#checkUpdatesBtn')?.addEventListener('click', () => checkForAppUpdates({ force: true }));
-  $('#viewUpdateBtn')?.addEventListener('click', () => {
+  $('#viewUpdateBtn')?.addEventListener('click', async () => {
     const url = trustedReleasePage($('#viewUpdateBtn').dataset.url);
-    if (url) api.openExternal(url);
+    if (!url) return;
+    if ($('#viewUpdateBtn').textContent === 'INSTALL UPDATE' && window.gemair && window.gemair.installUpdate) {
+      const result = await api.installUpdate(url);
+      if (!result.ok && result.error !== 'UPDATE_CANCELLED') toast('UPDATE', result.error || 'Could not start installer.', '⚠');
+    } else api.openExternal(url);
   });
   $('#downloadModal').addEventListener('click', (e) => { if (e.target === $('#downloadModal')) closeDownload(); });
   // let the OS links open in the user's real browser when running in Electron

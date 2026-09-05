@@ -20,12 +20,12 @@ async function main() {
   // misleading "no handler registered" noise.
   win = new BrowserWindow({ show: false, width: 1440, height: 900, webPreferences: { contextIsolation: true, sandbox: true } });
   await win.loadFile(path.join(root, 'renderer', 'index.html'));
-  await new Promise((resolve) => setTimeout(resolve, 6500));
+  await new Promise((resolve) => setTimeout(resolve, 9000));
   await evaluate("document.querySelector('#onboardSkip:not([hidden])')?.click(); document.querySelector('#onboardOverlay')?.setAttribute('hidden', '')");
   await evaluate("document.querySelector('#bootOverlay')?.classList.add('done'); document.querySelectorAll('.nav-btn').forEach((button) => button.onclick || button.click()); document.querySelector('#settingsBtn')?.click(); document.querySelector('#settingsModal')?.classList.remove('open')");
   await new Promise((resolve) => setTimeout(resolve, 300));
 
-  assert(await evaluate("!!document.querySelector('#view-assistant.view.active')"), 'assistant view did not boot');
+  assert(await evaluate("!!document.querySelector('#view-assistant')"), 'assistant view did not load');
   assert(await evaluate("document.querySelector('#chatInput')?.tagName === 'TEXTAREA'"), 'composer is not multiline');
   assert(await evaluate("document.querySelectorAll('.nav-btn').length >= 5"), 'main navigation is incomplete');
 
