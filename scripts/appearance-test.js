@@ -53,7 +53,7 @@ const sw = fs.readFileSync(path.join(ROOT, 'renderer/sw.js'), 'utf8');
 assert(app.includes("appearance: 'dark'"), 'default profile appearance is missing');
 assert(app.includes('appearance: DEFAULTS.appearance'), 'new profiles do not inherit appearance');
 assert(app.includes('function toggleAppearance()'), 'appearance toggle behavior is missing');
-assert(app.includes("persistProfile();\n}"), 'appearance toggle is not persisted');
+assert(/persistProfile\(\);\r?\n\}/.test(app), 'appearance toggle is not persisted');
 assert(app.includes("id: 'toggle-appearance'"), 'command palette appearance action is missing');
 assert(html.includes('id="appearanceToggle"') && html.includes('aria-pressed="false"'), 'accessible appearance control is missing');
 assert(html.includes('href="light-mode.css"'), 'light appearance stylesheet is not linked');

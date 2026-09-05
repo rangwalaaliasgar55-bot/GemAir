@@ -52,7 +52,7 @@ const ensureEnd = app.indexOf('// ----------------------------------------------
 const ensureSource = app.slice(ensureStart, ensureEnd);
 assert(ensureSource.includes('bindEvents();'), 'interactive safety net does not invoke event binding');
 assert(!ensureSource.includes('_eventsBound = true'), 'interactive safety net still marks events bound before binding');
-assert(app.includes("function bindEvents() {\n  if (_eventsBound) return;\n  _eventsBound = true;"), 'primary event binding is not idempotent');
+assert(/function bindEvents\(\) \{\r?\n  if \(_eventsBound\) return;\r?\n  _eventsBound = true;/.test(app), 'primary event binding is not idempotent');
 console.log('  ok   emergency interaction recovery no longer short-circuits bindEvents');
 
 console.log('\n  All renderer-lifecycle regression tests passed.\n');

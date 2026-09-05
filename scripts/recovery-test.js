@@ -27,7 +27,11 @@ fs.writeFileSync(stateFile, '[]');
 assert.strictEqual(api.safeReadJSONFile(stateFile), null, 'array roots must not be accepted as state objects');
 assert.strictEqual(api.atomicWriteJSON(stateFile, { revision: 1 }), true);
 assert.deepStrictEqual(JSON.parse(fs.readFileSync(stateFile, 'utf8')), { revision: 1 });
-assert.strictEqual(fs.statSync(stateFile).mode & 0o777, 0o600, 'state file permissions must be private');
+// Windows does not expose POSIX permission bits through stat; the production
+// writer still calls chmod and is enforced by the platform ACLs.
+if (process.platform !== 'win32') {
+  assert.strictEqual(fs.statSync(stateFile).mode & 0o777, 0o600, 'state file permissions must be private');
+}
 assert.strictEqual(api.atomicWriteJSON(stateFile, { revision: 2 }), true);
 assert.deepStrictEqual(JSON.parse(fs.readFileSync(stateFile + '.bak', 'utf8')), { revision: 1 }, 'previous valid state was not backed up');
 assert.strictEqual(fs.readdirSync(temporaryDirectory).some((name) => name.endsWith('.tmp')), false, 'temporary state files were not cleaned up');

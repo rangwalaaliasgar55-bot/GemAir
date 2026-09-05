@@ -1,8 +1,7 @@
 /* ============================================================
-   GemAir — Client-Side Zero-Server AI Engine
-   Layer A: Direct Client-Side Groq / OpenAI API Call (Zero Backend Required)
+   GemAir — AI transport and optional in-browser inference
+   Layer A: Server SSE proxy or direct provider API
    Layer B: WebGPU / In-Browser Client Model Execution
-   Layer C: Offline Intent Brain Fallback
    ============================================================ */
 (function () {
   'use strict';
@@ -15,6 +14,152 @@
       return !!adapter;
     } catch (e) {
       return false;
+    }
+  }
+
+  // Network chunks are not SSE events. Decode UTF-8 incrementally and dispatch
+  // only complete frames (also accepting a final frame without a blank line).
+  async function* chatEvents(body) {
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '', data = [], event = '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        if (buffer.length > 1024 * 1024) throw new Error('SSE_FRAME_TOO_LARGE');
+        let match;
+        while ((match = /[\r\n]/.exec(buffer))) {
+          const i = match.index;
+          if (!done && buffer[i] === '\r' && i === buffer.length - 1) break;
+          const line = buffer.slice(0, i);
+          buffer = buffer.slice(i + (buffer[i] === '\r' && buffer[i + 1] === '\n' ? 2 : 1));
+          if (!line) {
+            if (data.length) yield { data: data.join('\n'), event };
+            data = []; event = '';
+          } else if (line.startsWith('data:')) {
+            data.push(line.slice(5).replace(/^ /, ''));
+            if (data.join('\n').length > 1024 * 1024) throw new Error('SSE_FRAME_TOO_LARGE');
+          } else if (line.startsWith('event:')) event = line.slice(6).trim();
+        }
+        if (done) {
+          if (buffer.startsWith('data:')) data.push(buffer.slice(5).replace(/^ /, ''));
+          if (data.length) yield { data: data.join('\n'), event };
+          break;
+        }
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  }
+
+  async function readChatResponse(response, onDelta, provenance, server, signal) {
+    let reply = '', completed = false;
+    const meta = { ...provenance, status: response.status };
+    const failure = (data, fallback) => ({
+      ...meta, ok: false,
+      error: typeof data.error === 'string' ? data.error : fallback,
+      message: data.message || (data.error && data.error.message) || 'AI request failed. Check the service configuration and retry.',
+      ...(typeof data.retryable === 'boolean' ? { retryable: data.retryable } : {}),
+      ...(data.retryAfter != null ? { retryAfter: data.retryAfter } : {}),
+      ...(Array.isArray(data.attempts) ? { attempts: data.attempts } : {}),
+      ...(reply ? { partial: true, partialReply: reply } : {})
+    });
+    const updateMeta = (data) => {
+      if (server && typeof data.provider === 'string') meta.provider = data.provider;
+      if (typeof data.model === 'string') meta.model = data.model;
+      if (typeof data.free === 'boolean') meta.free = data.free;
+    };
+    const emit = (delta) => {
+      reply += delta;
+      if (typeof onDelta === 'function') onDelta(delta, { ...meta });
+    };
+    try {
+      if (signal && signal.aborted) throw new Error('ABORTED');
+      if (!response.ok) {
+        const parsed = await response.json().catch(() => null);
+        const data = parsed && typeof parsed === 'object' ? parsed : {};
+        updateMeta(data);
+        const retryAfter = response.headers.get('retry-after');
+        if (data.retryAfter == null && retryAfter) data.retryAfter = Number(retryAfter) || retryAfter;
+        return failure(data, 'HTTP_' + response.status);
+      }
+      if (!(response.headers.get('content-type') || '').includes('text/event-stream')) {
+        const data = await response.json();
+        if (!data || typeof data !== 'object') return failure({}, 'INVALID_COMPLETION');
+        updateMeta(data);
+        if (data.error || data.ok === false) return failure(data, 'UPSTREAM_ERROR');
+        const text = server ? data.reply : data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+        if ((server && data.ok !== true) || typeof text !== 'string' || !text.trim()) return failure({}, 'INVALID_COMPLETION');
+        emit(text); // A real non-stream completion, delivered once, not simulated typing.
+      } else {
+        if (!response.body || typeof response.body.getReader !== 'function') return failure({}, 'STREAM_UNSUPPORTED');
+        for await (const frame of chatEvents(response.body)) {
+          if (signal && signal.aborted) throw new Error('ABORTED');
+          if (!server && frame.data.trim() === '[DONE]') { completed = true; break; }
+          const data = JSON.parse(frame.data);
+          if (!data || typeof data !== 'object') throw new Error('INVALID_STREAM_EVENT');
+          updateMeta(data);
+          if (frame.event === 'error' || data.error || data.ok === false) return failure(data, 'UPSTREAM_STREAM_ERROR');
+          const choice = data.choices && data.choices[0];
+          const delta = server ? data.delta : choice && choice.delta && choice.delta.content;
+          if (delta != null && typeof delta !== 'string') throw new Error('INVALID_DELTA');
+          if (delta) emit(delta);
+          if (server && data.done === true) {
+            if (typeof data.reply === 'string') {
+              if (!reply) emit(data.reply);
+              else if (data.reply !== reply) throw new Error('STREAM_REPLY_MISMATCH');
+            }
+            completed = true;
+            break;
+          }
+          if (!server && choice && choice.finish_reason != null) completed = true;
+        }
+        if (!completed) return failure({}, 'STREAM_INTERRUPTED');
+      }
+      if (!reply.trim()) return failure({}, 'EMPTY_COMPLETION');
+      return { ...meta, ok: true, reply };
+    } catch (error) {
+      return failure({ message: error.message }, signal && signal.aborted ? 'ABORTED' : 'INVALID_RESPONSE');
+    }
+  }
+
+  /**
+   * POST /api/chat. onDelta(text, {via, provider, model, status}) receives real
+   * deltas only. JSON completions arrive once. Returns a result, never retries
+   * a failed/partial stream or silently switches to direct/local providers.
+   * options: endpoint, userId, stream, signal, timeoutMs (default 120000).
+   */
+  async function serverChat(messages, onDelta, options = {}) {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 120000;
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    if (options.signal) {
+      if (options.signal.aborted) abort();
+      else options.signal.addEventListener('abort', abort, { once: true });
+    }
+    try {
+      const body = {
+        messages,
+        stream: options.stream !== false && typeof onDelta === 'function' && typeof ReadableStream !== 'undefined'
+      };
+      const userId = options.userId === undefined ? window.__gemairUserId : options.userId;
+      if (userId) body.userId = userId;
+      const response = await fetch(options.endpoint || '/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: body.stream ? 'text/event-stream, application/json' : 'application/json' },
+        body: JSON.stringify(body), signal: controller.signal
+      });
+      const result = await readChatResponse(response, onDelta, { via: 'server' }, true, controller.signal);
+      if (timedOut) return { ...result, ok: false, error: 'TIMEOUT', message: 'Server chat timed out. Retry the request.' };
+      return result;
+    } catch (error) {
+      return { ok: false, via: 'server', error: timedOut ? 'TIMEOUT' : controller.signal.aborted ? 'ABORTED' : 'NETWORK_ERROR', message: timedOut ? 'Server chat timed out. Retry the request.' : error.message };
+    } finally {
+      clearTimeout(timer);
+      if (options.signal) options.signal.removeEventListener('abort', abort);
     }
   }
 
@@ -32,11 +177,12 @@
     if (!model) model = 'llama-3.3-70b-versatile';
 
     baseURL = baseURL.replace(/\/+$/, '');
-    const url = baseURL + '/chat/completions';
+    const url = baseURL + (baseURL.endsWith('/chat/completions') ? '' : '/chat/completions');
+    const provenance = { via: 'direct', provider: baseURL, model };
 
     const isLocal = /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(baseURL);
     if (!key && !isLocal) {
-      return { ok: false, error: 'NO_KEY' };
+      return { ...provenance, ok: false, error: 'NO_KEY', message: 'Add credentials for this provider or explicitly choose server chat.' };
     }
 
     try {
@@ -62,47 +208,9 @@
         })
       });
 
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        return { ok: false, error: `HTTP_${response.status}: ${errText.slice(0, 150)}` };
-      }
-
-      if (isStream && response.body) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let fullText = '';
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed === 'data: [DONE]') continue;
-            if (trimmed.startsWith('data: ')) {
-              try {
-                const json = JSON.parse(trimmed.slice(6));
-                const delta = json.choices && json.choices[0] && json.choices[0].delta && json.choices[0].delta.content;
-                if (delta) {
-                  fullText += delta;
-                  onDelta(delta);
-                }
-              } catch (e) {}
-            }
-          }
-        }
-        return { ok: true, reply: fullText.trim() };
-      } else {
-        const data = await response.json();
-        const reply = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-        return { ok: true, reply: (reply || '').trim() };
-      }
+      return await readChatResponse(response, onDelta, provenance, false);
     } catch (err) {
-      return { ok: false, error: err.message || 'Direct API call failed' };
+      return { ...provenance, ok: false, error: 'NETWORK_ERROR', message: err.message || 'Direct API call failed' };
     }
   }
 
@@ -214,6 +322,7 @@
 
   const aiClient = {
     checkWebGPU,
+    serverChat,
     directClientChat,
     // S8 — Layer B, now real
     enableLocalModel,

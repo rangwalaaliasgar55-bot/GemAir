@@ -325,6 +325,9 @@ function atomicWriteJSON(file, data, { backup = true } = {}) {
     if (Buffer.byteLength(payload, 'utf8') > MAX_STATE_FILE_BYTES) throw new Error('STATE_FILE_TOO_LARGE');
     fs.writeFileSync(temporary, payload, { encoding: 'utf8', mode: 0o600 });
     fs.renameSync(temporary, file);
+    // Rename preserves the temporary file's contents but not its requested
+    // mode on every platform, so enforce private permissions on the final path.
+    try { fs.chmodSync(file, 0o600); } catch {}
     return true;
   } catch (error) {
     try { fs.unlinkSync(temporary); } catch {}

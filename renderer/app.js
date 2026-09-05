@@ -4,7 +4,7 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// Bridge: Electron IPC (or a mock when opened in a plain browser preview)
+// Bridge: Electron IPC or browser-supported capabilities.
 // ---------------------------------------------------------------------------
 const isElectron = !!(window.gemair);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -30,13 +30,11 @@ const api = {
   platform: window.gemair ? window.gemair.platform : 'browser',
   async getSystemInfo() {
     if (window.gemair) return window.gemair.getSystemInfo();
-    const total = 16 * 1024 * 1024 * 1024;
-    const used = total * (0.4 + 0.25 * Math.random());
     return {
-      platform: 'browser-preview', release: 'n/a', hostname: 'gemair.local', arch: 'x64', cpus: 8,
-      cpuLoad: Math.round(10 + Math.random() * 40), memTotal: total, memFree: total - used, memUsed: used,
-      memPercent: Math.round((used / total) * 100), uptime: 3600 * 14, loadavg: [0.8, 1.1, 1.3],
-      battery: { percent: 82, charging: true }, disk: { totalGB: 512, freeGB: 187, percent: 63 }
+      platform: 'browser', available: false, hostname: 'Unavailable', arch: 'unknown',
+      cpus: navigator.hardwareConcurrency || null,
+      cpuLoad: null, memTotal: null, memFree: null, memUsed: null,
+      memPercent: null, uptime: null, loadavg: [], battery: null, disk: null
     };
   },
   async getActionLog() {
@@ -54,20 +52,14 @@ const api = {
   async getProfile() { if (window.gemair) return window.gemair.getProfile(); return window.webStore ? window.webStore.getProfile() : {}; },
   async setProfile(d) { if (window.gemair) return window.gemair.setProfile(d); if (window.webStore) await window.webStore.setProfile(d); },
 
-  async _webChat(messages) {
-    try {
-      // T1: bind fair-use to the signed-in account when there is one
-      const body = { messages };
-      if (window.__gemairUserId) body.userId = window.__gemairUserId;
-      const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      return await r.json();
-    } catch (e) { return { ok: false, error: e.message }; }
+  async _webChat(messages, onDelta) {
+    if (!window.aiClient) return { ok: false, error: 'Chat client unavailable. Reload the app.' };
+    return window.aiClient.serverChat(messages, onDelta);
   },
   async aiChat(config, messages) {
     if (window.gemair) return window.gemair.aiChat(config, messages);
     if (window.aiClient && config && config.apiKey) {
-      const direct = await window.aiClient.directClientChat(config, messages);
-      if (direct.ok) return direct;
+      return window.aiClient.directClientChat(config, messages);
     }
     const free = await this._webChat(messages);
     if (free.ok) return free;
@@ -112,20 +104,16 @@ const api = {
   async aiChatStream(config, messages, onDelta) {
     if (window.gemair) return window.gemair.aiChatStream(config, messages, onDelta);
     if (window.aiClient && config && config.apiKey) {
-      const direct = await window.aiClient.directClientChat(config, messages, onDelta);
-      if (direct.ok) return direct;
+      return window.aiClient.directClientChat(config, messages, onDelta);
     }
-    const res = await this._webChat(messages);
+    const res = await this._webChat(messages, onDelta);
     // S8: Layer B — if the free core could not answer and the user opted into
     // the in-browser WebGPU model, run it before dropping to the intent brain.
-    if (!res.ok && window.aiClient && window.aiClient.isLocalReady()) {
+    if (!res.ok && !res.partial && window.aiClient && window.aiClient.isLocalReady()) {
       const local = await window.aiClient.localChat(messages, onDelta);
       if (local.ok) return local;
     }
-    if (!res.ok) return res;
-    const text = res.reply;
-    for (const ch of text) { onDelta(ch); await sleep(12); } // simulate streaming locally
-    return { ok: true, reply: text };
+    return res;
   },
   /**
    * S9 — browser summarizer.
@@ -319,12 +307,6 @@ function downloadText(content, name) {
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   } catch (e) {}
 }
-
-const mockHeadlines = [
-  { title: 'Open-source JARVIS-style assistants are on the rise', score: 421, by: 'gemair', url: '#' },
-  { title: 'Local-first AI: why running models on your own machine matters', score: 388, by: 'dev', url: '#' },
-  { title: 'Voice interfaces are quietly taking over the desktop', score: 312, by: 'ui', url: '#' }
-];
 
 // ---------------------------------------------------------------------------
 // Free web tools (Vercel API — no key, no AI needed)
@@ -1269,6 +1251,8 @@ function disposeRendererLifecycle() {
 window.addEventListener('beforeunload', disposeRendererLifecycle, { once: true });
 
 // ---------------------------------------------------------------------------
+// Theme
+// ---------------------------------------------------------------------------
 // Theme (with RGB / rainbow mode) & Synthetic Web Audio SFX
 // ---------------------------------------------------------------------------
 // U1: hues live in themes.js (the single token source). This derives the legacy
@@ -1814,10 +1798,12 @@ function setGauge(sel, pct) {
   el.style.strokeDashoffset = c - (c * Math.min(100, Math.max(0, pct))) / 100;
 }
 function fmtBytes(b) {
+  if (!Number.isFinite(b)) return 'Unavailable';
   const u = ['B', 'KB', 'MB', 'GB', 'TB']; const i = b ? Math.floor(Math.log(b) / Math.log(1024)) : 0;
   return (b / Math.pow(1024, i)).toFixed(1) + ' ' + u[i];
 }
 function fmtUptime(s) {
+  if (!Number.isFinite(s)) return 'Unavailable';
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   return (d ? d + 'd ' : '') + h + 'h ' + m + 'm';
 }
@@ -1831,19 +1817,19 @@ function debounce(fn, wait = 120) {
 async function pollSystem() {
   try {
     const i = await api.getSystemInfo();
-    $('#cpuVal').textContent = i.cpuLoad + '%';
-    $('#memVal').textContent = i.memPercent + '%';
+    $('#cpuVal').textContent = Number.isFinite(i.cpuLoad) ? i.cpuLoad + '%' : 'N/A';
+    $('#memVal').textContent = Number.isFinite(i.memPercent) ? i.memPercent + '%' : 'N/A';
     setGauge('#cpuGauge', i.cpuLoad); setGauge('#memGauge', i.memPercent);
     $('#tHost').textContent = i.hostname;
     $('#tPlatform').textContent = i.platform + ' (' + i.arch + ')';
-    $('#tCores').textContent = i.cpus + ' cores';
+    $('#tCores').textContent = i.cpus ? i.cpus + ' logical cores' : 'Unavailable';
     $('#tUptime').textContent = fmtUptime(i.uptime);
     $('#tMemUsed').textContent = fmtBytes(i.memUsed) + ' / ' + fmtBytes(i.memTotal);
-    $('#tLoad').textContent = (i.loadavg || []).map((n) => n.toFixed(1)).join(' · ');
+    $('#tLoad').textContent = (i.loadavg || []).map((n) => n.toFixed(1)).join(' · ') || 'Unavailable';
     const bat = $('#tBattery');
     if (bat) {
       if (i.battery && typeof i.battery.percent === 'number') bat.textContent = i.battery.percent + '%' + (i.battery.charging ? ' ⚡ charging' : '');
-      else bat.textContent = 'AC power / none';
+      else bat.textContent = 'Unavailable';
     }
     const disk = $('#tDisk');
     if (disk) {
@@ -2844,15 +2830,7 @@ async function handleMessage(text) {
       const typingEl = document.querySelector('#chatLog .msg:last-child');
       if (typingEl) renderPlanner(typingEl, text);
       toast('PLAN-ACT', 'Big request detected — showing plan before execution (SHOW PLAN / RUN)', '📋');
-      // Auto-run after 2s if user doesn't click? No, wait for RUN per spec (dry-run chip)
-      // For voice triggers we auto-run? Spec says show plan before executing (dry-run chip: SHOW PLAN / RUN)
-      // So we keep queue and wait for RUN button, but also if chat triggered we can auto-run after short delay for demo
-      // We'll auto-run for this implementation to satisfy test matrix, but UI still shows chip
-      setTimeout(async ()=>{
-        if (planActQueue) { const q = planActQueue; planActQueue = null; await executePlanAct(q); }
-      }, 1200);
-      // continue to normal handling as well? For modes we already returned. For generic big request, we let plan-act handle and also continue to AI?
-      // We'll return after plan-act started to avoid duplicate
+      // Execution requires the user's explicit RUN confirmation.
       return;
     }
   } catch (e) {}
@@ -2916,6 +2894,7 @@ async function handleMessage(text) {
   renderPlanner(typing, text);
 
   let reply;
+  let replyFailed = false;
   let agentToolRuns = [];
   let activeAgentName = '';
   let usedConnectedBrain = null;
@@ -2990,32 +2969,14 @@ async function handleMessage(text) {
         });
       }
     } else {
-      // C4 resilience: session dies mid-chat -> instant FREE CORE fallback, never dead air
-      toast('BRAIN FALLBACK', (useConnected||'').toUpperCase() + ' failed (' + (res.error||'') + ') — switching to FREE CORE', '🔄');
-      // try free core
-      const freeRes = await api.aiChatStream(cfg, [sys, ...getContextMessages(48)], (delta)=>{
-        if (!streamed) { replyEl.innerHTML = ''; streamed = true; }
-        acc += delta;
-        replyEl.textContent = acc;
-        $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
-        if (streamingVoice && !String(acc).includes('```')) { try { streamSpeak(acc); } catch {} }
-      });
-      if (freeRes.ok) {
-        reply = freeRes.reply || acc;
-        if (!streamed) { await renderReply(replyEl, reply); }
-        else if (streamingVoice) { try { skipFinalSpeak = flushStreamSpeech(reply); } catch {} }
-        chatHistory.push({ role: 'assistant', content: reply });
-        usedConnectedBrain = 'FREE CORE';
-      } else {
-        const off = await api.aiOffline(text);
-        reply = off.reply;
-        if (!streamed) { await renderReply(replyEl, reply); } else { replyEl.textContent = reply; }
-        chatHistory.push({ role: 'assistant', content: reply });
-        usedConnectedBrain = 'OFFLINE BRAIN';
-      }
+      replyFailed = true;
+      resetStreamSpeech();
+      reply = (acc ? acc + '\n\n[Response interrupted]\n' : '') +
+        'Connection failed: ' + (res.message || humanError(res.error)) + '. Check Connections in Settings and retry.';
+      replyEl.textContent = reply;
     }
   } else if (useAI) {
-    // Try Vercel free serverless AI or user key first; fall back to offline brain if unavailable
+    // Report provider errors directly, never substitute a canned AI response.
     chatHistory.push({ role: 'user', content: text });
     const sys = buildSystemPrompt();
     const replyEl = typing.querySelector('p');
@@ -3036,6 +2997,13 @@ async function handleMessage(text) {
     });
     if (res.ok) {
       reply = res.reply || acc;
+      const source = [res.provider || res.via, res.model].filter(Boolean).join(' / ');
+      if (source) {
+        const label = document.createElement('div');
+        label.className = 'response-source';
+        label.textContent = 'Source: ' + source;
+        typing.appendChild(label);
+      }
       if (!streamed) { await renderReply(replyEl, reply); }
       else if (streamingVoice) { try { skipFinalSpeak = flushStreamSpeech(reply); } catch (e) {} }
       chatHistory.push({ role: 'assistant', content: reply });
@@ -3045,15 +3013,15 @@ async function handleMessage(text) {
         });
       }
     } else {
-      const resOffline = await api.aiOffline(text);
-      reply = resOffline.reply;
-      if (!streamed) { await renderReply(replyEl, reply); }
-      else { replyEl.textContent = reply; }
-      chatHistory.push({ role: 'assistant', content: reply });
+      replyFailed = true;
+      resetStreamSpeech();
+      reply = (acc ? acc + '\n\n[Response interrupted]\n' : '') +
+        'AI unavailable: ' + (res.message || humanError(res.error)) + '. Check AI settings and retry.';
+      replyEl.textContent = reply;
     }
   } else {
     const res = await api.aiOffline(text);
-    reply = res.reply;
+    reply = '[Local commands, not an AI model]\n' + res.reply;
     const replyEl = typing.querySelector('p');
     typewriterToken++;
     await renderReply(replyEl, reply);
@@ -3069,7 +3037,7 @@ async function handleMessage(text) {
   $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
 
   await api.memoryAppend('user', text);
-  await api.memoryAppend('assistant', reply);
+  if (!replyFailed) await api.memoryAppend('assistant', reply);
   await loadMemory();
   updateTranscriptCount();
   animateCircuits();
@@ -3081,12 +3049,12 @@ async function handleMessage(text) {
   try {
     if (activeReasoning) {
       activeReasoning.push('done', `Answered in ${reply ? reply.length : 0} characters.`);
-      activeReasoning.done('complete');
+      activeReasoning.done(replyFailed ? 'failed' : 'complete');
       activeReasoning = null;
     }
   } catch (e) {}
   updateContextMeter();
-  try { noteSuccessfulMission(); } catch (e) {} // T3
+  if (!replyFailed) { try { noteSuccessfulMission(); } catch (e) {} }
   if (!skipFinalSpeak) speak(reply);
 }
 
@@ -5518,11 +5486,11 @@ async function refreshHeadlines(category = worldCategory) {
   lists.forEach((list) => { list.innerHTML = `<div class="empty">Fetching ${worldCategory} headlines…</div>`; });
   try {
     const items = await api.getHeadlines(14, worldCategory);
-    // U2: 2.1 fell back to mockHeadlines and then labelled every row "LIVE".
-    // Fallback rows are now flagged and badged SIMULATED so nothing lies.
-    worldHeadlines = items.length
-      ? items
-      : mockHeadlines.map((item, index) => ({ ...item, id: 'mock-' + index, category: worldCategory, simulated: true }));
+    worldHeadlines = Array.isArray(items) ? items.filter(item => !item.simulated) : [];
+    if (!worldHeadlines.length) {
+      lists.forEach(list => { list.innerHTML = '<div class="empty">No headlines available. Try refreshing the feed.</div>'; });
+      return;
+    }
     const fill = (list) => {
       list.innerHTML = '';
       worldHeadlines.forEach((headline) => {
@@ -5814,7 +5782,7 @@ async function runLocalAction(act) {
       case 'battery': {
         const info = await api.getSystemInfo();
         const b = info && info.battery;
-        if (!b) return 'No battery detected — you appear to be on AC power.';
+        if (!b) return 'Battery telemetry is unavailable in this environment.';
         return 'Battery at ' + Math.round(b.percent) + ' percent' + (b.charging ? ' and charging.' : '.');
       }
       case 'ram': {
@@ -5831,7 +5799,7 @@ async function runLocalAction(act) {
       }
       case 'sysinfo': {
         const info = await api.getSystemInfo();
-        if (!info) return 'System telemetry unavailable.';
+        if (!info || info.available === false) return 'System telemetry is unavailable in the browser. Open the desktop app for real CPU, memory and disk readings.';
         const b = info.battery ? ' Battery ' + Math.round(info.battery.percent) + '%' + (info.battery.charging ? ' (charging)' : '') + '.' : '';
         const d = info.disk ? ' Disk ' + info.disk.freeGB + '/' + info.disk.totalGB + ' GB free.' : '';
         const up = Math.floor((info.uptime || 0) / 3600);
@@ -7544,6 +7512,10 @@ async function renderSystemPane(body, title) {
   title.textContent = 'LIVE TELEMETRY';
   body.innerHTML = '<div class="empty">Reading sensors…</div>';
   const i = await api.getSystemInfo();
+  if (i.available === false) {
+    body.innerHTML = '<div class="empty">Hardware telemetry requires the desktop app. Browsers cannot read CPU, RAM or disk usage.</div>';
+    return;
+  }
   const batRow = i.battery ? `<div class="dock-line"><span>BATTERY</span><b>${i.battery.percent}%${i.battery.charging ? ' ⚡' : ''}</b></div>` : '';
   const diskRow = i.disk ? `<div class="dock-line"><span>DISK FREE</span><b>${i.disk.freeGB} GB / ${i.disk.totalGB} GB (${100 - i.disk.percent}%)</b></div>` : '';
   body.innerHTML =

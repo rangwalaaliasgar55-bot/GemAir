@@ -16,9 +16,11 @@
   <meta name="apple-mobile-web-app-title" content="GemAir" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="light-mode.css" />
+  <link rel="stylesheet" href="depth.css" />
   <link rel="stylesheet" href="reduced-motion.css" />
 </head>
 <body>
+  <a class="chat-skip" href="#chatInput">Skip to chat</a>
   <div class="scanlines" aria-hidden="true"></div>
   <div class="vignette" aria-hidden="true"></div>
 
@@ -75,24 +77,24 @@
     </header>
 
     <div class="layout">
-      <nav class="sidenav">
-        <button class="nav-btn active" data-view="assistant">
+      <nav class="sidenav" aria-label="Main navigation">
+        <button class="nav-btn active" data-view="assistant" aria-label="Voice Core">
           <span class="nav-ico">◉</span>
           <span class="nav-label" data-i18n="nav.assistant">Voice Core</span>
         </button>
-        <button class="nav-btn" data-view="core">
+        <button class="nav-btn" data-view="core" aria-label="Desktop Manager">
           <span class="nav-ico">⬢</span>
           <span class="nav-label" data-i18n="nav.core">Desktop Manager</span>
         </button>
-        <button class="nav-btn" data-view="companion">
+        <button class="nav-btn" data-view="companion" aria-label="Life Companion">
           <span class="nav-ico">♥</span>
           <span class="nav-label" data-i18n="nav.companion">Life Companion</span>
         </button>
-        <button class="nav-btn" data-view="town">
+        <button class="nav-btn" data-view="town" aria-label="Agent Town">
           <span class="nav-ico">▦</span>
           <span class="nav-label" data-i18n="nav.town">Agent Town</span>
         </button>
-        <button class="nav-btn" data-view="world">
+        <button class="nav-btn" data-view="world" aria-label="Global Intel">
           <span class="nav-ico">◍</span>
           <span class="nav-label" data-i18n="nav.world">Global Intel</span>
         </button>
@@ -114,12 +116,12 @@
               </div>
 
               <div class="hud-panel satlink">
-                <h3 class="panel-title">SAT-LINK FEED <span class="dim">— SATELLITE STREAM</span></h3>
+                <h3 class="panel-title">LOCAL BRIEF <span class="dim">— WEATHER &amp; SEARCH</span></h3>
                 <div class="sat-stage">
-                  <canvas id="satCanvas" width="260" height="160"></canvas>
-                  <span class="sat-beta">BETA</span>
+                  <canvas id="satCanvas" width="260" height="160" aria-hidden="true"></canvas>
+                  <span class="sat-beta">DECORATIVE GLOBE</span>
                 </div>
-                <div class="sat-tabs" role="tablist" aria-label="Satellite feed">
+                <div class="sat-tabs" role="tablist" aria-label="Local brief">
                   <button class="sat-tab active" data-sat="today" role="tab" aria-selected="true" aria-controls="satPanel">TODAY</button>
                   <button class="sat-tab" data-sat="rap" role="tab" aria-selected="false" aria-controls="satPanel" title="Radar & Precipitation">RAP</button>
                   <button class="sat-tab" data-sat="search" role="tab" aria-selected="false" aria-controls="satPanel">SEARCH</button>
@@ -154,37 +156,37 @@
             <div class="stx-center">
               <div class="stx-core">
                 <div class="stx-circuits">
-                  <div class="stx-circuit" id="memCircuitRow" data-circ="memory" title="Click to view memory details">
+                  <button type="button" class="stx-circuit" id="memCircuitRow" data-circ="memory" title="View memory details">
                     <span class="sc-ico">⬡</span>
                     <span class="sc-name">MEMORY</span>
                     <span class="circuit-bar"><i id="memCircuit" style="width:0%"></i></span>
                     <span class="circuit-val" id="memCircuitVal">0%</span>
-                  </div>
-                  <div class="stx-circuit" id="skillCircuitRow" data-circ="skills" title="Click to view learned skills">
+                  </button>
+                  <button type="button" class="stx-circuit" id="skillCircuitRow" data-circ="skills" title="View learned skills">
                     <span class="sc-ico"></span>
                     <span class="sc-name">SKILLS</span>
                     <span class="circuit-bar"><i id="skillCircuit" style="width:0%"></i></span>
                     <span class="circuit-val" id="skillCircuitVal">0%</span>
-                  </div>
-                  <div class="stx-circuit" id="soulCircuitRow" data-circ="soul" title="Click to tune personality">
+                  </button>
+                  <button type="button" class="stx-circuit" id="soulCircuitRow" data-circ="soul" title="Tune personality">
                     <span class="sc-ico">✧</span>
                     <span class="sc-name">SOUL</span>
                     <span class="circuit-bar"><i id="soulCircuit" style="width:0%"></i></span>
                     <span class="circuit-val" id="soulCircuitVal">0%</span>
-                  </div>
-                  <div class="stx-circuit" id="settingCircuitRow" title="Open settings">
+                  </button>
+                  <button type="button" class="stx-circuit" id="settingCircuitRow" title="Open settings">
                     <span class="sc-ico">⚙</span>
                     <span class="sc-name">SETTING</span>
                     <span class="circuit-bar"><i style="width:100%"></i></span>
                     <span class="circuit-val dim">ON</span>
-                  </div>
+                  </button>
                 </div>
 
                 <canvas id="wireCanvas" width="120" height="420" aria-hidden="true"></canvas>
 
                 <div class="orb-panel hud-panel">
                   <div class="thinking-pill" id="thinkingPill"><span>THINKING</span><i></i></div>
-                  <canvas id="orbCanvas" width="560" height="560"></canvas>
+                  <canvas id="orbCanvas" width="560" height="560" aria-hidden="true"></canvas>
                   <canvas id="micVuCanvas" width="180" height="34" aria-label="Microphone input level"></canvas>
                   <div class="gem-nameplate">
                     <span class="gem-name">GEM</span>
@@ -260,9 +262,9 @@
                     <h3 class="panel-title">LINK <span class="dim" id="linkMode">— FREE CORE</span>
                       <button class="refresh-btn" id="clearChatBtn" style="padding:3px 10px;font-size:10px;">Clear</button>
                     </h3>
-                    <div class="chat-log" id="chatLog">
+                    <div class="chat-log" id="chatLog" role="log" aria-label="Conversation" tabindex="0">
                       <div class="msg system-msg">
-                        <p>Audio lip-sync &amp; spectrum engines ready.</p>
+                        <p>Start a conversation with Gem.</p>
                         <p class="sub">Speak naturally, or type below. Press <b>Ctrl+K</b> for instant command palette.</p>
                       </div>
                     </div>
@@ -277,11 +279,11 @@
                       </div>
                     </div>
                     <div class="chat-input-row">
-                      <button class="mic-btn" id="micBtn" title="Talk to Gem (Speech Recognition)">
+                      <button class="mic-btn" id="micBtn" title="Talk to Gem (Speech Recognition)" aria-label="Talk to Gem">
                         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M19 11a7 7 0 01-14 0M12 18v3"/></svg>
                       </button>
-                      <input type="text" id="chatInput" placeholder="Type instruction or / command for Gem…" autocomplete="off" />
-                      <button class="send-btn" id="sendBtn" title="Send message">➤</button>
+                      <input type="text" id="chatInput" aria-label="Message Gem" placeholder="Type instruction or / command for Gem…" autocomplete="off" />
+                      <button class="send-btn" id="sendBtn" title="Send message" aria-label="Send message">➤</button>
                     </div>
                     <div class="quick-commands" id="quickCommands" role="toolbar" aria-label="Quick assistant actions">
                       <button type="button" class="qc" data-cmd="Search the web for " data-shortcut="1" aria-keyshortcuts="Alt+1" title="Search the web (Alt+1)">🔎 Search</button>

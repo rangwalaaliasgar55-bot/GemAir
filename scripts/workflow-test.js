@@ -85,22 +85,24 @@ function callCore(core, body, headers = {}) {
   }
 
   // -------------------------------------------------------------------------
-  // 1. FREE CORE — boots free with no config, never demands a key.
+  // 1. An unconfigured server must not pretend a model answered.
   // -------------------------------------------------------------------------
   {
     const core = freshFreeCore();
     const r = await callCore(core, { messages: [{ role: 'user', content: 'hello there' }] });
     const p = r.payload || {};
-    if (!p.ok) fail('FREE CORE did not return ok:true with zero config');
-    else if (typeof p.reply !== 'string' || !p.reply.length) fail('FREE CORE returned an empty reply');
-    else ok('FREE CORE answers with zero config (ok:true, no key prompt)');
-    if (p.free !== true) fail('FREE CORE reply is not flagged free');
-    else ok('FREE CORE flags the reply as free');
+    if (p.ok !== false || p.reply) fail('Unconfigured chat returned a fake success');
+    else ok('Unconfigured chat reports failure without a fabricated reply');
+    if (!p.error || !p.message) fail('Unconfigured chat must explain how to connect a provider');
+    else ok('Unconfigured chat returns an actionable connection error');
   }
 
   // -------------------------------------------------------------------------
   // 2. Fair use ACTUALLY counts (V1). Uses a fresh module + a tiny daily cap.
   // -------------------------------------------------------------------------
+  const originalFetch = global.fetch;
+  process.env.GROQ_API_KEY = 'test-only-key';
+  global.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: 'Test completion' } }] }), { headers: { 'Content-Type': 'application/json' } });
   {
     process.env.FAIR_USE_DAILY = '3';
     process.env.THROTTLE_PER_MIN = '100'; // isolate fair use from throttling
@@ -114,8 +116,8 @@ function callCore(core, body, headers = {}) {
     if (limitedFlags.slice(0, 3).some(Boolean)) fail('fair use limited a request before the cap was reached');
     else if (!limitedFlags[3]) fail('fair use did NOT limit the request past the daily cap (counter is not counting)');
     else ok('fair use counts per identity and limits exactly past the cap');
-    if (results[3] && results[3].ok !== true) fail('the fair-use limit response is not a friendly ok:true reply');
-    else ok('fair-use limit still answers helpfully instead of erroring');
+    if (results[3] && results[3].ok !== false) fail('the fair-use limit response pretends to be a successful reply');
+    else ok('fair-use limit reports an honest error');
 
     // a DIFFERENT ip must have its own budget
     const other = (await callCore(core, { messages: [{ role: 'user', content: 'hi' }] }, { 'x-forwarded-for': '203.0.113.99' })).payload || {};
@@ -150,6 +152,8 @@ function callCore(core, body, headers = {}) {
   // -------------------------------------------------------------------------
   // 3. Throttling + origin allow-check (R10).
   // -------------------------------------------------------------------------
+  global.fetch = originalFetch;
+  delete process.env.GROQ_API_KEY;
   {
     process.env.THROTTLE_PER_MIN = '2';
     const core = freshFreeCore();

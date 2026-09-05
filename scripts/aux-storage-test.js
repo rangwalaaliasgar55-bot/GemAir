@@ -14,7 +14,7 @@ console.log('\nGemAir auxiliary-storage regression tests\n');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'gemair-aux-store-'));
 const file = path.join(temp, 'state.json');
 assert.strictEqual(writeJsonAtomic(file, { revision: 1 }, { maxBytes: 1024 }), true);
-assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600);
+if (process.platform !== 'win32') assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600);
 assert.strictEqual(writeJsonAtomic(file, { revision: 2 }, { maxBytes: 1024 }), true);
 assert.deepStrictEqual(JSON.parse(fs.readFileSync(file + '.bak', 'utf8')), { revision: 1 });
 fs.writeFileSync(file, '{corrupt');
@@ -63,8 +63,10 @@ assert(!output.names.includes('../../BAD'));
 assert.strictEqual(output.saved, true);
 assert(output.deleteBuiltin.error, 'built-in mode deletion should be rejected');
 assert.strictEqual(output.priority, 'free');
-assert.strictEqual(fs.statSync(output.modeFile).mode & 0o777, 0o600);
-assert.strictEqual(fs.statSync(output.connectionFile).mode & 0o777, 0o600);
+if (process.platform !== 'win32') {
+  assert.strictEqual(fs.statSync(output.modeFile).mode & 0o777, 0o600);
+  assert.strictEqual(fs.statSync(output.connectionFile).mode & 0o777, 0o600);
+}
 assert(fs.existsSync(output.modeFile + '.bak'), 'mode backup was not created');
 assert(fs.existsSync(output.connectionFile + '.bak'), 'connection backup was not created');
 console.log('  ok   modes and connection metadata are validated, private, and backed up');
