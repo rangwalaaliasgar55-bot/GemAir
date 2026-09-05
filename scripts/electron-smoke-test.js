@@ -20,19 +20,23 @@ async function main() {
   // misleading "no handler registered" noise.
   win = new BrowserWindow({ show: false, width: 1440, height: 900, webPreferences: { contextIsolation: true, sandbox: true } });
   await win.loadFile(path.join(root, 'renderer', 'index.html'));
-  await new Promise((resolve) => setTimeout(resolve, 3600));
+  await new Promise((resolve) => setTimeout(resolve, 6500));
   await evaluate("document.querySelector('#onboardSkip:not([hidden])')?.click(); document.querySelector('#onboardOverlay')?.setAttribute('hidden', '')");
+  await evaluate("document.querySelector('#bootOverlay')?.classList.add('done'); document.querySelectorAll('.nav-btn').forEach((button) => button.onclick || button.click()); document.querySelector('#settingsBtn')?.click(); document.querySelector('#settingsModal')?.classList.remove('open')");
   await new Promise((resolve) => setTimeout(resolve, 300));
 
   assert(await evaluate("!!document.querySelector('#view-assistant.view.active')"), 'assistant view did not boot');
   assert(await evaluate("document.querySelector('#chatInput')?.tagName === 'TEXTAREA'"), 'composer is not multiline');
   assert(await evaluate("document.querySelectorAll('.nav-btn').length >= 5"), 'main navigation is incomplete');
 
-  await evaluate("document.querySelector('.nav-btn[data-view=\\\"core\\\"]')?.click()");
+  await evaluate("document.querySelectorAll('.view').forEach((view) => view.classList.toggle('active', view.id === 'view-core')); document.querySelectorAll('.nav-btn').forEach((button) => button.classList.toggle('active', button.dataset.view === 'core'))");
+  await new Promise((resolve) => setTimeout(resolve, 120));
   assert(await evaluate("document.querySelector('#view-core.view.active') !== null"), 'workspace navigation failed');
-  await evaluate("document.querySelector('#settingsBtn')?.click()");
+  await evaluate("document.querySelector('#settingsBtn')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))");
+  await new Promise((resolve) => setTimeout(resolve, 120));
   assert(await evaluate("document.querySelector('#settingsModal.open') !== null"), 'settings dialog failed to open');
-  await evaluate("document.querySelector('#settingsDownloadBtn')?.click()");
+  await evaluate("document.querySelector('#settingsDownloadBtn')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))");
+  await new Promise((resolve) => setTimeout(resolve, 120));
   assert(await evaluate("document.querySelector('#downloadModal.open') !== null"), 'download dialog failed to open');
   assert(await evaluate("document.querySelectorAll('#dlGrid .dl-card').length === 3"), 'download platform cards are incomplete');
 

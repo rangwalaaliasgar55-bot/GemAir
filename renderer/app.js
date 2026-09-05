@@ -2594,6 +2594,51 @@ function needsLiveResearch(text) {
   return /\b(latest|current|today|now|news|price|cost|weather|forecast|who is|what is|when is|where is|research|compare|review|source|verify|fact|search|look up|find out)\b/i.test(String(text || ''));
 }
 
+async function runCommanderTool(text) {
+  const q = normaliseInput(text);
+  let result;
+  let label;
+  if (/\b(?:what(?:'s| is) the )?time\b|\bclock\b/i.test(q)) {
+    result = { answer: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) };
+    label = 'time';
+  } else if (/\b(?:what(?:'s| is) the )?date\b|\bwhat day\b/i.test(q)) {
+    result = { answer: new Date().toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) };
+    label = 'date';
+  } else if (/(?:weather|temperature|forecast)\b/i.test(q)) {
+    const match = q.match(/(?:weather|temperature|forecast)\s+(?:in|for|at)\s+([a-z ]+)/i);
+    if (!match) return null;
+    result = await webGet('weather', { city: match[1].trim() });
+    label = 'weather';
+  } else if (/(?:translate)\b/i.test(q)) {
+    const match = q.match(/translate\s+(.+?)\s+(?:to|into)\s+([a-z]+)/i);
+    if (!match) return null;
+    result = await webGet('translate', { text: match[1], to: match[2] });
+    label = 'translation';
+  } else if (/(?:define|meaning of)\b/i.test(q)) {
+    const match = q.match(/(?:define|meaning of)\s+([a-z-]+)/i);
+    if (!match) return null;
+    result = await webGet('dictionary', { word: match[1] });
+    label = 'definition';
+  } else if (/(?:bitcoin|ethereum|solana|dogecoin|crypto)\b/i.test(q)) {
+    const coin = ['bitcoin', 'ethereum', 'solana', 'dogecoin'].find((name) => q.includes(name)) || 'bitcoin';
+    result = await webGet('crypto', { coin });
+    label = 'market price';
+  } else if (needsLiveResearch(q)) {
+    const query = q.replace(/^(?:search|google|look up|find|tell me about|what is|who is|news about)\s*/i, '').trim();
+    if (!query) return null;
+    result = await webGet('search', { q: query });
+    label = 'web search';
+  } else return null;
+  if (!result || result.error) return { label, text: result?.message || result?.error || 'The live tool did not return a result.', error: true };
+  if (result.answer) return { label, text: result.answer + (result.source ? `\n\nSource: ${result.source}${result.url ? ` — ${result.url}` : ''}` : '') };
+  if (result.translation) return { label, text: result.translation };
+  if (result.definition) return { label, text: `${result.word || ''}: ${result.definition}${result.example ? `\nExample: ${result.example}` : ''}`.trim() };
+  if (result.temperature != null) return { label, text: `${result.city}: ${result.temperature}°C, ${result.condition}. Wind ${result.windspeed} km/h.` };
+  if (result.usd != null) return { label, text: `${label}: ${result.usd} USD${result.inr != null ? ` · ${result.inr} INR` : ''}.` };
+  const rows = (result.results || []).slice(0, 5).map((item, index) => `${index + 1}. ${item.title}${item.url ? `\n   ${item.url}` : ''}`).join('\n');
+  return { label, text: rows || JSON.stringify(result, null, 2) };
+}
+
 // Local heuristic memory extraction (for offline mode)
 function localExtract(text) {
   const facts = [];
@@ -2844,6 +2889,23 @@ async function handleMessage(text) {
       }
     }
   } catch (e) {}
+
+  // Keyless commander tools answer common requests with live data before any
+  // model fallback. This keeps the assistant useful without fabricating AI.
+  if (!isElectron || window.gemair) {
+    try {
+      const commander = await runCommanderTool(text);
+      if (commander) {
+        reasoningNote('tool', commander.label);
+        const response = (commander.error ? 'I could not complete the live ' : '') + commander.text;
+        addMessage('ai', response);
+        chatHistory.push({ role: 'user', content: text }, { role: 'assistant', content: response });
+        await api.memoryAppend('user', text); await api.memoryAppend('assistant', response);
+        if (!commander.error) speak(response);
+        return;
+      }
+    } catch (error) { console.warn('[commander-tool]', error); }
+  }
 
   // 2.4 M — voice triggers for modes
   try {
