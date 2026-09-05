@@ -78,15 +78,10 @@ module.exports = async (req, res) => {
       units: '°C / km/h'
     });
   } catch (e) {
-    // U2: mark the fallback as SIMULATED so the UI never labels it LIVE.
-    return res.json({
-      city: city.charAt(0).toUpperCase() + city.slice(1),
-      temperature: 22,
-      windspeed: 12,
-      condition: 'Partly cloudy',
-      units: '°C / km/h',
-      simulated: true,
-      error: 'weather_unavailable'
+    return res.status(503).json({
+      ok: false,
+      error: 'weather_unavailable',
+      message: 'Live weather data is temporarily unavailable. Please retry.'
     });
   }
 };

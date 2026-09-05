@@ -206,7 +206,7 @@ const api = {
   },
   async getHeadlines(limit, category) {
     if (window.gemair) return window.gemair.getHeadlines(limit, category);
-    try { const r = await fetch('/api/headlines?limit=' + (limit || 14) + '&category=' + encodeURIComponent(category || 'tech')); return await r.json(); } catch { return []; }
+    try { const r = await fetch('/api/headlines?limit=' + (limit || 14) + '&category=' + encodeURIComponent(category || 'tech')); const data = await r.json(); return Array.isArray(data) ? data : []; } catch { return []; }
   },
   openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
@@ -238,17 +238,28 @@ const api = {
   async codingUseStatus() { if (window.gemair && window.gemair.codingUseStatus) return window.gemair.codingUseStatus(); return { active: false }; },
   onCodingUseEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onCodingUseEvent ? window.gemair.onCodingUseEvent(cb) : null); },
   // 2.4 Connections
-  async connectionsGetStatus() { if (window.gemair && window.gemair.connectionsGetStatus) return window.gemair.connectionsGetStatus(); return { chatgpt: { connected: false, dot: 'DISCONNECTED' }, gemini: { connected: false, dot: 'DISCONNECTED' }, freeCore: { connected: true, dot: 'FALLBACK' }, meta: { priority: 'free' } }; },
+  async connectionsGetStatus() {
+    if (window.gemair && window.gemair.connectionsGetStatus) return window.gemair.connectionsGetStatus();
+    const status = { chatgpt: { connected: false, dot: 'BROWSER_OAUTH_REQUIRED', browser: true }, gemini: { connected: false, dot: 'BROWSER_OAUTH_REQUIRED', browser: true }, freeCore: { connected: false, dot: 'CHECKING', browser: true }, meta: { priority: 'free' } };
+    try {
+      const response = await fetch('/api/health', { headers: { Accept: 'application/json' } });
+      const health = await response.json();
+      status.freeCore.connected = response.ok && health.status === 'ok';
+      status.freeCore.dot = status.freeCore.connected ? 'READY' : 'UNAVAILABLE';
+      status.freeCore.message = status.freeCore.connected ? 'Live server tools available' : 'Live server tools unavailable';
+    } catch { status.freeCore.dot = 'UNAVAILABLE'; status.freeCore.message = 'Network unavailable'; }
+    return status;
+  },
   async connectionsSetPriority(p) { if (window.gemair) return window.gemair.connectionsSetPriority(p); },
   async connectionsAcknowledgeWarning() { if (window.gemair) return window.gemair.connectionsAcknowledgeWarning(); },
-  async connectionsOpenChatGPT() { if (window.gemair) return window.gemair.connectionsOpenChatGPT(); return { ok: false, error: 'desktop_only' }; },
+  async connectionsOpenChatGPT() { if (window.gemair) return window.gemair.connectionsOpenChatGPT(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'ChatGPT account access needs a server OAuth callback and encrypted session store. The browser cannot capture a ChatGPT session directly.' }; },
   async connectionsCaptureChatGPT() { if (window.gemair) return window.gemair.connectionsCaptureChatGPT(); return { error: 'desktop_only' }; },
-  async connectionsOpenGemini() { if (window.gemair) return window.gemair.connectionsOpenGemini(); return { ok: false }; },
+  async connectionsOpenGemini() { if (window.gemair) return window.gemair.connectionsOpenGemini(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'Gemini account access needs a configured Google OAuth client and server callback. No account will be marked connected in browser mode.' }; },
   async connectionsCaptureGemini(isFallback) { if (window.gemair) return window.gemair.connectionsCaptureGemini(isFallback); return { error: 'desktop_only' }; },
-  async connectionsOpenAIStudio() { if (window.gemair) return window.gemair.connectionsOpenAIStudio(); return { ok: false }; },
+  async connectionsOpenAIStudio() { if (window.gemair) return window.gemair.connectionsOpenAIStudio(); window.open('https://aistudio.google.com/', '_blank', 'noopener,noreferrer'); return { ok: true, browser: true }; },
   async connectionsDisconnect(provider) { if (window.gemair) return window.gemair.connectionsDisconnect(provider); },
   async connectionsClearAll() { if (window.gemair) return window.gemair.connectionsClearAll(); },
-  async connectionsChatStream(provider, messages, onDelta) { if (window.gemair) return window.gemair.connectionsChatStream(provider, messages, onDelta); return { ok: false, error: 'desktop_only' }; },
+  async connectionsChatStream(provider, messages, onDelta) { if (window.gemair) return window.gemair.connectionsChatStream(provider, messages, onDelta); return { ok: false, error: 'WEB_ACCOUNT_BRIDGE_UNAVAILABLE', message: `${provider} account chat is not configured for this web deployment. Use the live server brain or configure OAuth server-side.` }; },
   async modesList() { if (window.gemair && window.gemair.modesList) return window.gemair.modesList(); return []; },
   async modesGet(name) { if (window.gemair) return window.gemair.modesGet(name); },
   async modesSave(mode) { if (window.gemair) return window.gemair.modesSave(mode); },
@@ -7926,9 +7937,9 @@ function showExperimentalWarning(provider, onContinue) {
 async function handleConnectChatGPT() {
   showExperimentalWarning('chatgpt', async () => {
     try {
-      toast('CHATGPT', 'Opening chatgpt.com login…', '🔌');
+      toast('CHATGPT', 'Browser account connect is not configured on this deployment.', '⚠️');
       const res = await api.connectionsOpenChatGPT();
-      if (res && res.error) { toast('CHATGPT', res.error, '⚠️'); return; }
+      if (res && !res.ok) { toast('CHATGPT', res.message || res.error, '⚠️'); return; }
       // Show capture button
       const cap = $('#captureChatGPTBtn');
       if (cap) cap.hidden = false;
@@ -7960,8 +7971,8 @@ async function handleCaptureChatGPT() {
 async function handleConnectGemini() {
   showExperimentalWarning('gemini', async () => {
     try {
-      toast('GEMINI', 'Opening Gemini login…', '🔌');
-      await api.connectionsOpenGemini();
+      const res = await api.connectionsOpenGemini();
+      if (res && !res.ok) { toast('GEMINI', res.message || res.error, '⚠️'); return; }
       const cap = $('#captureGeminiBtn');
       if (cap) cap.hidden = false;
       toast('GEMINI', 'Sign in with Google inside opened window, then Capture', '👁');

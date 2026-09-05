@@ -27,7 +27,8 @@ module.exports = (req, res) => {
     anyAiConfigured: Object.values(PROVIDERS).some(has) || (!!env('AI_BASE_URL') && !!env('GROQ_API_KEY')),
     supabaseConfigured: !!env('SUPABASE_URL'),
     sharedLimiter: { enabled: !!(kvUrl && env('KV_REST_API_TOKEN')) },
-    freeBrainFallback: true, // always answers, even with nothing configured
+    freeBrainFallback: false,
+    liveTools: ['search', 'weather', 'headlines', 'crypto', 'currency', 'dictionary', 'translate'],
     uptimeSec: Math.round(process.uptime()),
     time: new Date().toISOString()
   });

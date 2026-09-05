@@ -883,14 +883,14 @@
           <fieldset id="connectionHubCard">
             <legend>CONNECTION HUB — ACCOUNTS → FREE CORE → OFFLINE</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
-              True account connect like Stonic — no API keys ever. Connect your ChatGPT/Gemini accounts via real login, encrypted locally with safeStorage. Chain: accounts → free core → offline brain.
+              Desktop account bridge: ChatGPT and Gemini OAuth sessions are encrypted locally when running GemAir Desktop. In browser mode, live search/tools work without keys; account sessions are not claimed unless a server OAuth callback is configured.
             </p>
             <div class="connection-rows">
               <!-- CHATGPT ROW -->
               <div class="conn-row" id="connChatGPTRow">
                 <span class="conn-dot" id="chatgptStatusDot" title="ChatGPT status">●</span>
                 <span class="conn-name">CHATGPT</span>
-                <span class="conn-email" id="chatgptEmail">Not connected</span>
+                <span class="conn-email" id="chatgptEmail">Desktop OAuth bridge required</span>
                 <span class="conn-badge" id="chatgptPlanBadge">—</span>
                 <span class="conn-usage" id="chatgptUsage">0 today</span>
                 <button class="primary-btn" id="connectChatGPTBtn" style="padding:6px 14px;font-size:11px;">CONNECT CHATGPT</button>
@@ -901,7 +901,7 @@
               <div class="conn-row" id="connGeminiRow">
                 <span class="conn-dot" id="geminiStatusDot" title="Gemini status">●</span>
                 <span class="conn-name">GEMINI</span>
-                <span class="conn-email" id="geminiEmail">Not connected</span>
+                <span class="conn-email" id="geminiEmail">Google OAuth bridge required</span>
                 <span class="conn-badge" id="geminiPlanBadge">—</span>
                 <span class="conn-usage" id="geminiUsage">0 today</span>
                 <button class="primary-btn" id="connectGeminiBtn" style="padding:6px 14px;font-size:11px;">CONNECT GEMINI</button>
@@ -912,7 +912,7 @@
               <div class="conn-row" id="connFreeRow">
                 <span class="conn-dot fallback" id="freeCoreDot" title="Free core status">●</span>
                 <span class="conn-name">FREE CORE</span>
-                <span class="conn-email">Serverless /api/chat — always available</span>
+                <span class="conn-email">Live server tools /api/* — status checked now</span>
                 <span class="conn-badge" style="background:var(--accent-dim);">FALLBACK</span>
                 <span class="conn-usage" id="freeCoreUsage">∞</span>
                 <span class="conn-status">READY</span>
@@ -931,7 +931,7 @@
 
             <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
               <button class="ghost-btn" id="openAIStudioBtn" style="padding:6px 12px;font-size:11px;">Fallback: Open AI Studio (Gemini)</button>
-              <span class="hint" style="font-size:10px;color:var(--text-dim);">If Gemini session capture is unstable, this opens AI Studio — sign in with Google, app reads credential locally, still zero key copy-paste.</span>
+               <span class="hint" style="font-size:10px;color:var(--text-dim);">AI Studio opens for direct use. GemAir does not read or claim a browser session without a configured OAuth callback.</span>
             </div>
           </fieldset>
         </div>
