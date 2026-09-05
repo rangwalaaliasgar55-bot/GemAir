@@ -5945,8 +5945,8 @@ async function runLocalAction(act) {
         if (r && r.error) return 'Could not open the browser: ' + r.error;
         return act.say;
       }
-      case 'minimizeAll': { await api.desktopMinimizeAll(); return act.say; }
-      case 'nextDesktop': { await api.desktopNextDesktop(); return act.say; }
+      case 'minimizeAll': { const r = await api.desktopMinimizeAll(); return r && r.error ? r.error : act.say; }
+      case 'nextDesktop': { const r = await api.desktopNextDesktop(); return r && r.error ? r.error : act.say; }
       case 'snap': { const r = await api.desktopSnapWindow(act.dir); return r && r.error ? 'Snap failed: ' + r.error : act.say; }
       case 'launch': {
         const r = await api.desktopLaunchApp(act.app);

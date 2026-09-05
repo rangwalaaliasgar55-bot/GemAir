@@ -46,7 +46,7 @@ console.log('  ok   automatic checks are daily and never install code');
 
 for (const id of ['setAutoUpdateChecks', 'checkUpdatesBtn', 'viewUpdateBtn', 'updateStatus']) assert(html.includes(`id="${id}"`), `missing update control ${id}`);
 assert(/id="updateStatus"[^>]*role="status"[^>]*aria-live="polite"/.test(html), 'update result is not announced accessibly');
-assert(/checks release metadata only/i.test(html) && /download the installer/i.test(html) && /Nothing replaces the app silently/i.test(html), 'update privacy behavior is not disclosed');
+assert(/checks release metadata only/i.test(html) && /DOWNLOAD UPDATE/i.test(app) && /Nothing replaces the app silently/i.test(html), 'update privacy behavior is not disclosed');
 console.log('  ok   update settings are explicit, accessible, and transparent');
 
 console.log('\n  All update-check regression tests passed.\n');
