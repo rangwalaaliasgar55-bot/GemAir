@@ -212,6 +212,7 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async version() { return window.gemair ? window.gemair.version() : '2.1.0'; },
+  onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
   onWakeToggle(cb) { return registerRendererDisposer(window.gemair && window.gemair.onWakeToggle ? window.gemair.onWakeToggle(cb) : null); },
   onActivity(cb) { return registerRendererDisposer(window.gemair && window.gemair.onActivity ? window.gemair.onActivity(cb) : null); },
@@ -6842,6 +6843,20 @@ function bindEvents() {
   $('#settingsDownloadBtn')?.addEventListener('click', openDownload);
   $('#topbarDownloadBtn')?.addEventListener('click', openDownload);
   $('#checkUpdatesBtn')?.addEventListener('click', () => checkForAppUpdates({ force: true }));
+  $('#updatePill')?.addEventListener('click', () => { openSettings(); setTimeout(() => checkForAppUpdates({ force: true }).catch(() => {}), 150); });
+  try {
+    if (api.onUpdateAvailable) api.onUpdateAvailable((info) => {
+      const pill = $('#updatePill');
+      if (pill && info && info.latest) {
+        pill.hidden = false;
+        pill.textContent = `⬆ Update ${info.latest}`;
+        pill.title = `GemAir ${info.latest} is available (installed: ${info.current || 'unknown'})`;
+      }
+      const status = $('#updateStatus');
+      if (status && info && info.latest) status.textContent = `GemAir ${info.latest} is available (installed: ${info.current || 'unknown'}). Open Settings → App Updates to install.`;
+      try { toast('UPDATE AVAILABLE', `GemAir ${info.latest} published — open Settings → App Updates to install.`, '⬆'); } catch {}
+    });
+  } catch {}
   $('#viewUpdateBtn')?.addEventListener('click', async () => {
     const url = trustedReleasePage($('#viewUpdateBtn').dataset.url);
     if (!url) return;

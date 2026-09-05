@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('gemair', {
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   checkForUpdates: (force = false) => ipcRenderer.invoke('app:checkForUpdates', !!force),
   installUpdate: (releaseUrl) => ipcRenderer.invoke('app:installUpdate', releaseUrl),
+  onUpdateAvailable: (cb) => subscribeIpc('app:update-available', cb),
   version: () => ipcRenderer.invoke('app:version'),
 
   memoryGet: () => ipcRenderer.invoke('memory:get'),

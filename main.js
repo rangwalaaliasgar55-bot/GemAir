@@ -282,6 +282,7 @@ function fallbackTrayIcon() {
 app.whenReady().then(() => {
   createWindow();
   try { createTray(); } catch (e) { console.error('[tray] disabled:', e.message); }
+  try { startAutoUpdateWatcher(); } catch (e) { console.error('[auto-update] disabled:', e.message); }
   startReminderScheduler();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -3780,6 +3781,54 @@ async function installUpdateFromRelease(releaseUrl) {
     return { ok: true, path: target, version: release.tag_name };
   } catch (error) { return { ok: false, error: error.name === 'AbortError' ? 'UPDATE_TIMEOUT' : error.message }; }
   finally { clearTimeout(timer); }
+}
+
+// ---------------------------------------------------------------------------
+// Automatic background updates: whenever the repo publishes a newer stable
+// release, notify the running desktop app. Checks run at startup, on window
+// focus (throttled), and every 30 minutes. The installer only ever runs
+// after explicit user approval inside installUpdateFromRelease.
+// ---------------------------------------------------------------------------
+const AUTO_UPDATE_POLL_MS = 30 * 60 * 1000;
+const AUTO_UPDATE_FOCUS_MS = 15 * 60 * 1000;
+let lastAutoUpdateAt = 0;
+let autoUpdateTimer = null;
+function autoUpdatesEnabled() {
+  try {
+    const profile = readProfile();
+    return profile.autoUpdateChecks !== false;
+  } catch { return true; }
+}
+async function pollAutoUpdate(reason) {
+  if (!autoUpdatesEnabled()) return null;
+  const now = Date.now();
+  const minGap = reason === 'focus' ? AUTO_UPDATE_FOCUS_MS : 5 * 60 * 1000;
+  if (now - lastAutoUpdateAt < minGap) return null;
+  lastAutoUpdateAt = now;
+  try {
+    const result = await checkForUpdates(false);
+    if (result && result.ok && result.available && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:update-available', {
+        current: result.current,
+        latest: result.latest,
+        url: result.url,
+        windowsAssetUrl: result.windowsAssetUrl || null,
+        name: result.name,
+        reason: reason || 'poll'
+      });
+    }
+    return result;
+  } catch { return null; }
+}
+function startAutoUpdateWatcher() {
+  if (autoUpdateTimer) return;
+  setTimeout(() => pollAutoUpdate('startup').catch(() => {}), 20000);
+  autoUpdateTimer = setInterval(() => pollAutoUpdate('interval').catch(() => {}), AUTO_UPDATE_POLL_MS);
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.on('focus', () => pollAutoUpdate('focus').catch(() => {}));
+    }
+  } catch {}
 }
 
 // ---------------------------------------------------------------------------

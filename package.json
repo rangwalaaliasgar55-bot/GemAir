@@ -63,6 +63,13 @@
       ],
       "icon": "build/icon.ico"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "rangwalaaliasgar55-bot",
+        "repo": "GemAir"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

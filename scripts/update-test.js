@@ -38,6 +38,15 @@ assert(main.includes("ipcMain.handle('app:installUpdate'"), 'installer update IP
 assert(preload.includes("ipcRenderer.invoke('app:installUpdate', releaseUrl)"), 'installer update IPC is not exposed');
 assert(main.includes('verifiedWindowsAsset'), 'Windows installer URL is not verified');
 assert(main.includes('UPDATE_CANCELLED'), 'update install cancellation is not handled');
+assert(main.includes('startAutoUpdateWatcher'), 'background auto-update watcher is missing');
+assert(main.includes('AUTO_UPDATE_POLL_MS'), 'auto-update poll interval is missing');
+assert(main.includes("mainWindow.webContents.send('app:update-available'"), 'auto-update availability event is missing');
+assert(preload.includes("subscribeIpc('app:update-available'"), 'auto-update event is not exposed through preload');
+assert(app.includes('onUpdateAvailable'), 'renderer does not subscribe to auto-update events');
+assert(html.includes('id="updatePill"'), 'update pill control is missing');
+const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+const published = JSON.stringify(((pkg.build || {}).publish) || []);
+assert(published.includes('rangwalaaliasgar55-bot') && published.includes('GemAir'), 'electron-builder publish config must point at the GemAir GitHub repo');
 console.log('  ok   desktop checks are bounded, stable-only, and exposed through guarded IPC');
 
 assert(app.includes("autoUpdateChecks: true"), 'daily update checks are not enabled by default');
