@@ -26,6 +26,7 @@ assert(bridge.includes('GEMINI_OAUTH_CLIENT_MISSING'), 'Gemini OAuth configurati
 assert(bridge.includes('setChatGPTConnection') && bridge.includes('setGeminiConnection'), 'OAuth bridge does not persist both providers');
 assert(store.includes('safeStorage.encryptString'), 'connection store is not encrypted');
 assert(store.includes('generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'), 'Gemini official API route missing');
+assert(!read('lib/oauth-gemini-pkce.js').includes('generative-language.retriever'), 'unsupported Gemini retriever scope is still requested');
 assert(main.includes('connections.getDecryptedTokens(provider)'), 'connected brain does not read encrypted tokens');
 assert(main.includes("if (stored.chatgpt && stored.chatgpt.connected) return { connectedProvider: 'chatgpt' }"), 'ChatGPT is not primary for desktop agent resolution');
 assert(main.includes("if (stored.gemini && stored.gemini.connected) return { connectedProvider: 'gemini' }"), 'Gemini is not primary for desktop agent resolution');
