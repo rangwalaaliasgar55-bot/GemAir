@@ -3772,13 +3772,22 @@ async function installUpdateFromRelease(releaseUrl) {
       if (total > maxBytes) return { ok: false, error: 'UPDATE_TOO_LARGE' };
       chunks.push(chunk);
     }
-    await fs.promises.writeFile(target, Buffer.concat(chunks));
+    // Reuse a background pre-download when it already fetched this exact version.
+    let installerPath = target;
+    try {
+      if (pendingUpdate && pendingUpdate.version === release.tag_name && pendingUpdate.path && fs.existsSync(pendingUpdate.path)) {
+        installerPath = pendingUpdate.path;
+      } else {
+        await fs.promises.writeFile(target, Buffer.concat(chunks));
+      }
+    } catch { await fs.promises.writeFile(target, Buffer.concat(chunks)); }
+    pendingUpdate = { version: release.tag_name, url: verifiedPage, path: installerPath, downloadedAt: Date.now() };
     const approved = await dialog.showMessageBox(mainWindow, { type: 'question', buttons: ['Install update', 'Cancel'], defaultId: 0, cancelId: 1, title: 'Install GemAir update?', message: `GemAir ${release.tag_name || ''} is ready. Close GemAir and run the downloaded installer now?`, detail: 'Your local profile and memory are preserved by the installer.' });
     if (approved.response !== 0) return { ok: false, error: 'UPDATE_CANCELLED' };
-    const child = spawn(target, [], { detached: true, stdio: 'ignore', windowsHide: false });
+    const child = spawn(installerPath, [], { detached: true, stdio: 'ignore', windowsHide: false });
     child.unref();
     setTimeout(() => app.quit(), 250);
-    return { ok: true, path: target, version: release.tag_name };
+    return { ok: true, path: installerPath, version: release.tag_name };
   } catch (error) { return { ok: false, error: error.name === 'AbortError' ? 'UPDATE_TIMEOUT' : error.message }; }
   finally { clearTimeout(timer); }
 }
@@ -3793,6 +3802,8 @@ const AUTO_UPDATE_POLL_MS = 30 * 60 * 1000;
 const AUTO_UPDATE_FOCUS_MS = 15 * 60 * 1000;
 let lastAutoUpdateAt = 0;
 let autoUpdateTimer = null;
+let pendingUpdate = null;
+let pendingDownloadTag = null;
 function autoUpdatesEnabled() {
   try {
     const profile = readProfile();
@@ -3814,11 +3825,65 @@ async function pollAutoUpdate(reason) {
         url: result.url,
         windowsAssetUrl: result.windowsAssetUrl || null,
         name: result.name,
+        downloaded: !!(pendingUpdate && pendingUpdate.version === ('v' + result.latest || result.latest)),
         reason: reason || 'poll'
       });
+      // Pre-download the Windows installer in the background so the one-click
+      // update is instant. Failures are silent here; the manual INSTALL UPDATE
+      // path still works.
+      predownloadUpdate(result).catch(() => {});
     }
     return result;
   } catch { return null; }
+}
+async function predownloadUpdate(result) {
+  try {
+    if (!result || !result.ok || !result.available || !result.windowsAssetUrl) return null;
+    const tag = 'v' + String(result.latest || '').replace(/^v/i, '');
+    if (pendingDownloadTag === tag) return pendingUpdate;
+    if (pendingUpdate && pendingUpdate.version === tag && pendingUpdate.path && fs.existsSync(pendingUpdate.path)) return pendingUpdate;
+    pendingDownloadTag = tag;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120000);
+    try {
+      const download = await fetch(result.windowsAssetUrl, { headers: { Accept: 'application/octet-stream', 'User-Agent': `GemAir/${app.getVersion()}` }, signal: controller.signal });
+      if (!download.ok || !download.body) { pendingDownloadTag = null; return null; }
+      const maxBytes = 300 * 1024 * 1024;
+      let total = 0;
+      const chunks = [];
+      for await (const chunk of download.body) {
+        total += chunk.length;
+        if (total > maxBytes) { pendingDownloadTag = null; return null; }
+        chunks.push(chunk);
+      }
+      const target = path.join(app.getPath('temp'), `GemAir-Setup-${tag.replace(/[^0-9A-Za-z.-]/g, '')}.exe`);
+      await fs.promises.writeFile(target, Buffer.concat(chunks));
+      pendingUpdate = { version: tag, url: result.url, path: target, downloadedAt: Date.now() };
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:update-available', {
+          current: result.current,
+          latest: result.latest,
+          url: result.url,
+          windowsAssetUrl: result.windowsAssetUrl || null,
+          name: result.name,
+          downloaded: true,
+          reason: 'predownloaded'
+        });
+      }
+      return pendingUpdate;
+    } finally { clearTimeout(timer); }
+  } catch { pendingDownloadTag = null; return null; }
+}
+async function applyPendingUpdate() {
+  try {
+    if (!pendingUpdate || !pendingUpdate.path || !fs.existsSync(pendingUpdate.path)) return { ok: false, error: 'UPDATE_NOT_DOWNLOADED' };
+    const approved = await dialog.showMessageBox(mainWindow, { type: 'question', buttons: ['Restart and update', 'Later'], defaultId: 0, cancelId: 1, title: 'Restart and update GemAir?', message: `GemAir ${pendingUpdate.version || ''} is downloaded. Restart now to install?`, detail: 'Your local profile and memory are preserved by the installer.' });
+    if (approved.response !== 0) return { ok: false, error: 'UPDATE_CANCELLED' };
+    const child = spawn(pendingUpdate.path, [], { detached: true, stdio: 'ignore', windowsHide: false });
+    child.unref();
+    setTimeout(() => app.quit(), 250);
+    return { ok: true, path: pendingUpdate.path, version: pendingUpdate.version };
+  } catch (error) { return { ok: false, error: error.message }; }
 }
 function startAutoUpdateWatcher() {
   if (autoUpdateTimer) return;
@@ -4000,6 +4065,7 @@ ipcMain.handle('memory:deleteTodo', (_e, id) => deleteTodoById(id));
 ipcMain.handle('win:saveBounds', () => saveWindowBounds());
 ipcMain.handle('app:checkForUpdates', (_e, force) => checkForUpdates(!!force));
 ipcMain.handle('app:installUpdate', (_e, url) => installUpdateFromRelease(url));
+ipcMain.handle('app:applyUpdate', () => applyPendingUpdate());
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:platform', () => process.platform);
 

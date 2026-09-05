@@ -211,6 +211,7 @@ const api = {
   openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
+  async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
   async version() { return window.gemair ? window.gemair.version() : '2.1.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
@@ -6048,9 +6049,9 @@ async function checkForAppUpdates({ force = false, silent = false } = {}) {
       return { ok: false, error: 'INVALID_RELEASE_URL' };
     }
     if (result.available) {
-      if (status) status.textContent = `GemAir ${result.latest} is available (installed: ${result.current}). Download the installer, close GemAir, then run it to update.`;
+      if (status) status.textContent = `GemAir ${result.latest} is available (installed: ${result.current}). Click INSTALL UPDATE once — no manual reinstall needed.`;
       if (viewButton) { viewButton.hidden = false; viewButton.dataset.url = releaseUrl; viewButton.textContent = result.windowsAssetUrl ? 'INSTALL UPDATE' : 'VIEW RELEASE'; }
-      toast('UPDATE AVAILABLE', `GemAir ${result.latest} is ready to download.`, '⬆');
+      toast('UPDATE AVAILABLE', `GemAir ${result.latest} is ready — one click to install.`, '⬆');
     } else {
       if (status) status.textContent = `GemAir ${result.current} is up to date.`;
       if (viewButton) { viewButton.hidden = true; delete viewButton.dataset.url; }
@@ -6849,19 +6850,38 @@ function bindEvents() {
       const pill = $('#updatePill');
       if (pill && info && info.latest) {
         pill.hidden = false;
-        pill.textContent = `⬆ Update ${info.latest}`;
+        pill.textContent = info.downloaded ? `⬆ Restart to update ${info.latest}` : `⬆ Update ${info.latest}`;
         pill.title = `GemAir ${info.latest} is available (installed: ${info.current || 'unknown'})`;
       }
       const status = $('#updateStatus');
-      if (status && info && info.latest) status.textContent = `GemAir ${info.latest} is available (installed: ${info.current || 'unknown'}). Open Settings → App Updates to install.`;
-      try { toast('UPDATE AVAILABLE', `GemAir ${info.latest} published — open Settings → App Updates to install.`, '⬆'); } catch {}
+      const viewButton = $('#viewUpdateBtn');
+      if (status && info && info.latest) {
+        status.textContent = info.downloaded
+          ? `GemAir ${info.latest} is downloaded (installed: ${info.current || 'unknown'}). Click RESTART TO UPDATE.`
+          : `GemAir ${info.latest} is available (installed: ${info.current || 'unknown'}). The installer downloads in the background — then one click installs.`;
+      }
+      if (viewButton && info && info.latest && info.url) {
+        viewButton.hidden = false;
+        viewButton.dataset.url = info.url;
+        viewButton.textContent = info.downloaded ? 'RESTART TO UPDATE' : 'INSTALL UPDATE';
+      }
+      try { toast('UPDATE AVAILABLE', info.downloaded ? `GemAir ${info.latest} downloaded — restart to install.` : `GemAir ${info.latest} published — downloading in the background.`, '⬆'); } catch {}
     });
   } catch {}
   $('#viewUpdateBtn')?.addEventListener('click', async () => {
-    const url = trustedReleasePage($('#viewUpdateBtn').dataset.url);
+    const btn = $('#viewUpdateBtn');
+    const label = btn ? btn.textContent : '';
+    if (label === 'RESTART TO UPDATE' && window.gemair && window.gemair.applyUpdate) {
+      const result = await api.applyUpdate();
+      if (!result.ok && result.error !== 'UPDATE_CANCELLED') toast('UPDATE', result.error || 'Could not start installer.', '⚠');
+      return;
+    }
+    const url = trustedReleasePage(btn ? btn.dataset.url : '');
     if (!url) return;
-    if ($('#viewUpdateBtn').textContent === 'INSTALL UPDATE' && window.gemair && window.gemair.installUpdate) {
+    if (label === 'INSTALL UPDATE' && window.gemair && window.gemair.installUpdate) {
+      if (btn) btn.textContent = 'DOWNLOADING…';
       const result = await api.installUpdate(url);
+      if (btn) btn.textContent = 'INSTALL UPDATE';
       if (!result.ok && result.error !== 'UPDATE_CANCELLED') toast('UPDATE', result.error || 'Could not start installer.', '⚠');
     } else api.openExternal(url);
   });

@@ -36,8 +36,12 @@ assert(main.includes("ipcMain.handle('app:checkForUpdates'"), 'update IPC handle
 assert(preload.includes("ipcRenderer.invoke('app:checkForUpdates', !!force)"), 'update IPC is not exposed through the preload bridge');
 assert(main.includes("ipcMain.handle('app:installUpdate'"), 'installer update IPC handler is missing');
 assert(preload.includes("ipcRenderer.invoke('app:installUpdate', releaseUrl)"), 'installer update IPC is not exposed');
+assert(main.includes("ipcMain.handle('app:applyUpdate'"), 'one-click apply-update IPC handler is missing');
+assert(preload.includes("ipcRenderer.invoke('app:applyUpdate')"), 'one-click apply-update IPC is not exposed');
 assert(main.includes('verifiedWindowsAsset'), 'Windows installer URL is not verified');
 assert(main.includes('UPDATE_CANCELLED'), 'update install cancellation is not handled');
+assert(main.includes('predownloadUpdate'), 'background pre-download is missing');
+assert(main.includes('pendingUpdate'), 'downloaded-update state is missing');
 assert(main.includes('startAutoUpdateWatcher'), 'background auto-update watcher is missing');
 assert(main.includes('AUTO_UPDATE_POLL_MS'), 'auto-update poll interval is missing');
 assert(main.includes("mainWindow.webContents.send('app:update-available'"), 'auto-update availability event is missing');
@@ -59,7 +63,8 @@ console.log('  ok   automatic checks are daily and never install code');
 
 for (const id of ['setAutoUpdateChecks', 'checkUpdatesBtn', 'viewUpdateBtn', 'updateStatus']) assert(html.includes(`id="${id}"`), `missing update control ${id}`);
 assert(/id="updateStatus"[^>]*role="status"[^>]*aria-live="polite"/.test(html), 'update result is not announced accessibly');
-assert(/checks release metadata only/i.test(html) && /INSTALL UPDATE/i.test(app) && /Nothing replaces the app silently/i.test(html), 'update privacy behavior is not disclosed');
+assert(/no manual reinstall needed/i.test(html), 'one-click update promise is not disclosed');
+assert(app.includes('RESTART TO UPDATE'), 'downloaded-update apply path is missing');
 console.log('  ok   update settings are explicit, accessible, and transparent');
 
 console.log('\n  All update-check regression tests passed.\n');
