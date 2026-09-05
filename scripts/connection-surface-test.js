@@ -21,6 +21,7 @@ assert(renderer.includes('async connectionsOauthChatGPT()'), 'ChatGPT renderer b
 assert(renderer.includes('async connectionsOauthGemini()'), 'Gemini renderer bridge missing');
 assert(renderer.includes('Opening secure OAuth sign-in'), 'renderer does not use secure OAuth flow');
 assert(bridge.includes('CHATGPT_OAUTH_CLIENT_REJECTED'), 'ChatGPT OAuth rejection is not explained');
+assert(bridge.includes('CHATGPT_OAUTH_CLIENT_REQUIRED'), 'ChatGPT missing OAuth client is not explained');
 assert(bridge.includes('GEMINI_OAUTH_CLIENT_MISSING'), 'Gemini OAuth configuration failure is not explained');
 assert(bridge.includes('setChatGPTConnection') && bridge.includes('setGeminiConnection'), 'OAuth bridge does not persist both providers');
 assert(store.includes('safeStorage.encryptString'), 'connection store is not encrypted');
