@@ -1173,16 +1173,15 @@
               <input type="checkbox" id="setAllowShell" /> Allow shell command execution (confirms each command)
             </label>
             <label class="check-label">
-              <input type="checkbox" id="setLocalBrain" /> Local AI — run a small language model in your browser (WebGPU)
+              <input type="checkbox" id="setLocalBrain" /> Local AI fallback — run a small language model in your browser (WebGPU)
             </label>
             <span class="hint" id="localBrainHint">Optional. Downloads roughly 800 MB once, then answers general questions locally. Live/current questions still use sources first.</span>
           </fieldset>
 
           <fieldset id="desktopAgentCard">
             <legend>🤖 DESKTOP AGENT — COMPUTER USE (KEYLESS, NO CLAUDE)</legend>
-            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
-              Like an agent that drives your real cursor, keyboard, screenshots and terminal — but <b>no API key, no Claude, no vendor</b>.
-              It runs on a <b>local model (Ollama)</b> when present (fully offline) or your optional free-tier key. Turn it on to let Gem take
+              <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+               A connected ChatGPT or Gemini brain can plan real desktop tasks through the guarded tool layer. Ollama is optional, not required. Turn it on to let Gem take
               screenshots, move the mouse, click, type and press keys to carry out a task you describe.
             </p>
             <label class="check-label">
@@ -1203,9 +1202,9 @@
 
           <fieldset id="codingAgentCard">
             <legend>👨‍💻 CODING AGENT — KEYLESS, GEMAIR</legend>
-            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
-              GemAir's own local coding agent — with <b>no API key, no Claude, no vendor</b>. Point it at a
-              project folder and describe a change — it reads your repo, plans, edits files and validates, using a <b>local model (Ollama)</b>.
+              <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+               GemAir's coding agent uses your connected ChatGPT or Gemini brain when available. Point it at a
+               project folder and describe a change — it reads your repo, plans, edits files and validates. Ollama remains optional.
               It can also delegate to a user-installed terminal coding CLI (keyless via Ollama).
             </p>
             <label class="check-label">

@@ -6199,7 +6199,9 @@ async function refreshAgentBrainChip() {
   const cfg = profile.ai || {};
   if (cfg.apiKey && cfg.baseURL) chip.textContent = 'User key (' + (cfg.model || 'model') + ')';
   else if (cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL)) chip.textContent = 'Local (Ollama) — keyless';
-  else chip.textContent = 'Auto: local Ollama → free';
+  else if (connectionsStatus && connectionsStatus.chatgpt?.connected) chip.textContent = 'Connected ChatGPT';
+  else if (connectionsStatus && connectionsStatus.gemini?.connected) chip.textContent = 'Connected Gemini';
+  else chip.textContent = 'Connect ChatGPT or Gemini';
   chip.classList.add('fallback');
 }
 let agentRunning = false;

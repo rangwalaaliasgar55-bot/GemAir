@@ -24,4 +24,6 @@ assert(bridge.includes('setChatGPTConnection') && bridge.includes('setGeminiConn
 assert(store.includes('safeStorage.encryptString'), 'connection store is not encrypted');
 assert(store.includes('generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'), 'Gemini official API route missing');
 assert(main.includes('connections.getDecryptedTokens(provider)'), 'connected brain does not read encrypted tokens');
+assert(main.includes("if (stored.chatgpt && stored.chatgpt.connected) return { connectedProvider: 'chatgpt' }"), 'ChatGPT is not primary for desktop agent resolution');
+assert(main.includes("if (stored.gemini && stored.gemini.connected) return { connectedProvider: 'gemini' }"), 'Gemini is not primary for desktop agent resolution');
 console.log('ok - ChatGPT and Gemini OAuth, encrypted storage, IPC, and provider routing contracts');

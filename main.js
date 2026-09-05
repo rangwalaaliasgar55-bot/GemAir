@@ -2160,21 +2160,18 @@ function pickVisionModel(names) {
   return names[0];
 }
 
-// Best keyless config for computer use: local Ollama first, then the user's
-// own optional key, then throw so the caller can degrade gracefully.
+// Resolve the user's selected brain for computer/coding agents. Connected
+// ChatGPT/Gemini sessions are the primary path; Ollama remains optional.
 async function resolveComputerUseConfig() {
   const profile = readProfile();
   const ai = profile.ai || {};
-  // 1. Explicitly configured local endpoint (no key required).
-  if (ai.baseURL && isLocalUrl(ai.baseURL)) {
-    return { baseURL: ai.baseURL, apiKey: ai.apiKey || '', model: ai.model || 'llama3' };
-  }
-  // 2. Auto-detect a running keyless local Ollama.
-  const local = await detectLocalOllama();
-  if (local) return local;
-  // 3. User's own optional key (free tiers — Groq/Gemini/OpenRouter — are fine; still never Claude).
+  const stored = connections.getSanitizedStatus();
+  if (stored.chatgpt && stored.chatgpt.connected) return { connectedProvider: 'chatgpt' };
+  if (stored.gemini && stored.gemini.connected) return { connectedProvider: 'gemini' };
+  // Optional local endpoint, then user's own compatible provider key.
+  if (ai.baseURL && isLocalUrl(ai.baseURL)) return { baseURL: ai.baseURL, apiKey: ai.apiKey || '', model: ai.model || 'llama3' };
   if (ai.apiKey && ai.baseURL) return { baseURL: ai.baseURL, apiKey: ai.apiKey, model: ai.model || 'llama-3.3-70b-versatile' };
-  throw new Error('NO_ENDPOINT');
+  throw new Error('NO_CONNECTED_BRAIN: Connect ChatGPT or Gemini in Settings, or configure an optional local/provider model.');
 }
 
 const COMPUTER_USE_SYSTEM_PROMPT = [
@@ -3801,6 +3798,10 @@ ipcMain.handle('agent:computerUse', async (e, task, config) => {
   try {
     // Resolve the best keyless brain automatically if the caller didn't pass one.
     const resolved = (config && (config.baseURL || config.apiKey)) ? { model: (config.model || '').trim(), baseURL: (config.baseURL || '').trim(), apiKey: (config.apiKey || '').trim() } : await resolveComputerUseConfig();
+    if (resolved.connectedProvider) {
+      const reply = await callConnectedBrain(resolved.connectedProvider, [{ role: 'system', content: COMPUTER_USE_SYSTEM_PROMPT }, { role: 'user', content: task }], (delta) => wc.send('ai:chunk', { reqId: 'computer-use', delta }));
+      return { ok: true, reply, steps: [], provider: resolved.connectedProvider, fallback: false };
+    }
     const run = await computerUseAgent(task, resolved, (payload) => { try { wc.send('agent:computerEvent', payload); } catch {} });
     return { ok: run.ok, reply: run.reply, steps: run.steps, error: run.error, stopped: run.stopped || false, fallback: false };
   } catch (err) {
@@ -3830,11 +3831,15 @@ ipcMain.handle('agent:codingUse', async (e, task, workingDir, config) => {
   const wc = e.sender;
   try {
     const resolved = (config && (config.baseURL || config.apiKey)) ? { model: (config.model || '').trim(), baseURL: (config.baseURL || '').trim(), apiKey: (config.apiKey || '').trim() } : await resolveCodingConfig();
+    if (resolved.connectedProvider) {
+      const reply = await callConnectedBrain(resolved.connectedProvider, [{ role: 'system', content: 'You are GemAir Coding Agent. Explain the requested change, inspect before editing, and never claim a file was changed unless a real desktop coding tool executed it.' }, { role: 'user', content: `${task}\nWorking directory: ${workingDir || os.homedir()}` }]);
+      return { ok: true, reply, steps: [], provider: resolved.connectedProvider, fallback: false };
+    }
     const run = await codingAgent(task, resolved, workingDir || os.homedir(), (payload) => { try { wc.send('agent:codingEvent', payload); } catch {} });
     return { ok: run.ok, reply: run.reply, steps: run.steps, error: run.error, stopped: run.stopped || false, fallback: false };
   } catch (err) {
     if (err.message === 'NO_ENDPOINT' || err.message === 'NO_KEY') {
-      return { ok: false, error: 'No model is connected. Start a local model (Ollama) for a keyless Coding Agent, or set an optional free-tier key.', steps: [], fallback: true };
+        return { ok: false, error: 'No model is connected. Connect ChatGPT or Gemini in Settings, or configure an optional local/provider model.', steps: [], fallback: true };
     }
     return { ok: false, error: err.message, steps: [] };
   }
