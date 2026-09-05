@@ -44,6 +44,28 @@ body:not([data-appearance='light']) .vignette { opacity: .18; }
 .settings-section fieldset { border-color: rgba(255,255,255,.09); background: rgba(255,255,255,.018); border-radius: 10px; }
 .conn-row { border-color: rgba(255,255,255,.08); background: rgba(255,255,255,.018); }
 
+/* Global product surface: every view and modal uses the same calm hierarchy. */
+.main { padding: 24px clamp(16px, 3vw, 38px); }
+.view > :is(.hud-panel, .core-grid, .world-grid, .town-layout, .companion-grid) { max-width: 1440px; margin-inline: auto; }
+.view .hud-panel, .view fieldset, .modal {
+  background: linear-gradient(145deg, rgba(255,255,255,.045), transparent 38%), var(--depth-surface);
+  border-color: rgba(255,255,255,.09);
+}
+.view .hud-panel:hover { border-color: rgba(255,255,255,.16); }
+.modal-backdrop { background: rgba(3,4,7,.72); backdrop-filter: blur(18px) saturate(120%); }
+.modal { border-radius: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08); }
+.modal-head { border-bottom-color: rgba(255,255,255,.08); padding: 18px 22px; }
+.modal-head h2 { letter-spacing: .12em; }
+.modal-body { gap: 16px; padding: 20px 22px; }
+.view :is(input, select, textarea) { border-color: rgba(255,255,255,.13); background: rgba(0,0,0,.24); border-radius: 9px; }
+.view :is(input, select, textarea):focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.view :is(button, .primary-btn, .ghost-btn, .mini-btn) { border-radius: 9px; }
+.view .panel-title { letter-spacing: .12em; }
+.view .empty { padding: 22px 12px; text-align: center; color: var(--depth-muted); }
+body[data-appearance='light'] .view .hud-panel,
+body[data-appearance='light'] .view fieldset,
+body[data-appearance='light'] .modal { background: linear-gradient(145deg, rgba(255,255,255,.9), transparent 42%), var(--depth-surface); border-color: rgba(20,35,55,.14); }
+
 .chat-skip {
   position: fixed;
   top: 12px;

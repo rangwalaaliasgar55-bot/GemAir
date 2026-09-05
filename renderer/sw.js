@@ -13,7 +13,7 @@
    ============================================================ */
 'use strict';
 
-const CACHE_VERSION = 'gemair-shell-v2.5.0-depth-real-chat1';
+const CACHE_VERSION = 'gemair-shell-v2.5.2-production1';
 const SHELL = [
   'index.html',
   'style.css',

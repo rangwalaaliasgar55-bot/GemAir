@@ -2,7 +2,7 @@
 
 ## Installers (GitHub Releases)
 
-After a version tag is pushed (`v2.5.1`, etc.), GitHub Actions builds:
+After a version tag is pushed (`v2.5.2`, etc.), GitHub Actions builds:
 
 | Platform | Artifact |
 |----------|----------|
@@ -21,8 +21,8 @@ npm ci
 npm run dist:win    # or dist:mac / dist:linux
 # outputs in release/
 
-git tag v2.5.1
-git push origin v2.5.1
+git tag v2.5.2
+git push origin v2.5.2
 ```
 
 ## From source

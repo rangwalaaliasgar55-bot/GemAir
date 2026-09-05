@@ -3675,9 +3675,10 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
     connections.incUsage('chatgpt');
     return remaining || full;
   } else if (provider === 'gemini') {
-    // For Gemini, we attempt web call but fallback if experimental
     try {
-      await connections.callGeminiWeb({ psid: tokens.psid, psidts: tokens.psidts, messages: adaptedMessages, onDelta });
+      const full = await connections.callGeminiWeb({ psid: tokens.psid, psidts: tokens.psidts, messages: adaptedMessages, onDelta });
+      connections.incUsage('gemini');
+      return full;
     } catch (e) {
       throw new Error('GEMINI_WEB_FAILED: ' + e.message);
     }

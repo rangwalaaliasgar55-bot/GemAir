@@ -11,12 +11,13 @@
       min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:48px 20px; }
     h1 { font-size:2rem; letter-spacing:.06em; margin:0 0 8px; color:var(--accent); }
     p { color:var(--muted); max-width:520px; text-align:center; }
-    .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); width:min(720px,100%); margin-top:32px; }
+    .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); width:min(820px,100%); margin-top:32px; }
     a.card { display:block; padding:20px; background:var(--card); border:1px solid #1a3a5c; border-radius:12px;
       color:var(--text); text-decoration:none; text-align:center; transition:.2s; }
     a.card:hover { border-color:var(--accent); box-shadow:0 0 24px rgba(0,229,255,.25); }
     a.card strong { display:block; color:var(--accent); margin-bottom:6px; }
     footer { margin-top:40px; color:var(--muted); font-size:13px; }
+    .status { width:min(820px,100%); margin-top:18px; color:var(--muted); text-align:center; font-size:13px; }
     code { background:#0f1a2e; padding:2px 6px; border-radius:4px; }
   </style>
 </head>
@@ -24,19 +25,20 @@
   <h1>GEMAIR</h1>
   <p>Free open-source sci-fi desktop AI. Voice, Agent Town, System Core, HUD themes. No subscription.</p>
   <div class="grid">
-    <a class="card" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
-      <strong>Windows</strong>
-      GemAir-Setup.exe
+     <a class="card" id="windows" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
+       <strong>Windows</strong>
+       Loading latest installer…
     </a>
-    <a class="card" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
+     <a class="card" id="macos" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
       <strong>macOS</strong>
-      GemAir.dmg
+       Loading latest installer…
     </a>
-    <a class="card" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
+     <a class="card" id="linux" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
       <strong>Linux</strong>
-      AppImage / .deb
+       Loading latest packages…
     </a>
   </div>
+  <div class="status" id="releaseStatus">Resolving the latest signed GitHub release…</div>
   <p style="margin-top:28px">Or from source:</p>
   <p><code>git clone https://github.com/rangwalaaliasgar55-bot/GemAir.git && cd GemAir && npm i && npm start</code></p>
   <footer>
@@ -44,4 +46,28 @@
     · MIT · Not affiliated with Stonic AI
   </footer>
 </body>
+<script>
+  (async () => {
+    const status = document.getElementById('releaseStatus');
+    try {
+      const response = await fetch('https://api.github.com/repos/rangwalaaliasgar55-bot/GemAir/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+      if (!response.ok) throw new Error('release lookup failed');
+      const release = await response.json();
+      const files = release.assets || [];
+      const pick = (re) => files.find((asset) => re.test(asset.name));
+      const links = [
+        ['windows', /\.exe$/i, 'Windows installer'],
+        ['macos', /\.dmg$/i, 'macOS disk image'],
+        ['linux', /\.(AppImage|deb)$/i, 'Linux packages']
+      ];
+      for (const [id, re, label] of links) {
+        const card = document.getElementById(id);
+        const asset = pick(re);
+        if (asset) { card.href = asset.browser_download_url; card.innerHTML = '<strong>' + label + '</strong>' + asset.name; }
+        else card.innerHTML = '<strong>' + label + '</strong>Open release page';
+      }
+      status.textContent = 'Latest stable release: ' + (release.tag_name || 'unknown') + ' · checksums included · published ' + new Date(release.published_at).toLocaleDateString();
+    } catch { status.textContent = 'Release assets are available from the GitHub releases page.'; }
+  })();
+</script>
 </html>

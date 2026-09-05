@@ -2547,6 +2547,10 @@ function hasToolIntent(text) {
   return /\b(search|google|weather|open|launch|translate|convert|define|remind|note|screenshot|volume|what time|calculate|bitcoin|price|todo|goal|email|whatsapp|organize|rename|archive|list|find|show|status)\b/i.test(text);
 }
 
+function needsLiveResearch(text) {
+  return /\b(latest|current|today|now|news|price|cost|weather|forecast|who is|what is|when is|where is|research|compare|review|source|verify|fact|search|look up|find out)\b/i.test(String(text || ''));
+}
+
 // Local heuristic memory extraction (for offline mode)
 function localExtract(text) {
   const facts = [];
@@ -3035,10 +3039,21 @@ async function handleMessage(text) {
       chatHistory.push({ role: 'assistant', content: reply });
     }
   } else {
-    const res = await api.aiOffline(text);
-    reply = '[Local commands, not an AI model]\n' + res.reply;
     const replyEl = typing.querySelector('p');
     typewriterToken++;
+    let local = null;
+    if (window.aiClient && window.aiClient.isLocalReady()) {
+      let localText = '';
+      local = await window.aiClient.localChat([{ role: 'system', content: buildSystemPrompt() }, ...getContextMessages(24)], (delta) => {
+        localText += delta;
+        replyEl.textContent = localText;
+      });
+      if (local.ok) reply = local.reply;
+    }
+    if (!local || !local.ok) {
+      const res = await api.aiOffline(text);
+      reply = '[LIVE TOOLS / LOCAL BRAIN]\n' + res.reply;
+    }
     await renderReply(replyEl, reply);
     if (profile.memoryOn) {
       const facts = localExtract(text);
@@ -6228,7 +6243,7 @@ function updateAiHint() {
   const prov = detectProvider(base);
   if (key && base) el.textContent = '✓ ' + (PROVIDER_NAMES[prov] || 'Custom AI endpoint') + ' active — using your key only.';
   else if (base && /localhost|127\.0\.0\.1/.test(base)) el.textContent = '✓ Local model detected (no key needed).';
-  else el.textContent = '✔ FREE CORE CONNECTED — 100% free out of the box. Pick a free model below or add your own key.';
+  else el.textContent = '✓ Live tools ready. General model answers require a configured provider or the optional local WebGPU model.';
 }
 function applyPreset(p) {
   // Provider presets — one click fills Base URL + Model. All of these speak
@@ -6509,8 +6524,8 @@ function bindEvents() {
     });
     localBrainToggle.checked = ok;
     if (hint) hint.textContent = ok
-      ? `Offline brain READY (${window.aiClient.LOCAL_MODEL.id}) — used automatically when the free core is unreachable.`
-      : 'Could not load the in-browser model. GemAir will keep using the free core and the offline intent brain.';
+      ? `Local model READY (${window.aiClient.LOCAL_MODEL.id}) — factual/current questions still use live tools first.`
+      : 'Could not load the local model. Live tools remain available; generic answers require a configured model.';
     toast('OFFLINE BRAIN', ok ? 'Local model ready' : 'Local model unavailable', ok ? '🧠' : '⚠️');
   });
 
@@ -6862,8 +6877,8 @@ function bindEvents() {
     try {
       // R8: strict — a supplied key that fails must NOT be masked by the free core.
       const res = await api.aiChatStrict(cfg, [{ role: 'user', content: 'Reply with exactly: OK' }]);
-      if (res.ok && res.via === 'direct') { resEl.textContent = '✓ OK — your key answered'; resEl.classList.add('ok'); }
-      else if (res.ok) { resEl.textContent = '✓ OK — GemAir free core (no key configured)'; resEl.classList.add('ok'); }
+      if (res.ok && res.via === 'direct') { resEl.textContent = `✓ OK — ${res.provider || 'provider'} answered${res.model ? ' · ' + res.model : ''}`; resEl.classList.add('ok'); }
+      else if (res.ok && res.via === 'free-core') { resEl.textContent = '✓ OK — live server model answered'; resEl.classList.add('ok'); }
       else { resEl.textContent = '✗ ' + humanError(res.error) + (res.via === 'direct' ? ' (your key/endpoint — the free core was NOT used)' : ''); resEl.classList.add('bad'); }
     } catch (e) { resEl.textContent = '✗ ' + e.message; resEl.classList.add('bad'); }
   });

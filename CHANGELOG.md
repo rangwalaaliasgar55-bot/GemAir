@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.5.2] — 2026-09-05
+
+Production answer routing, honest provider status, real Gemini OAuth generation, minimal dark UI, and release-ready desktop distribution.
+
 All notable changes to GemAir are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
