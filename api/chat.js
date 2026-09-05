@@ -17,7 +17,7 @@ const FREE_PROVIDERS = [
     id: 'groq', free: true,
     base: 'https://api.groq.com/openai/v1',
     keyEnv: ['GROQ_API_KEY', 'GROQ_KEY', 'VERCEL_GROQ_KEY'],
-    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-8b-8192', 'mixtral-8x7b-32768']
+    models: ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'llama3-8b-8192', 'mixtral-8x7b-32768']
   },
   {
     id: 'gemini', free: true,
@@ -104,7 +104,7 @@ function availableProviders() {
   const modelOverride = env('AI_MODEL');
   if (baseOverride) {
     const key = KEY_ENV_NAMES.map(env).find(Boolean) || '';
-    out.push({ id: 'override', base: baseOverride.replace(/\/+$/, ''), key, models: modelOverride ? [modelOverride] : ['llama-3.3-70b-versatile'] });
+    out.push({ id: 'override', base: baseOverride.replace(/\/+$/, ''), key, models: modelOverride ? [modelOverride] : ['llama-3.1-8b-instant'] });
   }
   for (const p of FREE_PROVIDERS) {
     const key = p.keyEnv.map(env).find(Boolean) || '';

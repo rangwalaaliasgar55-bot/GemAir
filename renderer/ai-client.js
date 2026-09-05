@@ -174,7 +174,7 @@
     let model = (config && config.model || '').trim();
 
     if (!baseURL) baseURL = 'https://api.groq.com/openai/v1';
-    if (!model) model = 'llama-3.3-70b-versatile';
+    if (!model) model = 'llama-3.1-8b-instant';
 
     baseURL = baseURL.replace(/\/+$/, '');
     const url = baseURL + (baseURL.endsWith('/chat/completions') ? '' : '/chat/completions');

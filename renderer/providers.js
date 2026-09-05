@@ -23,8 +23,8 @@
       keyUrl: 'https://console.groq.com/keys',
       note: 'Ultra-fast Llama/Qwen/Mistral. Generous free tier, no credit card.',
       models: [
-        { id: 'llama-3.3-70b-versatile', free: true },
         { id: 'llama-3.1-8b-instant', free: true },
+        { id: 'llama-3.3-70b-versatile', free: true },
         { id: 'qwen-2.5-32b', free: true },
         { id: 'mixtral-8x7b-32768', free: true }
       ]

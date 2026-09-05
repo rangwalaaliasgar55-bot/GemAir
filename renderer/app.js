@@ -525,7 +525,7 @@ const DEFAULTS = Object.freeze({
   name: 'Commander',
   get theme() { return (window.GemAirThemes && window.GemAirThemes.DEFAULT) || 'crimson'; },
   city: 'Mumbai',
-  model: 'llama-3.3-70b-versatile',
+  model: 'llama-3.1-8b-instant',
   voiceMode: 'edge',
   voicePreset: 'gem',
   voiceRate: 1.0,
@@ -6293,7 +6293,7 @@ function applyPreset(p) {
   // the OpenAI-compatible chat/completions protocol, so the SAME tool-calling
   // engine drives every provider (see AI-FRAMEWORK.md).
   const map = {
-    groq: { baseURL: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
+     groq: { baseURL: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' },
     openai: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
     gemini: { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
     claude: { baseURL: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-5' },
