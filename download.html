@@ -5,17 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Download GemAir — JARVIS-style desktop AI</title>
   <style>
-    :root { --bg:#050a12; --accent:#00e5ff; --text:#e8f4ff; --muted:#6b9bb8; --card:#0a1220; }
+    :root { --bg:#090a0c; --accent:#f5f5f7; --text:#f5f5f7; --muted:#a1a1aa; --card:rgba(30,31,35,.72); --line:rgba(255,255,255,.12); }
     * { box-sizing: border-box; }
-    body { margin:0; font:16px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--text);
-      min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:48px 20px; }
-    h1 { font-size:2rem; letter-spacing:.06em; margin:0 0 8px; color:var(--accent); }
-    p { color:var(--muted); max-width:520px; text-align:center; }
+    body { margin:0; font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",Inter,system-ui,sans-serif; background:radial-gradient(800px 520px at 50% -10%,#24262b,transparent 65%),var(--bg); color:var(--text);
+      min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:72px 20px; }
+    h1 { font-size:clamp(2.2rem,6vw,4rem); letter-spacing:-.055em; line-height:1; margin:0 0 14px; color:var(--accent); font-weight:700; }
+    p { color:var(--muted); max-width:570px; text-align:center; }
     .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); width:min(820px,100%); margin-top:32px; }
-    a.card { display:block; padding:20px; background:var(--card); border:1px solid #1a3a5c; border-radius:12px;
-      color:var(--text); text-decoration:none; text-align:center; transition:.2s; }
-    a.card:hover { border-color:var(--accent); box-shadow:0 0 24px rgba(0,229,255,.25); }
-    a.card strong { display:block; color:var(--accent); margin-bottom:6px; }
+    a.card { display:block; padding:24px; background:var(--card); border:1px solid var(--line); border-radius:18px;
+      color:var(--text); text-decoration:none; text-align:left; transition:transform .22s ease,background .22s ease,border-color .22s ease; backdrop-filter:blur(22px); }
+    a.card:hover { border-color:rgba(255,255,255,.3); background:rgba(50,51,57,.78); transform:translateY(-4px); }
+    a.card strong { display:block; color:var(--text); margin-bottom:8px; font-size:18px; }
+    a.card span { color:var(--muted); font-size:13px; }
     footer { margin-top:40px; color:var(--muted); font-size:13px; }
     .status { width:min(820px,100%); margin-top:18px; color:var(--muted); text-align:center; font-size:13px; }
     code { background:#0f1a2e; padding:2px 6px; border-radius:4px; }
@@ -26,16 +27,13 @@
   <p>Free open-source sci-fi desktop AI. Voice, Agent Town, System Core, HUD themes. No subscription.</p>
   <div class="grid">
      <a class="card" id="windows" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
-       <strong>Windows</strong>
-       Loading latest installer…
+       <strong>Windows</strong><span>Loading latest installer…</span>
     </a>
      <a class="card" id="macos" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
-      <strong>macOS</strong>
-       Loading latest installer…
+       <strong>macOS</strong><span>Loading latest installer…</span>
     </a>
      <a class="card" id="linux" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
-      <strong>Linux</strong>
-       Loading latest packages…
+       <strong>Linux</strong><span>Loading latest packages…</span>
     </a>
   </div>
   <div class="status" id="releaseStatus">Resolving the latest signed GitHub release…</div>
@@ -63,8 +61,8 @@
       for (const [id, re, label] of links) {
         const card = document.getElementById(id);
         const asset = pick(re);
-        if (asset) { card.href = asset.browser_download_url; card.innerHTML = '<strong>' + label + '</strong>' + asset.name; }
-        else card.innerHTML = '<strong>' + label + '</strong>Open release page';
+        if (asset) { card.href = asset.browser_download_url; card.innerHTML = '<strong>' + label + '</strong><span>' + asset.name + ' · direct download</span>'; }
+        else { card.href = 'https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest'; card.innerHTML = '<strong>' + label + '</strong><span>Open release page</span>'; }
       }
       status.textContent = 'Latest stable release: ' + (release.tag_name || 'unknown') + ' · checksums included · published ' + new Date(release.published_at).toLocaleDateString();
     } catch { status.textContent = 'Release assets are available from the GitHub releases page.'; }

@@ -69,6 +69,6 @@ jobs:
           name: GemAir ${{ github.event.inputs.tag || github.ref_name }}
           draft: false
           generate_release_notes: true
-           files: dist/*
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

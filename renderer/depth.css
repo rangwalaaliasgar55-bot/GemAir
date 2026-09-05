@@ -296,6 +296,11 @@ body:not([data-appearance='light']) {
 body:not([data-appearance='light']) .scanlines,
 body:not([data-appearance='light']) .vignette,
 body:not([data-appearance='light']) #bgCanvas { opacity: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, system-ui, sans-serif; letter-spacing: normal; }
+.brand-text h1, .panel-title, .modal-head h2 { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, system-ui, sans-serif; }
+.view-enter { animation: viewEnter .28s cubic-bezier(.2,.75,.25,1) both; }
+@keyframes viewEnter { from { opacity: 0; transform: translateY(8px) scale(.995); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .view-enter { animation: none; } }
 .app { background: #0b0c0f; }
 .topbar {
   height: 68px; min-height: 68px; padding: 0 24px;
@@ -401,6 +406,11 @@ body:not([data-appearance='light']) #bgCanvas { opacity: 0; }
 .qc { padding: 6px 10px; border-radius: 8px; border-color: rgba(255,255,255,.08); background: transparent; font-size: 10px; }
 .settings-nav { top: -20px; background: #17181c; }
 .settings-nav-btn { font-family: var(--font-sans); font-weight: 600; letter-spacing: .02em; text-transform: none; }
+.dl-card { transition: transform .22s ease, border-color .22s ease, background .22s ease, box-shadow .22s ease; }
+.dl-card:hover { transform: translateY(-3px); box-shadow: 0 16px 32px rgba(0,0,0,.22); }
+.dl-card.recommended { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.dl-card.unavailable { opacity: .62; }
+.dl-status { border-radius: 10px; background: rgba(255,255,255,.04); padding: 10px 12px; }
 
 @media (max-width: 1250px) {
   .assistant-grid { grid-template-columns: 220px minmax(0,1fr) 350px; gap: 14px; }

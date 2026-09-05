@@ -1678,8 +1678,20 @@ addLifecycleListener(document, 'visibilitychange', () => {
 function switchView(view) {
   playSfx('swoosh');
   api.trackUsage('view.' + String(view || 'unknown'));
-  $$('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
-  $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
+  const previous = $$('.view').find((v) => v.classList.contains('active'));
+  $$('.nav-btn').forEach((b) => {
+    const active = b.dataset.view === view;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+  $$('.view').forEach((v) => {
+    const active = v.id === 'view-' + view;
+    if (active && previous && previous !== v) {
+      v.classList.remove('view-enter');
+      requestAnimationFrame(() => v.classList.add('view-enter'));
+    }
+    v.classList.toggle('active', active);
+  });
   resumeViewFrames(view);
   if (view === 'world') refreshHeadlines();
   if (view === 'core') renderProcesses();
