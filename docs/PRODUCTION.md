@@ -24,6 +24,12 @@ The release workflow currently builds unsigned Electron artifacts. Before callin
 
 The workflow publishes `SHA256SUMS.txt` for the generated assets. Checksums prove file integrity, not publisher identity.
 
+## Desktop commander
+
+The desktop build exposes real commander tools through the same validated tool registry used by model calls. Safe actions such as opening apps/sites, listing windows, weather/search, modes, and telemetry can run directly. Sensitive actions such as shell commands, file writes/moves, closing applications, messaging, and mouse/keyboard control remain gated by Settings permissions and/or confirmation dialogs. There is no unrestricted arbitrary-action mode by design.
+
+Updates are metadata-only by design: users click `DOWNLOAD UPDATE`, choose the published release asset, close GemAir, and run the installer. This avoids silent replacement and keeps the user in control.
+
 ## Verification
 
 Run local deterministic checks:

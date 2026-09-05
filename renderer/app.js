@@ -6046,9 +6046,9 @@ async function checkForAppUpdates({ force = false, silent = false } = {}) {
       return { ok: false, error: 'INVALID_RELEASE_URL' };
     }
     if (result.available) {
-      if (status) status.textContent = `GemAir ${result.latest} is available (installed: ${result.current}).`;
-      if (viewButton) { viewButton.hidden = false; viewButton.dataset.url = releaseUrl; }
-      toast('UPDATE AVAILABLE', `GemAir ${result.latest} is ready on GitHub.`, '⬆');
+      if (status) status.textContent = `GemAir ${result.latest} is available (installed: ${result.current}). Download the installer, close GemAir, then run it to update.`;
+      if (viewButton) { viewButton.hidden = false; viewButton.dataset.url = releaseUrl; viewButton.textContent = 'DOWNLOAD UPDATE'; }
+      toast('UPDATE AVAILABLE', `GemAir ${result.latest} is ready to download.`, '⬆');
     } else {
       if (status) status.textContent = `GemAir ${result.current} is up to date.`;
       if (viewButton) { viewButton.hidden = true; delete viewButton.dataset.url; }
