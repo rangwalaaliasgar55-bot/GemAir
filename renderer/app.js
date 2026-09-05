@@ -2133,6 +2133,35 @@ function addMessage(role, text, opts = {}) {
   else if (opts.html) p.innerHTML = opts.html;
   else p.textContent = text;
   div.appendChild(p);
+  if (!opts.typing && (role === 'ai' || role === 'user')) {
+    const actions = document.createElement('div');
+    actions.className = 'msg-actions';
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'msg-action';
+    copy.textContent = 'Copy';
+    copy.setAttribute('aria-label', 'Copy message');
+    copy.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(p.textContent || ''); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy'; }, 1200); }
+      catch { toast('COPY', 'Clipboard access is unavailable.', '⚠'); }
+    });
+    actions.appendChild(copy);
+    if (role === 'ai') {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'msg-action';
+      retry.textContent = 'Retry';
+      retry.setAttribute('aria-label', 'Retry the previous request');
+      retry.addEventListener('click', () => {
+        let previous = div.previousElementSibling;
+        while (previous && !previous.classList.contains('user')) previous = previous.previousElementSibling;
+        const prompt = previous && previous.querySelector('p') ? previous.querySelector('p').textContent.trim() : '';
+        if (prompt) sendMessage(prompt);
+      });
+      actions.appendChild(retry);
+    }
+    div.appendChild(actions);
+  }
   log.appendChild(div);
   trimChatDom(log);
   log.scrollTop = log.scrollHeight;
@@ -7102,8 +7131,25 @@ function bindEvents() {
   });
 
   // chat
-  $('#sendBtn').addEventListener('click', () => sendMessage($('#chatInput').value));
-  $('#chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage($('#chatInput').value); });
+  const chatInput = $('#chatInput');
+  const resizeComposer = () => {
+    chatInput.style.height = 'auto';
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 144) + 'px';
+  };
+  const submitComposer = () => {
+    const value = chatInput.value;
+    if (!value.trim()) return;
+    sendMessage(value);
+    requestAnimationFrame(resizeComposer);
+  };
+  $('#sendBtn').addEventListener('click', submitComposer);
+  chatInput.addEventListener('input', resizeComposer);
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      submitComposer();
+    }
+  });
 
   // start AI loop
   $('#startBtn').addEventListener('click', () => {

@@ -3,69 +3,88 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Download GemAir — JARVIS-style desktop AI</title>
+  <meta name="color-scheme" content="dark light" />
+  <meta name="description" content="Download GemAir for Windows, macOS, or Linux." />
+  <title>Download GemAir</title>
   <style>
-    :root { --bg:#090a0c; --accent:#f5f5f7; --text:#f5f5f7; --muted:#a1a1aa; --card:rgba(30,31,35,.72); --line:rgba(255,255,255,.12); }
-    * { box-sizing: border-box; }
-    body { margin:0; font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",Inter,system-ui,sans-serif; background:radial-gradient(800px 520px at 50% -10%,#24262b,transparent 65%),var(--bg); color:var(--text);
-      min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:72px 20px; }
-    h1 { font-size:clamp(2.2rem,6vw,4rem); letter-spacing:-.055em; line-height:1; margin:0 0 14px; color:var(--accent); font-weight:700; }
-    p { color:var(--muted); max-width:570px; text-align:center; }
-    .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); width:min(820px,100%); margin-top:32px; }
-    a.card { display:block; padding:24px; background:var(--card); border:1px solid var(--line); border-radius:18px;
-      color:var(--text); text-decoration:none; text-align:left; transition:transform .22s ease,background .22s ease,border-color .22s ease; backdrop-filter:blur(22px); }
-    a.card:hover { border-color:rgba(255,255,255,.3); background:rgba(50,51,57,.78); transform:translateY(-4px); }
-    a.card strong { display:block; color:var(--text); margin-bottom:8px; font-size:18px; }
-    a.card span { color:var(--muted); font-size:13px; }
-    footer { margin-top:40px; color:var(--muted); font-size:13px; }
-    .status { width:min(820px,100%); margin-top:18px; color:var(--muted); text-align:center; font-size:13px; }
-    code { background:#0f1a2e; padding:2px 6px; border-radius:4px; }
+    :root { color-scheme:dark; --bg:#090a0c; --surface:rgba(31,32,36,.72); --surface-2:#17181c; --text:#f5f5f7; --muted:#a1a1aa; --line:rgba(255,255,255,.12); --blue:#409cff; --good:#5bd699; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(900px 600px at 50% -12%,#292b31,transparent 65%),var(--bg); font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+    a { color:inherit; }
+    .nav { position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between; width:min(1120px,100%); margin:auto; padding:16px 22px; background:rgba(9,10,12,.76); backdrop-filter:blur(20px); border-bottom:1px solid var(--line); }
+    .brand { font-weight:700; letter-spacing:-.02em; text-decoration:none; }
+    .nav-links { display:flex; align-items:center; gap:18px; font-size:13px; color:var(--muted); }
+    .nav-links a { text-decoration:none; }
+    .nav-links a:hover { color:var(--text); }
+    .shell { width:min(1120px,100%); margin:auto; padding:84px 22px 64px; }
+    .hero { max-width:760px; margin:auto; text-align:center; }
+    .eyebrow { color:var(--blue); font-weight:650; font-size:13px; }
+    h1 { margin:14px 0 18px; font-size:clamp(3rem,9vw,6.6rem); line-height:.94; letter-spacing:-.065em; }
+    .lede { margin:auto; max-width:650px; color:var(--muted); font-size:clamp(17px,2.2vw,22px); letter-spacing:-.015em; }
+    .actions { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top:28px; }
+    .button { display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 18px; border-radius:999px; text-decoration:none; background:var(--blue); color:white; font-weight:600; font-size:14px; }
+    .button.secondary { background:rgba(255,255,255,.08); color:var(--text); border:1px solid var(--line); }
+    .section { margin-top:92px; }
+    .section-head { max-width:660px; margin-bottom:24px; }
+    h2 { margin:0 0 8px; font-size:clamp(28px,4vw,44px); letter-spacing:-.045em; line-height:1.05; }
+    .section-head p,.fine { color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+    .card { position:relative; display:flex; flex-direction:column; min-height:190px; padding:24px; border:1px solid var(--line); border-radius:22px; background:var(--surface); backdrop-filter:blur(22px); text-decoration:none; transition:transform .22s ease,border-color .22s ease,background .22s ease; }
+    .card:hover { transform:translateY(-4px); border-color:rgba(255,255,255,.3); background:rgba(48,49,54,.82); }
+    .card.recommended { box-shadow:0 0 0 3px rgba(64,156,255,.22); border-color:var(--blue); }
+    .badge { align-self:flex-start; min-height:22px; padding:2px 8px; border-radius:999px; background:rgba(64,156,255,.14); color:#85beff; font-size:11px; font-weight:650; }
+    .card h3 { margin:28px 0 5px; font-size:22px; letter-spacing:-.03em; }
+    .asset { color:var(--muted); font-size:13px; overflow-wrap:anywhere; }
+    .cta { margin-top:auto; padding-top:20px; color:var(--blue); font-size:13px; font-weight:600; }
+    .status { margin-top:16px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; color:var(--muted); background:rgba(255,255,255,.035); font-size:13px; text-align:center; }
+    .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; counter-reset:steps; }
+    .step { padding:20px; border-top:1px solid var(--line); color:var(--muted); }
+    .step::before { counter-increment:steps; content:counter(steps); display:grid; place-items:center; width:28px; height:28px; margin-bottom:14px; border-radius:50%; background:rgba(255,255,255,.08); color:var(--text); font-size:12px; }
+    .step b { display:block; margin-bottom:5px; color:var(--text); }
+    footer { display:flex; justify-content:space-between; gap:20px; margin-top:80px; padding-top:24px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
+    @media (max-width:760px) { .grid,.steps { grid-template-columns:1fr; } .shell { padding-top:52px; } .section { margin-top:64px; } .nav-links a:first-child { display:none; } footer { flex-direction:column; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .card { transition:none; } }
   </style>
 </head>
 <body>
-  <h1>GEMAIR</h1>
-  <p>Free open-source sci-fi desktop AI. Voice, Agent Town, System Core, HUD themes. No subscription.</p>
-  <div class="grid">
-     <a class="card" id="windows" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
-       <strong>Windows</strong><span>Loading latest installer…</span>
-    </a>
-     <a class="card" id="macos" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
-       <strong>macOS</strong><span>Loading latest installer…</span>
-    </a>
-     <a class="card" id="linux" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest">
-       <strong>Linux</strong><span>Loading latest packages…</span>
-    </a>
-  </div>
-  <div class="status" id="releaseStatus">Resolving the latest signed GitHub release…</div>
-  <p style="margin-top:28px">Or from source:</p>
-  <p><code>git clone https://github.com/rangwalaaliasgar55-bot/GemAir.git && cd GemAir && npm i && npm start</code></p>
-  <footer>
-    Releases: <a href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases" style="color:var(--accent)">github.com/…/GemAir/releases</a>
-    · MIT · Not affiliated with Stonic AI
-  </footer>
+  <nav class="nav" aria-label="Product navigation"><a class="brand" href="/">GemAir</a><div class="nav-links"><a href="#features">Why desktop</a><a href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases">All releases</a><a href="/">Open web app</a></div></nav>
+  <main class="shell">
+    <section class="hero"><span class="eyebrow">GemAir for desktop</span><h1>Your assistant, closer to your work.</h1><p class="lede">Use voice, files, apps, tasks, local memory, and desktop automations from one private workspace.</p><div class="actions"><a class="button" id="heroDownload" href="#downloads">Choose your download</a><a class="button secondary" href="/">Try the web app</a></div></section>
+    <section class="section" id="downloads"><div class="section-head"><h2>Download the latest release.</h2><p>Choose your platform. Available cards link directly to assets published on GitHub Releases.</p></div><div class="grid">
+      <a class="card" id="windows" data-os="windows" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest"><span class="badge">Windows 10 / 11</span><h3>Windows</h3><span class="asset">Checking for installer…</span><span class="cta">View release</span></a>
+      <a class="card" id="macos" data-os="macos" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest"><span class="badge">macOS</span><h3>Mac</h3><span class="asset">Checking for disk image…</span><span class="cta">View release</span></a>
+      <a class="card" id="linux" data-os="linux" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest"><span class="badge">Linux desktop</span><h3>Linux</h3><span class="asset">Checking for package…</span><span class="cta">View release</span></a>
+    </div><div class="status" id="releaseStatus" role="status" aria-live="polite">Checking GitHub Releases…</div></section>
+    <section class="section" id="features"><div class="section-head"><h2>Desktop capabilities, explained.</h2><p>The browser app handles conversations and live web tools. The desktop app adds operating-system access that browsers cannot provide.</p></div><div class="steps"><div class="step"><b>Install</b>Open the downloaded installer and follow your operating system’s prompts.</div><div class="step"><b>Choose permissions</b>GemAir asks before sensitive file, microphone, or desktop actions.</div><div class="step"><b>Stay in control</b>Memory is local-first. Connected services and automation permissions can be removed in Settings.</div></div></section>
+    <footer><span>GemAir 2.5.2 · MIT licensed</span><span>Not affiliated with Apple, OpenAI, Google, or Stonic AI.</span></footer>
+  </main>
+  <script>
+    (() => {
+      const RELEASES = 'https://github.com/rangwalaaliasgar55-bot/GemAir/releases';
+      const status = document.getElementById('releaseStatus');
+      const ua = navigator.userAgent || '';
+      const detected = /Windows/i.test(ua) ? 'windows' : /Macintosh/i.test(ua) ? 'macos' : /Linux|X11/i.test(ua) && !/Android/i.test(ua) ? 'linux' : '';
+      if (detected) document.querySelector(`[data-os="${detected}"]`)?.classList.add('recommended');
+      fetch('https://api.github.com/repos/rangwalaaliasgar55-bot/GemAir/releases/latest', { headers:{ Accept:'application/vnd.github+json' } }).then((response) => {
+        if (!response.ok) throw new Error('release lookup failed');
+        return response.json();
+      }).then((release) => {
+        const assets = Array.isArray(release.assets) ? release.assets : [];
+        const checksum = assets.find((asset) => /SHA256SUMS\.txt$/i.test(asset.name));
+        const specs = [['windows',/\.exe$/i,'Download installer'],['macos',/\.dmg$/i,'Download disk image'],['linux',/\.(AppImage|deb)$/i,'Download package']];
+        let available = 0;
+        for (const [id, matcher, label] of specs) {
+          const card = document.getElementById(id), asset = assets.find((item) => matcher.test(item.name || ''));
+          if (!asset) continue;
+          available++;
+          card.href = asset.browser_download_url;
+          card.querySelector('.asset').textContent = `${asset.name}${asset.size ? ` · ${(asset.size / 1048576).toFixed(0)} MB` : ''}`;
+          card.querySelector('.cta').textContent = label;
+        }
+        status.textContent = available ? `${release.tag_name || 'Latest release'} · ${available} platform build${available === 1 ? '' : 's'} available${checksum ? ' · SHA-256 checksums available' : ''}.` : 'The latest release has no desktop installers yet. Open All releases for build status.';
+      }).catch(() => { status.textContent = 'Could not check assets right now. Platform cards open the GitHub release page.'; });
+    })();
+  </script>
 </body>
-<script>
-  (async () => {
-    const status = document.getElementById('releaseStatus');
-    try {
-      const response = await fetch('https://api.github.com/repos/rangwalaaliasgar55-bot/GemAir/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
-      if (!response.ok) throw new Error('release lookup failed');
-      const release = await response.json();
-      const files = release.assets || [];
-      const pick = (re) => files.find((asset) => re.test(asset.name));
-      const links = [
-        ['windows', /\.exe$/i, 'Windows installer'],
-        ['macos', /\.dmg$/i, 'macOS disk image'],
-        ['linux', /\.(AppImage|deb)$/i, 'Linux packages']
-      ];
-      for (const [id, re, label] of links) {
-        const card = document.getElementById(id);
-        const asset = pick(re);
-        if (asset) { card.href = asset.browser_download_url; card.innerHTML = '<strong>' + label + '</strong><span>' + asset.name + ' · direct download</span>'; }
-        else { card.href = 'https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest'; card.innerHTML = '<strong>' + label + '</strong><span>Open release page</span>'; }
-      }
-      status.textContent = 'Latest stable release: ' + (release.tag_name || 'unknown') + ' · checksums included · published ' + new Date(release.published_at).toLocaleDateString();
-    } catch { status.textContent = 'Release assets are available from the GitHub releases page.'; }
-  })();
-</script>
 </html>
