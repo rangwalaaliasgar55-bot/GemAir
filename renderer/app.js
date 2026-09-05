@@ -245,6 +245,7 @@ const api = {
       const response = await fetch('/api/health', { headers: { Accept: 'application/json' } });
       const health = await response.json();
       status.freeCore.connected = response.ok && health.status === 'ok';
+      status.freeCore.serverAiConfigured = !!health.anyAiConfigured;
       status.freeCore.dot = status.freeCore.connected ? 'READY' : 'UNAVAILABLE';
       status.freeCore.message = status.freeCore.connected ? 'Live server tools available' : 'Live server tools unavailable';
     } catch { status.freeCore.dot = 'UNAVAILABLE'; status.freeCore.message = 'Network unavailable'; }
@@ -2884,7 +2885,7 @@ async function handleMessage(text) {
   const cfg = profile.ai || {};
   const hasKey = !!(cfg.apiKey && cfg.baseURL);
   const isLocal = !!(cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL));
-  const useAI = hasKey || isLocal || !isElectron;
+  const useAI = hasKey || isLocal || (!isElectron && connectionsStatus.freeCore.serverAiConfigured === true);
   // 2.4: determine active brain from connections
   const activeBrain = getActiveBrain();
   let useConnected = null;
@@ -3024,11 +3025,14 @@ async function handleMessage(text) {
         });
       }
     } else {
-      replyFailed = true;
-      resetStreamSpeech();
-      reply = (acc ? acc + '\n\n[Response interrupted]\n' : '') +
-        'AI unavailable: ' + (res.message || humanError(res.error)) + '. Check AI settings and retry.';
-      replyEl.textContent = reply;
+      // A browser deployment without a server model still has a useful,
+      // keyless assistant: route supported requests through live APIs and
+      // keep generic replies explicitly local instead of faking model output.
+      const local = await api.aiOffline(text);
+      reply = '[LIVE TOOLS / LOCAL BRAIN]\n' + local.reply;
+      if (!streamed) await renderReply(replyEl, reply);
+      else replyEl.textContent = reply;
+      chatHistory.push({ role: 'assistant', content: reply });
     }
   } else {
     const res = await api.aiOffline(text);
