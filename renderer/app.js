@@ -6775,6 +6775,7 @@ function bindEvents() {
   $('#downloadClose').addEventListener('click', closeDownload);
   $('#downloadClose2').addEventListener('click', closeDownload);
   $('#settingsDownloadBtn')?.addEventListener('click', openDownload);
+  $('#topbarDownloadBtn')?.addEventListener('click', openDownload);
   $('#checkUpdatesBtn')?.addEventListener('click', () => checkForAppUpdates({ force: true }));
   $('#viewUpdateBtn')?.addEventListener('click', () => {
     const url = trustedReleasePage($('#viewUpdateBtn').dataset.url);

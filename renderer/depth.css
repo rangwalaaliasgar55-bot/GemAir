@@ -319,6 +319,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Di
   background: rgba(255,255,255,.045); color: var(--text-dim); box-shadow: none;
 }
 .active-brain-chip { padding: 0 11px; font-size: 10px; letter-spacing: .08em; }
+.download-app-btn { min-height: 36px; padding: 0 13px; border: 1px solid rgba(255,255,255,.14); border-radius: 999px; background: var(--accent); color: var(--bg); font: 650 12px var(--font-sans); cursor: pointer; transition: transform .18s ease, opacity .18s ease; }
+.download-app-btn:hover { transform: translateY(-1px); opacity: .9; }
 .sidenav {
   width: 214px; padding: 22px 12px; gap: 5px; background: #101114;
   border-right: 1px solid rgba(255,255,255,.07);
