@@ -2,13 +2,13 @@
 
 # GemAir 🪐
 
-### The free, open-source, emotionally intelligent personal AI
+### A calm, open-source personal assistant for your work
 
-**Meet Gem** — the intelligence inside GemAir. A free, open-source, emotionally intelligent personal AI that turns your PC into a sci-fi command center. It understands how you feel, helps with your **life, career, studies and wellbeing**, remembers you **forever**, and runs on **your own AI key** — or entirely **free, with no key at all**.
+**Meet Gem** — the assistant inside GemAir. GemAir combines conversation, live web tools, local memory, voice, tasks, and optional desktop automation in a focused workspace. Browser tools work without an API key; general model answers require a configured provider or the optional local WebGPU model.
 
 No subscription, no license fee, no cloud lock-in. **Yours. Forever.**
 
-> **GemAir 2.2 — FREE FOREVER, and now genuinely working end to end.** Everything runs on a free, keyless service (see **Settings → COST** — the badge says **$0.00 FOREVER**) and the app boots fully working with **zero configuration**: the **FREE CORE** answers on Vercel serverless with a provider fallback chain (Groq → Gemini → OpenRouter free tiers), **Microsoft Edge neural voices** are the primary TTS engine at no cost, and **12 one-sentence workflows** run as tested tool chains — now surfaced as one-click cards in the **Workflow Gallery**. 2.2 is an audit release: Edge TTS actually plays (the binary frame parser read a 4-byte header where the protocol uses 2), streamed replies are actually voiced, barge-in actually cuts the audio, the gaming optimizer actually selects High Performance instead of Power Saver, and the RGB theme no longer breaks every chart. It also turns the tree's dead code into real features: live SAT-LINK feeds, a real process monitor, a Tasks panel, full Hindi/Urdu with RTL, a visible reasoning stream, Google sign-in, and an opt-in in-browser WebGPU brain. Keys remain optional under **"Power user"**.
+> **GemAir 2.5.2** is local-first and capability-transparent: live browser tools work without a key, configured providers produce model answers, and desktop-only features are clearly separated from the web app.
 
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Windows-macOS-Linux-2b7a78?style=for-the-badge)]()
@@ -19,13 +19,13 @@ No subscription, no license fee, no cloud lock-in. **Yours. Forever.**
 
 ---
 
-## 📥 Download
+## Download
 
 | Platform | Installer |
 | --- | --- |
-| **Windows** 10 / 11 | `GemAir-Setup.exe` (from [Releases](https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest)) |
-| **macOS** (Apple Silicon & Intel) | `GemAir.dmg` |
-| **Linux** | `GemAir.AppImage` / `.deb` |
+| **Windows** 10 / 11 | Use the deployed `/download` page or [latest release](https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest) |
+| **macOS** (Apple Silicon & Intel) | Use the deployed `/download` page or latest release |
+| **Linux** | AppImage / `.deb` from the latest release |
 
 Or run from source:
 

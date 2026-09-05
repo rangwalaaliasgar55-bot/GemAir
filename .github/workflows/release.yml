@@ -33,6 +33,8 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
+      - name: Verify release metadata
+        run: npm run verify:release
       - run: npm run ${{ matrix.script }}
       - uses: actions/upload-artifact@v4
         with:
