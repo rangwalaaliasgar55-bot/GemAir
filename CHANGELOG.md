@@ -8,6 +8,11 @@ All notable changes to GemAir are documented here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Added — Gemini Live full audio pipeline (voice dialog)
+- `renderer/gemini-live.js` now runs real-time voice: 16-bit PCM 16 kHz mono mic capture in 100 ms frames over `realtimeInput.audio`, 24 kHz spoken answers played through Web Audio, AnalyserNode level meters, and VAD barge-in that cuts playback the moment you speak.
+- Settings → Voice shows live connection state, mic/Gem level meters, START/STOP voice, and reconnect on drop. No new dependencies — native WebSocket + Web Audio only, everything stays in the renderer.
+- `scripts/gemini-live-test.js` covers PCM conversion, 100 ms framing, base64 round trip, setup/text round trip, and disconnect recovery.
+
 ### Added — Expanded AI providers + free-model catalog (model switching)
 
 - New **AI provider & free-model catalog** (`renderer/providers.js`, single source of truth): 21 providers, **38 free-tier OpenAI-compatible models** across Gemini, Groq, Cerebras, SambaNova, NVIDIA NIM, Together AI, Fireworks, xAI (Grok), Z.AI (GLM), Cohere, HuggingFace, DeepSeek, Mistral, OpenRouter, Hyperbolic, DeepInfra, SiliconFlow, Novita, plus local Ollama.

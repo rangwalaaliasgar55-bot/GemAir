@@ -1146,7 +1146,21 @@
             </label>
             <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">
               <button class="test-btn" id="testGeminiLiveBtn" type="button">⚡ TEST LIVE SESSION</button>
+              <button class="ghost-btn" id="startGeminiLiveVoiceBtn" type="button">🎙 START LIVE VOICE</button>
+              <button class="ghost-btn" id="stopGeminiLiveVoiceBtn" type="button" hidden>⏹ STOP</button>
+              <button class="ghost-btn" id="reconnectGeminiLiveBtn" type="button" hidden>↻ RECONNECT</button>
               <span class="test-result" id="geminiLiveHint" role="status"></span>
+            </div>
+            <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;" aria-label="Live audio levels">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="dim" style="width:52px;font-size:10px;">MIC</span>
+                <div style="flex:1;height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;"><i id="geminiLiveMeterIn" style="display:block;height:100%;width:0%;background:var(--accent);"></i></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="dim" style="width:52px;font-size:10px;">GEM</span>
+                <div style="flex:1;height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;"><i id="geminiLiveMeterOut" style="display:block;height:100%;width:0%;background:var(--good,#3dff9a);"></i></div>
+              </div>
+              <span class="dim" id="geminiLiveState" role="status" style="font-size:10px;">idle</span>
             </div>
           </fieldset>
           <fieldset>

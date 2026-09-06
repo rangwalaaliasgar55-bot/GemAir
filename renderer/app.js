@@ -7322,6 +7322,69 @@ function bindEvents() {
     finally { try { session && session.close(); } catch {} }
   });
 
+  // Gemini Live voice dialog: mic in, spoken answers out, with meters.
+  let geminiLiveVoice = null;
+  const liveMeter = (id, value) => {
+    const el = $(id);
+    if (el) el.style.width = Math.round(Math.max(0, Math.min(1, value || 0)) * 100) + '%';
+  };
+  const liveState = (state) => { const el = $('#geminiLiveState'); if (el) el.textContent = state; };
+  const liveVoiceButtons = (running) => {
+    const start = $('#startGeminiLiveVoiceBtn'), stop = $('#stopGeminiLiveVoiceBtn'), recon = $('#reconnectGeminiLiveBtn');
+    if (start) start.hidden = !!running;
+    if (stop) stop.hidden = !running;
+    if (recon && running) recon.hidden = true;
+  };
+  $('#startGeminiLiveVoiceBtn')?.addEventListener('click', async () => {
+    const hint = $('#geminiLiveHint');
+    const say = (text, ok) => {
+      if (hint) { hint.textContent = text; hint.classList.toggle('ok', !!ok); hint.classList.toggle('bad', !ok); }
+    };
+    if (!window.geminiLive) { say('✗ Live transport failed to load.', false); return; }
+    if (geminiLiveVoice && geminiLiveVoice.ready) { say('Live voice is already running.', true); return; }
+    const model = ($('#setGeminiLiveModel')?.value || '').trim();
+    const apiKey = ($('#setGeminiLiveKey')?.value || '').trim();
+    if (!model || !apiKey) { say('Enter a live model ID and your AI Studio API key first.', false); return; }
+    liveState('connecting');
+    try {
+      geminiLiveVoice = await window.geminiLive.startVoice({
+        apiKey, model, timeoutMs: 25000,
+        onText: (text, done) => { if (text && done !== true) setCaption('ai', text); },
+        onError: (message) => { say('✗ ' + message, false); },
+        onState: (state) => {
+          liveState(state);
+          if (state === 'live') { liveVoiceButtons(true); say('● Live — speak now.', true); }
+          if (state === 'closed' || state === 'error') {
+            liveVoiceButtons(false);
+            liveMeter('#geminiLiveMeterIn', 0); liveMeter('#geminiLiveMeterOut', 0);
+            const recon = $('#reconnectGeminiLiveBtn');
+            if (recon) recon.hidden = false;
+          }
+        },
+        onLevel: ({ in: input, out }) => { liveMeter('#geminiLiveMeterIn', input); liveMeter('#geminiLiveMeterOut', out); },
+        onBargeIn: () => { try { toast('LIVE VOICE', 'Barged in — Gem stopped to listen.', '🎙'); } catch {} }
+      });
+    } catch (e) {
+      liveState('error');
+      liveVoiceButtons(false);
+      say('✗ ' + (e.message === 'MIC_UNAVAILABLE' ? 'Microphone unavailable — grant mic permission and retry.' : (e.message || 'Live voice failed')), false);
+      geminiLiveVoice = null;
+    }
+  });
+  const stopLiveVoice = () => {
+    try { geminiLiveVoice && geminiLiveVoice.close(1000); } catch {}
+    geminiLiveVoice = null;
+    liveState('closed');
+    liveVoiceButtons(false);
+    liveMeter('#geminiLiveMeterIn', 0); liveMeter('#geminiLiveMeterOut', 0);
+  };
+  $('#stopGeminiLiveVoiceBtn')?.addEventListener('click', stopLiveVoice);
+  $('#reconnectGeminiLiveBtn')?.addEventListener('click', () => {
+    const recon = $('#reconnectGeminiLiveBtn');
+    if (recon) recon.hidden = true;
+    $('#startGeminiLiveVoiceBtn')?.click();
+  });
+
   // chat
   const chatInput = $('#chatInput');
   const resizeComposer = () => {
