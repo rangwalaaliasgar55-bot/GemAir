@@ -30,4 +30,11 @@ assert(!read('lib/oauth-gemini-pkce.js').includes('generative-language.retriever
 assert(main.includes('connections.getDecryptedTokens(provider)'), 'connected brain does not read encrypted tokens');
 assert(main.includes("if (stored.chatgpt && stored.chatgpt.connected) return { connectedProvider: 'chatgpt' }"), 'ChatGPT is not primary for desktop agent resolution');
 assert(main.includes("if (stored.gemini && stored.gemini.connected) return { connectedProvider: 'gemini' }"), 'Gemini is not primary for desktop agent resolution');
+assert(main.includes("ipcMain.handle('connections:importCodex'"), 'Codex import IPC handler is missing');
+assert(preload.includes("connectionsImportCodex: () => ipcRenderer.invoke('connections:importCodex')"), 'Codex import preload bridge is missing');
+assert(renderer.includes('async connectionsImportCodex()'), 'Codex import renderer bridge is missing');
+assert(renderer.includes('handleImportCodex'), 'Codex import handler is missing');
+const codex = read('lib/codex-auth-import.js');
+assert(!/require\(['"]child_process['"]\)/.test(codex) && !/\bspawn\s*\(|\bexecFile\s*\(|\bexecSync\s*\(/.test(codex), 'Codex import must never download or execute third-party code');
+assert(codex.includes('.codex'), 'Codex import does not read the user-created token file');
 console.log('ok - ChatGPT and Gemini OAuth, encrypted storage, IPC, and provider routing contracts');

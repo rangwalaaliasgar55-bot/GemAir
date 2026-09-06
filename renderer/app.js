@@ -243,6 +243,7 @@ const api = {
   onCodingUseEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onCodingUseEvent ? window.gemair.onCodingUseEvent(cb) : null); },
   // 2.4 Connections
   async connectionsOauthChatGPT() { if (window.gemair && window.gemair.connectionsOauthChatGPT) return window.gemair.connectionsOauthChatGPT(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'ChatGPT OAuth requires GemAir Desktop or a configured web callback.' }; },
+  async connectionsImportCodex() { if (window.gemair && window.gemair.connectionsImportCodex) return window.gemair.connectionsImportCodex(); return { ok: false, error: 'DESKTOP_ONLY', message: 'Codex login import needs GemAir Desktop (it reads your local ~/.codex/auth.json).' }; },
   async connectionsOauthGemini() { if (window.gemair && window.gemair.connectionsOauthGemini) return window.gemair.connectionsOauthGemini(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'Gemini OAuth requires GemAir Desktop or a configured web callback.' }; },
   async connectionsGetStatus() {
     if (window.gemair && window.gemair.connectionsGetStatus) return window.gemair.connectionsGetStatus();
@@ -6153,6 +6154,7 @@ function openSettings() {
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setAutoUpdateChecks').checked = profile.autoUpdateChecks !== false;
   { const channel = $('#setUpdateChannel'); if (channel) channel.value = profile.updateChannel === 'nightly' ? 'nightly' : 'stable'; }
+  { const live = profile.geminiLive || {}; const m = $('#setGeminiLiveModel'); if (m) m.value = live.model || ''; const k = $('#setGeminiLiveKey'); if (k && !k.value) k.value = live.apiKey || ''; }
   $('#setUsageStats').checked = profile.usageStats === true;
   $('#setAmbientScore').checked = !!profile.ambientScore;
   // T5 — ambient track + volume
@@ -7001,6 +7003,10 @@ function bindEvents() {
     profile.ambientTrack = $('#setAmbientTrack')?.value || profile.ambientTrack || DEFAULTS.ambientTrack;
     profile.ambientVolume = Number($('#setAmbientVolume')?.value ?? ambientVolume());
     profile.screenAwareness = $('#setScreenAwareness').checked;
+    profile.geminiLive = {
+      model: ($('#setGeminiLiveModel')?.value || '').trim().slice(0, 120),
+      apiKey: ($('#setGeminiLiveKey')?.value || '').trim()
+    };
     // 2.5 Desktop Agent (computer control)
     const setComputerUse = $('#setComputerUse');
     const setComputerUseAuto = $('#setComputerUseAuto');
@@ -7281,6 +7287,39 @@ function bindEvents() {
     $('#setNeuralVoice').disabled = mode !== 'neural';
     $('#setEdgeVoice').disabled = mode !== 'edge';
     $('#previewVoice').disabled = false;
+  });
+
+  // Gemini Live dialog self-test: opens a real socket, asks for one exact
+  // word, and reports what the service actually returns.
+  $('#testGeminiLiveBtn')?.addEventListener('click', async () => {
+    const hint = $('#geminiLiveHint');
+    const say = (text, ok) => {
+      if (hint) { hint.textContent = text; hint.classList.toggle('ok', !!ok); hint.classList.toggle('bad', !ok); }
+    };
+    if (!window.geminiLive) { say('✗ Live transport failed to load.', false); return; }
+    const model = ($('#setGeminiLiveModel')?.value || '').trim();
+    const apiKey = ($('#setGeminiLiveKey')?.value || '').trim();
+    if (!model || !apiKey) { say('Enter a live model ID and your AI Studio API key first.', false); return; }
+    say('Connecting…');
+    let session = null;
+    try {
+      let answer = '';
+      session = await window.geminiLive.connect({
+        apiKey, model, timeoutMs: 25000,
+        onText: (text) => { answer += text; },
+        onError: (message) => { say('✗ ' + message, false); }
+      });
+      session.send('Reply with exactly: OK');
+      const deadline = Date.now() + 20000;
+      while (Date.now() < deadline && answer.trim() !== 'OK') {
+        await new Promise((r) => setTimeout(r, 200));
+        if (!session.ready) break;
+      }
+      if (answer.trim() === 'OK') say('✓ OK — live dialog answered', true);
+      else if (answer.trim()) say('Live answered, but not exactly OK: ' + answer.trim().slice(0, 80), false);
+      else say('✗ Connected, but no text arrived. The model ID may not support text dialog.', false);
+    } catch (e) { say('✗ ' + (e.message || 'Live session failed'), false); }
+    finally { try { session && session.close(); } catch {} }
   });
 
   // chat
@@ -8115,6 +8154,8 @@ function renderConnectionHub() {
   if (geminiUsage) geminiUsage.textContent = (status.gemini.usage||0) + ' today';
 
   if (connectChatGPTBtn) connectChatGPTBtn.hidden = !!status.chatgpt.connected;
+  const importCodexBtn = $('#importCodexBtn');
+  if (importCodexBtn) importCodexBtn.hidden = !!status.chatgpt.connected;
   if (disconnectChatGPTBtn) disconnectChatGPTBtn.hidden = !status.chatgpt.connected;
   if (captureChatGPTBtn) captureChatGPTBtn.hidden = !status.chatgpt.connected ? true : false; // show after login window opened
   // Actually capture button should be visible after auth window opened; we keep hidden initially and show after open
@@ -8183,6 +8224,21 @@ async function handleConnectChatGPT() {
   });
 }
 
+async function handleImportCodex() {
+  try {
+    toast('CHATGPT', 'Reading your local Codex login…', '📥');
+    const res = await api.connectionsImportCodex();
+    if (res && !res.error) {
+      await loadConnectionsStatus();
+      toast('CHATGPT', 'Codex login imported securely.', '✅');
+      return;
+    }
+    toast('CHATGPT', res.message || res.error || 'Codex import failed', '⚠️');
+  } catch (e) {
+    toast('CHATGPT', e.message, '⚠️');
+  }
+}
+
 async function handleCaptureChatGPT() {
   try {
     const res = await api.connectionsCaptureChatGPT();
@@ -8249,6 +8305,7 @@ async function handleOpenAIStudio() {
 
 function setupConnectionsHub() {
   $('#connectChatGPTBtn')?.addEventListener('click', handleConnectChatGPT);
+  $('#importCodexBtn')?.addEventListener('click', handleImportCodex);
   $('#captureChatGPTBtn')?.addEventListener('click', handleCaptureChatGPT);
   $('#disconnectChatGPTBtn')?.addEventListener('click', async () => {
     await api.connectionsDisconnect('chatgpt');

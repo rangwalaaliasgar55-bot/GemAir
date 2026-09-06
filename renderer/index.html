@@ -898,6 +898,7 @@
                  <button class="primary-btn" id="connectChatGPTBtn" style="padding:6px 14px;font-size:11px;">CHATGPT ACCOUNT (APPROVED OAUTH)</button>
                 <button class="ghost-btn" id="disconnectChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Disconnect</button>
                 <button class="ghost-btn" id="captureChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Capture Session</button>
+                <button class="ghost-btn" id="importCodexBtn" style="padding:6px 10px;font-size:10px;" title="Import tokens from a Codex CLI login you ran yourself (~/.codex/auth.json)">Import Codex login</button>
               </div>
               <!-- GEMINI ROW -->
               <div class="conn-row" id="connGeminiRow">
@@ -1130,6 +1131,22 @@
             </div>
             <div class="soul-slider" style="display:flex;align-items:center;gap:12px;">
               <span>PITCH</span><input type="range" id="setPitch" min="0.7" max="1.5" step="0.05" value="1.1" /><b id="pitchVal">1.1</b>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>GEMINI LIVE DIALOG (WEBSOCKET)</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+              Real-time text dialog over Google's Live API socket. Needs an API key from AI Studio and a live model ID you verify in the AI Studio docs — GemAir ships no model names because availability changes.
+            </p>
+            <label>Live model ID
+              <input type="text" id="setGeminiLiveModel" placeholder="e.g. gemini-2.0-flash-live-001 (verify in AI Studio docs)" autocomplete="off" />
+            </label>
+            <label>AI Studio API key
+              <input type="password" id="setGeminiLiveKey" placeholder="AIza…" autocomplete="off" />
+            </label>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">
+              <button class="test-btn" id="testGeminiLiveBtn" type="button">⚡ TEST LIVE SESSION</button>
+              <span class="test-result" id="geminiLiveHint" role="status"></span>
             </div>
           </fieldset>
           <fieldset>
@@ -1512,6 +1529,7 @@
   <script src="ai-client.js"></script>
   <script src="tts-engine.js"></script>
   <script src="edge-tts.js"></script>
+  <script src="gemini-live.js"></script>
   <script src="avatar.js"></script>
   <script src="providers.js"></script>
   <script src="app.js"></script>

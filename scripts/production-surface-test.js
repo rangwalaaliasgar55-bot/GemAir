@@ -29,4 +29,12 @@ for (const file of ['click.wav', 'hover.wav', 'activate.wav', 'message.wav', 'sw
   assert(fs.existsSync(path.join(sfxDir, file)), 'missing original sfx asset ' + file);
 }
 assert(app.includes('assets/sfx/'), 'original sfx pack is not wired into playback');
+assert(html.includes('src="gemini-live.js"'), 'Gemini Live transport is not loaded');
+assert(html.includes('id="setGeminiLiveModel"') && html.includes('id="setGeminiLiveKey"'), 'Gemini Live settings fields are missing');
+assert(html.includes('id="testGeminiLiveBtn"'), 'Gemini Live self-test control is missing');
+assert(html.includes('id="importCodexBtn"'), 'Codex import control is missing');
+const live = read('renderer/gemini-live.js');
+assert(live.includes('BidiGenerateContent'), 'Live transport does not use the documented streaming endpoint');
+assert(live.includes('response_modalities'), 'Live transport does not negotiate a response modality');
+assert(!/gemini-3\.[15]-flash-live-preview|gemini-3\.5-transcribe-live/.test(live + html + app), 'unverified live model IDs must never ship as fact');
 console.log('ok - production accessibility, navigation, motion, and website surface contracts');

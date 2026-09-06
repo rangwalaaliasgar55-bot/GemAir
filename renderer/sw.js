@@ -27,6 +27,7 @@ const SHELL = [
   'i18n.js',
   'tts-engine.js',
   'edge-tts.js',
+  'gemini-live.js',
   'ai-client.js',
   'favicon.svg',
   'manifest.webmanifest',

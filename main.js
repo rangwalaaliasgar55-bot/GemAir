@@ -4180,6 +4180,14 @@ ipcMain.handle('connections:oauthGemini', async () => {
     return result;
   } catch (error) { return { error: error.message || String(error) }; }
 });
+ipcMain.handle('connections:importCodex', async () => {
+  try {
+    const { importChatGPTFromCodex } = require('./lib/oauth-bridge');
+    const result = await importChatGPTFromCodex();
+    if (mainWindow && result && !result.error) mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
+    return result;
+  } catch (error) { return { error: error.message || String(error) }; }
+});
 ipcMain.handle('connections:getStatus', () => connections.getSanitizedStatus());
 ipcMain.handle('connections:setPriority', (_e, p) => connections.setPriority(p));
 ipcMain.handle('connections:acknowledgeWarning', () => { connections.acknowledgeWarning(); return true; });
