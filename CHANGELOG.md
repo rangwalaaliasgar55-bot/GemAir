@@ -116,7 +116,7 @@ Round 5 v2.4 "CONNECTED DESKTOP AGENT" — three leaps at once: true account con
 
 ### Added — Section 0 Recon
 
-- **CONNECTIONS.md** with full Stonic research (home, /jarvis-ai-for-pc, /features/*, /about, /changelog v1.0.0→v1.0.55, /guide, every blog post esp. "I Built Iron Man's JARVIS", founder Inventor Usman YouTube/Instagram/TikTok demos) and mermaid architecture diagram of ChatGPT-connect flow: embedded login → session capture → consumer backend → tool layer → voice. Marked confirmed vs inferred.
+- **CONNECTIONS.md** with full product research (home, /jarvis-ai-for-pc, /features/*, /about, /changelog v1.0.0→v1.0.55, /guide, product blog) and mermaid architecture diagram of ChatGPT-connect flow: embedded login → session capture → consumer backend → tool layer → voice. Marked confirmed vs inferred.
 
 ### Added — Section C Connect ChatGPT (session-based, Stonic-style)
 

@@ -1,6 +1,6 @@
 # CONNECTIONS — Stonic Recon & GemAir 2.4 Architecture
 
-> Research first: study of stonicai.com (home, /jarvis-ai-for-pc, /features/*, /about, /changelog v1.0.0→v1.0.55, /guide, blog esp. "I Built Iron Man's JARVIS") + founder Inventor Usman demos (YouTube @inventorusman, Instagram @inventorusman, TikTok @inventorusman) to extract the true account-connect UX.
+> Research first: study of stonicai.com (home, /jarvis-ai-for-pc, /features/*, /about, /changelog v1.0.0→v1.0.55, /guide, product blog) and public product demos to extract the true account-connect UX.
 
 ---
 
@@ -50,10 +50,10 @@ From `/blog/i-built-iron-mans-jarvis-for-windows` (founder story):
 
 **Six JARVIS tests** from `/jarvis-ai-for-pc`: listens, acts, performs, sees, stays home, messages. Honest table: 5/6 true, suit not.
 
-### Founder demos — Inventor Usman
+### Public product demos
 
-- **YouTube:** @inventorusman — videos "I Built an AI agent That Works For Me 24/7" deep dive into STONIC custom-built desktop assistant, not chatbot, real JARVIS-level. Shows voice assistant core with Memory/Skills/Soul/Settings circuits wired into orb, Agent Town with Alice/Bob/Carol/Dave desks, live seat indicators, World Monitor globe with hotspots, HUD theme recolour, cinematic boot.
-- **Instagram/TikTok:** @inventorusman 206.8K followers, 19.1K likes demos: "Jarvis Ai in Real life link in bio", "StonicAI: How to Create Your Own AI Agent" step-by-step app download pointers, demos showing command center, theme picker, voice command execution (organize downloads, open Chrome search SpaceX, WhatsApp message, system health).
+- **Product walkthroughs** present a custom-built desktop assistant (not a chatbot): voice assistant core with Memory/Skills/Soul/Settings circuits wired into an orb, an agent town with resident-agent desks, live seat indicators, a world-monitor globe with hotspots, HUD theme recolour, and a cinematic boot.
+- **Feature demonstrations** show the command center, theme picker, and voice command execution (organize downloads, open-and-search, messaging, system health).
 - **Settings UX inferred from screenshots:** stonicai.com shows Crimson/Emerald/Cyan themes fully recoloring interface, Agent Town pixel-art office, voice core with circuits. No direct screenshot of ChatGPT connect button found in public SEO pages, but pricing/terms explicitly describe **embedded OpenAI sign-in** — no API key copy-paste.
 
 ---
@@ -177,7 +177,7 @@ flowchart TD
 ### Confirmed vs Inferred legend
 
 - **CONFIRMED:** From stonicai.com pages (pricing, terms, guide, changelog, blog, features).
-- **INFERRED:** From open-source ChatGPT/Gemini web clients (waylaidwanderer, acheong08, EvanZhouDev/openai-oauth, HanaokaYuzu/Gemini-API, qutek/gemini-web-api) and founder demo frames. Marked in mermaid as separate subgraph.
+- **INFERRED:** From open-source ChatGPT/Gemini web clients (waylaidwanderer, acheong08, EvanZhouDev/openai-oauth, HanaokaYuzu/Gemini-API, qutek/gemini-web-api) and public demo frames. Marked in mermaid as separate subgraph.
 
 ---
 
@@ -186,7 +186,7 @@ flowchart TD
 - stonicai.com/ (home, themes, agent town)
 - stonicai.com/jarvis-ai-for-pc (six JARVIS tests)
 - stonicai.com/features/* (voice-control, desktop-automation, offline-private)
-- stonicai.com/about (founder Inventor Usman, 270K+ followers)
+- stonicai.com/about (product background)
 - stonicai.com/changelog (v1.0.0→v1.0.55)
 - stonicai.com/guide (four steps, Google sign-in)
 - stonicai.com/blog/i-built-iron-mans-jarvis-for-windows (four layers)
@@ -198,7 +198,7 @@ flowchart TD
 - github.com/HanaokaYuzu/Gemini-API
 - github.com/qutek/gemini-web-api
 - github.com/ntthanh2603/gemini-web-to-api
-- TikTok/YouTube/Instagram @inventorusman demos
+- Public product demonstration videos
 
 ---
 
