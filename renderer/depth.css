@@ -462,7 +462,117 @@ body:not([data-appearance='light']) {
     var(--bridge-bg);
   color: var(--bridge-text);
 }
-body:not([data-appearance='light']) #bgCanvas { opacity: 0.85; }
+body:not([data-appearance='light']) #bgCanvas { opacity: 0.9; }
+
+/* ============================================================
+   COMMAND-CENTER SKIN — cinematic mission-control look.
+   Pure CSS on the existing markup: no IDs, classes, or event
+   wiring change. Light appearance is intentionally untouched.
+   ============================================================ */
+body:not([data-appearance='light']) {
+  --deck-bg: #04060c;
+  --deck-panel: rgba(9, 13, 24, 0.88);
+  --deck-line: rgba(120, 150, 200, 0.16);
+  --deck-red: #ff3b46;
+  --deck-red-dim: rgba(255, 59, 70, 0.14);
+  --deck-cyan: #41e6ff;
+  --deck-amber: #ff9a3c;
+  --deck-green: #3dffa2;
+  --deck-text-dim: #8fa0b8;
+}
+/* deep-space backdrop with a faint tactical grid */
+body:not([data-appearance='light']).app,
+body:not([data-appearance='light']) .app { background: var(--deck-bg); }
+body:not([data-appearance='light']) .main {
+  background:
+    linear-gradient(rgba(90, 130, 200, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(90, 130, 200, 0.05) 1px, transparent 1px),
+    radial-gradient(1100px 600px at 50% -10%, rgba(40, 70, 140, 0.14), transparent 60%),
+    var(--deck-bg);
+  background-size: 44px 44px, 44px 44px, auto, auto;
+}
+/* slim command topbar */
+body:not([data-appearance='light']) .topbar {
+  height: 56px; min-height: 56px;
+  background: rgba(5, 8, 15, 0.94);
+  border-bottom: 1px solid var(--deck-line);
+  box-shadow: 0 1px 0 rgba(255, 59, 70, 0.25), 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+body:not([data-appearance='light']) .topbar::after { display: none; }
+body:not([data-appearance='light']) .brand-text h1 { letter-spacing: 0.28em; font-size: 16px; }
+/* angled viewport panels */
+body:not([data-appearance='light']) .hud-panel,
+body:not([data-appearance='light']) #view-assistant .hud-panel {
+  background: var(--deck-panel);
+  border: 1px solid var(--deck-line);
+  border-radius: 4px;
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  box-shadow: inset 0 0 40px rgba(20, 40, 90, 0.25), 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+body:not([data-appearance='light']) .panel-title { color: var(--deck-text-dim); letter-spacing: 0.24em; font-size: 11px; }
+body:not([data-appearance='light']) .panel-title .dim { color: rgba(143, 160, 184, 0.6); }
+/* circuit node rows: icon chip + name + bar, color-coded rails */
+body:not([data-appearance='light']) .stx-circuit {
+  background: linear-gradient(90deg, rgba(18, 26, 46, 0.95), rgba(8, 12, 24, 0.9));
+  border: 1px solid var(--deck-line);
+  border-left-width: 3px;
+  border-radius: 3px;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
+  padding: 9px 12px;
+}
+body:not([data-appearance='light']) #memCircuitRow { border-left-color: var(--deck-cyan); box-shadow: inset 0 0 18px rgba(65, 230, 255, 0.08); }
+body:not([data-appearance='light']) #skillCircuitRow { border-left-color: var(--deck-amber); box-shadow: inset 0 0 18px rgba(255, 154, 60, 0.08); }
+body:not([data-appearance='light']) #soulCircuitRow { border-left-color: var(--deck-green); box-shadow: inset 0 0 18px rgba(61, 255, 162, 0.08); }
+body:not([data-appearance='light']) #settingCircuitRow { border-left-color: #6b7a90; }
+body:not([data-appearance='light']) .sc-name { color: #c9d6ea; letter-spacing: 0.2em; }
+body:not([data-appearance='light']) .circuit-bar { background: rgba(255, 255, 255, 0.06); height: 4px; }
+/* orb core + START AI */
+body:not([data-appearance='light']) #view-assistant .orb-panel {
+  background: radial-gradient(ellipse at 50% 42%, rgba(255, 59, 70, 0.12), transparent 62%), rgba(7, 10, 20, 0.94);
+  border-color: rgba(255, 59, 70, 0.3);
+}
+body:not([data-appearance='light']) #view-assistant .orb-panel::before,
+body:not([data-appearance='light']) #view-assistant .orb-panel::after { opacity: 0.25; }
+body:not([data-appearance='light']) #view-assistant .start-btn {
+  border: 1px solid rgba(65, 230, 255, 0.55);
+  background: radial-gradient(circle at 50% 35%, rgba(65, 230, 255, 0.16), rgba(4, 8, 16, 0.9) 72%);
+  box-shadow: 0 0 28px rgba(65, 230, 255, 0.22), inset 0 0 22px rgba(65, 230, 255, 0.1);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  border-radius: 0;
+  width: 132px; height: 76px;
+}
+body:not([data-appearance='light']) .start-label { color: #bff1ff; letter-spacing: 0.22em; }
+body:not([data-appearance='light']) .thinking-pill {
+  background: rgba(10, 14, 26, 0.9); border: 1px solid var(--deck-line);
+  letter-spacing: 0.2em; color: var(--deck-text-dim);
+}
+body:not([data-appearance='light']) .thinking-pill.on { border-color: var(--deck-red); color: #ffb3b8; box-shadow: 0 0 16px rgba(255, 59, 70, 0.35); }
+/* segmented sat tabs + numbered headlines */
+body:not([data-appearance='light']) .sat-tabs { background: rgba(255, 255, 255, 0.03); border: 1px solid var(--deck-line); }
+body:not([data-appearance='light']) .sat-tab.active { background: rgba(255, 59, 70, 0.16); color: #ffd7da; }
+body:not([data-appearance='light']) .n-idx { color: var(--deck-red); font-weight: 700; }
+body:not([data-appearance='light']) .news-item { border-bottom-color: rgba(120, 150, 200, 0.1); }
+/* right console: tabs + mono tool feed + composer */
+body:not([data-appearance='light']) .expert-tabs { background: transparent; border-bottom: 1px solid var(--deck-line); border-radius: 0; padding: 0; }
+body:not([data-appearance='light']) .expert-tab { border-radius: 0; color: var(--deck-text-dim); letter-spacing: 0.18em; }
+body:not([data-appearance='light']) .expert-tab.active { background: transparent; color: var(--deck-red); box-shadow: inset 0 -2px 0 var(--deck-red); }
+body:not([data-appearance='light']) .tool-feed { font-family: var(--font-mono); font-size: 11px; }
+body:not([data-appearance='light']) .tool-activity-title { color: var(--deck-text-dim); letter-spacing: 0.2em; }
+body:not([data-appearance='light']) .msg.ai { background: rgba(14, 20, 36, 0.92); border-color: rgba(120, 150, 200, 0.18); }
+body:not([data-appearance='light']) .msg.user { background: rgba(255, 59, 70, 0.1); border-color: rgba(255, 59, 70, 0.35); }
+body:not([data-appearance='light']) .chat-input-row { background: rgba(6, 9, 18, 0.92); border: 1px solid var(--deck-line); }
+body:not([data-appearance='light']) .chat-input-row textarea { color: #dcebff; }
+body:not([data-appearance='light']) .mic-btn, body:not([data-appearance='light']) .send-btn { background: rgba(255, 59, 70, 0.12); border: 1px solid rgba(255, 59, 70, 0.4); }
+body:not([data-appearance='light']) .send-btn { color: #ffc9cd; }
+/* sidenav rail + topbar controls */
+body:not([data-appearance='light']) .sidenav { background: rgba(4, 6, 12, 0.96); }
+body:not([data-appearance='light']) .sidenav::before { content: 'DECK'; }
+body:not([data-appearance='light']) .nav-btn.active { background: rgba(255, 59, 70, 0.12); border-color: rgba(255, 59, 70, 0.35); }
+body:not([data-appearance='light']) .nav-btn.active .nav-ico { color: var(--deck-red); }
+body:not([data-appearance='light']) .active-brain-chip { border-color: rgba(255, 59, 70, 0.4); color: #ffc9cd; }
+body:not([data-appearance='light']) .download-app-btn { background: var(--deck-red); box-shadow: 0 0 18px rgba(255, 59, 70, 0.45); }
+body:not([data-appearance='light']) .primary-btn { background: linear-gradient(180deg, rgba(255, 59, 70, 0.85), rgba(150, 20, 30, 0.9)); border-color: rgba(255, 120, 128, 0.5); }
+body:not([data-appearance='light']) ::-webkit-scrollbar-thumb { background: rgba(255, 59, 70, 0.35); }
 body:not([data-appearance='light']) .scanlines { opacity: 0.16; }
 body:not([data-appearance='light']) .vignette { opacity: 0.5; }
 body:not([data-appearance='light']) .app { background: transparent; }

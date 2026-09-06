@@ -50,8 +50,14 @@ assert(main.includes('writeNightlyState'), 'applied nightly builds are not recor
 assert(html.includes('id="setUpdateChannel"'), 'update channel selector is missing');
 assert(app.includes("profile.updateChannel = $('#setUpdateChannel')"), 'update channel is not persisted');
 const nightly = fs.readFileSync(path.join(ROOT, '.github/workflows/nightly.yml'), 'utf8');
-assert(nightly.includes('automatic_release_tag: nightly'), 'nightly workflow does not publish a rolling pre-release');
+assert(nightly.includes('ncipollo/release-action@v1'), 'nightly workflow must use the maintained rolling-release action');
+assert(nightly.includes('tag: nightly') && nightly.includes('replacesArtifacts: true'), 'nightly workflow does not publish a rolling pre-release');
 assert(nightly.includes('branches:') && nightly.includes('- main'), 'nightly workflow does not build on pushes to main');
+assert(nightly.includes('fail-fast: false'), 'one OS build failure should not cancel the other nightly builds');
+const autoRelease = fs.readFileSync(path.join(ROOT, '.github/workflows/auto-release.yml'), 'utf8');
+assert(autoRelease.includes('refs/tags/'), 'auto-release workflow never creates the version tag');
+assert(autoRelease.includes('getLatestRelease'), 'auto-release workflow does not compare against the latest release');
+assert(autoRelease.includes('package.json'), 'auto-release workflow is not driven by the package version');
 assert(main.includes('startAutoUpdateWatcher'), 'background auto-update watcher is missing');
 assert(main.includes('AUTO_UPDATE_POLL_MS'), 'auto-update poll interval is missing');
 assert(main.includes("mainWindow.webContents.send('app:update-available'"), 'auto-update availability event is missing');

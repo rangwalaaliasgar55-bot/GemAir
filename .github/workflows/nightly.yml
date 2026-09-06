@@ -3,6 +3,10 @@ name: Nightly build
 # Builds installers from every push to main (and nightly on schedule) and
 # publishes them to a rolling "nightly" pre-release, so the desktop app's
 # nightly update channel always has something fresh to install.
+#
+# NOTE: this previously used marvinpinto/action-automatic-releases, which is
+# archived and fails on current runners — ncipollo/release-action is the
+# maintained replacement for rolling tags.
 on:
   push:
     branches:
@@ -17,6 +21,7 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -64,10 +69,13 @@ jobs:
         working-directory: dist
         run: sha256sum * > SHA256SUMS.txt
       - name: Publish rolling nightly pre-release
-        uses: marvinpinto/action-automatic-releases@latest
+        uses: ncipollo/release-action@v1
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          automatic_release_tag: nightly
+          tag: nightly
+          name: GemAir nightly
           prerelease: true
-          title: GemAir nightly
-          files: dist/*
+          allowUpdates: true
+          removeArtifacts: true
+          replacesArtifacts: true
+          commit: main
+          artifacts: "dist/*"
