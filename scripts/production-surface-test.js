@@ -20,4 +20,8 @@ assert(website.includes('id="windows"') && website.includes('id="macos"') && web
 assert(website.includes('Open web app'), 'website web-app path is missing');
 assert(website.includes('checksum ?'), 'website makes checksum claims conditionally');
 assert(html.includes('id="topbarDownloadBtn"'), 'desktop download action must be visible in the app shell');
+const vercel = JSON.parse(read('vercel.json'));
+assert(vercel.rewrites.some((rule) => rule.source === '/download'), '/download rewrite is missing from production routing');
+const devServer = read('scripts/dev-server.js');
+assert(devServer.includes("rel === '/download'"), 'local dev server does not mirror the /download route');
 console.log('ok - production accessibility, navigation, motion, and website surface contracts');

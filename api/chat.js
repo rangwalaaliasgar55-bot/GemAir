@@ -299,13 +299,13 @@ async function fairUseBump(identities) {
 
 // Single, guarded chat/completions call to one provider+model. Returns
 // { ok, status, reply } — `status` lets the caller rotate on 429.
-async function tryProvider(provider, messages, temperature, maxTokens) {
+async function tryProvider(provider, model, messages, temperature, maxTokens) {
   const url = provider.base + (provider.base.endsWith('/chat/completions') ? '' : '/chat/completions');
   try {
     return await fetchWithTimeout(url, {
       method: 'POST',
       headers: aiHeaders(provider, provider.key),
-      body: JSON.stringify({ model: provider.models[0], messages, temperature, max_tokens: maxTokens })
+      body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens })
     }, UPSTREAM_TIMEOUT_MS, async (res) => {
       if (!res.ok) {
         if (res.body) await res.body.cancel().catch(() => {});
@@ -314,7 +314,7 @@ async function tryProvider(provider, messages, temperature, maxTokens) {
       const data = await res.json();
       const reply = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
       if (data.error || typeof reply !== 'string' || !reply.trim()) return { ok: false, status: 502, error: 'INVALID_COMPLETION' };
-      return { ok: true, status: res.status, reply, model: data.model || provider.models[0] };
+      return { ok: true, status: res.status, reply, model: data.model || model };
     });
   } catch (e) {
     if (e && e.isTimeout) return { ok: false, status: 504, error: 'timeout' };
@@ -330,23 +330,30 @@ function unavailable(attempts) {
   };
 }
 
-// Rotate providers on 429 (rate-limit): move the failing provider to the back
-// and pick the next free one. Each rotation retries at most once per provider.
+// Rotate through every provider+model pair: a retired model (404) or a bad
+// model name must not sink the whole provider when its other models work.
+// 429/504 rotates the failing pair to the back for at most one retry each,
+// so one slow provider can never pin the function past its deadline.
 async function chatWithFallback(providers, messages) {
   const temperature = 0.6, maxTokens = 1200;
-  const queue = providers.slice();
+  const queue = [];
+  for (const provider of providers) for (const model of provider.models) queue.push({ provider, model });
+  const retried = new Set();
   const attempts = [];
-  while (queue.length && attempts.length < providers.length * 2) {
-    const provider = queue.shift();
-    const r = await tryProvider(provider, messages, temperature, maxTokens);
+  const maxAttempts = queue.length * 2;
+  while (queue.length && attempts.length < maxAttempts) {
+    const { provider, model } = queue.shift();
+    const r = await tryProvider(provider, model, messages, temperature, maxTokens);
     if (r.ok) return { ok: true, reply: r.reply, provider: provider.id, model: r.model, free: provider.free === true };
-    attempts.push({ provider: provider.id, model: provider.models[0], status: r.status, error: r.error });
-    if (r.status === 429 || r.status === 504) {
-      // rate-limited or timed out → rotate to the next provider and retry
-      queue.push(provider);
+    attempts.push({ provider: provider.id, model, status: r.status, error: r.error });
+    const key = provider.id + '|' + model;
+    if ((r.status === 429 || r.status === 504) && !retried.has(key)) {
+      // rate-limited or timed out → rotate to the back and retry once
+      retried.add(key);
+      queue.push({ provider, model });
       continue;
     }
-    // hard error (bad key, model missing, provider down) → just move on
+    // hard error (bad key, model missing, provider down) → try the next model
   }
   return unavailable(attempts);
 }
@@ -397,23 +404,26 @@ async function streamPassthrough(req, res, providers, messages) {
   };
   const callerOrigin = requestOrigin(req);
   if (callerOrigin && originAllowed({ headers: { origin: callerOrigin } }).ok) sseHeaders['Access-Control-Allow-Origin'] = callerOrigin;
-  const queue = providers.slice();
+  const queue = [];
+  for (const provider of providers) for (const model of provider.models) queue.push({ provider, model });
+  const retried = new Set();
   let started = false;
   const send = (obj) => {
     if (!started) { res.writeHead(200, sseHeaders); started = true; }
     res.write('data: ' + JSON.stringify(obj) + '\n\n');
   };
   const attempts = [];
-  while (queue.length && attempts.length < providers.length * 2) {
-    const provider = queue.shift();
+  const maxAttempts = queue.length * 2;
+  while (queue.length && attempts.length < maxAttempts) {
+    const { provider, model: startModel } = queue.shift();
     const url = provider.base + (provider.base.endsWith('/chat/completions') ? '' : '/chat/completions');
-    let content = '', model = provider.models[0];
+    let content = '', model = startModel;
     let status = 502, code = 'UPSTREAM_FAILURE';
     try {
       await fetchWithTimeout(url, {
         method: 'POST',
         headers: aiHeaders(provider, provider.key),
-        body: JSON.stringify({ model: provider.models[0], messages, temperature, max_tokens: maxTokens, stream: true })
+        body: JSON.stringify({ model: startModel, messages, temperature, max_tokens: maxTokens, stream: true })
       }, UPSTREAM_TIMEOUT_MS, async (up) => {
         if (!up.ok) {
           status = up.status; code = 'HTTP_' + status;
@@ -457,7 +467,11 @@ async function streamPassthrough(req, res, providers, messages) {
         send({ ok: false, error: 'STREAM_INTERRUPTED', message: 'The AI stream failed before completion. Retry the request; the partial response is not complete.', retryable: true, provider: provider.id, model, partial: true, attempts });
         return res.end();
       }
-      if (status === 429 || status === 504) queue.push(provider);
+      const key = provider.id + '|' + startModel;
+      if ((status === 429 || status === 504) && !retried.has(key)) {
+        retried.add(key);
+        queue.push({ provider, model: startModel });
+      }
     }
   }
   return res.status(503).json(unavailable(attempts));

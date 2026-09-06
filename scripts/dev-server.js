@@ -111,6 +111,14 @@ async function handleApi(req, res, url) {
 function serveStatic(req, res, url) {
   let rel = decodeURIComponent(url.pathname);
   if (rel === '/' || rel === '') rel = '/index.html';
+  // mirror the Vercel rewrite: "/download" -> "download.html" (repo root)
+  if (rel === '/download' || rel === '/download.html') {
+    const file = path.join(ROOT, 'download.html');
+    res.setHeader('Content-Type', MIME['.html']);
+    res.setHeader('Cache-Control', 'no-store');
+    fs.createReadStream(file).pipe(res);
+    return;
+  }
   // mirror the Vercel rewrite: "/foo" -> "renderer/foo"
   const file = path.join(STATIC_DIR, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));
 

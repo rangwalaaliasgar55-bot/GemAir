@@ -106,6 +106,20 @@ function client(fetch, extra = {}) {
   assert.equal(rotated.data.free, false);
   console.log('ok - real fallback reports the responding provider/model');
 
+  const perModel = handler({ GROQ_API_KEY: 'g' }, async (_url, options) => {
+    const model = JSON.parse(options.body).model;
+    return model === 'llama-3.1-8b-instant'
+      ? json({ error: 'model not found' }, 404)
+      : json({ model, choices: [{ message: { content: 'second-model reply' } }] });
+  });
+  const second = await invoke(perModel);
+  assert.equal(second.data.ok, true);
+  assert.equal(second.data.provider, 'groq');
+  assert.equal(second.data.model, 'llama-3.3-70b-versatile');
+  assert.equal(second.data.reply, 'second-model reply');
+  assert.ok(second.data.attempts === undefined);
+  console.log('ok - a retired model falls through to the next model on the same provider');
+
   const delta = { model: 'actual-model', choices: [{ delta: { content: 'Hi \u{1f30d}' } }] };
   const upstream = ': heartbeat\r\n\r\n' + frame(delta) + 'data: [DONE]';
   const res = await invoke(handler({ GROQ_API_KEY: 'g' }, async () => stream(upstream)), { messages, stream: true });
