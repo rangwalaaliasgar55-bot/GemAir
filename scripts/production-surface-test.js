@@ -24,4 +24,9 @@ const vercel = JSON.parse(read('vercel.json'));
 assert(vercel.rewrites.some((rule) => rule.source === '/download'), '/download rewrite is missing from production routing');
 const devServer = read('scripts/dev-server.js');
 assert(devServer.includes("rel === '/download'"), 'local dev server does not mirror the /download route');
+const sfxDir = path.join(root, 'renderer/assets/sfx');
+for (const file of ['click.wav', 'hover.wav', 'activate.wav', 'message.wav', 'swoosh.wav', 'alert.wav', 'mic.wav', 'success.wav']) {
+  assert(fs.existsSync(path.join(sfxDir, file)), 'missing original sfx asset ' + file);
+}
+assert(app.includes('assets/sfx/'), 'original sfx pack is not wired into playback');
 console.log('ok - production accessibility, navigation, motion, and website surface contracts');

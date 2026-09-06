@@ -1403,8 +1403,26 @@ function setAmbientScore(enabled, trackId) {
   } catch (e) { scoreNodes = null; }
 }
 
+// Original GemAir sound pack (scripts/generate-sfx.js). Files play first;
+// the oscillator synth below stays as the offline fallback.
+const SFX_FILES = { click: 'click.wav', hover: 'hover.wav', activate: 'activate.wav', message: 'message.wav', swoosh: 'swoosh.wav', swipe: 'swoosh.wav', alert: 'alert.wav', mic: 'mic.wav', success: 'success.wav' };
+const sfxCache = {};
+function playSfxFile(type) {
+  try {
+    const file = SFX_FILES[type];
+    if (!file || typeof Audio === 'undefined') return false;
+    let audio = sfxCache[type];
+    if (!audio) { audio = new Audio('assets/sfx/' + file); audio.preload = 'auto'; sfxCache[type] = audio; }
+    const clone = audio.cloneNode(true);
+    clone.volume = 0.6;
+    const played = clone.play();
+    if (played && typeof played.catch === 'function') played.catch(() => {});
+    return true;
+  } catch { return false; }
+}
 function playSfx(type) {
   if (profile && profile.sfx === false) return;
+  if (playSfxFile(type)) return;
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
