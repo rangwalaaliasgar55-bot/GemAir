@@ -11,7 +11,7 @@ The `/download` route serves `download.html`. It queries the public GitHub Relea
 - Browser chat can use live keyless tools without a model key.
 - General browser model answers require a configured server provider or the optional local WebGPU model.
 - Desktop ChatGPT uses the PKCE OAuth bridge and encrypted local storage. It requires the OAuth client and provider authorization to remain valid.
-- Desktop Gemini uses Google OAuth and the official Generative Language API. Set `GEMAIR_GEMINI_CLIENT_ID` and, when required by the OAuth client, `GEMAIR_GEMINI_CLIENT_SECRET`.
+- Desktop Gemini uses Google OAuth for identity only (`openid email profile` — Google rejects broader scopes with `invalid_scope` unless the Cloud project enables and approves them). Text generation authenticates with the user's AI Studio API key (Settings → Voice → Gemini Live Dialog), which the desktop brain also reads; the OAuth token remains as fallback.
 - ChatGPT OAuth can return `invalid_authorize_request` when the configured client ID is not approved for the requested redirect or scope. The built-in placeholder client is not a production credential; configure `GEMAIR_CHATGPT_CLIENT_ID` with an approved client.
 - Gemini requires a Google OAuth Desktop client with `http://127.0.0.1:8766/callback` registered. Without it, the UI reports configuration guidance and does not claim Gemini is connected.
 - A browser deployment cannot safely capture desktop cookies or local OAuth callbacks without a server-side callback, encrypted session store, CSRF protection, and a configured provider client. The web UI therefore does not claim browser account connections that are not configured.

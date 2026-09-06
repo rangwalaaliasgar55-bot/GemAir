@@ -8,6 +8,11 @@ All notable changes to GemAir are documented here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Fixed — Gemini OAuth invalid_scope + key-based generation
+- Google sign-in now requests identity scopes only (`openid email profile`); the `generative-language` scope was rejected with `invalid_scope` and blocked login entirely.
+- Fixed a latent crash in `setGeminiConnection` that referenced an undefined variable, failing every Gemini store write.
+- Desktop Gemini generation now prefers the user's AI Studio API key (same field as the Live dialog) with the OAuth token as fallback, and reports `GEMINI_KEY_REQUIRED` with setup steps when neither exists.
+
 ### Added — Proactive OpenAI token refresh (desktop)
 - Stored ChatGPT sessions now refresh 5 minutes before expiry via `grant_type=refresh_token` (no `code_verifier`, per OAuth rules), with refreshed tokens written back to the encrypted store and the next refresh rescheduled.
 - Dead sessions (401/`invalid_grant`) surface the exact message "ChatGPT session expired — re-import Codex login" through the existing expiry channel; transient failures retry in 10 minutes.

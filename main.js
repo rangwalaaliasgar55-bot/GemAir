@@ -3676,8 +3676,16 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
     connections.incUsage('chatgpt');
     return remaining || full;
   } else if (provider === 'gemini') {
+    // Generation prefers the user's AI Studio key (Settings → Voice →
+    // Gemini Live Dialog) because Google sign-in alone grants no API scope.
+    let profileKey = '';
+    try { profileKey = (readProfile().geminiLive || {}).apiKey || ''; } catch {}
+    const auth = connections.resolveGeminiAuth({ profileKey, storedApiKey: tokens.apiKey, oauthToken: tokens.psid });
+    if (auth.mode === 'none') {
+      throw new Error('GEMINI_KEY_REQUIRED: connect Google, then paste an AI Studio API key in Settings → Voice → Gemini Live Dialog.');
+    }
     try {
-      const full = await connections.callGeminiWeb({ psid: tokens.psid, psidts: tokens.psidts, messages: adaptedMessages, onDelta });
+      const full = await connections.callGeminiWeb({ psid: tokens.psid, psidts: tokens.psidts, apiKey: auth.apiKey, messages: adaptedMessages, onDelta });
       connections.incUsage('gemini');
       return full;
     } catch (e) {

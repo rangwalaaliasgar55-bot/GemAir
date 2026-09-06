@@ -1137,6 +1137,7 @@
             <legend>GEMINI LIVE DIALOG (WEBSOCKET)</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
               Real-time text dialog over Google's Live API socket. Needs an API key from AI Studio and a live model ID you verify in the AI Studio docs — GemAir ships no model names because availability changes.
+              The same key powers desktop Gemini chat: Google sign-in alone grants no API scope, so connect Google for identity, then paste the key here.
             </p>
             <label>Live model ID
               <input type="text" id="setGeminiLiveModel" placeholder="e.g. gemini-2.0-flash-live-001 (verify in AI Studio docs)" autocomplete="off" />
