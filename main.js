@@ -283,6 +283,7 @@ app.whenReady().then(() => {
   createWindow();
   try { createTray(); } catch (e) { console.error('[tray] disabled:', e.message); }
   try { startAutoUpdateWatcher(); } catch (e) { console.error('[auto-update] disabled:', e.message); }
+  try { scheduleChatGPTRefresh(); } catch (e) { console.error('[token-refresh] disabled:', e.message); }
   try { setupSilentUpdater(); } catch (e) { console.error('[silent-updater] disabled:', e.message); }
   startReminderScheduler();
   app.on('activate', () => {
@@ -4161,13 +4162,54 @@ ipcMain.handle('app:applyUpdate', () => applyPendingUpdate());
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:platform', () => process.platform);
 
+// Proactive ChatGPT token refresh: runs 5 minutes before the stored
+// access token expires so long sessions never hit a dead token mid-chat.
+// On 401/invalid_grant the session is truly dead — surface the exact
+// re-import message instead of retrying forever.
+let chatgptRefreshTimer = null;
+function scheduleChatGPTRefresh() {
+  try { if (chatgptRefreshTimer) { clearTimeout(chatgptRefreshTimer); chatgptRefreshTimer = null; } } catch {}
+  let tokens = null;
+  try { tokens = connections.getDecryptedTokens('chatgpt'); } catch { return; }
+  if (!tokens || !tokens.accessToken || !tokens.refreshToken || !tokens.expiresAt) return;
+  const delay = Math.max(60 * 1000, tokens.expiresAt - Date.now() - 5 * 60 * 1000);
+  chatgptRefreshTimer = setTimeout(runChatGPTRefresh, delay);
+}
+async function runChatGPTRefresh() {
+  chatgptRefreshTimer = null;
+  const { checkAndRefreshChatGPT } = require('./lib/oauth-bridge');
+  try {
+    const result = await checkAndRefreshChatGPT();
+    if (result && result.refreshed) {
+      scheduleChatGPTRefresh();
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
+    } else if (result && (result.code === 'REFRESH_UNAUTHORIZED' || result.code === 'NO_REFRESH_TOKEN')) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('connections:expired', {
+          provider: 'chatgpt',
+          error: result.code,
+          message: 'ChatGPT session expired — re-import Codex login'
+        });
+      }
+    } else {
+      // Transient failure (network, bad response): retry in 10 minutes.
+      chatgptRefreshTimer = setTimeout(runChatGPTRefresh, 10 * 60 * 1000);
+    }
+  } catch (error) {
+    chatgptRefreshTimer = setTimeout(runChatGPTRefresh, 10 * 60 * 1000);
+  }
+}
+
 // 2.4 Connections
 ipcMain.handle('connections:oauthChatGPT', async () => {
   try {
     const { shell } = require('electron');
     const { loginChatGPTViaPkce } = require('./lib/oauth-bridge');
     const result = await loginChatGPTViaPkce((url) => shell.openExternal(url));
-    if (mainWindow && result && !result.error) mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
+    if (mainWindow && result && !result.error) {
+      mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
+      scheduleChatGPTRefresh();
+    }
     return result;
   } catch (error) { return { error: error.message || String(error) }; }
 });
@@ -4184,7 +4226,10 @@ ipcMain.handle('connections:importCodex', async () => {
   try {
     const { importChatGPTFromCodex } = require('./lib/oauth-bridge');
     const result = await importChatGPTFromCodex();
-    if (mainWindow && result && !result.error) mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
+    if (mainWindow && result && !result.error) {
+      mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
+      scheduleChatGPTRefresh();
+    }
     return result;
   } catch (error) { return { error: error.message || String(error) }; }
 });

@@ -8,6 +8,11 @@ All notable changes to GemAir are documented here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Added — Proactive OpenAI token refresh (desktop)
+- Stored ChatGPT sessions now refresh 5 minutes before expiry via `grant_type=refresh_token` (no `code_verifier`, per OAuth rules), with refreshed tokens written back to the encrypted store and the next refresh rescheduled.
+- Dead sessions (401/`invalid_grant`) surface the exact message "ChatGPT session expired — re-import Codex login" through the existing expiry channel; transient failures retry in 10 minutes.
+- `scripts/chatgpt-refresh-test.js` covers request shape, failure mapping, refresh policy, scheduler window, and messaging.
+
 ### Added — Gemini Live full audio pipeline (voice dialog)
 - `renderer/gemini-live.js` now runs real-time voice: 16-bit PCM 16 kHz mono mic capture in 100 ms frames over `realtimeInput.audio`, 24 kHz spoken answers played through Web Audio, AnalyserNode level meters, and VAD barge-in that cuts playback the moment you speak.
 - Settings → Voice shows live connection state, mic/Gem level meters, START/STOP voice, and reconnect on drop. No new dependencies — native WebSocket + Web Audio only, everything stays in the renderer.

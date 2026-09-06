@@ -8426,10 +8426,11 @@ function setupConnectionsHub() {
 
   if (api.onConnectionsUpdated) api.onConnectionsUpdated((s) => { connectionsStatus = s; renderConnectionHub(); renderConnectionsStatusRow(); updateActiveBrain(); });
   if (api.onConnectionsExpired) api.onConnectionsExpired((data) => {
+    const detail = (data && data.message) || ('Your ' + (data.provider||'').toUpperCase() + ' session expired or hit a bot-check (' + (data.error||'') + '). Reconnect to restore.');
     const body = $('#reconnectBody');
-    if (body) body.textContent = 'Your ' + (data.provider||'').toUpperCase() + ' session expired or hit a bot-check (' + (data.error||'') + '). Reconnect to restore. Falling back to FREE CORE.';
+    if (body) body.textContent = detail + ' Falling back to FREE CORE.';
     $('#reconnectModal').classList.add('open');
-    toast('CONNECTION LOST', (data.provider||'').toUpperCase() + ' session expired — fallback to FREE CORE', '⚠️');
+    toast('CONNECTION LOST', detail, '⚠️');
     // instant fallback: set active brain to free core
     updateActiveBrain();
   });
