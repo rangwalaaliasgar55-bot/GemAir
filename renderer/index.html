@@ -1140,8 +1140,13 @@
               The same key powers desktop Gemini chat: Google sign-in alone grants no API scope, so connect Google for identity, then paste the key here.
             </p>
             <label>Live model ID
-              <input type="text" id="setGeminiLiveModel" placeholder="e.g. gemini-2.0-flash-live-001 (verify in AI Studio docs)" autocomplete="off" />
+              <input type="text" id="setGeminiLiveModel" list="geminiLiveModelList" placeholder="Press Refresh, then pick a model your key can use" autocomplete="off" />
+              <datalist id="geminiLiveModelList"></datalist>
             </label>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:2px;flex-wrap:wrap;">
+              <button class="ghost-btn" id="refreshGeminiLiveModelsBtn" type="button">↻ Refresh model list</button>
+              <span class="dim" style="font-size:10px;">Lists what YOUR key can use — no guessing.</span>
+            </div>
             <label>AI Studio API key
               <input type="password" id="setGeminiLiveKey" placeholder="AIza…" autocomplete="off" />
             </label>

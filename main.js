@@ -3678,14 +3678,16 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
   } else if (provider === 'gemini') {
     // Generation prefers the user's AI Studio key (Settings → Voice →
     // Gemini Live Dialog) because Google sign-in alone grants no API scope.
-    let profileKey = '';
-    try { profileKey = (readProfile().geminiLive || {}).apiKey || ''; } catch {}
+    // The model ID comes from the same field, so desktop chat uses an ID the
+    // user's own key reports — never a remembered (possibly retired) one.
+    let profileKey = '', profileModel = '';
+    try { const live = readProfile().geminiLive || {}; profileKey = live.apiKey || ''; profileModel = live.model || ''; } catch {}
     const auth = connections.resolveGeminiAuth({ profileKey, storedApiKey: tokens.apiKey, oauthToken: tokens.psid });
     if (auth.mode === 'none') {
       throw new Error('GEMINI_KEY_REQUIRED: connect Google, then paste an AI Studio API key in Settings → Voice → Gemini Live Dialog.');
     }
     try {
-      const full = await connections.callGeminiWeb({ psid: tokens.psid, psidts: tokens.psidts, apiKey: auth.apiKey, messages: adaptedMessages, onDelta });
+      const full = await connections.callGeminiWeb({ psid: tokens.psid, psidts: tokens.psidts, apiKey: auth.apiKey, model: profileModel, messages: adaptedMessages, onDelta });
       connections.incUsage('gemini');
       return full;
     } catch (e) {

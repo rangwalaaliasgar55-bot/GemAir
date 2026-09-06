@@ -8,6 +8,10 @@ All notable changes to GemAir are documented here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Fixed — ChatGPT authorize URL, Gemini model discovery
+- ChatGPT OAuth authorize URL now sends the two flags the working Codex CLI flow requires (`id_token_add_organizations`, `codex_cli_simplified_flow`), verified against the published v2 package — this was the `missing_required_parameter` rejection.
+- Gemini settings gain one-click model discovery: the app asks Google what your own key can use and fills the picker, so retired model IDs stop causing `GEMINI_HTTP_404`. Desktop chat uses the same picked ID, and 404s now explain retired-model vs disabled-API.
+
 ### Added — Guided Codex login (no terminal needed)
 - The ChatGPT row's Import button is now a full guided flow: if no Codex login exists, one click opens the visible login console, watches for the token file for 5 minutes, and imports it automatically on success. Missing Node.js and timeouts are reported honestly.
 - The silent import path itself still never downloads or executes anything (regression-guarded).

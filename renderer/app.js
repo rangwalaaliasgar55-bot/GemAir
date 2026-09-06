@@ -7324,6 +7324,38 @@ function bindEvents() {
     finally { try { session && session.close(); } catch {} }
   });
 
+  // Model discovery: ask Google what the user's own key can use, so the
+  // model field holds a working ID instead of a remembered (possibly
+  // retired) one. Failures are reported with Google's own message.
+  $('#refreshGeminiLiveModelsBtn')?.addEventListener('click', async () => {
+    const hint = $('#geminiLiveHint');
+    const say = (text, ok) => {
+      if (hint) { hint.textContent = text; hint.classList.toggle('ok', !!ok); hint.classList.toggle('bad', !ok); }
+    };
+    if (!window.geminiLive) { say('✗ Live transport failed to load.', false); return; }
+    const apiKey = ($('#setGeminiLiveKey')?.value || '').trim();
+    if (!apiKey) { say('Paste your AI Studio API key first, then refresh.', false); return; }
+    say('Asking Google what this key can use…');
+    try {
+      const models = await window.geminiLive.listModels(apiKey);
+      const list = $('#geminiLiveModelList');
+      if (list) {
+        list.innerHTML = '';
+        for (const m of models.slice(0, 60)) {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.label = m.displayName + (m.methods.length ? ' · ' + m.methods.slice(0, 3).join(', ') : '');
+          list.appendChild(opt);
+        }
+      }
+      if (!models.length) { say('Key works, but Google lists no models for it. Enable the Generative Language API in your Cloud project.', false); return; }
+      say(`✓ ${models.length} models available — pick one from the dropdown.`, true);
+    } catch (e) {
+      const msg = e.message || 'Model list failed';
+      say('✗ ' + (/403|SERVICE_DISABLED|PERMISSION_DENIED/.test(msg) ? 'API disabled for this key — enable Generative Language API in Google Cloud console, then retry.' : msg), false);
+    }
+  });
+
   // Gemini Live voice dialog: mic in, spoken answers out, with meters.
   let geminiLiveVoice = null;
   const liveMeter = (id, value) => {

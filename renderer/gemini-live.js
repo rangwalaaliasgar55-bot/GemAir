@@ -405,8 +405,40 @@
     return session;
   }
 
+  // Ask Google which models THIS key can actually use, instead of trusting
+  // remembered model IDs. Returns [{ id, displayName, methods }].
+  // Throws LIST_MODELS_HTTP_<status> with the server's message attached.
+  async function listModels(apiKey, fetchImpl) {
+    const key = String(apiKey || '').trim();
+    if (!key) throw new Error('MISSING_API_KEY');
+    const doFetch = fetchImpl || fetch;
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=' + encodeURIComponent(key);
+    let response;
+    try {
+      response = await doFetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+    } catch (e) {
+      throw new Error('LIST_MODELS_NETWORK');
+    }
+    let data = null;
+    try { data = await response.json(); } catch { data = null; }
+    if (!response.ok) {
+      const detail = data && data.error && data.error.message ? String(data.error.message).slice(0, 220) : '';
+      const err = new Error('LIST_MODELS_HTTP_' + response.status + (detail ? ': ' + detail : ''));
+      err.status = response.status;
+      err.detail = detail;
+      throw err;
+    }
+    return ((data && data.models) || [])
+      .filter((m) => m && typeof m.name === 'string')
+      .map((m) => ({
+        id: m.name.replace(/^models\//, ''),
+        displayName: m.displayName || m.name.replace(/^models\//, ''),
+        methods: Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : []
+      }));
+  }
+
   window.geminiLive = {
-    connect, startVoice, ENDPOINT,
+    connect, startVoice, listModels, ENDPOINT,
     audio: { floatToPcm16, chunkFrames, encodeBase64, decodeBase64ToInt16, pcm16ToFloat, resampleTo16k, rms, MIC_RATE, MIC_FRAME, OUT_RATE }
   };
 })();

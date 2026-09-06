@@ -111,5 +111,42 @@ function byteStream(frames) {
     console.log('  ok   socket disconnect surfaces closed state and reconnect revives');
   }
 
+  // 4. model discovery: listModels maps Google's catalog, errors honestly
+  {
+    const { client } = loadClient(byteStream([]));
+    await assert.rejects(
+      client.listModels(''),
+      /MISSING_API_KEY/,
+      'empty key must fail fast'
+    );
+    const catalog = {
+      models: [
+        { name: 'models/aaa-live', displayName: 'AAA Live', supportedGenerationMethods: ['generateContent', 'bidiGenerateContent'] },
+        { name: 'models/bbb-text', supportedGenerationMethods: ['generateContent'] },
+        { bogus: true }
+      ]
+    };
+    const okFetch = async (url, options) => {
+      assert.ok(url.includes('/v1beta/models?pageSize='), 'wrong catalog endpoint: ' + url);
+      assert.ok(url.includes('key=test-key'), 'API key must authenticate the catalog request');
+      assert.equal(options.method, 'GET');
+      return { ok: true, status: 200, json: async () => catalog };
+    };
+    const models = await client.listModels('test-key', okFetch);
+    assert.equal(models.length, 2, 'bogus entries must be filtered');
+    assert.deepEqual(models[0], { id: 'aaa-live', displayName: 'AAA Live', methods: ['generateContent', 'bidiGenerateContent'] });
+    assert.equal(models[1].displayName, 'bbb-text', 'missing displayName must fall back to the id');
+    const denied = async () => ({
+      ok: false, status: 403,
+      json: async () => ({ error: { message: 'Generative Language API has not been used in project 123 before.' } })
+    });
+    await assert.rejects(
+      client.listModels('test-key', denied),
+      /LIST_MODELS_HTTP_403.*has not been used/,
+      'disabled-API errors must carry Google’s message'
+    );
+    console.log('  ok   model discovery maps the catalog and reports disabled APIs honestly');
+  }
+
   console.log('\n  All Gemini Live transport tests passed.\n');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

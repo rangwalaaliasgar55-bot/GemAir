@@ -25,7 +25,7 @@ assert(bridge.includes('CHATGPT_OAUTH_CLIENT_REQUIRED'), 'ChatGPT missing OAuth 
 assert(bridge.includes('GEMINI_OAUTH_CLIENT_MISSING'), 'Gemini OAuth configuration failure is not explained');
 assert(bridge.includes('setChatGPTConnection') && bridge.includes('setGeminiConnection'), 'OAuth bridge does not persist both providers');
 assert(store.includes('safeStorage.encryptString'), 'connection store is not encrypted');
-assert(store.includes('generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'), 'Gemini official API route missing');
+assert(store.includes('generativelanguage.googleapis.com/v1beta/models/') && store.includes(':generateContent'), 'Gemini official API route missing');
 assert(!read('lib/oauth-gemini-pkce.js').includes('generative-language.retriever'), 'unsupported Gemini retriever scope is still requested');
 assert(!read('lib/oauth-gemini-pkce.js').includes('auth/generative-language'), 'generative-language OAuth scope is still requested (Google rejects it with invalid_scope)');
 assert(store.includes('apiKeyEnc'), 'Gemini AI Studio key is not stored encrypted');
@@ -75,6 +75,19 @@ console.log('ok - ChatGPT and Gemini OAuth, encrypted storage, IPC, and provider
     connections.callGeminiWeb({ messages: [{ role: 'user', content: 'hi' }], fetchFn: fakeFetch }),
     /GEMINI_KEY_REQUIRED/,
     'missing credentials must fail with an actionable error'
+  );
+  const modelSeen = {};
+  const modelFetch = async (url, options) => {
+    modelSeen.url = url;
+    return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }) };
+  };
+  await connections.callGeminiWeb({ apiKey: 'AIzaTestKey1234567890', model: 'my-live-model', messages: [{ role: 'user', content: 'hi' }], fetchFn: modelFetch });
+  assert.ok(modelSeen.url.includes('/models/my-live-model:generateContent'), 'caller-supplied model ID must reach the URL, got: ' + modelSeen.url);
+  const goneFetch = async () => ({ ok: false, status: 404, json: async () => ({}) });
+  await assert.rejects(
+    connections.callGeminiWeb({ apiKey: 'AIzaTestKey1234567890', model: 'retired-model', messages: [{ role: 'user', content: 'hi' }], fetchFn: goneFetch }),
+    /GEMINI_HTTP_404.*retired\/unknown or/i,
+    'a 404 must explain retired-model vs disabled-API instead of a bare status'
   );
   console.log('ok - Gemini auth resolution prefers API keys and routes honestly without credentials');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
