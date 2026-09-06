@@ -8,6 +8,10 @@ All notable changes to GemAir are documented here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Added — Guided Codex login (no terminal needed)
+- The ChatGPT row's Import button is now a full guided flow: if no Codex login exists, one click opens the visible login console, watches for the token file for 5 minutes, and imports it automatically on success. Missing Node.js and timeouts are reported honestly.
+- The silent import path itself still never downloads or executes anything (regression-guarded).
+
 ### Fixed — Gemini OAuth invalid_scope + key-based generation
 - Google sign-in now requests identity scopes only (`openid email profile`); the `generative-language` scope was rejected with `invalid_scope` and blocked login entirely.
 - Fixed a latent crash in `setGeminiConnection` that referenced an undefined variable, failing every Gemini store write.

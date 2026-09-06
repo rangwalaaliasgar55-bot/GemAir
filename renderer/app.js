@@ -244,6 +244,8 @@ const api = {
   // 2.4 Connections
   async connectionsOauthChatGPT() { if (window.gemair && window.gemair.connectionsOauthChatGPT) return window.gemair.connectionsOauthChatGPT(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'ChatGPT OAuth requires GemAir Desktop or a configured web callback.' }; },
   async connectionsImportCodex() { if (window.gemair && window.gemair.connectionsImportCodex) return window.gemair.connectionsImportCodex(); return { ok: false, error: 'DESKTOP_ONLY', message: 'Codex login import needs GemAir Desktop (it reads your local ~/.codex/auth.json).' }; },
+  async connectionsCodexStatus() { if (window.gemair && window.gemair.connectionsCodexStatus) return window.gemair.connectionsCodexStatus(); return { exists: false, valid: false }; },
+  async connectionsLaunchCodexLogin() { if (window.gemair && window.gemair.connectionsLaunchCodexLogin) return window.gemair.connectionsLaunchCodexLogin(); return { ok: false, error: 'DESKTOP_ONLY' }; },
   async connectionsOauthGemini() { if (window.gemair && window.gemair.connectionsOauthGemini) return window.gemair.connectionsOauthGemini(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'Gemini OAuth requires GemAir Desktop or a configured web callback.' }; },
   async connectionsGetStatus() {
     if (window.gemair && window.gemair.connectionsGetStatus) return window.gemair.connectionsGetStatus();
@@ -8287,16 +8289,51 @@ async function handleConnectChatGPT() {
   });
 }
 
+let codexPollTimer = null;
 async function handleImportCodex() {
+  // Guided flow so nobody needs a terminal: import when a login exists,
+  // otherwise launch the visible login and watch for its token file.
   try {
-    toast('CHATGPT', 'Reading your local Codex login…', '📥');
-    const res = await api.connectionsImportCodex();
-    if (res && !res.error) {
-      await loadConnectionsStatus();
-      toast('CHATGPT', 'Codex login imported securely.', '✅');
+    if (codexPollTimer) { clearInterval(codexPollTimer); codexPollTimer = null; }
+    const status = await api.connectionsCodexStatus().catch(() => ({ exists: false, valid: false }));
+    if (status && status.valid) {
+      toast('CHATGPT', 'Reading your local Codex login…', '📥');
+      const res = await api.connectionsImportCodex();
+      if (res && !res.error) {
+        await loadConnectionsStatus();
+        toast('CHATGPT', 'Codex login imported securely.', '✅');
+        return;
+      }
+      toast('CHATGPT', res.message || res.error || 'Codex import failed', '⚠️');
       return;
     }
-    toast('CHATGPT', res.message || res.error || 'Codex import failed', '⚠️');
+    const launched = await api.connectionsLaunchCodexLogin().catch((e) => ({ error: e.message }));
+    if (launched && launched.error) {
+      toast('CHATGPT', launched.message || launched.error, '⚠️');
+      return;
+    }
+    toast('CHATGPT', 'A login window opened — sign in to ChatGPT there. GemAir will pick up the login automatically.', '🔐');
+    const deadline = Date.now() + 5 * 60 * 1000;
+    codexPollTimer = setInterval(async () => {
+      try {
+        if (Date.now() > deadline) {
+          clearInterval(codexPollTimer); codexPollTimer = null;
+          toast('CHATGPT', 'Login window timed out. Press Import Codex login to try again.', '⚠️');
+          return;
+        }
+        const next = await api.connectionsCodexStatus();
+        if (next && next.valid) {
+          clearInterval(codexPollTimer); codexPollTimer = null;
+          const res = await api.connectionsImportCodex();
+          if (res && !res.error) {
+            await loadConnectionsStatus();
+            toast('CHATGPT', 'Codex login imported securely.', '✅');
+          } else {
+            toast('CHATGPT', res.message || res.error || 'Codex import failed', '⚠️');
+          }
+        }
+      } catch (e) { /* keep polling until the deadline */ }
+    }, 3000);
   } catch (e) {
     toast('CHATGPT', e.message, '⚠️');
   }

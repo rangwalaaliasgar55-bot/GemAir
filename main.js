@@ -6,7 +6,7 @@ const os = require('os');
 const fs = require('fs');
 const dns = require('dns');
 const net = require('net');
-const { exec, execFile, spawn } = require('child_process');
+const { exec, execFile, spawn, spawnSync } = require('child_process');
 
 const connections = require('./lib/connections');
 const windowTools = require('./lib/window-tools');
@@ -4239,6 +4239,35 @@ ipcMain.handle('connections:importCodex', async () => {
       scheduleChatGPTRefresh();
     }
     return result;
+  } catch (error) { return { error: error.message || String(error) }; }
+});
+ipcMain.handle('connections:codexStatus', async () => {
+  try {
+    const { codexStatus } = require('./lib/codex-auth-import');
+    return codexStatus();
+  } catch (error) { return { exists: false, valid: false, error: error.message || String(error) }; }
+});
+// User-initiated Codex login launcher. Runs ONLY on explicit button click,
+// in a NEW VISIBLE console window so the user sees exactly what runs and can
+// close it. GemAir never downloads or runs this package silently — the user
+// watches the login happen, then the app imports the resulting token file.
+ipcMain.handle('connections:launchCodexLogin', async () => {
+  try {
+    const probe = process.platform === 'win32'
+      ? spawnSync('where', ['npx'], { timeout: 10000 })
+      : spawnSync('which', ['npx'], { timeout: 10000 });
+    if (probe.error || probe.status !== 0) {
+      return { error: 'NEED_NODE', message: 'Node.js is required for the guided Codex login. Install it from https://nodejs.org, restart GemAir, and retry. Advanced users can run the login manually in a terminal instead.' };
+    }
+    if (process.platform === 'win32') {
+      const child = spawn('cmd.exe', ['/c', 'start', 'GemAir Codex login', 'npx', '-y', 'openai-oauth', 'login'], { detached: true, stdio: 'ignore', windowsHide: false });
+      child.unref();
+    } else if (process.platform === 'darwin') {
+      spawn('open', ['-a', 'Terminal', 'npx', '-y', 'openai-oauth', 'login'], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      return { error: 'NEED_MANUAL', message: 'Open a terminal and run the Codex login command yourself, then press Import Codex login again.' };
+    }
+    return { ok: true, launched: true };
   } catch (error) { return { error: error.message || String(error) }; }
 });
 ipcMain.handle('connections:getStatus', () => connections.getSanitizedStatus());

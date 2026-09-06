@@ -37,7 +37,15 @@ assert(preload.includes("connectionsImportCodex: () => ipcRenderer.invoke('conne
 assert(renderer.includes('async connectionsImportCodex()'), 'Codex import renderer bridge is missing');
 assert(renderer.includes('handleImportCodex'), 'Codex import handler is missing');
 const codex = read('lib/codex-auth-import.js');
-assert(!/require\(['"]child_process['"]\)/.test(codex) && !/\bspawn\s*\(|\bexecFile\s*\(|\bexecSync\s*\(/.test(codex), 'Codex import must never download or execute third-party code');
+assert(!/require\(['"]child_process['"]\)/.test(codex) && !/\bspawn\s*\(|\bexecFile\s*\(|\bexecSync\s*\(/.test(codex), 'Codex import itself must never download or execute third-party code');
+assert(codex.includes('function codexStatus'), 'Codex login state check is missing');
+assert(main.includes("ipcMain.handle('connections:launchCodexLogin'"), 'guided Codex login launcher is missing');
+assert(main.includes("ipcMain.handle('connections:codexStatus'"), 'Codex status IPC handler is missing');
+assert(preload.includes("connectionsLaunchCodexLogin: () => ipcRenderer.invoke('connections:launchCodexLogin')"), 'Codex launcher preload bridge is missing');
+assert(preload.includes("connectionsCodexStatus: () => ipcRenderer.invoke('connections:codexStatus')"), 'Codex status preload bridge is missing');
+assert(renderer.includes('codexPollTimer'), 'renderer does not poll for the login result');
+assert(main.includes('windowsHide: false'), 'guided login must run in a visible console window');
+assert(main.includes('NEED_NODE'), 'missing Node.js is not reported honestly');
 assert(codex.includes('.codex'), 'Codex import does not read the user-created token file');
 console.log('ok - ChatGPT and Gemini OAuth, encrypted storage, IPC, and provider routing contracts');
 

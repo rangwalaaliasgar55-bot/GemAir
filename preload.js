@@ -86,6 +86,8 @@ contextBridge.exposeInMainWorld('gemair', {
 
   connectionsOauthChatGPT: () => ipcRenderer.invoke('connections:oauthChatGPT'),
   connectionsImportCodex: () => ipcRenderer.invoke('connections:importCodex'),
+  connectionsCodexStatus: () => ipcRenderer.invoke('connections:codexStatus'),
+  connectionsLaunchCodexLogin: () => ipcRenderer.invoke('connections:launchCodexLogin'),
   connectionsOauthGemini: () => ipcRenderer.invoke('connections:oauthGemini'),
   connectionsGetStatus: () => ipcRenderer.invoke('connections:getStatus'),
   connectionsSetPriority: (p) => ipcRenderer.invoke('connections:setPriority', p),
