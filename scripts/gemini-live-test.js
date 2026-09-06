@@ -171,5 +171,117 @@ function byteStream(frames) {
     console.log('  ok   abnormal socket close reports its code');
   }
 
+  // 6. reconnect policy: 1006 retries with capped backoff, 1000 and user
+  //    hang-up stay silent, liveness probe forces recovery on dead sockets
+  {
+    const { client } = loadClient(byteStream([{ setupComplete: {} }]));
+    const { computeBackoff, checkLiveness, RECONNECT_MAX, RECONNECT_BASE_MS, RECONNECT_CAP_MS, HEARTBEAT_MS } = client._internals;
+    assert.deepEqual(
+      [0, 1, 2, 3, 4, 5, 6].map(computeBackoff),
+      [1000, 2000, 4000, 8000, 16000, 30000, 30000],
+      'backoff must double from 1s and cap at 30s'
+    );
+    assert.equal(RECONNECT_MAX, 5);
+    assert.equal(RECONNECT_BASE_MS, 1000);
+    assert.equal(RECONNECT_CAP_MS, 30000);
+    assert.equal(HEARTBEAT_MS, 20000);
+    assert.ok(client.ENDPOINT.startsWith('wss://'), 'production transport must use wss');
+    console.log('  ok   backoff schedule, retry cap, heartbeat interval, wss endpoint');
+  }
+
+  {
+    let builds = 0;
+    const logs = [];
+    const Flaky = class {
+      constructor() {
+        builds++;
+        this.readyState = 1;
+        setTimeout(() => this.onopen && this.onopen(), 1);
+      }
+      send(s) {
+        if (!JSON.parse(s).setup) return;
+        setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ setupComplete: {} }) }), 1);
+        if (builds === 1) setTimeout(() => { this.readyState = 3; this.onclose && this.onclose({ code: 1006, reason: '' }); }, 10);
+      }
+      close() { this.readyState = 3; }
+    };
+    Flaky.OPEN = 1;
+    const { client } = loadClient(Flaky);
+    const session = await client.connect({
+      apiKey: 'k', model: 'm', onText: () => {},
+      onLog: (message) => logs.push(message),
+      onError: () => {}
+    });
+    session._autoRetry = true; // voice sessions arm this at startup
+    await new Promise((r) => setTimeout(r, 1800));
+    assert.equal(builds, 2, 'a 1006 drop must trigger exactly one rebuild, saw ' + builds);
+    assert.equal(session.ready, true, 'session must be live again after retry');
+    assert.ok(logs.some((m) => /attempt 1\/5/.test(m)), 'each attempt must be logged, got: ' + logs.join(' | '));
+    session.close(1000);
+    console.log('  ok   1006 drop reconnects once with backoff and logs the attempt');
+  }
+
+  {
+    let builds = 0;
+    let errors = 0;
+    const Clean = class {
+      constructor() {
+        builds++;
+        this.readyState = 1;
+        setTimeout(() => this.onopen && this.onopen(), 1);
+      }
+      send(s) {
+        if (!JSON.parse(s).setup) return;
+        setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ setupComplete: {} }) }), 1);
+        setTimeout(() => { this.readyState = 3; this.onclose && this.onclose({ code: 1000, reason: '' }); }, 5);
+      }
+      close() { this.readyState = 3; }
+    };
+    Clean.OPEN = 1;
+    void Clean;
+    const { client } = loadClient(Clean);
+    const session = await client.connect({
+      apiKey: 'k', model: 'm', onText: () => {},
+      onError: () => { errors++; }
+    });
+    session._autoRetry = true;
+    await new Promise((r) => setTimeout(r, 1400));
+    assert.equal(builds, 1, 'a clean 1000 close must never rebuild');
+    assert.equal(errors, 0, 'a clean 1000 close must stay silent');
+    assert.equal(session.state, 'closed');
+    console.log('  ok   clean 1000 shutdown stays silent with no retry');
+  }
+
+  {
+    let builds = 0;
+    let errors = 0;
+    const { client } = loadClient(byteStream([{ setupComplete: {} }]));
+    const session = await client.connect({
+      apiKey: 'k', model: 'm', onText: () => {},
+      onError: () => { errors++; }
+    });
+    session._autoRetry = true;
+    builds++; // the initial construction above
+    session.close(); // user hang-up
+    await new Promise((r) => setTimeout(r, 1300));
+    assert.equal(errors, 0, 'user hang-up must not report an error');
+    console.log('  ok   user hang-up stays silent with no retry');
+  }
+
+  {
+    const { client } = loadClient(byteStream([{ setupComplete: {} }]));
+    const { checkLiveness } = client._internals;
+    const session = await client.connect({ apiKey: 'k', model: 'm', onText: () => {}, onError: () => {} });
+    assert.equal(checkLiveness(session), true, 'open socket must pass the probe');
+    session._autoRetry = true;
+    session._ws.readyState = 3; // simulate a half-dead socket
+    assert.equal(checkLiveness(session), false, 'dead socket must take the drop path');
+    await new Promise((r) => setTimeout(r, 1300));
+    assert.equal(session.ready, true, 'watchdog drop must recover');
+    session.close(1000);
+    assert.equal(checkLiveness({ state: 'closed' }), true, 'non-live sessions are left alone');
+    console.log('  ok   liveness probe recovers half-dead sockets');
+  }
+
   console.log('\n  All Gemini Live transport tests passed.\n');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

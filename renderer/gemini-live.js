@@ -110,6 +110,67 @@
     try { session._onState && session._onState(state); } catch {}
   }
 
+  // Reconnect policy (voice drops): exponential backoff, base 1s, cap 30s,
+  // max 5 attempts. Pure — unit-tested.
+  const RECONNECT_MAX = 5, RECONNECT_BASE_MS = 1000, RECONNECT_CAP_MS = 30000;
+  const HEARTBEAT_MS = 20000;
+  function computeBackoff(attempt) {
+    return Math.min(RECONNECT_CAP_MS, RECONNECT_BASE_MS * Math.pow(2, Math.max(0, attempt)));
+  }
+  function sessionLog(session, message) {
+    try {
+      const fn = session._opts && session._opts.onLog;
+      if (typeof fn === 'function') fn(message);
+    } catch {}
+  }
+  function clearReconnect(session) {
+    try { if (session._reconnectTimer) clearTimeout(session._reconnectTimer); } catch {}
+    session._reconnectTimer = null;
+  }
+  function stopWatchdog(session) {
+    try { if (session._watchdog) clearInterval(session._watchdog); } catch {}
+    session._watchdog = null;
+  }
+  function startWatchdog(session) {
+    stopWatchdog(session);
+    try {
+      session._watchdog = setInterval(() => { try { checkLiveness(session); } catch {} }, HEARTBEAT_MS);
+    } catch {}
+  }
+  // Liveness probe. Browser WebSocket exposes no app-visible ping/pong, so
+  // the probe IS the heartbeat: every HEARTBEAT_MS tick, a session that
+  // believes it is live must hold an OPEN socket — otherwise it takes the
+  // same drop path as an abnormal close (no extra 10s wait needed).
+  function checkLiveness(session) {
+    if (!session || session.state !== 'live') return true;
+    const ws = session._ws;
+    if (ws && ws.readyState === WebSocket.OPEN) return true;
+    scheduleReconnect(session, 1006, 'watchdog: socket not open');
+    return false;
+  }
+  function scheduleReconnect(session, code, why) {
+    if (!session._autoRetry || session._userClosed) return false;
+    if (session._reconnectAttempts >= RECONNECT_MAX) {
+      sessionLog(session, 'Live reconnect giving up after ' + RECONNECT_MAX + ' attempts.');
+      return false;
+    }
+    clearReconnect(session);
+    const delay = computeBackoff(session._reconnectAttempts);
+    session._reconnectAttempts++;
+    const gen = (session._retryGen = (session._retryGen || 0) + 1);
+    setState(session, 'connecting');
+    sessionLog(session, 'Live reconnect attempt ' + session._reconnectAttempts + '/' + RECONNECT_MAX + ' in ' + delay + 'ms (code ' + code + (why ? ', ' + why : '') + ').');
+    session._reconnectTimer = setTimeout(() => {
+      session._reconnectTimer = null;
+      if (session._userClosed || gen !== session._retryGen) return;
+      openSocket(session, session._opts, session._emit).then(
+        () => { session._reconnectAttempts = 0; startWatchdog(session); },
+        () => { scheduleReconnect(session, code, 'retry failed'); }
+      );
+    }, delay);
+    return true;
+  }
+
   function attachCommon(ws, session, opts, onReady) {
     const timeoutMs = opts.timeoutMs;
     const timer = setTimeout(() => {
@@ -126,6 +187,7 @@
       clearTimeout(timer);
       if (!session._settled) {
         session._settled = true;
+        session._everLive = true;
         setState(session, 'live');
         onReady();
       }
@@ -193,14 +255,25 @@
       };
       ws.onclose = (event) => {
         const wasLive = session.state === 'live';
+        const userClosed = !!session._userClosed;
         const code = event && typeof event.code === 'number' ? event.code : 0;
         const reason = event && typeof event.reason === 'string' && event.reason ? ': ' + String(event.reason).slice(0, 160) : '';
+        stopWatchdog(session);
         setState(session, 'closed');
         if (!session._settled) {
           session._settled = true;
           clearTimeout(session._timer);
           reject(new Error('SOCKET_CLOSED' + (code ? ' (code ' + code + ')' : '') + reason));
-        } else if (wasLive) {
+          return;
+        }
+        if (userClosed || code === 1000) {
+          // Clean shutdown (user hang-up or server goaway): silent, no retry.
+          try { session._onSocketClosed && session._onSocketClosed(); } catch {}
+          return;
+        }
+        if (wasLive && session._autoRetry && session._everLive && !session._reconnectTimer) {
+          scheduleReconnect(session, code, 'drop');
+        } else if (wasLive && !userClosed) {
           try { opts.onError && opts.onError('Live socket disconnected' + (code ? ' (code ' + code + ')' : '') + reason + '.'); } catch {}
         }
         try { session._onSocketClosed && session._onSocketClosed(); } catch {}
@@ -212,12 +285,25 @@
     const session = {
       state: 'connecting',
       _onState: typeof onState === 'function' ? onState : null,
+      _autoRetry: false,
+      _everLive: false,
+      _userClosed: false,
+      _reconnectAttempts: 0,
+      _reconnectTimer: null,
+      _watchdog: null,
+      _retryGen: 0,
       get ready() { return session.state === 'live' && session._ws && session._ws.readyState === WebSocket.OPEN; },
       reconnect() {
+        session._userClosed = false;
+        session._reconnectAttempts = 0;
+        clearReconnect(session);
         try { session._ws && session._ws.close(); } catch {}
         return openSocket(session, session._opts, session._emit);
       },
       close(code) {
+        session._userClosed = true;
+        clearReconnect(session);
+        stopWatchdog(session);
         try { session._teardown && session._teardown(); } catch {}
         try { session._ws && session._ws.close(typeof code === 'number' ? code : 1000); } catch {}
         setState(session, 'closed');
@@ -236,7 +322,7 @@
     const opts = {
       apiKey, model,
       timeoutMs: Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 30000,
-      onText: options.onText, onError: options.onError,
+      onText: options.onText, onError: options.onError, onLog: options.onLog,
       setup: { generation_config: { response_modalities: ['TEXT'] } }
     };
     const session = baseSession(opts, options.onState);
@@ -284,7 +370,7 @@
     const opts = {
       apiKey, model,
       timeoutMs: Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 30000,
-      onText: options.onText, onError: options.onError,
+      onText: options.onText, onError: options.onError, onLog: options.onLog,
       setup: {
         generation_config: {
           response_modalities: ['AUDIO'],
@@ -346,6 +432,8 @@
 
     session._teardown = () => {
       stopped = true;
+      stopWatchdog(session);
+      clearReconnect(session);
       stopOutput(false);
       try { micTap && micTap.disconnect(); } catch {}
       try { micSource && micSource.disconnect(); } catch {}
@@ -403,7 +491,9 @@
 
     session._onSocketClosed = () => session._teardown();
     session._emit = (b64) => playPcm24k(b64);
+    session._autoRetry = true;
     await openSocket(session, opts, (b64) => playPcm24k(b64));
+    startWatchdog(session);
     return session;
   }
 
@@ -441,6 +531,8 @@
 
   window.geminiLive = {
     connect, startVoice, listModels, ENDPOINT,
-    audio: { floatToPcm16, chunkFrames, encodeBase64, decodeBase64ToInt16, pcm16ToFloat, resampleTo16k, rms, MIC_RATE, MIC_FRAME, OUT_RATE }
+    audio: { floatToPcm16, chunkFrames, encodeBase64, decodeBase64ToInt16, pcm16ToFloat, resampleTo16k, rms, MIC_RATE, MIC_FRAME, OUT_RATE },
+    // Exposed for unit tests: backoff schedule, liveness probe, intervals.
+    _internals: { computeBackoff, checkLiveness, RECONNECT_MAX, RECONNECT_BASE_MS, RECONNECT_CAP_MS, HEARTBEAT_MS }
   };
 })();

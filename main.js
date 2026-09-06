@@ -4322,10 +4322,10 @@ ipcMain.handle('connections:chatStream', async (e, reqId, provider, messages) =>
     wc.send('ai:streamEnd', { reqId, reply });
     return { ok: true, reqId, reply };
   } catch (err) {
-    wc.send('ai:streamError', { reqId, error: err.message, provider });
+    wc.send('ai:streamError', { reqId, error: err.message, detail: err.detail, provider });
     // trigger fallback notification
-    if (mainWindow) mainWindow.webContents.send('connections:expired', { provider, error: err.message });
-    return { ok: false, reqId, error: err.message };
+    if (mainWindow) mainWindow.webContents.send('connections:expired', { provider, error: err.message, message: err.detail ? err.message + ' — ' + String(err.detail).slice(0, 300) : undefined });
+    return { ok: false, reqId, error: err.message, detail: err.detail };
   }
 });
 

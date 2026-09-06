@@ -104,7 +104,7 @@ contextBridge.exposeInMainWorld('gemair', {
     return new Promise((resolve, reject) => {
       const onChunk = (_e, data) => { if (data.reqId === reqId) onDelta(data.delta); };
       const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply }); } };
-      const onErr = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: false, error: data.error, provider: data.provider }); } };
+      const onErr = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: false, error: data.error, detail: data.detail, provider: data.provider }); } };
       const cleanup = () => { ipcRenderer.removeListener('ai:chunk', onChunk); ipcRenderer.removeListener('ai:streamEnd', onEnd); ipcRenderer.removeListener('ai:streamError', onErr); };
       ipcRenderer.on('ai:chunk', onChunk);
       ipcRenderer.on('ai:streamEnd', onEnd);

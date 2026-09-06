@@ -3129,7 +3129,8 @@ async function handleMessage(text) {
       replyFailed = true;
       resetStreamSpeech();
       reply = (acc ? acc + '\n\n[Response interrupted]\n' : '') +
-        'Connection failed: ' + (res.message || humanError(res.error)) + '. Check Connections in Settings and retry.';
+        'Connection failed: ' + (res.message || humanError(res.error)) + '. Check Connections in Settings and retry.'
+        + (res.detail ? '\n\nProvider said: ' + String(res.detail).slice(0, 500) : '');
       replyEl.textContent = reply;
     }
   } else if (useAI) {
@@ -7383,6 +7384,7 @@ function bindEvents() {
     try {
       geminiLiveVoice = await window.geminiLive.startVoice({
         apiKey, model, timeoutMs: 25000,
+        onLog: (message) => { liveState(message); },
         onText: (text, done) => { if (text && done !== true) setCaption('ai', text); },
         onError: (message) => { say('✗ ' + message, false); },
         onState: (state) => {
