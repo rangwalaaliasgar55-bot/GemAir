@@ -272,6 +272,16 @@ function callCore(core, body, headers = {}) {
     else fail(`System prompt missing few-shot recipe for ${wf}`);
   }
   if (recipes >= 12) ok(`System prompt carries few-shot recipes for ${recipes} workflows (including 2.4 modes)`);
+  if (!promptSrc.includes('NOW: It is')) fail('System prompt does not inject the current date/time — the model cannot resolve today/tomorrow');
+  else ok('System prompt carries the live date/time for knowledge freshness');
+  if (!promptSrc.includes('Never narrate tool use')) fail('System prompt does not silence tool narration');
+  else ok('System prompt forbids narrating tool calls');
+  if (!promptSrc.includes('Never paste raw tool output')) fail('System prompt does not require synthesized tool results');
+  else ok('System prompt requires synthesized answers, never raw tool JSON');
+  if (promptSrc.includes('slice(0, 60).map((f)')) fail('System prompt still sends the oldest memories first');
+  else ok('System prompt ranks memories by importance/recency with bounded sections');
+  if (!mainSrc.includes('It is ${nowStamp}')) fail('Desktop connected-brain prompt lacks date awareness');
+  else ok('Desktop connected-brain prompt carries date, tone, and silent-tool rules');
 
   // -------------------------------------------------------------------------
   // 6. Section R regression guards — the exact bugs 2.2 fixed must stay fixed.

@@ -2466,13 +2466,19 @@ function renderAdaptivePersonalityState() {
 
 function buildSystemPrompt() {
   const personality = getPersonalityAdjustments();
-  const facts = (memory.facts || []).slice(0, 60).map((f) => `- ${f.text}`).join('\n');
+  // Most relevant memories first: importance, then recency. The old slice(0, 60)
+  // sent the OLDEST facts, starving small/local models of what matters now.
+  const facts = (memory.facts || []).slice()
+    .sort((a, b) => ((b.importance || 0) - (a.importance || 0)) || ((b.updated || b.created || 0) - (a.updated || a.created || 0)))
+    .slice(0, 40).map((f) => `- ${f.text}`).join('\n');
   const recentMood = getRecentMoodAverage();
   const moodAvg = recentMood == null ? null : Math.round(recentMood * 100);
   const goals = (memory.goals || []).filter((g) => !g.done).map((g) => `- [${g.category}] ${g.text}`).join('\n');
-  const skills = (memory.skills || []).slice(0, 40).map((s) => `- ${s.name ? s.name + ': ' : ''}${s.text}`).join('\n');
-  const instructions = (memory.instructions || []).slice(0, 40).map((i) => `- ${i.text}`).join('\n');
-  const modes = (typeof getModesForPrompt === 'function' ? getModesForPrompt() : '');
+  const skills = (memory.skills || []).slice(-15).map((s) => `- ${s.name ? s.name + ': ' : ''}${s.text}`).join('\n');
+  const instructions = (memory.instructions || []).slice(0, 25).map((i) => `- ${i.text}`).join('\n');
+  const modesRaw = (typeof getModesForPrompt === 'function' ? getModesForPrompt() : '');
+  const modes = modesRaw.length > 1200 ? modesRaw.slice(0, 1200) + '\n- …(more modes available via list_modes)' : modesRaw;
+  const nowStamp = new Date().toLocaleString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   const focused = desktopFocused && desktopFocused.app ? `${desktopFocused.app} (${desktopFocused.title})` : 'unknown';
   const activeBrain = (typeof getActiveBrain === 'function' ? getActiveBrain() : 'FREE CORE');
   const curMode = currentMode || profile.currentMode || 'NO MODE';
@@ -2483,6 +2489,7 @@ function buildSystemPrompt() {
       `Always refer to yourself as Gem, never as GemAir (GemAir is the app you live in). ` +
       `You are the user's friend, mentor, life coach and career advisor — genuinely caring, perceptive and wise. ` +
       `The user's name is ${profile.name || 'Commander'}. Address them by their name naturally — at the start of a greeting, when reassuring them, or when something matters. Do not repeat it in every sentence; roughly once per reply at most. ` +
+      `NOW: It is ${nowStamp}. Use this to resolve "today", "tomorrow", "yesterday", "this week", and to judge whether your training data may be outdated — if it might be, search instead of answering from memory. ` +
       `Personality baseline — warmth ${personality.base.warmth}/100, wit ${personality.base.wit}/100, brevity ${personality.base.brevity}/100. ` +
       `Effective tone — ${personality.mode}: warmth ${personality.warmth}/100, wit ${personality.wit}/100, brevity ${personality.brevity}/100 (higher brevity means a shorter answer). ${personality.adaptive ? 'This is a bounded mood-based adjustment; the user sliders remain the baseline.' : 'Adaptive personality is disabled; follow the manual sliders exactly.'} ` +
       `LANGUAGE: Respond in the user's language. They are currently writing in ${currentLang === 'hi' ? 'Hindi' : currentLang === 'ur' ? 'Urdu' : currentLang === 'hinglish' ? 'Hinglish (Roman Hindi/Urdu)' : 'English'} — mirror it, including for Hindi/Urdu speakers. ` +
@@ -2517,6 +2524,9 @@ User: "play soft music" -> open lofi playlist + set volume 35 + apply theme viol
       `- Cut filler: "I think", "it seems", "as an AI", "let me help you with that", closing offers of further help.\n` +
       `- One follow-up question at most, and only when you genuinely cannot proceed without it.\n` +
       `- Spoken replies are read aloud, so prefer plain sentences over markdown scaffolding.\n` +
+      `- Never narrate tool use ("I'll search for that now", "Let me check"). Call tools silently, then give the answer.\n` +
+      `- Never paste raw tool output or JSON into your reply; synthesize it into a natural answer with sources.\n` +
+      `- Sound like a person, not a manual: specific, direct, a little warm. Never say "as an AI".\n` +
       `VERIFICATION CONTRACT:\n` +
       `- Anything factual, current, numeric, or about a real person/product MUST come from a tool call this turn.\n` +
       `- Cite inline as [source](url) immediately after the claim it supports.\n` +

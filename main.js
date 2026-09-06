@@ -3631,8 +3631,9 @@ async function captureGeminiSession(isAIStudioFallback=false) {
 async function callConnectedBrain(provider, messages, onDelta, onTool) {
   // Adapter layer: inject TOOLS as JSON-in-prompt, parse tool calls
   const toolPrompt = connections.buildToolPrompt(TOOLS);
+  const nowStamp = new Date().toLocaleString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   const adaptedMessages = [
-    { role: 'system', content: `You are Gem, inside GemAir desktop. You have tools. ${toolPrompt}\nRespond helpfully. If you need to act, use the TOOL_CALL format.` },
+    { role: 'system', content: `You are Gem, the personal AI inside the GemAir desktop app — warm, direct, and precise. It is ${nowStamp}; use that for "today/tomorrow" and to distrust stale training data (search instead). ${toolPrompt}\nIf you need to act, use the TOOL_CALL format. Never narrate tool use ("I'll check..."); call tools silently, then answer. Never paste raw tool JSON; synthesize it into a natural reply with sources. Default to 1-3 sentences; expand only when asked or when steps are genuinely needed. Never say "as an AI".` },
     ...messages
   ];
   const tokens = connections.getDecryptedTokens(provider);
