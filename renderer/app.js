@@ -214,6 +214,7 @@ const api = {
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
   async version() { return window.gemair ? window.gemair.version() : '2.1.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
+  onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
   onWakeToggle(cb) { return registerRendererDisposer(window.gemair && window.gemair.onWakeToggle ? window.gemair.onWakeToggle(cb) : null); },
   onActivity(cb) { return registerRendererDisposer(window.gemair && window.gemair.onActivity ? window.gemair.onActivity(cb) : null); },
@@ -6879,6 +6880,21 @@ function bindEvents() {
         viewButton.textContent = info.downloaded ? 'RESTART TO UPDATE' : 'INSTALL UPDATE';
       }
       try { toast('UPDATE AVAILABLE', info.downloaded ? `${display} downloaded — restart to install.` : `${display} published — downloading in the background.`, '⬆'); } catch {}
+    });
+    if (api.onUpdaterEvent) api.onUpdaterEvent((event) => {
+      if (!event) return;
+      const status = $('#updateStatus');
+      const pill = $('#updatePill');
+      const viewButton = $('#viewUpdateBtn');
+      if (event.type === 'progress') {
+        if (status) status.textContent = `Downloading update… ${event.percent || 0}% (installs on restart, nothing to click through).`;
+        if (pill) { pill.hidden = false; pill.textContent = `⬇ Downloading ${event.percent || 0}%`; }
+      } else if (event.type === 'downloaded') {
+        if (status) status.textContent = `Update ${event.version || ''} is downloaded. Click RESTART TO UPDATE.`;
+        if (pill) { pill.hidden = false; pill.textContent = '⬆ Restart to update'; }
+        if (viewButton) { viewButton.hidden = false; viewButton.textContent = 'RESTART TO UPDATE'; }
+        try { toast('UPDATE READY', 'Update downloaded — restart to install.', '⬆'); } catch {}
+      }
     });
   } catch {}
   $('#viewUpdateBtn')?.addEventListener('click', async () => {

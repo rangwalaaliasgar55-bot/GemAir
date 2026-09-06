@@ -43,6 +43,11 @@ assert(main.includes('verifiedWindowsAsset'), 'Windows installer URL is not veri
 assert(main.includes('UPDATE_CANCELLED'), 'update install cancellation is not handled');
 assert(main.includes('predownloadUpdate'), 'background pre-download is missing');
 assert(main.includes('pendingUpdate'), 'downloaded-update state is missing');
+assert(main.includes("require('electron-updater')"), 'silent update engine is not wired');
+assert(main.includes('quitAndInstall'), 'silent update is never applied');
+assert(preload.includes("subscribeIpc('app:updater-event'"), 'updater progress events are not bridged to the renderer');
+assert(app.includes('onUpdaterEvent'), 'renderer does not subscribe to updater progress');
+assert(app.includes('Downloading update'), 'download progress is not shown to the user');
 assert(main.includes('RELEASE_NIGHTLY_API_URL'), 'nightly release endpoint is missing');
 assert(main.includes('getUpdateChannel'), 'update channel selection is missing');
 assert(main.includes('NIGHTLY_NOT_PUBLISHED'), 'missing nightly pre-release is not reported');
@@ -74,8 +79,9 @@ assert(app.includes('24 * 60 * 60 * 1000'), 'renderer daily throttle is missing'
 assert(app.includes("profile.autoUpdateChecks === false"), 'automatic checks do not respect user preference');
 assert(app.includes('function trustedReleasePage(value)'), 'renderer does not revalidate release URLs');
 assert(app.includes("api.openExternal(url)"), 'release opening is not a separate user action');
-assert(!main.includes('autoUpdater'), 'metadata-only update checks should not install automatically');
-console.log('  ok   automatic checks are daily and never install code');
+assert(main.includes('autoInstallOnAppQuit'), 'downloaded updates do not apply on quit');
+assert(main.indexOf('showMessageBox') < main.indexOf('quitAndInstall'), 'silent install bypasses user approval');
+console.log('  ok   automatic checks are daily; installs require a click or app quit');
 
 for (const id of ['setAutoUpdateChecks', 'checkUpdatesBtn', 'viewUpdateBtn', 'updateStatus']) assert(html.includes(`id="${id}"`), `missing update control ${id}`);
 assert(/id="updateStatus"[^>]*role="status"[^>]*aria-live="polite"/.test(html), 'update result is not announced accessibly');

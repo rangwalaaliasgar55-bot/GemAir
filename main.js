@@ -283,6 +283,7 @@ app.whenReady().then(() => {
   createWindow();
   try { createTray(); } catch (e) { console.error('[tray] disabled:', e.message); }
   try { startAutoUpdateWatcher(); } catch (e) { console.error('[auto-update] disabled:', e.message); }
+  try { setupSilentUpdater(); } catch (e) { console.error('[silent-updater] disabled:', e.message); }
   startReminderScheduler();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -3849,6 +3850,37 @@ let lastAutoUpdateAt = 0;
 let autoUpdateTimer = null;
 let pendingUpdate = null;
 let pendingDownloadTag = null;
+// Silent update engine (electron-updater): differential background downloads
+// from the GitHub releases feed emitted by the `publish` build config.
+// Stable channel only — nightly tags are not semver-comparable, so nightlies
+// keep the marker-aware manual flow below. Everything degrades to that flow
+// when the module is missing or the app runs unpackaged (npm start).
+let silentUpdater = null;
+let silentUpdateDownloaded = null;
+function silentUpdaterReady() {
+  try { return !!(silentUpdater && app.isPackaged && getUpdateChannel() !== 'nightly'); }
+  catch { return false; }
+}
+function updaterSend(payload) {
+  try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:updater-event', payload); } catch {}
+}
+function setupSilentUpdater() {
+  try {
+    silentUpdater = require('electron-updater').autoUpdater;
+  } catch { silentUpdater = null; return; }
+  try {
+    silentUpdater.autoDownload = true;
+    silentUpdater.autoInstallOnAppQuit = true;
+    silentUpdater.allowPrerelease = false;
+    silentUpdater.on('update-available', (info) => updaterSend({ type: 'available', version: info && info.version }));
+    silentUpdater.on('download-progress', (progress) => updaterSend({ type: 'progress', percent: Math.round((progress && progress.percent) || 0) }));
+    silentUpdater.on('update-downloaded', (info) => {
+      silentUpdateDownloaded = { version: info && info.version, at: Date.now() };
+      updaterSend({ type: 'downloaded', version: info && info.version });
+    });
+    silentUpdater.on('error', (error) => updaterSend({ type: 'error', message: error && error.message ? String(error.message).slice(0, 200) : 'updater error' }));
+  } catch { silentUpdater = null; }
+}
 function autoUpdatesEnabled() {
   try {
     const profile = readProfile();
@@ -3874,10 +3906,17 @@ async function pollAutoUpdate(reason) {
         downloaded: !!(pendingUpdate && pendingUpdate.path && fs.existsSync(pendingUpdate.path) && String(pendingUpdate.version || '').replace(/^v/i, '').toLowerCase() === String(result.latest || '').replace(/^v/i, '').toLowerCase()),
         reason: reason || 'poll'
       });
-      // Pre-download the Windows installer in the background so the one-click
-      // update is instant. Failures are silent here; the manual INSTALL UPDATE
-      // path still works.
-      predownloadUpdate(result).catch(() => {});
+      if (silentUpdaterReady()) {
+        // Preferred path: differential silent download; progress and
+        // completion arrive via updater events. Manual flow stays as fallback.
+        try { await silentUpdater.checkForUpdates(); }
+        catch { predownloadUpdate(result).catch(() => {}); }
+      } else {
+        // Pre-download the Windows installer in the background so the one-click
+        // update is instant. Failures are silent here; the manual INSTALL UPDATE
+        // path still works.
+        predownloadUpdate(result).catch(() => {});
+      }
     }
     return result;
   } catch { return null; }
@@ -3922,6 +3961,12 @@ async function predownloadUpdate(result) {
 }
 async function applyPendingUpdate() {
   try {
+    if (silentUpdateDownloaded && silentUpdaterReady()) {
+      const approved = await dialog.showMessageBox(mainWindow, { type: 'question', buttons: ['Restart and update', 'Later'], defaultId: 0, cancelId: 1, title: 'Restart and update GemAir?', message: `GemAir ${silentUpdateDownloaded.version || ''} is downloaded. Restart now to install?`, detail: 'Your local profile and memory are preserved by the installer.' });
+      if (approved.response !== 0) return { ok: false, error: 'UPDATE_CANCELLED' };
+      try { silentUpdater.quitAndInstall(); } catch (error) { return { ok: false, error: error.message }; }
+      return { ok: true, silent: true, version: silentUpdateDownloaded.version };
+    }
     if (!pendingUpdate || !pendingUpdate.path || !fs.existsSync(pendingUpdate.path)) return { ok: false, error: 'UPDATE_NOT_DOWNLOADED' };
     const approved = await dialog.showMessageBox(mainWindow, { type: 'question', buttons: ['Restart and update', 'Later'], defaultId: 0, cancelId: 1, title: 'Restart and update GemAir?', message: `GemAir ${pendingUpdate.version || ''} is downloaded. Restart now to install?`, detail: 'Your local profile and memory are preserved by the installer.' });
     if (approved.response !== 0) return { ok: false, error: 'UPDATE_CANCELLED' };

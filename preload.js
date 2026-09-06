@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('gemair', {
   installUpdate: (releaseUrl) => ipcRenderer.invoke('app:installUpdate', releaseUrl),
   applyUpdate: () => ipcRenderer.invoke('app:applyUpdate'),
   onUpdateAvailable: (cb) => subscribeIpc('app:update-available', cb),
+  onUpdaterEvent: (cb) => subscribeIpc('app:updater-event', cb),
   version: () => ipcRenderer.invoke('app:version'),
 
   memoryGet: () => ipcRenderer.invoke('memory:get'),
