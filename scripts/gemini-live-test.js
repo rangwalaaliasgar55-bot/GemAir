@@ -148,5 +148,28 @@ function byteStream(frames) {
     console.log('  ok   model discovery maps the catalog and reports disabled APIs honestly');
   }
 
+  // 5. abnormal socket close reports its code instead of a bare message
+  {
+    const { client } = loadClient(class {
+      constructor() { this.readyState = 1; setTimeout(() => this.onopen && this.onopen(), 1); }
+      send(s) {
+        if (JSON.parse(s).setup) {
+          setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ setupComplete: {} }) }), 1);
+          setTimeout(() => { this.readyState = 3; this.onclose && this.onclose({ code: 1006, reason: '' }); }, 5);
+        }
+      }
+      close() { this.readyState = 3; }
+    });
+    let reported = '';
+    const session = await client.connect({
+      apiKey: 'k', model: 'm', onText: () => {},
+      onError: (message) => { reported = message; }
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(session.state, 'closed');
+    assert.ok(reported.includes('1006'), 'close code must surface, got: ' + reported);
+    console.log('  ok   abnormal socket close reports its code');
+  }
+
   console.log('\n  All Gemini Live transport tests passed.\n');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

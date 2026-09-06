@@ -8,6 +8,10 @@ All notable changes to GemAir are documented here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Fixed — Gemini error transparency, voice close codes
+- Gemini REST failures now include Google's own error text (bad key vs disabled API vs unknown model), and voice-socket drops report the WebSocket close code — so the next failure message identifies its cause instead of a bare status.
+- ChatGPT authorize URL verified parameter-by-parameter against the published v2 package; only the redirect URI differs now (see report).
+
 ### Fixed — ChatGPT authorize URL, Gemini model discovery
 - ChatGPT OAuth authorize URL now sends the two flags the working Codex CLI flow requires (`id_token_add_organizations`, `codex_cli_simplified_flow`), verified against the published v2 package — this was the `missing_required_parameter` rejection.
 - Gemini settings gain one-click model discovery: the app asks Google what your own key can use and fills the picker, so retired model IDs stop causing `GEMINI_HTTP_404`. Desktop chat uses the same picked ID, and 404s now explain retired-model vs disabled-API.

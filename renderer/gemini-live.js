@@ -191,15 +191,17 @@
           setState(session, 'error');
         }
       };
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         const wasLive = session.state === 'live';
+        const code = event && typeof event.code === 'number' ? event.code : 0;
+        const reason = event && typeof event.reason === 'string' && event.reason ? ': ' + String(event.reason).slice(0, 160) : '';
         setState(session, 'closed');
         if (!session._settled) {
           session._settled = true;
           clearTimeout(session._timer);
-          reject(new Error('SOCKET_CLOSED'));
+          reject(new Error('SOCKET_CLOSED' + (code ? ' (code ' + code + ')' : '') + reason));
         } else if (wasLive) {
-          try { opts.onError && opts.onError('Live socket disconnected.'); } catch {}
+          try { opts.onError && opts.onError('Live socket disconnected' + (code ? ' (code ' + code + ')' : '') + reason + '.'); } catch {}
         }
         try { session._onSocketClosed && session._onSocketClosed(); } catch {}
       };
