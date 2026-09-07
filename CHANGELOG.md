@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.5.3] — 2026-09-07
+
+Apple HIG interface overhaul (original CSS only, no third-party assets): translucent menu bar with traffic lights, Finder-style sidebar, grouped cards, iOS switches and segmented controls, iMessage chat bubbles, sheet modals, Spotlight command palette, iOS-style Control Center with live network/battery readings, macOS System Settings layout with Apple & System section, calm Siri-style orb, Notification Center toasts, and PWA precache for the new Apple layer. Gemini Live model picker now filters to exact free-catalog IDs only.
+
 ## [2.5.2] — 2026-09-05
 
 Production answer routing, honest provider status, real Gemini OAuth generation, minimal dark UI, and release-ready desktop distribution.

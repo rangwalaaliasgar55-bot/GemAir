@@ -529,8 +529,15 @@
       }));
   }
 
+  // Keep only discovered models present in a free-catalog ID list.
+  // Exact ID match — never fuzzy, never invented.
+  function filterFreeModels(models, freeIds) {
+    const set = new Set((freeIds || []).filter((id) => typeof id === 'string'));
+    return (models || []).filter((m) => m && set.has(m.id));
+  }
+
   window.geminiLive = {
-    connect, startVoice, listModels, ENDPOINT,
+    connect, startVoice, listModels, filterFreeModels, ENDPOINT,
     audio: { floatToPcm16, chunkFrames, encodeBase64, decodeBase64ToInt16, pcm16ToFloat, resampleTo16k, rms, MIC_RATE, MIC_FRAME, OUT_RATE },
     // Exposed for unit tests: backoff schedule, liveness probe, intervals.
     _internals: { computeBackoff, checkLiveness, RECONNECT_MAX, RECONNECT_BASE_MS, RECONNECT_CAP_MS, HEARTBEAT_MS }

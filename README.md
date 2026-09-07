@@ -8,7 +8,7 @@
 
 No subscription, no license fee, no cloud lock-in. **Yours. Forever.**
 
-> **GemAir 2.5.2** is local-first and capability-transparent: live browser tools work without a key, configured providers produce model answers, and desktop-only features are clearly separated from the web app.
+> **GemAir 2.5.3** is local-first and capability-transparent: live browser tools work without a key, configured providers produce model answers, and desktop-only features are clearly separated from the web app.
 
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Windows-macOS-Linux-2b7a78?style=for-the-badge)]()
