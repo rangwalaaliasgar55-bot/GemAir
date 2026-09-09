@@ -479,6 +479,15 @@ body[data-appearance='light'] .palette-backdrop .palette { background: rgba(255,
   display: grid; grid-template-columns: 232px minmax(0, 1fr);
   gap: 0; padding: 0 !important; min-height: min(580px, 78vh);
 }
+/* Sidebar is ONE grid item: profile card stacked over the section list. */
+.settings-side {
+  grid-column: 1;
+  display: flex; flex-direction: column;
+  min-height: 0; overflow-y: auto;
+  background: rgba(0, 0, 0, 0.22);
+  border-right: 1px solid var(--apple-hairline);
+}
+body[data-appearance='light'] .settings-side { background: rgba(0,0,0,.03); }
 .apple-id-card {
   margin: 12px; padding: 10px 12px;
   border-radius: 10px;
@@ -494,12 +503,12 @@ body[data-appearance='light'] .palette-backdrop .palette { background: rgba(255,
 .apple-id-card b { font-size: 14px; font-weight: 600; }
 .apple-id-card span { font-size: 12px; color: var(--text-dim); }
 .settings-nav {
-  background: rgba(0, 0, 0, 0.22);
-  border-right: 1px solid var(--apple-hairline);
+  background: transparent;
+  border-right: none;
   padding: 4px 8px 12px !important;
   position: static !important;
   display: flex; flex-direction: column; gap: 1px;
-  overflow: auto;
+  overflow: visible;
 }
 body[data-appearance='light'] .settings-nav { background: rgba(0,0,0,.03); }
 .settings-nav-btn {
@@ -528,6 +537,7 @@ body[data-appearance='light'] .settings-nav { background: rgba(0,0,0,.03); }
 .settings-nav-btn[data-ssection="apple"] .sico { background: linear-gradient(145deg, #8e8e93, #48484a); }
 .settings-section { display: none; padding: 18px 20px; overflow: auto; }
 .settings-section.active { display: block; }
+#settingsModal .settings-section { grid-column: 2; min-width: 0; min-height: 0; }
 .settings-section fieldset { border-radius: 10px !important; }
 .settings-section legend { font-size: 11px; font-weight: 600; color: var(--text-dim); }
 .settings-section .apple-slider-row label { color: var(--text-dim); }
@@ -731,8 +741,9 @@ body[data-dnd='on'] .toasts { opacity: 0.35; }
 }
 
 @media (max-width: 860px) {
-  #settingsModal .modal-body { grid-template-columns: 1fr; }
-  .settings-nav { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--apple-hairline); }
+  #settingsModal .modal-body { grid-template-columns: minmax(0, 1fr); }
+  .settings-side { border-right: none; border-bottom: 1px solid var(--apple-hairline); overflow-x: auto; }
+  .settings-nav { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: none; }
   .settings-nav-btn { white-space: nowrap; width: auto; }
   .sidenav { margin: 0; border-radius: 0; flex-direction: row !important; overflow-x: auto; }
   .sidenav::before { display: none; }
