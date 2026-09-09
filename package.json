@@ -1,7 +1,7 @@
 {
   "name": "gemair",
   "version": "2.5.3",
-  "description": "GemAir — a free, open-source JARVIS-style desktop assistant. A sci-fi command center for your PC: voice assistant, system core, agent town and world monitor.",
+  "description": "GemAir \u2014 a free, open-source personal assistant. Voice, memory, tools, automations, and a calm workspace for your PC.",
   "main": "main.js",
   "author": "GemAir",
   "license": "MIT",

@@ -1172,6 +1172,88 @@ body[data-appearance='light'] .agent-card {
   font-family: var(--apple-font) !important;
 }
 
+/* ============================================================
+   17 · NEON SWEEP — kill leftover HUD glows from style.css
+   ============================================================ */
+.live-clock,
+.gem-name,
+.brand-text h1,
+.panel-title,
+.orb-status,
+.ver,
+.sys-chip,
+.active-brain-chip,
+.circuit-val,
+.sc-ico {
+  text-shadow: none !important;
+}
+.icon-btn:hover,
+.nav-btn.active,
+.gender-toggle-btn:hover,
+.briefing-chip.as-btn:hover,
+.start-btn,
+.start-btn:hover,
+.primary-btn,
+.mic-btn.recording,
+.tool-chip,
+.seat-chip .seat-dot,
+.ts-item.online i,
+.thinking-pill.on,
+.palette-item.selected {
+  box-shadow: none !important;
+}
+.start-btn {
+  box-shadow: var(--elevation-2) !important;
+}
+.start-btn:hover {
+  transform: none !important;
+  filter: brightness(1.06);
+  box-shadow: var(--elevation-3) !important;
+}
+/* RGB theme: keep accent cycling via themes.js vars, drop rainbow borders */
+body[data-theme='rgb'] .nav-btn.active,
+body[data-theme='rgb'] .brand-orb,
+body[data-theme='rgb'] .primary-btn,
+body.rgb-speaking .start-btn,
+body.rgb-speaking .orb-status,
+body.rgb-recording .orb-panel,
+body.rgb-recording .mic-btn,
+body.iron-man-burst .orb-panel,
+body.konami-burst .app {
+  animation: none !important;
+  filter: none !important;
+}
+body[data-theme='rgb'] .primary-btn {
+  background: var(--apple-blue) !important;
+  color: #fff !important;
+}
+/* Globe / radar captions calm */
+.globe-caption {
+  letter-spacing: 0.02em !important;
+  font-size: 11px !important;
+  color: var(--color-label-tertiary) !important;
+  text-shadow: none !important;
+}
+/* World / core canvas frames */
+#globeCanvas, #mapCanvas, #radarCanvas, #satCanvas, #moodCanvas {
+  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--apple-hairline) !important;
+  box-shadow: none !important;
+}
+/* View titles */
+.view-title {
+  font-family: var(--font-display, var(--apple-font)) !important;
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.018em !important;
+  text-shadow: none !important;
+}
+.view-sub {
+  font-size: 13px !important;
+  letter-spacing: 0 !important;
+  color: var(--color-label-secondary) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agent-card.s-busy .agent-card-pulse { animation: none; }
   .typing i { animation: none; opacity: 0.7; }
