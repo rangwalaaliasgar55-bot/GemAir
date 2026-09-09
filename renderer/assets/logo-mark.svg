@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="GemAir">
+  <!--
+    GemAir mark — a faceted gem inscribed in a calm circular aperture.
+    Symbolizes clarity (cut gem) and open air/space (ring). Geometric
+    enough to read at 16px; premium at large sizes via soft facet shading.
+  -->
+  <defs>
+    <linearGradient id="ga-facet" x1="8" y1="6" x2="24" y2="26" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#5AC8FA"/>
+      <stop offset="45%" stop-color="#0A84FF"/>
+      <stop offset="100%" stop-color="#5E5CE6"/>
+    </linearGradient>
+    <linearGradient id="ga-shine" x1="12" y1="8" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- outer ring -->
+  <circle cx="16" cy="16" r="14.25" stroke="url(#ga-facet)" stroke-width="1.75" opacity="0.95"/>
+  <!-- gem body (hexagonal cut) -->
+  <path fill="url(#ga-facet)" d="M16 6.2 L24.2 11.2 L24.2 20.8 L16 25.8 L7.8 20.8 L7.8 11.2 Z"/>
+  <!-- facet dividers -->
+  <path stroke="#0B0C0F" stroke-opacity="0.22" stroke-width="0.7" d="M16 6.2 V25.8 M7.8 11.2 L24.2 20.8 M24.2 11.2 L7.8 20.8"/>
+  <!-- top table highlight -->
+  <path fill="url(#ga-shine)" d="M16 6.2 L24.2 11.2 L16 14.6 L7.8 11.2 Z"/>
+</svg>
