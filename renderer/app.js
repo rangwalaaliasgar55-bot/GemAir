@@ -1010,8 +1010,8 @@ function updateSystemStatusChip() {
     try { return (window.GemAirI18n && window.GemAirI18n.t(k)) || fallback; } catch (e) { return fallback; }
   };
   if (!n) {
-    if (chip) { chip.textContent = t('status.nominal', 'SYSTEMS NOMINAL'); chip.title = 'All subsystems started cleanly.'; }
-    if (footer) footer.textContent = 'ALL SYSTEMS NOMINAL';
+    if (chip) { chip.textContent = t('status.nominal', 'Ready'); chip.title = 'All subsystems started cleanly.'; }
+    if (footer) footer.textContent = 'All systems ready';
     document.body.classList.remove('sys-degraded');
     return;
   }
@@ -1020,7 +1020,7 @@ function updateSystemStatusChip() {
     chip.textContent = `${t('status.degraded', 'DEGRADED')} — ${n} SUBSYSTEM${n > 1 ? 'S' : ''}`;
     chip.title = `Failed to start: ${names}`;
   }
-  if (footer) footer.textContent = `DEGRADED — ${n} SUBSYSTEM${n > 1 ? 'S' : ''} OFFLINE`;
+  if (footer) footer.textContent = `${n} subsystem${n > 1 ? 's' : ''} offline`;
   document.body.classList.add('sys-degraded');
 }
 window.__gemairInitFailures = _initFailures;
@@ -3628,49 +3628,45 @@ function initRecognition() {
 }
 
 // ---------------------------------------------------------------------------
-// Agent Town — animated pixel-art office (canvas)
+// Agent Town — glass card grid (preserves agent state APIs)
+// Public surface (unchanged contracts):
+//   window.__townAgents, window.__assignAgentTask, window.__agentBubble,
+//   window.__agentHandoff, townAgents(), seat bars, activity feed
 // ---------------------------------------------------------------------------
 function startAgentTown() {
-  const canvas = $('#townCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  const accent = () => getAccent();
+  const grid = document.getElementById('townAgentGrid');
+  const canvas = document.getElementById('townCanvas');
+  // Keep canvas node for any legacy bindings; rendering is DOM cards.
+  if (canvas) { try { canvas.hidden = true; canvas.setAttribute('aria-hidden', 'true'); } catch (e) {} }
+  if (!grid && !canvas) return;
 
-  // office furniture layout
   const desks = [
     { x: 130, y: 90 }, { x: 620, y: 90 }, { x: 130, y: 320 }, { x: 620, y: 320 }
   ];
-  const whiteboard = { x: 860, y: 120 };
-  const server = { x: 40, y: 440 };
-  const coffee = { x: 470, y: 210 };
 
   const agents = AGENTS.map((a, i) => ({
-    name: a.name, role: a.role, color: AGENT_COLORS[a.name],
+    name: a.name, role: a.role, emoji: a.emoji, color: AGENT_COLORS[a.name],
     home: desks[i], pos: { x: desks[i].x, y: desks[i].y - 20 }, target: { ...desks[i] },
-    state: 'idle', task: '', timer: 0, phase: Math.random() * Math.PI * 2
+    state: 'idle', task: '', timer: 0, phase: Math.random() * Math.PI * 2,
+    chatter: null
   }));
 
-  const waypoints = [...desks.map((d) => ({ x: d.x, y: d.y - 24 })), { x: whiteboard.x - 30, y: whiteboard.y + 60 }, { x: server.x + 40, y: server.y - 30 }, { x: coffee.x, y: coffee.y + 40 }];
-
-  // Ambient office chatter — agents small-talk between jobs so the town feels
-  // inhabited, not like four mannequins waiting for orders.
   const CHATTER = [
-    'Coffee break, then back to it.',
-    'Whiteboard is up to date.',
-    'Servers humming nicely today.',
-    'Task queue looks clear.',
-    'Syncing my notes real quick.',
-    'That last run went smooth.',
-    'Anyone else hear that fan spin up?',
-    'Backups verified — all good.',
-    'Nice weather for a compile.',
-    'Meeting at the whiteboard later?'
+    'Standing by.',
+    'Notes are current.',
+    'Queue looks clear.',
+    'Ready for the next handoff.',
+    'Syncing context.',
+    'Last run finished cleanly.'
   ];
   let townFrame = 0;
+  const handoffs = [];
+  let focusedName = null;
+  let lastPaintKey = '';
+
   function maybeChatter() {
     townFrame++;
-    if (townFrame % 480 !== 0) return; // roughly every 8 seconds of frames
+    if (townFrame % 480 !== 0) return;
     const idle = agents.filter((a) => a.state === 'idle' && !a.chatter);
     if (!idle.length) return;
     const a = idle[Math.floor(Math.random() * idle.length)];
@@ -3678,317 +3674,203 @@ function startAgentTown() {
     addActivity(a.name, a.chatter.text);
   }
 
-  // click -> assign task (routes to the agent's own brain)
-  addLifecycleListener(canvas, 'click', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const sx = W / rect.width, sy = H / rect.height;
-    const mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy;
-    for (const a of agents) {
-      if (Math.hypot(mx - a.pos.x, my - a.pos.y) < 22) {
-        assignTask(a.name, 'Awaiting your task…');
-        switchView('assistant');
-        $('#chatInput').value = `@${a.name} `;
-        $('#chatInput').focus();
-        addActivity(a.name, 'received a new task from you');
-        return;
-      }
-    }
-  });
-
   function assignTask(name, task) {
     const a = agents.find((x) => x.name === name);
     if (!a) return;
     a.state = 'queued'; a.task = task || 'Working…'; a.timer = 0;
+    a.chatter = { text: String(a.task).slice(0, 80), until: townFrame + 300, sticky: true };
     addActivity(name, 'task queued: ' + a.task);
+    paint(true);
   }
   window.__assignAgentTask = assignTask;
 
-  // Chat can push a speech bubble onto any agent (e.g. when @Alice answers).
-  // Sticky bubbles survive while the agent is busy; ambient chatter does not.
   window.__agentBubble = (name, text) => {
     const clean = String(name || '').trim().toLowerCase().replace(/^@/, '');
     const a = agents.find((x) => x.name.toLowerCase() === clean);
     if (!a || !text) return false;
     a.chatter = { text: String(text).slice(0, 120), until: townFrame + 300, sticky: true };
+    paint(true);
     return true;
   };
 
-  const handoffs = [];
   window.__agentHandoff = (from, to, text) => {
     handoffs.push({ from, to, text: String(text || 'handoff').slice(0, 52), born: townFrame, until: townFrame + 260 });
     while (handoffs.length > 5) handoffs.shift();
+    paint(true);
     return true;
   };
 
-  function drawFloor() {
-    const hour = new Date().getHours();
-    const daylight = hour >= 7 && hour < 18;
-    const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, daylight ? '#122033' : '#050914');
-    grad.addColorStop(1, daylight ? '#09111e' : '#03060d');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
-    // Office windows make the local-time lighting legible at a glance.
-    ctx.fillStyle = daylight ? 'rgba(255,210,125,.16)' : 'rgba(70,120,255,.12)';
-    for (let x = 250; x <= 650; x += 200) ctx.fillRect(x, 10, 120, 34);
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x <= W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y <= H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  function handoffToChat(a) {
+    if (!a) return;
+    assignTask(a.name, 'Awaiting your task…');
+    switchView('assistant');
+    const input = document.getElementById('chatInput');
+    if (input) { input.value = '@' + a.name + ' '; input.focus(); }
+    addActivity(a.name, 'received a new task from you');
   }
 
-  function drawDesk(d, a) {
-    ctx.fillStyle = 'rgba(20,28,44,0.9)';
-    ctx.fillRect(d.x - 44, d.y, 88, 8);       // tabletop
-    ctx.fillRect(d.x - 36, d.y - 26, 72, 26); // back panel
-    ctx.fillStyle = '#0a0f1a';
-    ctx.fillRect(d.x - 28, d.y - 20, 56, 16); // screen
-    ctx.fillStyle = a.color;
-    ctx.globalAlpha = 0.35;
-    ctx.fillRect(d.x - 28, d.y - 20, 56, 16);
-    ctx.globalAlpha = 1;
-    // nameplate
-    ctx.fillStyle = '#111a2c';
-    ctx.fillRect(d.x - 20, d.y + 2, 40, 10);
-    ctx.fillStyle = '#9fb2d0';
-    ctx.font = '7px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(a.name.toUpperCase(), d.x, d.y + 10);
+  function stateLabel(s) {
+    if (s === 'busy') return 'Working';
+    if (s === 'queued') return 'Queued';
+    if (s === 'done') return 'Done';
+    return 'Ready';
   }
 
-  function drawWhiteboard() {
-    ctx.fillStyle = '#e8eef7';
-    ctx.fillRect(whiteboard.x, whiteboard.y, 8, 70);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(whiteboard.x + 8, whiteboard.y + 4, 4, 62);
-    // scribbles
-    ctx.fillStyle = '#2b4b8a';
-    ctx.fillRect(whiteboard.x + 16, whiteboard.y + 8, 20, 3);
-    ctx.fillRect(whiteboard.x + 16, whiteboard.y + 16, 14, 3);
-    ctx.fillStyle = '#c0392b';
-    ctx.fillRect(whiteboard.x + 16, whiteboard.y + 26, 18, 3);
-  }
+  function paint(force) {
+    const key = agents.map((a) => [a.name, a.state, a.task, a.chatter && a.chatter.text].join('|')).join('~')
+      + '::' + handoffs.map((h) => h.from + h.to + h.text).join('~') + '::' + (focusedName || '');
+    if (!force && key === lastPaintKey) return;
+    lastPaintKey = key;
 
-  function drawServer() {
-    ctx.fillStyle = '#182238';
-    ctx.fillRect(server.x, server.y, 44, 60);
-    ctx.fillStyle = '#0c1424';
-    for (let i = 0; i < 4; i++) ctx.fillRect(server.x + 4, server.y + 6 + i * 14, 36, 10);
-    // blinking LEDs
-    for (let i = 0; i < 4; i++) {
-      const on = (Math.floor(Date.now() / 400) + i) % 3 !== 0;
-      ctx.fillStyle = on ? (i % 2 ? '#4be3a1' : '#ffd166') : '#334';
-      ctx.fillRect(server.x + 40, server.y + 9 + i * 14, 4, 4);
+    if (grid) {
+      grid.innerHTML = agents.map((a) => {
+        const status = a.state || 'idle';
+        const bubble = a.chatter && a.chatter.text ? a.chatter.text : '';
+        const task = a.task || (status === 'idle' ? 'Standing by' : '');
+        const focused = focusedName === a.name ? ' is-focused' : '';
+        return `<button type="button" class="agent-card s-${status}${focused}" data-agent="${a.name}" role="listitem" aria-label="${a.name}, ${stateLabel(status)}">
+          <span class="agent-card-avatar" style="--agent-color:${a.color}">${a.emoji || a.name[0]}</span>
+          <span class="agent-card-body">
+            <span class="agent-card-head">
+              <span class="agent-card-name">${a.name}</span>
+              <span class="agent-card-state">${stateLabel(status)}</span>
+            </span>
+            <span class="agent-card-role">${a.role || ''}</span>
+            <span class="agent-card-task">${task ? escapeHtml(String(task).slice(0, 96)) : '<span class="dim">No active task</span>'}</span>
+            ${bubble ? `<span class="agent-card-bubble">${escapeHtml(String(bubble).slice(0, 100))}</span>` : ''}
+          </span>
+          <span class="agent-card-pulse" aria-hidden="true"></span>
+        </button>`;
+      }).join('');
     }
-  }
 
-  function drawCoffee() {
-    ctx.fillStyle = '#2a1a12';
-    ctx.fillRect(coffee.x, coffee.y, 30, 34);
-    ctx.fillStyle = '#1a0f0a';
-    ctx.fillRect(coffee.x + 2, coffee.y + 4, 26, 10);
-    ctx.fillStyle = '#5b3a1e';
-    ctx.fillRect(coffee.x + 12, coffee.y + 16, 8, 12);
-    ctx.fillStyle = '#0a0f1a';
-    ctx.fillRect(coffee.x + 26, coffee.y + 8, 8, 12); // cup
-  }
-
-  function drawHandoffs(t) {
-    for (let i = handoffs.length - 1; i >= 0; i--) {
-      const handoff = handoffs[i];
-      if (townFrame > handoff.until) { handoffs.splice(i, 1); continue; }
-      const from = agents.find((agent) => agent.name === handoff.from);
-      const to = agents.find((agent) => agent.name === handoff.to);
-      if (!from || !to) continue;
-      const progress = Math.min(1, Math.max(0, (townFrame - handoff.born) / 110));
-      const x = from.pos.x + (to.pos.x - from.pos.x) * progress;
-      const y = from.pos.y + (to.pos.y - from.pos.y) * progress - Math.sin(progress * Math.PI) * 34;
-      ctx.save();
-      ctx.setLineDash([4, 5]); ctx.strokeStyle = getAccent(); ctx.globalAlpha = 0.38;
-      ctx.beginPath(); ctx.moveTo(from.pos.x, from.pos.y); ctx.lineTo(to.pos.x, to.pos.y); ctx.stroke();
-      ctx.setLineDash([]); ctx.globalAlpha = 1;
-      ctx.fillStyle = getAccent(); ctx.beginPath(); ctx.arc(x, y, 5 + Math.sin(t * .01) * 1.2, 0, Math.PI * 2); ctx.fill();
-      ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
-      ctx.fillText(handoff.text, (from.pos.x + to.pos.x) / 2, (from.pos.y + to.pos.y) / 2 - 18);
-      ctx.restore();
+    const strip = document.getElementById('townHandoffStrip');
+    if (strip) {
+      const live = handoffs.filter((h) => townFrame <= h.until);
+      strip.innerHTML = live.length
+        ? live.map((h) => `<span class="town-handoff-chip"><b>${escapeHtml(h.from)}</b> → <b>${escapeHtml(h.to)}</b> · ${escapeHtml(h.text)}</span>`).join('')
+        : '';
+      strip.hidden = !live.length;
     }
-  }
 
-  function drawAgent(a, t) {
-    const bob = a.state === 'busy' ? Math.sin(t * 0.02) * 1.5 : Math.abs(Math.sin(t * 0.01 + a.phase)) * 2;
-    const x = Math.round(a.pos.x), y = Math.round(a.pos.y) - Math.round(bob);
-    // shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.fillRect(x - 6, a.pos.y + 8, 12, 3);
-    // legs
-    ctx.fillStyle = '#1a2336';
-    ctx.fillRect(x - 4, y + 10, 3, 8);
-    ctx.fillRect(x + 1, y + 10, 3, 8);
-    // body
-    ctx.fillStyle = a.color;
-    ctx.fillRect(x - 5, y + 2, 10, 9);
-    // head
-    ctx.fillStyle = '#f0c9a8';
-    ctx.fillRect(x - 4, y - 8, 8, 8);
-    // eyes
-    ctx.fillStyle = '#111';
-    ctx.fillRect(x - 2, y - 5, 2, 2);
-    ctx.fillRect(x + 2, y - 5, 2, 2);
-    // status ring
-    const ringColor = a.state === 'queued' ? '#8ab4ff' : a.state === 'busy' ? '#ffc24b' : a.state === 'done' ? accent() : '#3dff9a';
-    ctx.strokeStyle = ringColor;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(x, y + 2, 11, 0, Math.PI * 2);
-    ctx.stroke();
-    // name
-    ctx.fillStyle = '#9fb2d0';
-    ctx.font = '8px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(a.name, x, y - 14);
-  }
-
-  function drawBubble(a) {
-    if (a.state === 'idle') return;
-    const tag = a.state === 'queued' ? '◌ QUEUED' : a.state === 'busy' ? '▶ RUNNING' : '✓ DONE';
-    const lines = wrapText(a.task, 18);
-    const bw = Math.min(150, Math.max(60, ...lines.map((l) => l.length)) * 6 + 12);
-    const bh = lines.length * 9 + 20;
-    const bx = a.pos.x - bw / 2, by = a.pos.y - 34 - bh;
-    ctx.fillStyle = 'rgba(6,10,18,0.92)';
-    ctx.strokeStyle = a.state === 'done' ? accent() : a.state === 'queued' ? '#8ab4ff' : '#ffc24b';
-    ctx.lineWidth = 1;
-    roundRect(ctx, bx, by, bw, bh, 6);
-    ctx.fill(); ctx.stroke();
-    // tail
-    ctx.beginPath(); ctx.moveTo(a.pos.x - 3, by + bh); ctx.lineTo(a.pos.x, a.pos.y - 24); ctx.lineTo(a.pos.x + 3, by + bh); ctx.closePath();
-    ctx.fillStyle = 'rgba(6,10,18,0.92)'; ctx.fill();
-    ctx.fillStyle = '#dfe8ff';
-    ctx.font = '8px monospace';
-    ctx.textAlign = 'center';
-    lines.forEach((l, i) => ctx.fillText(l, a.pos.x, by + 13 + i * 9));
-    // live status label
-    ctx.font = '7px monospace';
-    ctx.fillStyle = a.state === 'done' ? accent() : a.state === 'queued' ? '#8ab4ff' : '#ffc24b';
-    ctx.fillText(tag, a.pos.x, by + bh - 5);
-  }
-
-  // Small ambient speech bubble while idle ("small-talk between jobs")
-  function drawChatter(a) {
-    if (!a.chatter) return;
-    if (townFrame > a.chatter.until || (a.state !== 'idle' && !a.chatter.sticky)) { a.chatter = null; return; }
-    const lines = wrapText(a.chatter.text, 16);
-    const bw = Math.max(60, ...lines.map((l) => l.length)) * 5.4 + 10;
-    const bh = lines.length * 8 + 8;
-    const bx = a.pos.x - bw / 2, by = a.pos.y - 30 - bh;
-    ctx.globalAlpha = 0.92;
-    ctx.fillStyle = 'rgba(10,15,26,0.9)';
-    ctx.strokeStyle = 'rgba(140,160,200,0.35)';
-    ctx.lineWidth = 1;
-    roundRect(ctx, bx, by, bw, bh, 5);
-    ctx.fill(); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(a.pos.x - 3, by + bh); ctx.lineTo(a.pos.x, a.pos.y - 22); ctx.lineTo(a.pos.x + 3, by + bh); ctx.closePath();
-    ctx.fillStyle = 'rgba(10,15,26,0.9)'; ctx.fill();
-    ctx.fillStyle = '#b9c8e2';
-    ctx.font = '7px monospace';
-    ctx.textAlign = 'center';
-    lines.forEach((l, i) => ctx.fillText(l, a.pos.x, by + 11 + i * 8));
-    ctx.globalAlpha = 1;
-  }
-
-  function roundRect(c, x, y, w, h, r) {
-    c.beginPath();
-    c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
-    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
-  }
-
-  function wrapText(text, max) {
-    const words = String(text).split(' ');
-    const lines = []; let cur = '';
-    for (const w of words) {
-      if ((cur + ' ' + w).trim().length <= max) cur = (cur + ' ' + w).trim();
-      else { if (cur) lines.push(cur); cur = w; }
+    // Mini preview grid (assistant view)
+    const mini = document.getElementById('townMiniGrid');
+    if (mini) {
+      mini.innerHTML = agents.map((a) => {
+        const status = a.state || 'idle';
+        return `<div class="agent-card agent-card-mini s-${status}" data-agent="${a.name}" role="listitem">
+          <span class="agent-card-avatar" style="--agent-color:${a.color}">${a.emoji || a.name[0]}</span>
+          <span class="agent-card-body">
+            <span class="agent-card-head"><span class="agent-card-name">${a.name}</span><span class="agent-card-state">${stateLabel(status)}</span></span>
+            <span class="agent-card-task">${a.task ? escapeHtml(String(a.task).slice(0, 48)) : '<span class="dim">Idle</span>'}</span>
+          </span>
+        </div>`;
+      }).join('');
     }
-    if (cur) lines.push(cur);
-    return lines.slice(0, 4);
+
+    // legend dots (if present)
+    agents.forEach((a) => {
+      const dot = document.getElementById('lg-' + a.name);
+      if (dot) dot.className = 'legend-dot ' + a.state;
+    });
+  }
+
+  if (grid && !grid.dataset.townBound) {
+    grid.dataset.townBound = '1';
+    grid.addEventListener('click', (e) => {
+      const card = e.target.closest('[data-agent]');
+      if (!card) return;
+      const a = agents.find((x) => x.name === card.dataset.agent);
+      if (!a) return;
+      focusedName = a.name;
+      paint(true);
+      handoffToChat(a);
+    });
+    grid.addEventListener('keydown', (e) => {
+      const card = e.target.closest('[data-agent]');
+      if (!card) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        const a = agents.find((x) => x.name === card.dataset.agent);
+        if (a) handoffToChat(a);
+      }
+    });
+  }
+
+  const miniHost = document.getElementById('townMiniGrid');
+  if (miniHost && !miniHost.dataset.townBound) {
+    miniHost.dataset.townBound = '1';
+    miniHost.addEventListener('click', () => {
+      try { if (typeof playSfx === 'function') playSfx('swoosh'); } catch (e) {}
+      switchView('town');
+    });
   }
 
   function updateAgent(a) {
     a.timer++;
     if (a.state === 'queued') {
-      // acknowledge the task, walk to the desk, then start running
-      moveToward(a, a.home);
-      if (Math.hypot(a.pos.x - a.home.x, a.pos.y - a.home.y) < 4 && a.timer > 50) {
+      if (a.timer > 40) {
         a.state = 'busy'; a.timer = 0;
         addActivity(a.name, 'started: ' + a.task);
       }
       return;
     }
     if (a.state === 'busy') {
-      // work at the desk, then report done
-      moveToward(a, a.home);
-      if (a.timer > 160) { a.state = 'done'; a.timer = 0; addActivity(a.name, 'completed: ' + a.task); }
+      if (a.timer > 160) {
+        a.state = 'done'; a.timer = 0;
+        addActivity(a.name, 'completed: ' + a.task);
+      }
       return;
     }
     if (a.state === 'done') {
       if (a.timer > 220) { a.state = 'idle'; a.task = ''; a.timer = 0; }
       return;
     }
-    // idle wander
-    if (Math.hypot(a.pos.x - a.target.x, a.pos.y - a.target.y) < 3 || a.timer > 400) {
-      const coffeeRun = Math.random() < 0.24;
-      a.target = coffeeRun ? { x: coffee.x, y: coffee.y + 40 } : waypoints[Math.floor(Math.random() * waypoints.length)];
-      if (coffeeRun) {
-        a.chatter = { text: 'Coffee run ☕', until: townFrame + 220 };
-        addActivity(a.name, 'walked to the coffee machine');
-      }
-      a.timer = 0;
-    }
-    moveToward(a, a.target);
   }
 
-  function moveToward(a, tgt) {
-    const dx = tgt.x - a.pos.x, dy = tgt.y - a.pos.y;
-    const d = Math.hypot(dx, dy) || 1;
-    const sp = a.state === 'busy' ? 1.2 : 0.5;
-    a.pos.x += (dx / d) * sp;
-    a.pos.y += (dy / d) * sp;
-  }
-
-  // expose live agent state for the seat bar / status strip / mini preview
-  // (other code reads this; the town renderer stays the single writer)
-  window.__townAgents = agents;
-
-  // legend
-  const legend = $('#townLegend');
-  legend.innerHTML = '';
-  agents.forEach((a) => {
-    const div = document.createElement('div');
-    div.className = 'legend-agent';
-    div.innerHTML = `<span class="legend-dot idle" id="lg-${a.name}"></span><span>${a.name} — <span class="dim">${a.role}</span></span>`;
-    legend.appendChild(div);
-  });
-
-  let raf;
-  function loop(t) {
-    ctx.clearRect(0, 0, W, H);
-    drawFloor();
-    drawWhiteboard(); drawServer(); drawCoffee();
-    agents.forEach((a, i) => { drawDesk(desks[i], a); });
-    agents.forEach((a) => updateAgent(a));
-    maybeChatter();
-    drawHandoffs(t);
-    agents.forEach((a) => drawAgent(a, t));
-    agents.forEach((a) => drawBubble(a));
-    agents.forEach((a) => drawChatter(a));
-    // update legend dots
+  // legend (optional)
+  const legend = document.getElementById('townLegend');
+  if (legend) {
+    legend.innerHTML = '';
     agents.forEach((a) => {
-      const dot = document.getElementById('lg-' + a.name);
-      if (dot) { dot.className = 'legend-dot ' + a.state; }
+      const div = document.createElement('div');
+      div.className = 'legend-agent';
+      div.innerHTML = `<span class="legend-dot idle" id="lg-${a.name}"></span><span>${a.name} — <span class="dim">${a.role}</span></span>`;
+      legend.appendChild(div);
     });
-    raf = scheduleViewFrame('town', loop);
   }
-  raf = scheduleViewFrame('town', loop);
+
+  window.__townAgents = agents;
+  window.__townFocusAgent = (name) => {
+    focusedName = name || null;
+    paint(true);
+    return focusedName;
+  };
+
+  paint(true);
+
+  // Low-frequency tick — not a continuous canvas RAF loop
+  let tickTimer = null;
+  function tick() {
+    townFrame++;
+    agents.forEach(updateAgent);
+    agents.forEach((a) => {
+      if (a.chatter && !a.chatter.sticky && townFrame > a.chatter.until) a.chatter = null;
+      if (a.chatter && a.chatter.sticky && a.state === 'idle' && townFrame > a.chatter.until) a.chatter = null;
+    });
+    for (let i = handoffs.length - 1; i >= 0; i--) {
+      if (townFrame > handoffs[i].until) handoffs.splice(i, 1);
+    }
+    maybeChatter();
+    paint(false);
+  }
+  tickTimer = setInterval(tick, 250);
+  try {
+    if (typeof addLifecycleListener === 'function') {
+      // no-op lifecycle hook for cleanup patterns elsewhere
+    }
+  } catch (e) {}
+  window.__townTickStop = () => { try { clearInterval(tickTimer); } catch (e) {} };
 }
 
 async function runCollaborationMission(task) {
@@ -4306,40 +4188,30 @@ function initTownChrome() {
   $('#townChatBtn')?.addEventListener('click', focusChat);
   $('#townChatMini')?.addEventListener('click', focusChat);
 
-  // "Press E" — hover an agent in the full town, press E to hand over a task
-  const canvas = $('#townCanvas'), tag = $('#pressE');
+  // "Press E" — focused agent card hands over a task (card grid, not canvas)
   let hovered = null;
-  if (canvas && tag) {
-    addLifecycleListener(canvas, 'mousemove', (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
-      const mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy;
-      hovered = null;
-      for (const a of townAgents()) {
-        if (a.pos && Math.hypot(mx - a.pos.x, my - a.pos.y) < 24) { hovered = a; break; }
-      }
-      if (hovered) {
-        tag.style.left = (hovered.pos.x / sx) + 'px';
-        tag.style.top = (hovered.pos.y / sy - 10) + 'px';
-        tag.classList.add('show');
-        canvas.style.cursor = 'pointer';
-      } else {
-        tag.classList.remove('show');
-        canvas.style.cursor = '';
-      }
+  const grid = document.getElementById('townAgentGrid');
+  if (grid && !grid.dataset.focusTrack) {
+    grid.dataset.focusTrack = '1';
+    grid.addEventListener('pointerover', (e) => {
+      const card = e.target.closest('[data-agent]');
+      hovered = card ? townAgents().find((a) => a.name === card.dataset.agent) || null : null;
+      if (hovered && window.__townFocusAgent) window.__townFocusAgent(hovered.name);
     });
-    addLifecycleListener(canvas, 'mouseleave', () => { hovered = null; tag.classList.remove('show'); });
+    grid.addEventListener('pointerleave', () => { hovered = null; });
   }
   addLifecycleListener(window, 'keydown', (e) => {
     if (e.key.toLowerCase() !== 'e' || e.ctrlKey || e.metaKey || e.altKey) return;
     const ae = document.activeElement;
-    if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
-    if (!hovered || !$('#view-town').classList.contains('active')) return;
-    window.__assignAgentTask?.(hovered.name, 'Awaiting your task…');
-    addActivity(hovered.name, 'received a task face-to-face (E)');
+    if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName) && !ae.closest?.('#townAgentGrid')) return;
+    if (!$('#view-town')?.classList.contains('active')) return;
+    const target = hovered || townAgents().find((a) => a.state === 'idle') || townAgents()[0];
+    if (!target) return;
+    window.__assignAgentTask?.(target.name, 'Awaiting your task…');
+    addActivity(target.name, 'received a task face-to-face (E)');
     switchView('assistant');
-    $('#chatInput').value = '@' + hovered.name + ' ';
-    $('#chatInput').focus();
+    const input = $('#chatInput');
+    if (input) { input.value = '@' + target.name + ' '; input.focus(); }
   });
 
   // live chrome refresh (seat dots, status strip, visual hub, notes, media link)
@@ -4354,48 +4226,21 @@ function initTownChrome() {
   }, 1500);
 }
 
-// Mini office preview inside the assistant view (reads live town state)
+// Mini agent preview inside the assistant view (DOM cards; canvas hidden)
 function startTownPreview() {
-  const canvas = $('#townMiniCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  const S = 0.44, OX = (W - 900 * S) / 2, OY = (H - 520 * S) / 2;
-  function loop() {
-    ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = '#070b14'; ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = 'rgba(255,255,255,0.045)'; ctx.lineWidth = 1;
-    for (let x = 0; x <= W; x += 32) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y <= H; y += 32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-    // desks
-    TOWN_DESKS.forEach((d) => {
-      ctx.fillStyle = 'rgba(20,28,44,0.95)';
-      ctx.fillRect(OX + d.x * S - 18, OY + d.y * S, 36, 4);
-      ctx.fillRect(OX + d.x * S - 14, OY + d.y * S - 11, 28, 11);
-      ctx.fillStyle = 'rgba(10,15,26,0.9)';
-      ctx.fillRect(OX + d.x * S - 11, OY + d.y * S - 9, 22, 8);
+  const canvas = document.getElementById('townMiniCanvas');
+  if (canvas) { try { canvas.hidden = true; canvas.setAttribute('aria-hidden', 'true'); } catch (e) {} }
+  // Cards are painted by startAgentTown via #townMiniGrid.
+  const mini = document.getElementById('townMiniGrid');
+  if (mini && !mini.dataset.clickTown) {
+    mini.dataset.clickTown = '1';
+    mini.addEventListener('click', () => {
+      try { if (typeof playSfx === 'function') playSfx('swoosh'); } catch (e) {}
+      switchView('town');
     });
-    // agents (live positions from the full town, idle desks as fallback)
-    const list = townAgents();
-    list.forEach((a, i) => {
-      const p = a.pos || TOWN_DESKS[i];
-      const x = OX + p.x * S, y = OY + p.y * S;
-      const s = a.state || 'idle';
-      const ring = s === 'busy' ? '#ffc24b' : s === 'queued' ? '#3bc9ff' : s === 'done' ? getAccent() : '#3dff9a';
-      ctx.fillStyle = a.color || '#5d9cff';
-      ctx.fillRect(x - 4, y - 5, 8, 8);
-      ctx.fillStyle = '#f0c9a8';
-      ctx.fillRect(x - 3, y - 10, 6, 5);
-      ctx.strokeStyle = ring; ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = '#9fb2d0'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
-      ctx.fillText(a.name, x, y - 14);
-    });
-    scheduleViewFrame('assistant', loop);
   }
-  scheduleViewFrame('assistant', loop);
-  addLifecycleListener(canvas, 'click', () => { playSfx('swoosh'); switchView('town'); });
 }
+
 
 // ---------------------------------------------------------------------------
 // T1 — account state UI (Supabase Google OAuth alongside the anon identity).

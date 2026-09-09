@@ -16,6 +16,7 @@
 const CACHE_VERSION = 'gemair-shell-v2.5.3-production1';
 const SHELL = [
   'index.html',
+  'design-tokens.css',
   'style.css',
   'light-mode.css',
   'depth.css',
@@ -34,7 +35,10 @@ const SHELL = [
   'favicon.svg',
   'manifest.webmanifest',
   'assets/gemair-logo.png',
-  'assets/gemair-512.png'
+  'assets/gemair-512.png',
+  'assets/logo-mark.svg',
+  'assets/logo-mark-light.svg',
+  'assets/logo-mark-mono.svg'
 ];
 
 self.addEventListener('install', (event) => {

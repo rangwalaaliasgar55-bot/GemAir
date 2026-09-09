@@ -6,7 +6,10 @@
     scroll-behavior: auto !important;
     transition-duration: 0.001ms !important;
   }
-  .scanlines, .vignette { opacity: .15; }
-  #bgCanvas { opacity: .28; }
+  .scanlines, .vignette { opacity: 0; }
+  #bgCanvas { opacity: 0.08; }
   .hud-panel:hover { transform: none !important; }
+  .agent-card:hover, .agent-card:active { transform: none !important; }
+  .send-btn:active, .mood-btns button:active { transform: none !important; }
+  .typing i, .typing-caret, .agent-card-pulse { animation: none !important; }
 }

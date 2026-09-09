@@ -41,7 +41,7 @@
     },
     emerald: {
       label: 'Emerald',
-      tagline: 'Hacker green — matrix terminal',
+      tagline: 'Fresh green — focused work',
       accent: '#35ffb0', lightAccent: '#087f5b', hue: 152,
       bg: '#040a08', bg2: '#071310',
       text: '#e9fff5', dim: '#7fae9c',
@@ -52,7 +52,7 @@
     },
     cyan: {
       label: 'Cyan',
-      tagline: 'Cyberpunk blue — neon city',
+      tagline: 'Clear blue — calm focus',
       accent: '#3bc9ff', lightAccent: '#066a9c', hue: 198,
       bg: '#04080d', bg2: '#071019',
       text: '#e6f6ff', dim: '#7fa3b8',
@@ -63,7 +63,7 @@
     },
     violet: {
       label: 'Violet',
-      tagline: 'Nebula purple — deep space',
+      tagline: 'Soft violet — evening mode',
       accent: '#b05cff', lightAccent: '#7048a8', hue: 275,
       bg: '#06040d', bg2: '#0b0716',
       text: '#f0e9ff', dim: '#a08bb8',
@@ -74,7 +74,7 @@
     },
     amber: {
       label: 'Amber',
-      tagline: 'Warm core — cockpit instruments',
+      tagline: 'Warm amber — evening light',
       accent: '#ffb73b', lightAccent: '#9a5b00', hue: 38,
       bg: '#0a0604', bg2: '#120b06',
       text: '#fff3e2', dim: '#b39a7c',
@@ -107,7 +107,7 @@
     },
     rgb: {
       label: 'RGB',
-      tagline: 'Rainbow cycle — full spectrum',
+      tagline: 'Dynamic spectrum — playful accent',
       accent: '#ff3bff', lightAccent: '#9c2c9c', hue: 300,
       dynamic: true,
       bg: '#04060c', bg2: '#070b15',

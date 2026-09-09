@@ -4,16 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://vercel.live https://*.vercel.live; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://vercel.live; img-src 'self' data: blob: https:; font-src 'self' data: https: https://fonts.gstatic.com; connect-src 'self' https: wss:; media-src 'self' blob: data: https:; frame-src 'self' https://vercel.live; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
-  <title>GemAir — Mission Control AI Center</title>
+  <title>GemAir</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="apple-touch-icon" href="assets/gemair-512.png" />
   <!-- PWA: install GemAir from any browser → works from anywhere -->
   <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#04060c" />
+  <meta name="theme-color" content="#0b0c0f" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="GemAir" />
+  <link rel="stylesheet" href="design-tokens.css" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="light-mode.css" />
   <link rel="stylesheet" href="depth.css" />
@@ -25,17 +26,17 @@
   <div class="scanlines" aria-hidden="true"></div>
   <div class="vignette" aria-hidden="true"></div>
 
-  <div class="boot-overlay" id="bootOverlay" role="dialog" aria-label="GemAir startup sequence" aria-live="polite">
+  <div class="boot-overlay" id="bootOverlay" role="dialog" aria-label="GemAir startup" aria-live="polite">
     <div class="boot-scan" aria-hidden="true"></div>
     <div class="boot-bios" id="bootBios"></div>
     <div class="boot-core">
-      <img class="boot-logo" src="assets/gemair-logo.png" alt="" />
-      <div class="boot-orb"><span></span></div>
-      <div class="boot-title">GEM<span>AIR</span></div>
-      <div class="boot-line" id="bootLine">INITIALIZING CORE SYSTEMS…</div>
+      <img class="boot-logo" src="assets/logo-mark.svg" width="96" height="96" alt="" />
+      <div class="boot-orb" aria-hidden="true"><span></span></div>
+      <div class="boot-title">GemAir</div>
+      <div class="boot-line" id="bootLine">Starting…</div>
       <div class="boot-bar"><i id="bootBar"></i></div>
     </div>
-    <div class="boot-skip">PRESS ANY KEY OR TAP TO SKIP</div>
+    <div class="boot-skip">Press any key to skip</div>
   </div>
 
   <canvas id="bgCanvas" aria-hidden="true"></canvas>
@@ -61,10 +62,13 @@
   <div class="app">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-orb"><span></span></div>
+        <div class="brand-mark" aria-hidden="true">
+          <img class="brand-logo brand-logo-dark" src="assets/logo-mark.svg" width="26" height="26" alt="" />
+          <img class="brand-logo brand-logo-light" src="assets/logo-mark-light.svg" width="26" height="26" alt="" />
+        </div>
         <div class="brand-text">
-          <h1>GEM<span class="dim">AIR</span></h1>
-          <p>MISSION CONTROL <span class="ver" id="verTag">v2.5.3</span></p>
+          <h1>GemAir</h1>
+          <p>Personal assistant <span class="ver" id="verTag">v2.5.3</span></p>
         </div>
       </div>
 
@@ -96,7 +100,7 @@
         </div>
         <div class="sys-chip" title="System status">
           <span class="dot" id="sysDot"></span>
-          <span id="sysChipText" data-i18n="status.nominal">SYSTEMS NOMINAL</span>
+          <span id="sysChipText" data-i18n="status.nominal">Ready</span>
         </div>
         <button class="icon-btn" id="settingsBtn" title="Settings">⚙</button>
       </div>
@@ -237,12 +241,13 @@
 
               <div class="hud-panel town-preview" id="townPreview">
                 <div class="tp-head">
-                  <h3 class="panel-title">AGENT TOWN <span class="tp-ready" id="townPreviewState">READY</span></h3>
-                  <button class="refresh-btn" id="openTownBtn" style="padding:4px 12px;font-size:10px;">OPEN TOWN →</button>
+                  <h3 class="panel-title">Agents <span class="tp-ready" id="townPreviewState">Ready</span></h3>
+                  <button class="refresh-btn" id="openTownBtn" style="padding:4px 12px;font-size:10px;">Open →</button>
                 </div>
                 <div class="town-seatbar" id="townSeatBarMini"></div>
-                <div class="tp-stage">
-                  <canvas id="townMiniCanvas" width="560" height="240"></canvas>
+                <div class="tp-stage tp-stage-cards">
+                  <canvas id="townMiniCanvas" width="560" height="240" hidden aria-hidden="true"></canvas>
+                  <div class="agent-card-grid agent-card-grid-mini" id="townMiniGrid" role="list" aria-label="Agent preview"></div>
                 </div>
                 <div class="town-statusbar">
                   <span class="ts-item online" id="townOnlineMini"><i></i>Online</span>
@@ -250,7 +255,7 @@
                   <span class="ts-item">CTX <span class="ctx-meter"><i id="townCtxMini"></i></span></span>
                   <span class="ts-item" id="townSeatsMini">0/4 seat</span>
                   <span class="ts-item" id="townBusyMini">0/4 busy</span>
-                  <button class="ts-chat" id="townChatMini">💬 CHAT</button>
+                  <button class="ts-chat" id="townChatMini">Chat</button>
                 </div>
               </div>
 
@@ -651,42 +656,42 @@
 
         <section class="view" id="view-town">
           <div class="town-head">
-            <h2 class="view-title">AGENT TOWN <span class="tp-ready" id="townHeadState">READY</span></h2>
+            <h2 class="view-title">Automations <span class="tp-ready" id="townHeadState">Ready</span></h2>
             <div class="town-tabs">
-              <button class="town-tab active" data-ttab="agents">agents</button>
-              <button class="town-tab" data-ttab="visualhub">visual hub</button>
-              <button class="town-tab" data-ttab="gesture">gesture</button>
+              <button class="town-tab active" data-ttab="agents">Agents</button>
+              <button class="town-tab" data-ttab="visualhub">Hub</button>
+              <button class="town-tab" data-ttab="gesture">Shortcuts</button>
             </div>
-            <p class="view-sub">Alice, Bob, Carol, and Dave walk, work, and collaborate inside your virtual office. Hover an agent and press <b>E</b> (or click) to hand over a task face-to-face.</p>
+            <p class="view-sub">Alice, Bob, Carol, and Dave collaborate with real tools. Click a card or press <b>E</b> while focused to hand over a task.</p>
           </div>
           <div class="hud-panel dispatch-panel" style="margin-bottom:18px;">
-            <h3 class="panel-title">MISSION DISPATCH <span class="dim">— ASSIGN TASK TO AGENTS</span></h3>
+            <h3 class="panel-title">Dispatch <span class="dim">— assign a task</span></h3>
             <div class="inline-add">
               <select id="dispatchAgent" style="width:200px;">
-                <option value="all">ALL AGENTS (Collaborate)</option>
-                <option value="Alice">Alice (Research & Writing)</option>
-                <option value="Bob">Bob (System & Automation)</option>
-                <option value="Carol">Carol (Creative & Design)</option>
-                <option value="Dave">Dave (Planning & Strategy)</option>
+                <option value="all">All agents (collaborate)</option>
+                <option value="Alice">Alice (Research &amp; Writing)</option>
+                <option value="Bob">Bob (System &amp; Automation)</option>
+                <option value="Carol">Carol (Creative &amp; Design)</option>
+                <option value="Dave">Dave (Planning &amp; Strategy)</option>
               </select>
               <input type="text" id="dispatchTaskInput" placeholder="Describe the mission or task for the agents…" />
-              <button class="primary-btn" id="dispatchTaskBtn">🚀 DISPATCH</button>
+              <button class="primary-btn" id="dispatchTaskBtn">Dispatch</button>
             </div>
           </div>
 
           <div class="town-tab-pane" data-tpane="visualhub" hidden>
             <div class="hud-panel">
-              <h3 class="panel-title">VISUAL HUB <span class="dim">— SEAT MANAGER</span></h3>
+              <h3 class="panel-title">Visual hub <span class="dim">— seat manager</span></h3>
               <div class="vh-grid" id="visualHubGrid"></div>
             </div>
           </div>
           <div class="town-tab-pane" data-tpane="gesture" hidden>
             <div class="hud-panel">
-              <h3 class="panel-title">GESTURE <span class="dim">— VOICE & QUICK COMMANDS</span></h3>
+              <h3 class="panel-title">Shortcuts <span class="dim">— voice &amp; keys</span></h3>
               <div class="gesture-list">
-                <div class="g-row"><kbd>E</kbd><span>Hover an agent + press E — hand a task face-to-face</span></div>
-                <div class="g-row"><kbd>@</kbd><span>Chat prefix: <b>@Alice organize my reports</b> routes to that agent's brain</span></div>
-                <div class="g-row"><kbd>🎙</kbd><span>"Dispatch a task to Bob" — spoken commands reach the same dispatch queue</span></div>
+                <div class="g-row"><kbd>E</kbd><span>Focus an agent card + press E — hand a task</span></div>
+                <div class="g-row"><kbd>@</kbd><span>Chat prefix: <b>@Alice organize my reports</b> routes to that agent</span></div>
+                <div class="g-row"><kbd>🎙</kbd><span>"Dispatch a task to Bob" — spoken commands reach the same queue</span></div>
                 <div class="g-row"><kbd class="kbd-mod">Ctrl</kbd><kbd>K</kbd><span>Command palette — jump to any view, memory or action</span></div>
                 <div class="g-row"><kbd class="kbd-mod">Ctrl</kbd><kbd>L</kbd><span>Focus the chat input from anywhere</span></div>
               </div>
@@ -696,10 +701,13 @@
           <div class="town-layout">
             <div class="hud-panel town-canvas-panel">
               <div class="town-seatbar" id="townSeatBar"></div>
-              <div class="town-stage">
-                <canvas id="townCanvas" width="900" height="520"></canvas>
-                <div class="press-e" id="pressE">Press <b>E</b></div>
-                <div class="town-legend" id="townLegend"></div>
+              <div class="town-stage town-stage-cards">
+                <!-- Hidden canvas kept for API compatibility / legacy bindings -->
+                <canvas id="townCanvas" width="900" height="520" hidden aria-hidden="true"></canvas>
+                <div class="press-e" id="pressE" hidden>Press <b>E</b></div>
+                <div class="agent-card-grid" id="townAgentGrid" role="list" aria-label="Agents"></div>
+                <div class="town-handoff-strip" id="townHandoffStrip" aria-live="polite"></div>
+                <div class="town-legend" id="townLegend" hidden></div>
               </div>
               <div class="town-statusbar">
                 <span class="ts-item online" id="townOnline"><i></i>Online</span>
@@ -707,23 +715,23 @@
                 <span class="ts-item">CTX <span class="ctx-meter"><i id="townCtx"></i></span></span>
                 <span class="ts-item" id="townSeats">0/4 seat</span>
                 <span class="ts-item" id="townBusy">0/4 busy</span>
-                <button class="ts-chat" id="townChatBtn">💬 CHAT</button>
+                <button class="ts-chat" id="townChatBtn">Chat</button>
               </div>
             </div>
 
             <div class="town-side">
               <div class="hud-panel workflow-gallery">
-                <h3 class="panel-title">WORKFLOW GALLERY <span class="dim">— ONE-CLICK RECIPES</span></h3>
+                <h3 class="panel-title">Workflows <span class="dim">— one-click recipes</span></h3>
                 <div class="wf-grid" id="workflowGallery"></div>
               </div>
               <div class="hud-panel activity-panel">
-                <h3 class="panel-title">AGENT FEED <span class="dim">— LIVE STATUS</span></h3>
+                <h3 class="panel-title">Activity <span class="dim">— live status</span></h3>
                 <div class="activity-feed" id="activityFeed">
-                  <div class="empty">Agents are standing by. Assign a task to begin multi-agent execution.</div>
+                  <div class="empty">Agents are standing by. Assign a task to begin.</div>
                 </div>
               </div>
               <div class="hud-panel mission-panel">
-                <h3 class="panel-title">MISSION LOG <span class="dim">— ACTION HISTORY</span></h3>
+                <h3 class="panel-title">Mission log <span class="dim">— action history</span></h3>
                 <div class="mission-log" id="missionLog">
                   <div class="empty">No actions logged yet.</div>
                 </div>
@@ -775,8 +783,8 @@
     </div>
 
     <footer class="footer">
-      <span id="footerLeft">GEMAIR · FREE &amp; OPEN-SOURCE · RUNS LOCALLY</span>
-      <span id="footerRight">ALL SYSTEMS NOMINAL</span>
+      <span id="footerLeft">GemAir · Free &amp; open-source · Runs locally</span>
+      <span id="footerRight">All systems ready</span>
     </footer>
   </div>
 
