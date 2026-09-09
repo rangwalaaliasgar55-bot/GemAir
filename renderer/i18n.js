@@ -24,7 +24,7 @@
       'nav.companion': 'Life Companion',
       'nav.town': 'Agent Town',
       'nav.world': 'Global Intel',
-      'status.nominal': 'SYSTEMS NOMINAL',
+      'status.nominal': 'Ready',
       'status.degraded': 'DEGRADED',
       'status.offline': 'OFFLINE',
       'settings.title': 'SETTINGS',
