@@ -1,0 +1,427 @@
+/* ============================================================
+   GemAir Design Tokens — single source of truth
+   Apple-quality semantic system. Light/dark via body[data-appearance].
+   Theme accents still flow from themes.js (--accent*). Do not delete
+   --accent / --panel / --text bindings consumed by app.js canvases.
+   ============================================================ */
+
+:root {
+  /* ---------- Color · semantic (dark default) ---------- */
+  --color-bg-primary: #0b0c0f;
+  --color-bg-secondary: #12141a;
+  --color-bg-tertiary: #1a1d26;
+  --color-surface-primary: rgba(28, 30, 38, 0.72);
+  --color-surface-secondary: rgba(36, 40, 52, 0.55);
+  --color-surface-elevated: rgba(40, 44, 56, 0.88);
+  --color-surface-opaque: #1c1e26;
+  --color-fill-primary: rgba(120, 128, 144, 0.22);
+  --color-fill-secondary: rgba(120, 128, 144, 0.14);
+  --color-fill-tertiary: rgba(120, 128, 144, 0.08);
+  --color-label-primary: #f5f5f7;
+  --color-label-secondary: rgba(235, 235, 245, 0.6);
+  --color-label-tertiary: rgba(235, 235, 245, 0.4);
+  --color-label-quaternary: rgba(235, 235, 245, 0.22);
+  --color-separator: rgba(255, 255, 255, 0.1);
+  --color-separator-opaque: #38383a;
+  --color-link: #0a84ff;
+  --color-system-blue: #0a84ff;
+  --color-system-green: #30d158;
+  --color-system-orange: #ff9f0a;
+  --color-system-red: #ff453a;
+  --color-system-yellow: #ffd60a;
+  --color-system-purple: #bf5af2;
+  --color-system-teal: #64d2ff;
+  --color-system-indigo: #5e5ce6;
+  --color-success: var(--color-system-green);
+  --color-warning: var(--color-system-orange);
+  --color-danger: var(--color-system-red);
+  --color-info: var(--color-system-teal);
+
+  /* Bridge tokens kept for themes.js / legacy CSS (overwritten on apply) */
+  --bg: var(--color-bg-primary);
+  --bg-2: var(--color-bg-secondary);
+  --panel: var(--color-surface-primary);
+  --panel-border: var(--color-separator);
+  --text: var(--color-label-primary);
+  --text-dim: var(--color-label-secondary);
+  --good: var(--color-success);
+  --warn: var(--color-warning);
+  --error: var(--color-danger);
+  --info: var(--color-info);
+
+  /* ---------- Materials · Liquid Glass tiers ---------- */
+  /* thin: menus, chips */
+  --material-thin-bg: rgba(30, 32, 40, 0.55);
+  --material-thin-blur: 16px;
+  --material-thin-saturate: 140%;
+  --material-thin-border: rgba(255, 255, 255, 0.08);
+  --material-thin-highlight: inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
+
+  /* regular: cards, sidebars */
+  --material-regular-bg: rgba(28, 30, 38, 0.72);
+  --material-regular-blur: 28px;
+  --material-regular-saturate: 160%;
+  --material-regular-border: rgba(255, 255, 255, 0.1);
+  --material-regular-highlight: inset 0 0.5px 0 rgba(255, 255, 255, 0.14);
+
+  /* thick: sheets, modals */
+  --material-thick-bg: rgba(32, 34, 44, 0.88);
+  --material-thick-blur: 40px;
+  --material-thick-saturate: 180%;
+  --material-thick-border: rgba(255, 255, 255, 0.12);
+  --material-thick-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+
+  /* ultra: control center / floating */
+  --material-ultra-bg: rgba(36, 40, 52, 0.62);
+  --material-ultra-blur: 48px;
+  --material-ultra-saturate: 180%;
+  --material-ultra-border: rgba(255, 255, 255, 0.14);
+  --material-ultra-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+
+  --material-thin:
+    blur(var(--material-thin-blur)) saturate(var(--material-thin-saturate));
+  --material-regular:
+    blur(var(--material-regular-blur)) saturate(var(--material-regular-saturate));
+  --material-thick:
+    blur(var(--material-thick-blur)) saturate(var(--material-thick-saturate));
+  --material-ultra:
+    blur(var(--material-ultra-blur)) saturate(var(--material-ultra-saturate));
+
+  /* ---------- Radius · continuous-corner scale ---------- */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-full: 9999px;
+  /* Squircle approximation helper (use with large radii on cards) */
+  --radius-continuous: 12px;
+  --radius-continuous-lg: 20px;
+  --radius-continuous-xl: 28px;
+
+  /* ---------- Elevation · soft diffuse shadows ---------- */
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.12);
+  --elevation-2: 0 4px 16px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12);
+  --elevation-3: 0 12px 40px rgba(0, 0, 0, 0.32), 0 4px 12px rgba(0, 0, 0, 0.16);
+  --elevation-4: 0 24px 80px rgba(0, 0, 0, 0.45), 0 8px 24px rgba(0, 0, 0, 0.2);
+  --elevation-specular: inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
+
+  /* ---------- Typography · SF Pro optical stack ---------- */
+  --font-display:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui,
+    sans-serif;
+  --font-text:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui,
+    sans-serif;
+  --font-mono:
+    'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace;
+  --font-sans: var(--font-text);
+  --font-heading: var(--font-display);
+
+  /* Type scale (Apple HIG-inspired) */
+  --type-large-title-size: 34px;
+  --type-large-title-weight: 700;
+  --type-large-title-leading: 41px;
+  --type-large-title-tracking: -0.02em;
+
+  --type-title1-size: 28px;
+  --type-title1-weight: 700;
+  --type-title1-leading: 34px;
+  --type-title1-tracking: -0.018em;
+
+  --type-title2-size: 22px;
+  --type-title2-weight: 700;
+  --type-title2-leading: 28px;
+  --type-title2-tracking: -0.014em;
+
+  --type-title3-size: 20px;
+  --type-title3-weight: 600;
+  --type-title3-leading: 25px;
+  --type-title3-tracking: -0.01em;
+
+  --type-headline-size: 17px;
+  --type-headline-weight: 600;
+  --type-headline-leading: 22px;
+  --type-headline-tracking: -0.008em;
+
+  --type-body-size: 15px;
+  --type-body-weight: 400;
+  --type-body-leading: 22px;
+  --type-body-tracking: -0.006em;
+
+  --type-callout-size: 14px;
+  --type-callout-weight: 400;
+  --type-callout-leading: 20px;
+  --type-callout-tracking: -0.004em;
+
+  --type-subhead-size: 13px;
+  --type-subhead-weight: 400;
+  --type-subhead-leading: 18px;
+  --type-subhead-tracking: -0.002em;
+
+  --type-footnote-size: 12px;
+  --type-footnote-weight: 400;
+  --type-footnote-leading: 16px;
+  --type-footnote-tracking: 0;
+
+  --type-caption1-size: 11px;
+  --type-caption1-weight: 500;
+  --type-caption1-leading: 14px;
+  --type-caption1-tracking: 0.01em;
+
+  --type-caption2-size: 10px;
+  --type-caption2-weight: 500;
+  --type-caption2-leading: 13px;
+  --type-caption2-tracking: 0.02em;
+
+  /* ---------- Motion · spring-like curves ---------- */
+  /* Button press / micro */
+  --motion-instant: 80ms;
+  --motion-fast: 160ms;
+  --motion-normal: 240ms;
+  --motion-slow: 360ms;
+  --motion-sheet: 420ms;
+
+  --ease-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring-bounce: cubic-bezier(0.34, 1.3, 0.64, 1);
+
+  --transition-control: var(--motion-fast) var(--ease-standard);
+  --transition-panel: var(--motion-normal) var(--ease-emphasized);
+  --transition-sheet: var(--motion-sheet) var(--ease-spring);
+  --transition-press: var(--motion-instant) var(--ease-standard);
+  --transition-list: var(--motion-normal) var(--ease-decelerate);
+
+  /* ---------- Spacing · 4pt / 8pt grid ---------- */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---------- Layout chrome ---------- */
+  --chrome-titlebar-height: 48px;
+  --chrome-sidenav-width: 188px;
+  --chrome-hairline: var(--color-separator);
+
+  /* ---------- Window controls (original, not Apple trademark clone) ---------- */
+  --win-close: #e85d5d;
+  --win-min: #e0b04a;
+  --win-max: #5cb86a;
+  --win-control-size: 11px;
+  --win-control-gap: 7px;
+
+  /* ---------- Compat aliases used by apple.css ---------- */
+  --apple-blur: var(--material-regular);
+  --apple-card-radius: var(--radius-md);
+  --apple-font: var(--font-text);
+  --apple-hairline: var(--color-separator);
+  --apple-fill: var(--color-fill-primary);
+  --apple-fill-strong: rgba(120, 128, 144, 0.32);
+  --apple-blue: var(--color-system-blue);
+  --apple-green: var(--color-system-green);
+  --apple-shadow: var(--elevation-2);
+  --apple-sheet-shadow: var(--elevation-4);
+}
+
+/* ---------- Light appearance ---------- */
+body[data-appearance='light'] {
+  color-scheme: light;
+
+  --color-bg-primary: #f2f3f7;
+  --color-bg-secondary: #e8eaef;
+  --color-bg-tertiary: #dfe2e8;
+  --color-surface-primary: rgba(255, 255, 255, 0.78);
+  --color-surface-secondary: rgba(255, 255, 255, 0.62);
+  --color-surface-elevated: rgba(255, 255, 255, 0.92);
+  --color-surface-opaque: #ffffff;
+  --color-fill-primary: rgba(60, 70, 90, 0.12);
+  --color-fill-secondary: rgba(60, 70, 90, 0.08);
+  --color-fill-tertiary: rgba(60, 70, 90, 0.05);
+  --color-label-primary: #1d1d1f;
+  --color-label-secondary: rgba(29, 29, 31, 0.64);
+  --color-label-tertiary: rgba(29, 29, 31, 0.42);
+  --color-label-quaternary: rgba(29, 29, 31, 0.24);
+  --color-separator: rgba(20, 35, 55, 0.12);
+  --color-separator-opaque: #c6c6c8;
+  --color-link: #007aff;
+  --color-system-blue: #007aff;
+  --color-system-green: #34c759;
+  --color-system-orange: #ff9500;
+  --color-system-red: #ff3b30;
+  --color-system-yellow: #ffcc00;
+  --color-system-purple: #af52de;
+  --color-system-teal: #5ac8fa;
+  --color-system-indigo: #5856d6;
+
+  --material-thin-bg: rgba(255, 255, 255, 0.55);
+  --material-thin-border: rgba(20, 35, 55, 0.08);
+  --material-thin-highlight: inset 0 0.5px 0 rgba(255, 255, 255, 0.9);
+
+  --material-regular-bg: rgba(255, 255, 255, 0.72);
+  --material-regular-border: rgba(20, 35, 55, 0.1);
+  --material-regular-highlight: inset 0 0.5px 0 rgba(255, 255, 255, 0.95);
+
+  --material-thick-bg: rgba(246, 247, 250, 0.92);
+  --material-thick-border: rgba(20, 35, 55, 0.12);
+  --material-thick-highlight: inset 0 1px 0 rgba(255, 255, 255, 1);
+
+  --material-ultra-bg: rgba(255, 255, 255, 0.68);
+  --material-ultra-border: rgba(20, 35, 55, 0.12);
+
+  --elevation-1: 0 1px 2px rgba(26, 44, 72, 0.06), 0 1px 3px rgba(26, 44, 72, 0.04);
+  --elevation-2: 0 4px 16px rgba(26, 44, 72, 0.1), 0 1px 4px rgba(26, 44, 72, 0.06);
+  --elevation-3: 0 12px 36px rgba(26, 44, 72, 0.14), 0 4px 12px rgba(26, 44, 72, 0.08);
+  --elevation-4: 0 24px 64px rgba(26, 44, 72, 0.2), 0 8px 20px rgba(26, 44, 72, 0.1);
+  --elevation-specular: inset 0 0.5px 0 rgba(255, 255, 255, 0.9);
+
+  --win-close: #ff5f57;
+  --win-min: #febc2e;
+  --win-max: #28c840;
+}
+
+/* ---------- Utility material classes ---------- */
+.material-thin {
+  background: var(--material-thin-bg);
+  -webkit-backdrop-filter: var(--material-thin);
+  backdrop-filter: var(--material-thin);
+  border: 1px solid var(--material-thin-border);
+  box-shadow: var(--material-thin-highlight);
+}
+.material-regular {
+  background: var(--material-regular-bg);
+  -webkit-backdrop-filter: var(--material-regular);
+  backdrop-filter: var(--material-regular);
+  border: 1px solid var(--material-regular-border);
+  box-shadow: var(--material-regular-highlight), var(--elevation-2);
+}
+.material-thick {
+  background: var(--material-thick-bg);
+  -webkit-backdrop-filter: var(--material-thick);
+  backdrop-filter: var(--material-thick);
+  border: 1px solid var(--material-thick-border);
+  box-shadow: var(--material-thick-highlight), var(--elevation-4);
+}
+.material-ultra {
+  background: var(--material-ultra-bg);
+  -webkit-backdrop-filter: var(--material-ultra);
+  backdrop-filter: var(--material-ultra);
+  border: 1px solid var(--material-ultra-border);
+  box-shadow: var(--material-ultra-highlight), var(--elevation-3);
+}
+
+/* Graceful fallback when backdrop-filter is unsupported */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .material-thin,
+  .material-regular,
+  .material-thick,
+  .material-ultra {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .material-thin { background: var(--color-surface-opaque); opacity: 1; }
+  .material-regular { background: var(--color-surface-opaque); }
+  .material-thick { background: var(--color-surface-opaque); }
+  .material-ultra { background: var(--color-surface-opaque); }
+  body[data-appearance='light'] .material-thin,
+  body[data-appearance='light'] .material-regular,
+  body[data-appearance='light'] .material-thick,
+  body[data-appearance='light'] .material-ultra {
+    background: #ffffff;
+  }
+}
+
+/* ---------- Type utility classes ---------- */
+.type-large-title {
+  font-family: var(--font-display);
+  font-size: var(--type-large-title-size);
+  font-weight: var(--type-large-title-weight);
+  line-height: var(--type-large-title-leading);
+  letter-spacing: var(--type-large-title-tracking);
+}
+.type-title1 {
+  font-family: var(--font-display);
+  font-size: var(--type-title1-size);
+  font-weight: var(--type-title1-weight);
+  line-height: var(--type-title1-leading);
+  letter-spacing: var(--type-title1-tracking);
+}
+.type-title2 {
+  font-family: var(--font-display);
+  font-size: var(--type-title2-size);
+  font-weight: var(--type-title2-weight);
+  line-height: var(--type-title2-leading);
+  letter-spacing: var(--type-title2-tracking);
+}
+.type-title3 {
+  font-family: var(--font-display);
+  font-size: var(--type-title3-size);
+  font-weight: var(--type-title3-weight);
+  line-height: var(--type-title3-leading);
+  letter-spacing: var(--type-title3-tracking);
+}
+.type-headline {
+  font-family: var(--font-text);
+  font-size: var(--type-headline-size);
+  font-weight: var(--type-headline-weight);
+  line-height: var(--type-headline-leading);
+  letter-spacing: var(--type-headline-tracking);
+}
+.type-body {
+  font-family: var(--font-text);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
+  line-height: var(--type-body-leading);
+  letter-spacing: var(--type-body-tracking);
+}
+.type-callout {
+  font-family: var(--font-text);
+  font-size: var(--type-callout-size);
+  font-weight: var(--type-callout-weight);
+  line-height: var(--type-callout-leading);
+  letter-spacing: var(--type-callout-tracking);
+}
+.type-subhead {
+  font-family: var(--font-text);
+  font-size: var(--type-subhead-size);
+  font-weight: var(--type-subhead-weight);
+  line-height: var(--type-subhead-leading);
+  letter-spacing: var(--type-subhead-tracking);
+}
+.type-footnote {
+  font-family: var(--font-text);
+  font-size: var(--type-footnote-size);
+  font-weight: var(--type-footnote-weight);
+  line-height: var(--type-footnote-leading);
+  letter-spacing: var(--type-footnote-tracking);
+}
+.type-caption {
+  font-family: var(--font-text);
+  font-size: var(--type-caption1-size);
+  font-weight: var(--type-caption1-weight);
+  line-height: var(--type-caption1-leading);
+  letter-spacing: var(--type-caption1-tracking);
+}
+
+/* ---------- Reduced motion: freeze token-driven transitions ---------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-instant: 0ms;
+    --motion-fast: 0ms;
+    --motion-normal: 0ms;
+    --motion-slow: 0ms;
+    --motion-sheet: 0ms;
+  }
+}
