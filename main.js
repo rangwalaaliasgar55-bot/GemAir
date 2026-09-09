@@ -3708,11 +3708,22 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
       // user to the free AI Studio key instead; the captured session stays.
       throw connectedError('GEMINI_SESSION_NO_API: your Google web session is captured, but Google only allows API calls with an AI Studio key. Paste a free key in Settings → Voice → Gemini Live Dialog (Get key: https://aistudio.google.com/apikey). Your captured session is kept.', false);
     }
+    if (connections.isLiveOnlyModelId(profileModel)) {
+      // Live voice models (native-audio, *-live-*) reject generateContent
+      // with HTTP 400 — they only stream over WebSocket. Fail fast with
+      // guidance instead of a cryptic provider error. Session untouched.
+      throw connectedError('GEMINI_LIVE_MODEL: "' + profileModel + '" is a Live voice model and cannot answer text chat. Pick a text model (e.g. gemini-2.5-flash) in Settings → Voice → Gemini Live Dialog, or use it via Live voice instead.', false);
+    }
     try {
       const full = await connections.callGeminiWeb({ psid: tokens.psid, psidts: tokens.psidts, apiKey: auth.apiKey, model: profileModel, messages: adaptedMessages, onDelta });
       connections.incUsage('gemini');
       return full;
     } catch (e) {
+      // Safety net for Live-only IDs that slip past the guard (new Google
+      // naming): Google's 400 names bidiGenerateContent explicitly.
+      if (/bidiGenerateContent|bidirectional/i.test((e.message || '') + ' ' + (e.detail || ''))) {
+        throw connectedError('GEMINI_LIVE_MODEL: this model ID is a Live voice model and cannot answer text chat. Pick a text model (e.g. gemini-2.5-flash) in Settings → Voice → Gemini Live Dialog, or use it via Live voice instead.', false, e.detail);
+      }
       // 401 on a real ya29 bearer = revoked token (session dead). Bad keys,
       // retired models and quota errors are config — keep the session.
       throw connectedError('GEMINI_WEB_FAILED: ' + e.message, connections.isSessionExpiredError('gemini', e.message, auth.mode), e.detail);

@@ -2584,6 +2584,7 @@ const humanError = (err) => {
   if (err.startsWith('GEMINI_SESSION_NO_API')) return 'Google session captured, but Google needs a free AI Studio key for API calls — paste one in Settings → Voice → Gemini Live Dialog. Session kept.';
   if (err.startsWith('GEMINI_KEY_REQUIRED')) return 'Gemini needs a free AI Studio key — Settings → Voice → Gemini Live Dialog.';
   if (err.startsWith('GEMINI_HTTP_404')) return 'Gemini model retired or API disabled — refresh the model list in Settings → Voice.';
+  if (err.startsWith('GEMINI_LIVE_MODEL')) return 'That model is Live-voice-only and cannot answer text chat — pick a text model (e.g. gemini-2.5-flash) in Settings → Voice, or use Live voice.';
   if (err.startsWith('GEMINI_WEB_FAILED')) return 'Gemini call failed — ' + String(err).slice(0, 120);
   if (err.startsWith('CHATGPT_WEB_FAILED')) return 'ChatGPT web call failed (often a bot-check) — retry, or re-capture the session in Settings → AI & Connections.';
   if (err === 'TOKEN_EXPIRED') return 'ChatGPT session expired — reconnect in Settings → AI & Connections.';
@@ -7351,7 +7352,10 @@ function bindEvents() {
         for (const m of models.slice(0, 60)) {
           const opt = document.createElement('option');
           opt.value = m.id;
-          opt.label = m.displayName + (m.methods.length ? ' · ' + m.methods.slice(0, 3).join(', ') : '');
+          // Models without generateContent only stream over Live voice — say
+          // so in the picker, or users route them into text chat (HTTP 400).
+          const liveOnly = Array.isArray(m.methods) && m.methods.length > 0 && !m.methods.includes('generateContent');
+          opt.label = m.displayName + (m.methods.length ? ' · ' + m.methods.slice(0, 3).join(', ') : '') + (liveOnly ? ' · LIVE VOICE ONLY' : '');
           list.appendChild(opt);
         }
       }

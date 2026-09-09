@@ -114,5 +114,26 @@ function fakeStore(tokens) {
     console.log('  ok   scheduler, 5-minute window, and exact expiry messaging');
   }
 
+  // 5. authorize URL carries every parameter auth.openai.com requires —
+  // omitting originator lands on /error with missing_required_parameter.
+  {
+    const url = pkce.buildChatGPTAuthorizeUrl({
+      clientId: 'app_test', redirectUri: 'http://localhost:1455/auth/callback',
+      challenge: 'ch', state: 'st'
+    });
+    const u = new URL(url);
+    assert.equal(u.origin + u.pathname, 'https://auth.openai.com/oauth/authorize');
+    for (const [k, v] of [
+      ['response_type', 'code'], ['client_id', 'app_test'],
+      ['redirect_uri', 'http://localhost:1455/auth/callback'],
+      ['scope', 'openid profile email offline_access'],
+      ['code_challenge', 'ch'], ['code_challenge_method', 'S256'],
+      ['id_token_add_organizations', 'true'],
+      ['codex_cli_simplified_flow', 'true'],
+      ['originator', 'gemair'], ['state', 'st']
+    ]) assert.equal(u.searchParams.get(k), v, 'authorize URL missing ' + k);
+    console.log('  ok   authorize URL carries originator + both Codex flags');
+  }
+
   console.log('\n  All ChatGPT refresh tests passed.\n');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

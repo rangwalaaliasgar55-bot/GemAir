@@ -89,6 +89,12 @@ console.log('ok - ChatGPT and Gemini OAuth, encrypted storage, IPC, and provider
     /GEMINI_HTTP_404.*retired\/unknown or/i,
     'a 404 must explain retired-model vs disabled-API instead of a bare status'
   );
+  // Live-voice-only models reject generateContent — text chat must reroute.
+  assert.equal(connections.isLiveOnlyModelId('gemini-2.5-flash-native-audio-preview-12-2025'), true);
+  assert.equal(connections.isLiveOnlyModelId('gemini-2.0-flash-live-001'), true);
+  assert.equal(connections.isLiveOnlyModelId('gemini-2.5-flash'), false);
+  assert.equal(connections.isLiveOnlyModelId('gemini-2.0-flash'), false);
+  assert.equal(connections.isLiveOnlyModelId(''), false);
   // PSID cookies are browser sessions, not OAuth tokens — misusing one as
   // Bearer caused a 401 that flipped the UI to "disconnected" on first chat.
   assert.equal(connections.isWebSessionOnlyToken('ya29.valid-looking-token'), false);
