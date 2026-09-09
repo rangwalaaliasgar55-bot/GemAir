@@ -103,7 +103,7 @@ body[data-appearance='light'] .topbar {
 #updatePill { border-radius: 8px; }
 
 /* Apple menu extras stay, calmed */
-.apple-extras { gap: 6px; }
+.apple-extras { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .apple-btn {
   border: 1px solid transparent;
   background: var(--apple-fill);
@@ -642,12 +642,16 @@ body[data-dnd='on'] .toasts { opacity: 0.35; }
   font-size: 12.5px;
 }
 .stx-circuit:hover { background: var(--apple-fill-strong) !important; }
+/* Chevron pinned inside the existing grid (col 2, row 1) so the
+   name/bar/value rows never shift. */
+.stx-circuit { position: relative; padding-right: 26px !important; }
 .stx-circuit::after {
   content: "›";
-  margin-left: auto;
+  position: absolute; right: 10px; top: 8px;
   font-size: 16px;
   font-weight: 400;
   color: var(--text-dim);
+  pointer-events: none;
 }
 .stx-circuit .sc-ico { font-size: 12px; }
 .circuit-bar { height: 4px; border-radius: 999px; background: rgba(120,128,144,.3); box-shadow: none; }
@@ -697,6 +701,12 @@ body[data-dnd='on'] .toasts { opacity: 0.35; }
 /* HUD dock items hover like Dock icons */
 .hud-dock-body > * { transition: transform 0.15s ease; border-radius: 10px; }
 .hud-dock-body > *:hover { transform: translateY(-3px); }
+
+@media (max-width: 1100px) {
+  /* Duplicates of Control Center widgets — hide, don't lose (still in CC). */
+  #appleNet, #appleBattery { display: none; }
+  .topbar-mode-chips { flex-wrap: wrap; }
+}
 
 @media (max-width: 860px) {
   #settingsModal .modal-body { grid-template-columns: 1fr; }

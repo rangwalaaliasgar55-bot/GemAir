@@ -2581,6 +2581,12 @@ const humanError = (err) => {
   if (err === 'TOOL_LOOP') return 'The model got stuck calling tools.';
   if (err.startsWith('HTTP_401')) return 'AI core reconnecting (auth) — I will use the built-in brain for now.';
   if (err.startsWith('HTTP_429')) return '429 Rate limited — wait a moment and retry.';
+  if (err.startsWith('GEMINI_SESSION_NO_API')) return 'Google session captured, but Google needs a free AI Studio key for API calls — paste one in Settings → Voice → Gemini Live Dialog. Session kept.';
+  if (err.startsWith('GEMINI_KEY_REQUIRED')) return 'Gemini needs a free AI Studio key — Settings → Voice → Gemini Live Dialog.';
+  if (err.startsWith('GEMINI_HTTP_404')) return 'Gemini model retired or API disabled — refresh the model list in Settings → Voice.';
+  if (err.startsWith('GEMINI_WEB_FAILED')) return 'Gemini call failed — ' + String(err).slice(0, 120);
+  if (err.startsWith('CHATGPT_WEB_FAILED')) return 'ChatGPT web call failed (often a bot-check) — retry, or re-capture the session in Settings → AI & Connections.';
+  if (err === 'TOKEN_EXPIRED') return 'ChatGPT session expired — reconnect in Settings → AI & Connections.';
   if (err.startsWith('HTTP_')) return 'HTTP error ' + err.replace('HTTP_', '').split(' ')[0];
   return String(err).slice(0, 140);
 };

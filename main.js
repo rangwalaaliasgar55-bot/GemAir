@@ -3508,6 +3508,10 @@ function createAuthWindow(provider) {
     }
   });
   configureAuthWindowSecurity(authWindow, provider);
+  // Embedded Electron windows send an "Electron/..." user agent by default,
+  // which Google rejects with 403 disallowed_useragent and which trips bot
+  // checks on chatgpt.com. Present as real Chrome (same UA as our fetches).
+  try { authWindow.webContents.setUserAgent(BROWSER_UA); } catch {}
   // Clear previous session? Keep persist so user doesn't re-login each time
   const url = provider === 'chatgpt' ? 'https://chatgpt.com/auth/login' : 'https://accounts.google.com/signin/v2/identifier?service=gemini&continue=https://gemini.google.com/app';
   authWindow.loadURL(url);
@@ -3632,6 +3636,16 @@ async function captureGeminiSession(isAIStudioFallback=false) {
 
 async function callConnectedBrain(provider, messages, onDelta, onTool) {
   // Adapter layer: inject TOOLS as JSON-in-prompt, parse tool calls
+  // Errors carry `sessionExpired=true` ONLY when the stored session is dead
+  // (revoked/expired token). Config problems (missing key, retired model)
+  // must never look like expiry — otherwise the UI disconnects a live
+  // session on the first failed message.
+  const connectedError = (message, expired, detail) => {
+    const err = new Error(message);
+    err.sessionExpired = expired === true;
+    if (detail !== undefined) err.detail = detail;
+    return err;
+  };
   const toolPrompt = connections.buildToolPrompt(TOOLS);
   const nowStamp = new Date().toLocaleString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   const adaptedMessages = [
@@ -3641,15 +3655,16 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
   const tokens = connections.getDecryptedTokens(provider);
   if (!tokens) throw new Error('NO_CONNECTED_SESSION');
   if (provider === 'chatgpt') {
-    if (!tokens.accessToken) throw new Error('NO_CHATGPT_TOKEN');
+    if (!tokens.accessToken) throw connectedError('NO_CHATGPT_TOKEN', false);
     // Check expiry
-    if (connections.isTokenExpired('chatgpt')) throw new Error('TOKEN_EXPIRED');
+    if (connections.isTokenExpired('chatgpt')) throw connectedError('TOKEN_EXPIRED', true);
     let full = '';
     try {
       full = await connections.callChatGPTWeb({ accessToken: tokens.accessToken, messages: adaptedMessages, onDelta });
     } catch (e) {
-      // If web call fails (bot check etc), throw to trigger fallback
-      throw new Error('CHATGPT_WEB_FAILED: ' + e.message);
+      // If web call fails (bot check etc), throw to trigger fallback.
+      // Only a dead session (401/403) expires the UI; anything else keeps it.
+      throw connectedError('CHATGPT_WEB_FAILED: ' + e.message, connections.isSessionExpiredError('chatgpt', e.message), e.detail);
     }
     // Parse tool calls
     const toolCalls = connections.parseToolCallsFromText(full);
@@ -3684,14 +3699,23 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
     try { const live = readProfile().geminiLive || {}; profileKey = live.apiKey || ''; profileModel = live.model || ''; } catch {}
     const auth = connections.resolveGeminiAuth({ profileKey, storedApiKey: tokens.apiKey, oauthToken: tokens.psid });
     if (auth.mode === 'none') {
-      throw new Error('GEMINI_KEY_REQUIRED: connect Google, then paste an AI Studio API key in Settings → Voice → Gemini Live Dialog.');
+      throw connectedError('GEMINI_KEY_REQUIRED: connect Google, then paste an AI Studio API key in Settings → Voice → Gemini Live Dialog.', false);
+    }
+    if (auth.mode === 'bearer' && connections.isWebSessionOnlyToken(auth.token)) {
+      // A captured google.com PSID cookie is a browser session cookie, not an
+      // OAuth access token — Google's API rejects it with 401. Never send it
+      // as Bearer (that 401 used to flip the UI to "disconnected"). Guide the
+      // user to the free AI Studio key instead; the captured session stays.
+      throw connectedError('GEMINI_SESSION_NO_API: your Google web session is captured, but Google only allows API calls with an AI Studio key. Paste a free key in Settings → Voice → Gemini Live Dialog (Get key: https://aistudio.google.com/apikey). Your captured session is kept.', false);
     }
     try {
       const full = await connections.callGeminiWeb({ psid: tokens.psid, psidts: tokens.psidts, apiKey: auth.apiKey, model: profileModel, messages: adaptedMessages, onDelta });
       connections.incUsage('gemini');
       return full;
     } catch (e) {
-      throw new Error('GEMINI_WEB_FAILED: ' + e.message);
+      // 401 on a real ya29 bearer = revoked token (session dead). Bad keys,
+      // retired models and quota errors are config — keep the session.
+      throw connectedError('GEMINI_WEB_FAILED: ' + e.message, connections.isSessionExpiredError('gemini', e.message, auth.mode), e.detail);
     }
   }
   throw new Error('UNSUPPORTED_PROVIDER');
@@ -4299,6 +4323,7 @@ ipcMain.handle('connections:openAIStudio', async () => {
     webPreferences: { partition: 'persist:gemini', nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, navigateOnDragDrop: false, safeDialogs: true }
   });
   configureAuthWindowSecurity(authWindow, 'gemini');
+  try { authWindow.webContents.setUserAgent(BROWSER_UA); } catch {}
   authWindow.loadURL('https://aistudio.google.com/');
   return { ok: true };
 });
@@ -4323,8 +4348,16 @@ ipcMain.handle('connections:chatStream', async (e, reqId, provider, messages) =>
     return { ok: true, reqId, reply };
   } catch (err) {
     wc.send('ai:streamError', { reqId, error: err.message, detail: err.detail, provider });
-    // trigger fallback notification
-    if (mainWindow) mainWindow.webContents.send('connections:expired', { provider, error: err.message, message: err.detail ? err.message + ' — ' + String(err.detail).slice(0, 300) : undefined });
+    // "Expired" (reconnect modal + fallback) ONLY for genuinely dead
+    // sessions. Config errors (missing key, retired model) refresh the hub
+    // dots instead, so a live session is never shown as disconnected.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (err && err.sessionExpired === true) {
+        mainWindow.webContents.send('connections:expired', { provider, error: err.message, message: err.detail ? err.message + ' — ' + String(err.detail).slice(0, 300) : undefined });
+      } else {
+        try { mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus()); } catch {}
+      }
+    }
     return { ok: false, reqId, error: err.message, detail: err.detail };
   }
 });

@@ -89,5 +89,18 @@ console.log('ok - ChatGPT and Gemini OAuth, encrypted storage, IPC, and provider
     /GEMINI_HTTP_404.*retired\/unknown or/i,
     'a 404 must explain retired-model vs disabled-API instead of a bare status'
   );
+  // PSID cookies are browser sessions, not OAuth tokens — misusing one as
+  // Bearer caused a 401 that flipped the UI to "disconnected" on first chat.
+  assert.equal(connections.isWebSessionOnlyToken('ya29.valid-looking-token'), false);
+  assert.equal(connections.isWebSessionOnlyToken('g.a000random-psid-cookie-value-xyz'), true);
+  assert.equal(connections.isWebSessionOnlyToken(''), false);
+  // Only dead sessions expire the UI; config problems keep it.
+  assert.equal(connections.isSessionExpiredError('chatgpt', 'TOKEN_EXPIRED'), true);
+  assert.equal(connections.isSessionExpiredError('chatgpt', 'CHATGPT_WEB_FAILED: HTTP_401 boom'), true);
+  assert.equal(connections.isSessionExpiredError('chatgpt', 'CHATGPT_WEB_FAILED: HTTP_500 boom'), false);
+  assert.equal(connections.isSessionExpiredError('gemini', 'GEMINI_WEB_FAILED: GEMINI_HTTP_401 bad', 'bearer'), true);
+  assert.equal(connections.isSessionExpiredError('gemini', 'GEMINI_WEB_FAILED: GEMINI_HTTP_401 bad', 'key'), false);
+  assert.equal(connections.isSessionExpiredError('gemini', 'GEMINI_WEB_FAILED: GEMINI_HTTP_404 gone', 'key'), false);
+  assert.equal(connections.isSessionExpiredError('gemini', 'GEMINI_KEY_REQUIRED: add a key'), false);
   console.log('ok - Gemini auth resolution prefers API keys and routes honestly without credentials');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
