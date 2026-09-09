@@ -7332,6 +7332,77 @@ function bindEvents() {
     finally { try { session && session.close(); } catch {} }
   });
 
+  // Gemini Live TEXT chat: typed messages over the same WebSocket the voice
+  // dialog uses — so Live-only models (native-audio) work here too, unlike
+  // desktop text chat which needs a generateContent-capable model.
+  let geminiLiveTextBusy = false;
+  async function sendGeminiLiveText() {
+    if (geminiLiveTextBusy) return;
+    const input = $('#geminiLiveTextInput');
+    const log = $('#geminiLiveTextLog');
+    const hint = $('#geminiLiveHint');
+    const say = (text, ok) => {
+      if (hint) { hint.textContent = text; hint.classList.toggle('ok', !!ok); hint.classList.toggle('bad', !ok); }
+    };
+    if (!window.geminiLive) { say('✗ Live transport failed to load.', false); return; }
+    const text = (input && input.value || '').trim();
+    if (!text) return;
+    const model = ($('#setGeminiLiveModel')?.value || '').trim();
+    const apiKey = ($('#setGeminiLiveKey')?.value || '').trim();
+    if (!model || !apiKey) { say('Enter a live model ID and your AI Studio API key first.', false); return; }
+    geminiLiveTextBusy = true;
+    if (input) input.value = '';
+    const bubble = (who, body) => {
+      if (!log) return null;
+      const empty = log.querySelector('.empty');
+      if (empty) empty.remove();
+      const div = document.createElement('div');
+      div.className = 'msg ' + (who === 'You' ? 'user' : 'ai');
+      const b = document.createElement('b');
+      b.textContent = who;
+      const p = document.createElement('p');
+      p.textContent = body;
+      div.appendChild(b); div.appendChild(p);
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+      return p;
+    };
+    bubble('You', text);
+    const replyP = bubble('Gem', '…');
+    let session = null;
+    try {
+      let answer = '', lastGrow = Date.now();
+      say('Live typing…');
+      session = await window.geminiLive.connect({
+        apiKey, model, timeoutMs: 25000,
+        onText: (t) => { answer += t; lastGrow = Date.now(); if (replyP) replyP.textContent = answer; },
+        onError: (message) => { say('✗ ' + message, false); }
+      });
+      session.send(text);
+      const deadline = Date.now() + 45000;
+      // Reply is complete after first text + 2.5s of silence (Live streams).
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 300));
+        if (!session.ready) break;
+        if (answer.trim() && Date.now() - lastGrow > 2500) break;
+      }
+      if (!answer.trim()) {
+        if (replyP) replyP.textContent = '(empty reply — the model may not support text; try a text model ID)';
+        say('✗ Empty reply.', false);
+      } else {
+        say('✓ Live answered', true);
+      }
+    } catch (e) {
+      if (replyP) replyP.textContent = '✗ ' + (e.message || 'Live text failed');
+      say('✗ ' + (e.message || 'Live text failed'), false);
+    } finally {
+      try { session && session.close(); } catch {}
+      geminiLiveTextBusy = false;
+    }
+  }
+  $('#sendGeminiLiveTextBtn')?.addEventListener('click', sendGeminiLiveText);
+  $('#geminiLiveTextInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendGeminiLiveText(); } });
+
   // Model discovery: ask Google what the user's own key can use, so the
   // model field holds a working ID instead of a remembered (possibly
   // retired) one. Failures are reported with Google's own message.
@@ -8265,12 +8336,17 @@ function renderConnectionHub() {
   if (connectChatGPTBtn) connectChatGPTBtn.hidden = !!status.chatgpt.connected;
   const importCodexBtn = $('#importCodexBtn');
   if (importCodexBtn) importCodexBtn.hidden = !!status.chatgpt.connected;
+  const openChatGPTBtn = $('#openChatGPTBtn');
+  if (openChatGPTBtn) openChatGPTBtn.hidden = !!status.chatgpt.connected;
   if (disconnectChatGPTBtn) disconnectChatGPTBtn.hidden = !status.chatgpt.connected;
-  if (captureChatGPTBtn) captureChatGPTBtn.hidden = !status.chatgpt.connected ? true : false; // show after login window opened
-  // Actually capture button should be visible after auth window opened; we keep hidden initially and show after open
+  // Capture is the second step of browser sign-in: visible whenever the
+  // account is NOT connected yet (it was previously unreachable).
+  if (captureChatGPTBtn) captureChatGPTBtn.hidden = !!status.chatgpt.connected;
   if (connectGeminiBtn) connectGeminiBtn.hidden = !!status.gemini.connected;
+  const openGeminiBtn = $('#openGeminiBtn');
+  if (openGeminiBtn) openGeminiBtn.hidden = !!status.gemini.connected;
   if (disconnectGeminiBtn) disconnectGeminiBtn.hidden = !status.gemini.connected;
-  if (captureGeminiBtn) captureGeminiBtn.hidden = !status.gemini.connected ? true : false;
+  if (captureGeminiBtn) captureGeminiBtn.hidden = !!status.gemini.connected;
 
   if (priorityPicker && status.meta) {
     priorityPicker.value = status.meta.priority || 'chatgpt';
@@ -8324,6 +8400,13 @@ async function handleConnectChatGPT() {
       if (res && !res.error) {
         await loadConnectionsStatus();
         toast('CHATGPT', 'Account connected securely.', '✅');
+        return;
+      }
+      // No operator OAuth client on this machine: fall through to the guided
+      // Codex login, which works with a normal ChatGPT account.
+      if (res && /CHATGPT_OAUTH_CLIENT_REQUIRED|CHATGPT_OAUTH_CLIENT_REJECTED/.test(res.error || '')) {
+        toast('CHATGPT', 'Direct OAuth is not configured here — switching to guided Codex login…', '🔀');
+        handleImportCodex();
         return;
       }
       toast('CHATGPT', res.message || res.error || 'OAuth sign-in failed', '⚠️');
@@ -8393,9 +8476,22 @@ async function handleCaptureChatGPT() {
       await api.connectionsAcknowledgeWarning();
       await loadConnectionsStatus();
       speak('ChatGPT connected as ' + res.email);
+    } else if (res && /No auth window/.test(res.error || '')) {
+      // No window open yet: open it and let the user sign in first.
+      await api.connectionsOpenChatGPT();
+      toast('CHATGPT', 'Sign-in window opened — log in at chatgpt.com, then press Capture Session.', '🔐');
     } else {
       toast('CHATGPT', res.error || 'Capture failed', '⚠️');
     }
+  } catch (e) {
+    toast('CHATGPT', e.message, '⚠️');
+  }
+}
+
+async function handleOpenChatGPT() {
+  try {
+    await api.connectionsOpenChatGPT();
+    toast('CHATGPT', 'Sign-in window opened — log in, then press Capture Session.', '🔐');
   } catch (e) {
     toast('CHATGPT', e.message, '⚠️');
   }
@@ -8411,11 +8507,27 @@ async function handleConnectGemini() {
         toast('GEMINI', 'Account connected securely.', '✅');
         return;
       }
-      toast('GEMINI', res.message || res.error || 'OAuth sign-in failed. Set GEMAIR_GEMINI_CLIENT_ID.', '⚠️');
+      // No operator OAuth client on this machine: fall through to browser
+      // sign-in + capture, which needs no configuration.
+      if (res && /GEMINI_OAUTH_CLIENT_MISSING/.test(res.error || '')) {
+        toast('GEMINI', 'Direct OAuth is not configured here — opening browser sign-in…', '🔀');
+        handleOpenGemini();
+        return;
+      }
+      toast('GEMINI', res.message || res.error || 'OAuth sign-in failed.', '⚠️');
     } catch (e) {
       toast('GEMINI', e.message, '⚠️');
     }
   });
+}
+
+async function handleOpenGemini() {
+  try {
+    await api.connectionsOpenGemini();
+    toast('GEMINI', 'Sign-in window opened — log in with Google, then press Capture Session.', '🔐');
+  } catch (e) {
+    toast('GEMINI', e.message, '⚠️');
+  }
 }
 
 async function handleCaptureGemini() {
@@ -8428,6 +8540,9 @@ async function handleCaptureGemini() {
       await api.connectionsAcknowledgeWarning();
       await loadConnectionsStatus();
       speak('Gemini connected');
+    } else if (res && /No auth window/.test(res.error || '')) {
+      await api.connectionsOpenGemini();
+      toast('GEMINI', 'Sign-in window opened — log in with Google, then press Capture Session.', '🔐');
     } else {
       toast('GEMINI', res.error, '⚠️');
     }
@@ -8449,6 +8564,8 @@ async function handleOpenAIStudio() {
 
 function setupConnectionsHub() {
   $('#connectChatGPTBtn')?.addEventListener('click', handleConnectChatGPT);
+  $('#openChatGPTBtn')?.addEventListener('click', handleOpenChatGPT);
+  $('#openGeminiBtn')?.addEventListener('click', handleOpenGemini);
   $('#importCodexBtn')?.addEventListener('click', handleImportCodex);
   $('#captureChatGPTBtn')?.addEventListener('click', handleCaptureChatGPT);
   $('#disconnectChatGPTBtn')?.addEventListener('click', async () => {

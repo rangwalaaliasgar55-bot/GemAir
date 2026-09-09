@@ -698,6 +698,28 @@ body[data-dnd='on'] .toasts { opacity: 0.35; }
 .quick-commands { gap: 6px; }
 .quick-commands .qc { font-size: 12px; padding: 6px 10px !important; }
 
+/* Gemini Live text chat log: bubble column like the main chat */
+#geminiLiveTextLog { display: flex; flex-direction: column; gap: 6px; }
+#geminiLiveTextLog .msg b { display: block; font-size: 10.5px; color: var(--text-dim); margin-bottom: 2px; }
+
+/* Connection Hub rows: calm two-line cards, quiet mono metadata */
+.connection-rows { gap: 8px; }
+.conn-row {
+  border: 1px solid var(--apple-hairline) !important;
+  background: var(--apple-fill) !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+  font-size: 12px;
+  row-gap: 8px;
+}
+.conn-dot { text-shadow: none !important; }
+.conn-dot.connected { color: var(--apple-green); }
+.conn-dot.experimental { color: #ff9f0a; }
+.conn-dot.fallback { color: var(--apple-blue); }
+.conn-name { font-size: 12.5px; font-weight: 700; letter-spacing: 0.01em; }
+.conn-email { font-size: 11px; }
+.conn-badge, .conn-usage { font-size: 10px; letter-spacing: 0.02em; }
+
 /* HUD dock items hover like Dock icons */
 .hud-dock-body > * { transition: transform 0.15s ease; border-radius: 10px; }
 .hud-dock-body > *:hover { transform: translateY(-3px); }

@@ -890,7 +890,7 @@
       <div class="modal-head">
         <h2 id="settingsModalTitle">SETTINGS</h2>
         <div style="display:flex;gap:10px;align-items:center;">
-          <input type="text" id="settingsSearch" placeholder="Search settings… (connections, brain, voice, desktop, appearance)" style="width:260px;" />
+          <input type="text" id="settingsSearch" placeholder="Search settings… (connections, voice, desktop, appearance, system)" style="width:260px;" />
           <button class="icon-btn" id="settingsClose">✕</button>
         </div>
       </div>
@@ -909,22 +909,23 @@
           <button class="settings-nav-btn" data-ssection="apple"><span class="sico">🍎</span>Apple &amp; System</button>
         </div>
 
-        <!-- CONNECTIONS SECTION (C, D, H) -->
+        <!-- CONNECTIONS SECTION: one guided path per provider, no dead ends -->
         <div class="settings-section active" data-section="connections">
           <fieldset id="connectionHubCard">
             <legend>CONNECTION HUB — ACCOUNTS → FREE CORE → OFFLINE</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
-              Desktop account bridge: ChatGPT and Gemini OAuth sessions are encrypted locally when running GemAir Desktop. In browser mode, live search/tools work without keys; account sessions are not claimed unless a server OAuth callback is configured.
+              Press Connect and follow the steps — GemAir picks the working method automatically and says exactly what it needs. Sessions are encrypted on this device; nothing is uploaded.
             </p>
             <div class="connection-rows">
               <!-- CHATGPT ROW -->
               <div class="conn-row" id="connChatGPTRow">
                 <span class="conn-dot" id="chatgptStatusDot" title="ChatGPT status">●</span>
                 <span class="conn-name">CHATGPT</span>
-                <span class="conn-email" id="chatgptEmail">Desktop OAuth bridge required</span>
+                <span class="conn-email" id="chatgptEmail">Not connected</span>
                 <span class="conn-badge" id="chatgptPlanBadge">—</span>
                 <span class="conn-usage" id="chatgptUsage">0 today</span>
-                 <button class="primary-btn" id="connectChatGPTBtn" style="padding:6px 14px;font-size:11px;">CHATGPT ACCOUNT (APPROVED OAUTH)</button>
+                <button class="primary-btn" id="connectChatGPTBtn" style="padding:6px 14px;font-size:11px;">CONNECT CHATGPT</button>
+                <button class="ghost-btn" id="openChatGPTBtn" style="padding:6px 10px;font-size:10px;" title="Sign in inside GemAir's browser window, then press Capture Session.">Browser sign-in</button>
                 <button class="ghost-btn" id="disconnectChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Disconnect</button>
                 <button class="ghost-btn" id="captureChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Capture Session</button>
                 <button class="ghost-btn" id="importCodexBtn" style="padding:6px 10px;font-size:10px;" title="One click: opens the ChatGPT login for you, then imports it automatically. No terminal needed.">Import Codex login</button>
@@ -933,10 +934,11 @@
               <div class="conn-row" id="connGeminiRow">
                 <span class="conn-dot" id="geminiStatusDot" title="Gemini status">●</span>
                 <span class="conn-name">GEMINI</span>
-                <span class="conn-email" id="geminiEmail">Google OAuth bridge required</span>
+                <span class="conn-email" id="geminiEmail">Not connected</span>
                 <span class="conn-badge" id="geminiPlanBadge">—</span>
                 <span class="conn-usage" id="geminiUsage">0 today</span>
                 <button class="primary-btn" id="connectGeminiBtn" style="padding:6px 14px;font-size:11px;">CONNECT GEMINI</button>
+                <button class="ghost-btn" id="openGeminiBtn" style="padding:6px 10px;font-size:10px;" title="Sign in with Google inside GemAir's browser window, then press Capture Session.">Browser sign-in</button>
                 <button class="ghost-btn" id="disconnectGeminiBtn" style="padding:6px 10px;font-size:10px;" hidden>Disconnect</button>
                 <button class="ghost-btn" id="captureGeminiBtn" style="padding:6px 10px;font-size:10px;" hidden>Capture Session</button>
               </div>
@@ -1197,6 +1199,13 @@
                 <div style="flex:1;height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;"><i id="geminiLiveMeterOut" style="display:block;height:100%;width:0%;background:var(--good,#3dff9a);"></i></div>
               </div>
               <span class="dim" id="geminiLiveState" role="status" style="font-size:10px;">idle</span>
+            </div>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;" aria-label="Live text chat">
+              <div class="memory-list" id="geminiLiveTextLog" role="log" aria-label="Gemini Live text chat" style="max-height:180px;overflow:auto;"><div class="empty">No Live text yet — type below and Send. Works with Live voice models too (native-audio), over the same socket as voice.</div></div>
+              <div style="display:flex;gap:8px;">
+                <input type="text" id="geminiLiveTextInput" placeholder="Type to Gemini Live…" style="flex:1;" autocomplete="off" aria-label="Message Gemini Live" />
+                <button class="primary-btn" id="sendGeminiLiveTextBtn" type="button" style="padding:6px 16px;">Send</button>
+              </div>
             </div>
           </fieldset>
           <fieldset>
