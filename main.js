@@ -4335,7 +4335,7 @@ ipcMain.handle('connections:importSessionJson', async (_e, text) => {
     if (stored && stored.error) return stored;
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
     scheduleChatGPTRefresh();
-    return { ok: true, email: parsed.email, plan: parsed.plan };
+    return { ok: true, email: parsed.email, plan: parsed.plan, expiresAt: parsed.expiresAt };
   } catch (error) {
     const code = (error && (error.code || error.message)) || 'IMPORT_FAILED';
     if (code === 'SESSION_JSON_EMPTY' || code === 'SESSION_JSON_INVALID') {

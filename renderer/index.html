@@ -1157,8 +1157,21 @@
             <label>Voice engine
               <select id="setVoiceMode">
                 <option value="edge" selected>Edge neural — Microsoft voices (free, internet)</option>
+                <option value="gemini">Gemini voice — natural, uses your AI Studio key (free tier)</option>
                 <option value="neural">Neural (Google — free, internet required)</option>
                 <option value="system">System (Offline OS voice)</option>
+              </select>
+              <span class="hint" style="font-size:11px;color:var(--text-dim)">Edge is the free default. Gemini needs the AI Studio key in the Gemini Live section below — without it, speech falls back to Edge automatically.</span>
+            </label>
+            <label>Gemini voice
+              <select id="setGeminiVoice">
+                <option value="">Auto (Aoede ♀ / Charon ♂)</option>
+                <option value="Aoede">Aoede — warm female</option>
+                <option value="Kore">Kore — clear female</option>
+                <option value="Sulafat">Sulafat — soft female</option>
+                <option value="Charon">Charon — deep male</option>
+                <option value="Fenrir">Fenrir — strong male</option>
+                <option value="Orus">Orus — calm male</option>
               </select>
             </label>
             <label>Edge neural voice

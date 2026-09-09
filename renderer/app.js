@@ -3336,6 +3336,9 @@ function ttsOptionsFor(clean, gen, mode) {
     neuralVoice: profile.voice?.neuralVoice || DEFAULTS.neuralVoice,
     edgeVoice: profile.voice?.edgeVoice || preset.edgeVoice || DEFAULTS.edgeVoice,
     edgeLang: profile.voice?.sttLang || DEFAULTS.sttLang,
+    geminiApiKey: (profile.geminiLive && profile.geminiLive.apiKey) || '',
+    geminiModel: (profile.geminiLive && profile.geminiLive.model) || '',
+    geminiVoice: profile.voice?.geminiVoice || '',
     presetVoice: preset.edgeVoice,
     preset: profile.voice?.preset || 'gem',
     emotionMod: mod,
@@ -6159,6 +6162,7 @@ function openSettings() {
   $('#pitchVal').textContent = $('#setPitch').value;
   $('#setVoiceMode').value = profile.voice?.mode || DEFAULTS.voiceMode;
   $('#setNeuralVoice').value = profile.voice?.neuralVoice || 'en';
+  if ($('#setGeminiVoice')) $('#setGeminiVoice').value = profile.voice?.geminiVoice || '';
   $('#setSttLang').value = profile.voice?.sttLang || DEFAULTS.sttLang;
   $('#setMemoryOn').checked = profile.memoryOn !== false;
   $('#setContextStrategy').value = CONTEXT_STRATEGIES[profile.contextStrategy] ? profile.contextStrategy : DEFAULTS.contextStrategy;
@@ -7001,6 +7005,7 @@ function bindEvents() {
     profile.voice.pitch = Number($('#setPitch').value);
     profile.voice.mode = $('#setVoiceMode').value;
     profile.voice.neuralVoice = $('#setNeuralVoice').value;
+    profile.voice.geminiVoice = $('#setGeminiVoice')?.value || '';
     profile.voice.edgeVoice = $('#setEdgeVoice')?.value || profile.voice.edgeVoice || DEFAULTS.edgeVoice;
     profile.voice.name = $('#setVoice').value;
     profile.voice.sttLang = $('#setSttLang').value;
@@ -8400,7 +8405,7 @@ function showExperimentalWarning(provider, onContinue) {
 async function handleConnectChatGPT() {
   showExperimentalWarning('chatgpt', async () => {
     try {
-      toast('CHATGPT', 'Opening secure OAuth sign-in…', '🔐');
+      toast('CHATGPT', 'Opening ChatGPT sign-in… (OpenAI titles the page "Codex" — that is only the login method; you are connecting your ChatGPT account.)', '🔐');
       const res = await api.connectionsOauthChatGPT();
       if (res && !res.error) {
         await loadConnectionsStatus();
@@ -8526,7 +8531,8 @@ async function handleImportSessionJson() {
       await persistProfile();
       await api.connectionsAcknowledgeWarning();
       await loadConnectionsStatus();
-      toast('CHATGPT', 'Connected as ' + (res.email || 'ChatGPT') + ' — pasted session imported.', '✅');
+      const until = res.expiresAt ? new Date(res.expiresAt).toLocaleString() : 'unknown expiry';
+      toast('CHATGPT', 'Connected as ' + (res.email || 'ChatGPT') + ' · valid until ' + until, '✅');
       speak('ChatGPT connected');
     } else {
       say('✗ ' + (res.message || res.error || 'Import failed'));

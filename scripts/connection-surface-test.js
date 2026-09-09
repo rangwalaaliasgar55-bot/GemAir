@@ -19,7 +19,7 @@ assert(preload.includes("connectionsOauthChatGPT: () => ipcRenderer.invoke('conn
 assert(preload.includes("connectionsOauthGemini: () => ipcRenderer.invoke('connections:oauthGemini')"), 'Gemini OAuth preload bridge missing');
 assert(renderer.includes('async connectionsOauthChatGPT()'), 'ChatGPT renderer bridge missing');
 assert(renderer.includes('async connectionsOauthGemini()'), 'Gemini renderer bridge missing');
-assert(renderer.includes('Opening secure OAuth sign-in'), 'renderer does not use secure OAuth flow');
+assert(renderer.includes('Opening ChatGPT sign-in'), 'renderer does not use secure OAuth flow');
 assert(bridge.includes('CHATGPT_OAUTH_CLIENT_REJECTED'), 'ChatGPT OAuth rejection is not explained');
 assert(read('lib/oauth-chatgpt-pkce.js').includes('built-in public Codex client'), 'ChatGPT flow does not use the built-in public client');
 assert(bridge.includes('GEMINI_OAUTH_CLIENT_MISSING'), 'Gemini OAuth configuration failure is not explained');

@@ -16,6 +16,7 @@
   let analyserNode = null;
   let currentAudio = null;
   let mediaSources = null; // WeakMap: createMediaElementSource may only run once per element
+  const pcmSources = new Set(); // live Gemini PCM buffer sources, stopped on barge-in
 
   function getAudioContext() {
     if (!audioContext) {
@@ -115,6 +116,11 @@
     /** Cancel everything currently audible (called by app.js stopSpeaking, R3). */
     stop() {
       this._cancelled = true;
+      for (const source of pcmSources) {
+        try { source.stop(); } catch (e) {}
+        try { source.disconnect(); } catch (e) {}
+      }
+      pcmSources.clear();
       if (currentAudio) {
         try { currentAudio.pause(); currentAudio.src = ''; } catch (e) {}
         currentAudio = null;
@@ -153,7 +159,18 @@
       const finalVolume = Math.max(0.5, Math.min(1.2, Number(opts.volume || 1) + (emotionMod.volume || 0)));
       const pauseMs = Math.max(0, Math.min(1500, Math.round((emotionMod.pause || 0) * 400)));
 
-      if (engine === 'edge' || engine === 'neural') {
+      // Gemini voice is opt-in (needs the user's free AI Studio key). No key
+      // or any failure falls through to the FREE Edge chain, then system —
+      // speech never goes silent because of a missing key.
+      if (engine === 'gemini') {
+        try {
+          const r = await this.speakGemini(cleanText, opts, finalVolume);
+          if (r) return true;
+        } catch (e) { /* fall through to the free chain */ }
+        if (!this._alive(opts)) return false;
+      }
+
+      if (engine === 'edge' || engine === 'gemini' || engine === 'neural') {
         if (engine === 'edge') {
           const edge = window.edgeTts;
           if (edge && edge.isAvailable()) {
@@ -202,6 +219,128 @@
       return played > 0 && played === chunks.length;
     },
 
+    /**
+     * Gemini native voice (generateContent with AUDIO modality). Uses the
+     * user's own AI Studio key — free tier. Live-only model IDs can never
+     * speak REST audio, so a text-capable model is chosen instead.
+     * Returns true only when every chunk actually played.
+     */
+    GEMINI_TTS_FALLBACK_MODEL: 'gemini-2.5-flash-preview-tts',
+
+    geminiTtsModel(configured) {
+      const id = String(configured || '').trim();
+      if (id && !/native[\-_]?audio|[\-_]live[\-_]/i.test(id)) return id;
+      return this.GEMINI_TTS_FALLBACK_MODEL;
+    },
+
+    geminiVoiceName(requested, gender) {
+      const v = String(requested || '').trim();
+      if (/^(Aoede|Kore|Sulafat|Charon|Fenrir|Orus|Puck|Zephyr|Callirrhoe|Autonoe|Enceladus|Erinome|Algenib|Rasalgethi|Laomedeia|Algieba|Despina|Umbriel|Alnilam|Schedar|Gacrux|Pulcherrima|Achird|Zubenelgenubi|Vindemiatrix|Sadachbia|Sadaltager|Sulafat)$/i.test(v)) return v;
+      return gender === 'male' ? 'Charon' : 'Aoede';
+    },
+
+    async speakGemini(text, opts = {}, volume = 1) {
+      const apiKey = String(opts.geminiApiKey || '').trim();
+      if (!apiKey) return false;
+      if (typeof fetch === 'undefined') return false;
+      const model = this.geminiTtsModel(opts.geminiModel);
+      const voiceName = this.geminiVoiceName(opts.geminiVoice, opts.gender || this.gender);
+      const chunks = chunk(text, 900);
+      let played = 0;
+      for (const part of chunks) {
+        if (!this._alive(opts) || this._cancelled) break;
+        let data = null;
+        try {
+          const res = await fetch(
+            'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey),
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ role: 'user', parts: [{ text: part }] }],
+                generationConfig: {
+                  responseModalities: ['AUDIO'],
+                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
+                }
+              })
+            }
+          );
+          data = await res.json().catch(() => null);
+          if (!res.ok) break;
+        } catch (e) { break; }
+        const parts = (((data.candidates || [])[0] || {}).content || {}).parts || [];
+        const audio = parts.map((p) => (p.inlineData && p.inlineData.data) || '').find(Boolean) || '';
+        if (!audio) break;
+        if (!this._alive(opts) || this._cancelled) break;
+        const ok = await this.playPcm24k(audio, opts, volume);
+        if (!ok) break;
+        played++;
+      }
+      return played > 0 && played === chunks.length;
+    },
+
+    /** Play base64 16-bit PCM @ 24kHz mono through the shared analyser. */
+    playPcm24k(b64, opts = {}, volume = 1) {
+      return new Promise((resolve) => {
+        let settled = false;
+        const done = (ok) => {
+          if (settled) return;
+          settled = true;
+          try { if (window.gemAvatar) window.gemAvatar.setState({ speaking: false }); } catch (e) {}
+          resolve(ok);
+        };
+        try {
+          const ctx = getAudioContext();
+          if (!ctx) return done(false);
+          const bin = atob(String(b64).replace(/\s+/g, ''));
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const samples = new Int16Array(bytes.buffer, 0, Math.floor(bytes.length / 2));
+          if (!samples.length) return done(false);
+          const buffer = ctx.createBuffer(1, samples.length, 24000);
+          const out = buffer.getChannelData(0);
+          for (let i = 0; i < samples.length; i++) out[i] = samples[i] / 32768;
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          const gain = ctx.createGain();
+          gain.gain.value = Math.max(0, Math.min(1.2, Number(volume) || 1));
+          const analyser = getAnalyser();
+          const sink = (node) => { try { node.connect(ctx.destination); } catch (e) {} };
+          try { source.connect(gain); } catch (e) {}
+          if (analyser) { try { gain.connect(analyser); analyser.connect(ctx.destination); } catch (e) { sink(gain); } }
+          else sink(gain);
+          try { if (window.gemAvatar) { window.gemAvatar.setAudioAnalyser(analyser); window.gemAvatar.setState({ speaking: true }); } } catch (e) {}
+          pcmSources.add(source);
+          const teardown = () => {
+            try { source.stop(); } catch (e) {}
+            try { source.disconnect(); } catch (e) {}
+            try { gain.disconnect(); } catch (e) {}
+            pcmSources.delete(source);
+          };
+          const guard = setInterval(() => {
+            if (this._cancelled || !this._alive(opts)) {
+              clearInterval(guard);
+              teardown();
+              done(false);
+            }
+          }, 120);
+          const timer = setTimeout(() => {
+            clearInterval(guard);
+            teardown();
+            done(false);
+          }, 120000);
+          source.onended = () => {
+            clearInterval(guard);
+            clearTimeout(timer);
+            try { source.disconnect(); } catch (e) {}
+            try { gain.disconnect(); } catch (e) {}
+            pcmSources.delete(source);
+            done(true);
+          };
+          try { source.start(); } catch (e) { clearInterval(guard); clearTimeout(timer); done(false); }
+        } catch (e) { done(false); }
+      });
+    },
     /**
      * Google translate_tts neural fallback.
      *
