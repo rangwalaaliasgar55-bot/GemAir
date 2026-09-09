@@ -8402,9 +8402,10 @@ async function handleConnectChatGPT() {
         toast('CHATGPT', 'Account connected securely.', '✅');
         return;
       }
-      // No operator OAuth client on this machine: fall through to the guided
+      // Direct OAuth rejected server-side: fall through to the guided
       // Codex login, which works with a normal ChatGPT account.
-      if (res && /CHATGPT_OAUTH_CLIENT_REQUIRED|CHATGPT_OAUTH_CLIENT_REJECTED/.test(res.error || '')) {
+      // (Timeouts/cancels stay as errors — no surprise terminal popups.)
+      if (res && /CHATGPT_OAUTH_CLIENT_REJECTED/.test(res.error || '')) {
         toast('CHATGPT', 'Direct OAuth is not configured here — switching to guided Codex login…', '🔀');
         handleImportCodex();
         return;
