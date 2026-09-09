@@ -94,6 +94,7 @@ contextBridge.exposeInMainWorld('gemair', {
   connectionsAcknowledgeWarning: () => ipcRenderer.invoke('connections:acknowledgeWarning'),
   connectionsOpenChatGPT: () => ipcRenderer.invoke('connections:openChatGPT'),
   connectionsCaptureChatGPT: () => ipcRenderer.invoke('connections:captureChatGPT'),
+  connectionsImportSessionJson: (text) => ipcRenderer.invoke('connections:importSessionJson', text),
   connectionsOpenGemini: () => ipcRenderer.invoke('connections:openGemini'),
   connectionsCaptureGemini: (isFallback) => ipcRenderer.invoke('connections:captureGemini', isFallback),
   connectionsOpenAIStudio: () => ipcRenderer.invoke('connections:openAIStudio'),

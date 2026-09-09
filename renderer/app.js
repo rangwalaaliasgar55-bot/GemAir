@@ -264,6 +264,7 @@ const api = {
   async connectionsAcknowledgeWarning() { if (window.gemair) return window.gemair.connectionsAcknowledgeWarning(); },
   async connectionsOpenChatGPT() { if (window.gemair) return window.gemair.connectionsOpenChatGPT(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'ChatGPT account access needs a server OAuth callback and encrypted session store. The browser cannot capture a ChatGPT session directly.' }; },
   async connectionsCaptureChatGPT() { if (window.gemair) return window.gemair.connectionsCaptureChatGPT(); return { error: 'desktop_only' }; },
+  async connectionsImportSessionJson(text) { if (window.gemair && window.gemair.connectionsImportSessionJson) return window.gemair.connectionsImportSessionJson(text); return { error: 'desktop_only' }; },
   async connectionsOpenGemini() { if (window.gemair) return window.gemair.connectionsOpenGemini(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'Gemini account access needs a configured Google OAuth client and server callback. No account will be marked connected in browser mode.' }; },
   async connectionsCaptureGemini(isFallback) { if (window.gemair) return window.gemair.connectionsCaptureGemini(isFallback); return { error: 'desktop_only' }; },
   async connectionsOpenAIStudio() { if (window.gemair) return window.gemair.connectionsOpenAIStudio(); window.open('https://aistudio.google.com/', '_blank', 'noopener,noreferrer'); return { ok: true, browser: true }; },
@@ -4578,7 +4579,7 @@ function showRatingPrompt(missions) {
 // mouse. Every modal now announces itself, traps Tab, restores focus on close
 // and answers Escape.
 // ---------------------------------------------------------------------------
-const MODAL_IDS = ['themeModal', 'settingsModal', 'downloadModal', 'breatheModal', 'reportModal', 'experimentalWarningModal', 'reconnectModal', 'agentModal', 'codingAgentModal'];
+const MODAL_IDS = ['themeModal', 'settingsModal', 'downloadModal', 'breatheModal', 'reportModal', 'experimentalWarningModal', 'reconnectModal', 'sessionJsonModal', 'agentModal', 'codingAgentModal'];
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 let lastFocusedBeforeModal = null;
 
@@ -8338,6 +8339,8 @@ function renderConnectionHub() {
   if (importCodexBtn) importCodexBtn.hidden = !!status.chatgpt.connected;
   const openChatGPTBtn = $('#openChatGPTBtn');
   if (openChatGPTBtn) openChatGPTBtn.hidden = !!status.chatgpt.connected;
+  const pasteSessionBtn = $('#pasteSessionBtn');
+  if (pasteSessionBtn) pasteSessionBtn.hidden = !!status.chatgpt.connected;
   if (disconnectChatGPTBtn) disconnectChatGPTBtn.hidden = !status.chatgpt.connected;
   // Capture is the second step of browser sign-in: visible whenever the
   // account is NOT connected yet (it was previously unreachable).
@@ -8498,6 +8501,39 @@ async function handleOpenChatGPT() {
   }
 }
 
+function openSessionJsonModal() {
+  const m = $('#sessionJsonModal');
+  const input = $('#sessionJsonInput');
+  const hint = $('#sessionJsonHint');
+  if (hint) hint.textContent = 'Tokens stay encrypted on this device and are never uploaded.';
+  if (input) input.value = '';
+  if (m) { m.classList.add('open'); if (input) input.focus(); }
+}
+function closeSessionJsonModal() {
+  $('#sessionJsonModal')?.classList.remove('open');
+}
+async function handleImportSessionJson() {
+  const input = $('#sessionJsonInput');
+  const hint = $('#sessionJsonHint');
+  const say = (text) => { if (hint) hint.textContent = text; };
+  try {
+    const res = await api.connectionsImportSessionJson((input && input.value) || '');
+    if (res && res.ok) {
+      closeSessionJsonModal();
+      profile.connectionsWarningAcknowledged = true;
+      await persistProfile();
+      await api.connectionsAcknowledgeWarning();
+      await loadConnectionsStatus();
+      toast('CHATGPT', 'Connected as ' + (res.email || 'ChatGPT') + ' — pasted session imported.', '✅');
+      speak('ChatGPT connected');
+    } else {
+      say('✗ ' + (res.message || res.error || 'Import failed'));
+    }
+  } catch (e) {
+    say('✗ ' + (e.message || 'Import failed'));
+  }
+}
+
 async function handleConnectGemini() {
   showExperimentalWarning('gemini', async () => {
     try {
@@ -8566,6 +8602,10 @@ async function handleOpenAIStudio() {
 function setupConnectionsHub() {
   $('#connectChatGPTBtn')?.addEventListener('click', handleConnectChatGPT);
   $('#openChatGPTBtn')?.addEventListener('click', handleOpenChatGPT);
+  $('#pasteSessionBtn')?.addEventListener('click', openSessionJsonModal);
+  $('#sessionJsonClose')?.addEventListener('click', closeSessionJsonModal);
+  $('#sessionJsonCancel')?.addEventListener('click', closeSessionJsonModal);
+  $('#sessionJsonImportBtn')?.addEventListener('click', handleImportSessionJson);
   $('#openGeminiBtn')?.addEventListener('click', handleOpenGemini);
   $('#importCodexBtn')?.addEventListener('click', handleImportCodex);
   $('#captureChatGPTBtn')?.addEventListener('click', handleCaptureChatGPT);

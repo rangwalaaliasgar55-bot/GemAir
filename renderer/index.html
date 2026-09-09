@@ -851,6 +851,29 @@
     </div>
   </div>
 
+  <!-- Paste-session import: log in with your own browser, paste the session JSON -->
+  <div class="modal-backdrop" id="sessionJsonModal" role="dialog" aria-modal="true" aria-labelledby="sessionJsonTitle">
+    <div class="modal" style="width:min(620px,94vw);">
+      <div class="modal-head">
+        <h2 id="sessionJsonTitle">📋 PASTE CHATGPT SESSION</h2>
+        <button class="icon-btn" id="sessionJsonClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <ol style="font-size:12.5px;line-height:1.7;margin:0 0 10px 18px;padding:0;">
+          <li>Open your normal browser and log in at <b>chatgpt.com</b>.</li>
+          <li>Visit <b>https://chatgpt.com/api/auth/session</b> (or chat.openai.com/api/auth/session) — a JSON page loads.</li>
+          <li>Copy the <b>entire</b> page, paste it below, press Import.</li>
+        </ol>
+        <textarea id="sessionJsonInput" rows="6" style="width:100%;font-family:var(--font-mono);font-size:11px;" placeholder='{"user":{"email":"you@…"},"accessToken":"eyJ…","expires":"…"}' aria-label="Session JSON"></textarea>
+        <p class="dim" id="sessionJsonHint" role="status" style="font-size:11px;margin-top:8px;">Tokens stay encrypted on this device and are never uploaded.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="ghost-btn" id="sessionJsonCancel">Cancel</button>
+        <button class="primary-btn" id="sessionJsonImportBtn">Import session</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Mode transition sweep overlay (M4) -->
   <div class="mode-sweep" id="modeSweep" aria-hidden="true"></div>
 
@@ -928,6 +951,7 @@
                 <button class="ghost-btn" id="openChatGPTBtn" style="padding:6px 10px;font-size:10px;" title="Sign in inside GemAir's browser window, then press Capture Session.">Browser sign-in</button>
                 <button class="ghost-btn" id="disconnectChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Disconnect</button>
                 <button class="ghost-btn" id="captureChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Capture Session</button>
+                <button class="ghost-btn" id="pasteSessionBtn" style="padding:6px 10px;font-size:10px;" title="Log in at chatgpt.com in your own browser, copy the session JSON page, paste it here.">Paste session JSON</button>
                 <button class="ghost-btn" id="importCodexBtn" style="padding:6px 10px;font-size:10px;" title="One click: opens the ChatGPT login for you, then imports it automatically. No terminal needed.">Import Codex login</button>
               </div>
               <!-- GEMINI ROW -->

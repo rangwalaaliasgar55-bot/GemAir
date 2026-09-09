@@ -89,7 +89,19 @@ console.log('ok - ChatGPT and Gemini OAuth, encrypted storage, IPC, and provider
     /GEMINI_HTTP_404.*retired\/unknown or/i,
     'a 404 must explain retired-model vs disabled-API instead of a bare status'
   );
-  // Live-voice-only models reject generateContent — text chat must reroute.
+  // Pasted session-JSON import (free-chatgpt.js flow): pure parse first.
+  const goodJwt = 'eyJhbGciOiJIUzI1NiJ9.' + 'e30.' + 'c2lnbmF0dXJlLW1vcmUtdGhhbi10d2VudHktY2hhcnMtbG9uZw';
+  const parsed = connections.parseChatGPTSessionJson(JSON.stringify({
+    user: { email: 'me@example.com' }, accessToken: goodJwt, expires: new Date(Date.now() + 3600000).toISOString()
+  }));
+  assert.equal(parsed.email, 'me@example.com');
+  assert.equal(parsed.accessToken, goodJwt);
+  assert.ok(parsed.expiresAt > Date.now(), 'session expires must be honored');
+  assert.throws(() => connections.parseChatGPTSessionJson(''), /SESSION_JSON_EMPTY/);
+  assert.throws(() => connections.parseChatGPTSessionJson('{nope'), /SESSION_JSON_INVALID/);
+  assert.throws(() => connections.parseChatGPTSessionJson(JSON.stringify({ user: {} })), /SESSION_JSON_NO_TOKEN/);
+  assert.throws(() => connections.parseChatGPTSessionJson(JSON.stringify({ accessToken: 'short' })), /SESSION_JSON_NO_TOKEN/);
+  console.log('ok - Pasted session JSON parses honestly without credentials');
   assert.equal(connections.isLiveOnlyModelId('gemini-2.5-flash-native-audio-preview-12-2025'), true);
   assert.equal(connections.isLiveOnlyModelId('gemini-2.0-flash-live-001'), true);
   assert.equal(connections.isLiveOnlyModelId('gemini-2.5-flash'), false);
