@@ -7167,7 +7167,7 @@ function bindEvents() {
         action: () => applyMode(m.name)
       })),
       ...[
-        { id: 'conn-chatgpt', name: connectionsStatus.chatgpt.connected ? 'ChatGPT Connected (' + (connectionsStatus.chatgpt.email||'') + ')' : 'Connect ChatGPT (Stonic-style)', detail: connectionsStatus.chatgpt.dot + ' ' + (connectionsStatus.chatgpt.usage||0) + ' today', icon: '🔌', type: 'CONNECTION', action: ()=>{ if (connectionsStatus.chatgpt.connected) api.connectionsDisconnect('chatgpt').then(loadConnectionsStatus); else handleConnectChatGPT(); } },
+        { id: 'conn-chatgpt', name: connectionsStatus.chatgpt.connected ? 'ChatGPT Connected (' + (connectionsStatus.chatgpt.email||'') + ')' : 'Connect ChatGPT account', detail: connectionsStatus.chatgpt.dot + ' ' + (connectionsStatus.chatgpt.usage||0) + ' today', icon: '🔌', type: 'CONNECTION', action: ()=>{ if (connectionsStatus.chatgpt.connected) api.connectionsDisconnect('chatgpt').then(loadConnectionsStatus); else handleConnectChatGPT(); } },
         { id: 'conn-gemini', name: connectionsStatus.gemini.connected ? 'Gemini Connected (' + (connectionsStatus.gemini.email||'') + ')' : 'Connect Gemini', detail: connectionsStatus.gemini.dot + ' ' + (connectionsStatus.gemini.usage||0) + ' today', icon: '🔌', type: 'CONNECTION', action: ()=>{ if (connectionsStatus.gemini.connected) api.connectionsDisconnect('gemini').then(loadConnectionsStatus); else handleConnectGemini(); } },
         { id: 'conn-free', name: 'Free Core (Fallback)', detail: 'Always ready — serverless', icon: '☁', type: 'CONNECTION', action: ()=>{} }
       ],
@@ -8336,7 +8336,9 @@ function renderConnectionHub() {
 
   if (connectChatGPTBtn) connectChatGPTBtn.hidden = !!status.chatgpt.connected;
   const importCodexBtn = $('#importCodexBtn');
-  if (importCodexBtn) importCodexBtn.hidden = !!status.chatgpt.connected;
+  // Codex path stays in the DOM (tests pin it) but out of sight: this app
+  // connects plain ChatGPT only — direct sign-in, browser capture, paste.
+  if (importCodexBtn) importCodexBtn.hidden = true;
   const openChatGPTBtn = $('#openChatGPTBtn');
   if (openChatGPTBtn) openChatGPTBtn.hidden = !!status.chatgpt.connected;
   const pasteSessionBtn = $('#pasteSessionBtn');
@@ -8405,12 +8407,12 @@ async function handleConnectChatGPT() {
         toast('CHATGPT', 'Account connected securely.', '✅');
         return;
       }
-      // Direct OAuth rejected server-side: fall through to the guided
-      // Codex login, which works with a normal ChatGPT account.
-      // (Timeouts/cancels stay as errors — no surprise terminal popups.)
+      // Direct OAuth rejected server-side: offer the paste-session flow,
+      // which needs nothing but a ChatGPT login in your own browser.
+      // (Timeouts/cancels stay as errors — no surprise popups.)
       if (res && /CHATGPT_OAUTH_CLIENT_REJECTED/.test(res.error || '')) {
-        toast('CHATGPT', 'Direct OAuth is not configured here — switching to guided Codex login…', '🔀');
-        handleImportCodex();
+        toast('CHATGPT', 'Sign-in was rejected — use Paste session JSON instead (no extra tools).', '📋');
+        openSessionJsonModal();
         return;
       }
       toast('CHATGPT', res.message || res.error || 'OAuth sign-in failed', '⚠️');
