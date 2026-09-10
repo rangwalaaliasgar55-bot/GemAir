@@ -306,22 +306,58 @@ body.wake-armed #micVuCanvas { opacity: 1; }
 }
 .gender-toggle-btn:hover { color: var(--color-label-primary); background: var(--color-fill-secondary); }
 
-.orb-center { position: absolute; z-index: 5; }
+.orb-center { position: absolute; inset: 0; display: grid; place-items: center; z-index: 5; pointer-events: none; }
+.orb-center .start-btn { pointer-events: auto; }
+/* The voice orb is CSS now — the particle canvas stays in the DOM but is
+   hidden (its paint is parked in the motion/perf phase). States ride on
+   body classes the app already toggles: .rgb-recording, .rgb-speaking,
+   .ga-thinking. */
+#orbCanvas { display: none; }
 .start-btn {
   width: 130px; height: 130px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent, var(--color-system-blue)) 18%, transparent), var(--color-surface-secondary) 78%);
-  border: 1px solid var(--color-separator); color: var(--color-label-primary); cursor: pointer;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  box-shadow: var(--elevation-2); position: relative;
-  transition: transform var(--transition-press), box-shadow var(--transition-control), filter var(--transition-control);
+  background:
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.20), transparent 45%),
+    radial-gradient(circle at 50% 55%, color-mix(in srgb, var(--accent, var(--color-system-blue)) 26%, transparent), color-mix(in srgb, var(--color-system-indigo) 16%, transparent) 72%),
+    var(--color-surface-secondary);
+  border: 1px solid color-mix(in srgb, var(--accent, var(--color-system-blue)) 30%, transparent);
+  color: var(--color-label-primary); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), var(--elevation-2); position: relative;
+  transition: transform var(--transition-press), box-shadow var(--transition-control), filter var(--transition-control), border-color var(--transition-control);
 }
-.start-btn:hover { filter: brightness(1.05); box-shadow: var(--elevation-3); }
+.start-btn:hover { filter: brightness(1.05); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), var(--elevation-3); }
 .start-btn:active { transform: scale(.97); }
 .start-ring {
-  position: absolute; inset: -8px; border-radius: 50%;
-  border: 1px dashed var(--color-separator); opacity: 0.6;
+  position: absolute; inset: -9px; border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--accent, var(--color-system-blue)) 30%, transparent);
+  opacity: 0; transition: opacity var(--transition-control);
 }
-.start-label { font-family: var(--font-text); font-size: 12px; font-weight: 700; letter-spacing: 0; }
+.start-label { font-family: var(--font-text); font-size: 12.5px; font-weight: 650; letter-spacing: -0.01em; }
+
+/* Orb states */
+body.rgb-recording .start-btn { filter: saturate(1.12); }
+body.rgb-recording .start-btn .start-ring { opacity: 1; }
+body.rgb-speaking .start-btn {
+  transform: scale(1.04);
+  filter: saturate(1.22) brightness(1.06);
+  border-color: color-mix(in srgb, var(--color-system-green) 45%, transparent);
+}
+body.rgb-speaking .start-btn .start-ring {
+  opacity: 1; border-color: color-mix(in srgb, var(--color-system-green) 34%, transparent);
+}
+body.ga-thinking .start-btn {
+  border-color: color-mix(in srgb, var(--color-system-orange) 45%, transparent);
+  filter: saturate(1.08) brightness(1.04);
+}
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes gaOrbBreath { 0%, 100% { transform: scale(1.02); } 50% { transform: scale(1.06); } }
+  @keyframes gaOrbRing { 0% { transform: scale(.96); opacity: .9; } 100% { transform: scale(1.22); opacity: 0; } }
+  body.rgb-speaking .start-btn { animation: gaOrbBreath 2.4s var(--ease-standard) ease-in-out infinite; }
+  body.rgb-recording .start-ring, body.rgb-speaking .start-ring { animation: gaOrbRing 1.9s var(--ease-standard) ease-out infinite; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .start-btn, .start-ring { animation: none !important; transform: none; }
+}
 
 .orb-status {
   position: absolute; bottom: 22px; right: 24px; z-index: 3;

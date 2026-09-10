@@ -2724,6 +2724,7 @@ function extractName(text) {
 function setThinking(on) {
   const pill = $('#thinkingPill');
   if (pill) pill.classList.toggle('on', !!on);
+  try { document.body.classList.toggle('ga-thinking', !!on); } catch {}
 }
 
 let operationRequestActive = false;
