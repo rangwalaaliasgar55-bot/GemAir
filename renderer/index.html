@@ -144,12 +144,12 @@
             <div class="stx-left">
               <!-- U2 Dashboard NOW card -->
               <div class="hud-panel now-card" id="nowCard">
-                <h3 class="panel-title">NOW <span class="dim">— DASHBOARD</span></h3>
+                <h3 class="panel-title">Now <span class="dim">— dashboard</span></h3>
                 <div class="now-grid">
-                  <div class="now-line"><span>MODE</span><b id="nowMode">NO MODE</b></div>
-                  <div class="now-line"><span>BRAIN</span><b id="nowBrain">FREE CORE</b></div>
-                  <div class="now-line"><span>NEXT</span><b id="nowReminder">No reminders</b></div>
-                  <div class="now-line"><span>BATTERY</span><b id="nowBattery">—</b></div>
+                  <div class="now-line"><span>Mode</span><b id="nowMode">No mode</b></div>
+                  <div class="now-line"><span>Brain</span><b id="nowBrain">Free core</b></div>
+                  <div class="now-line"><span>Next</span><b id="nowReminder">No reminders</b></div>
+                  <div class="now-line"><span>Battery</span><b id="nowBattery">—</b></div>
                 </div>
               </div>
 
@@ -157,13 +157,13 @@
                 <h3 class="panel-title">LOCAL BRIEF <span class="dim">— WEATHER &amp; SEARCH</span></h3>
                 <div class="sat-stage">
                   <canvas id="satCanvas" width="260" height="160" aria-hidden="true"></canvas>
-                  <span class="sat-beta">DECORATIVE GLOBE</span>
+                  <span class="sat-beta">Decorative globe</span>
                 </div>
                 <div class="sat-tabs" role="tablist" aria-label="Local brief">
-                  <button class="sat-tab active" data-sat="today" role="tab" aria-selected="true" aria-controls="satPanel">TODAY</button>
-                  <button class="sat-tab" data-sat="rap" role="tab" aria-selected="false" aria-controls="satPanel" title="Radar & Precipitation">RAP</button>
-                  <button class="sat-tab" data-sat="search" role="tab" aria-selected="false" aria-controls="satPanel">SEARCH</button>
-                  <button class="sat-tab" data-sat="alerts" role="tab" aria-selected="false" aria-controls="satPanel">ALERTS</button>
+                  <button class="sat-tab active" data-sat="today" role="tab" aria-selected="true" aria-controls="satPanel">Today</button>
+                  <button class="sat-tab" data-sat="rap" role="tab" aria-selected="false" aria-controls="satPanel" title="Radar & Precipitation">Radar</button>
+                  <button class="sat-tab" data-sat="search" role="tab" aria-selected="false" aria-controls="satPanel">Search</button>
+                  <button class="sat-tab" data-sat="alerts" role="tab" aria-selected="false" aria-controls="satPanel">Alerts</button>
                 </div>
                 <div class="sat-panel" id="satPanel" role="tabpanel" aria-live="polite">
                   <div class="empty">Loading feed…</div>
@@ -171,7 +171,7 @@
               </div>
 
               <div class="hud-panel headlines-mini">
-                <h3 class="panel-title">TODAY HEADLINES</h3>
+                <h3 class="panel-title">Today’s headlines</h3>
                 <div class="news-list mini" id="newsListMini">
                   <div class="empty">Fetching headlines…</div>
                 </div>
@@ -237,10 +237,10 @@
 
               <!-- A1 Plan-Act live progress -->
               <div class="hud-panel plan-act-panel" id="planActPanel" hidden>
-                <h3 class="panel-title">PLAN-ACT <span class="dim" id="planActState">— IDLE</span>
+                <h3 class="panel-title">Plan <span class="dim" id="planActState">— idle</span>
                   <span class="dry-run-chip" id="dryRunChip">
-                    <button class="mini-btn" id="showPlanBtn">SHOW PLAN</button>
-                    <button class="primary-btn" id="runPlanBtn">RUN</button>
+                    <button class="mini-btn" id="showPlanBtn">Show plan</button>
+                    <button class="primary-btn" id="runPlanBtn">Run</button>
                   </span>
                 </h3>
                 <div class="plan-act-body" id="planActBody">
@@ -254,25 +254,25 @@
                 <div class="stx-circuits">
                   <button type="button" class="stx-circuit" id="memCircuitRow" data-circ="memory" title="View memory details">
                     <span class="sc-ico">⬡</span>
-                    <span class="sc-name">MEMORY</span>
+                    <span class="sc-name">Memory</span>
                     <span class="circuit-bar"><i id="memCircuit" style="width:0%"></i></span>
                     <span class="circuit-val" id="memCircuitVal">0%</span>
                   </button>
                   <button type="button" class="stx-circuit" id="skillCircuitRow" data-circ="skills" title="View learned skills">
                     <span class="sc-ico"></span>
-                    <span class="sc-name">SKILLS</span>
+                    <span class="sc-name">Skills</span>
                     <span class="circuit-bar"><i id="skillCircuit" style="width:0%"></i></span>
                     <span class="circuit-val" id="skillCircuitVal">0%</span>
                   </button>
                   <button type="button" class="stx-circuit" id="soulCircuitRow" data-circ="soul" title="Tune personality">
                     <span class="sc-ico">✧</span>
-                    <span class="sc-name">SOUL</span>
+                    <span class="sc-name">Soul</span>
                     <span class="circuit-bar"><i id="soulCircuit" style="width:0%"></i></span>
                     <span class="circuit-val" id="soulCircuitVal">0%</span>
                   </button>
                   <button type="button" class="stx-circuit" id="settingCircuitRow" title="Open settings">
                     <span class="sc-ico">⚙</span>
-                    <span class="sc-name">SETTING</span>
+                    <span class="sc-name">Settings</span>
                     <span class="circuit-bar"><i style="width:100%"></i></span>
                     <span class="circuit-val dim">ON</span>
                   </button>
@@ -281,27 +281,27 @@
               </div>
 
                 <div class="orb-panel hud-panel">
-                  <div class="thinking-pill" id="thinkingPill"><span>THINKING</span><i></i></div>
+                  <div class="thinking-pill" id="thinkingPill"><span>Thinking</span><i></i></div>
                   <canvas id="orbCanvas" width="560" height="560" aria-hidden="true"></canvas>
                   <canvas id="micVuCanvas" width="180" height="34" aria-label="Microphone input level"></canvas>
                   <div class="gem-nameplate">
-                    <span class="gem-name">GEM</span>
+                    <span class="gem-name">Gem</span>
                     <span class="gem-role" id="gemRole">personal intelligence</span>
                     <button class="gender-toggle-btn" id="avatarGenderToggle" title="Switch Voice (Female / Male)">
-                      <span id="avatarGenderLabel">♀ FEMALE</span>
+                      <span id="avatarGenderLabel">♀ Female</span>
                     </button>
                   </div>
                   <div class="orb-center">
                     <button class="start-btn" id="startBtn">
                       <span class="start-ring"></span>
-                      <span class="start-label" id="startLabel">START AI</span>
+                      <span class="start-label" id="startLabel">Start</span>
                     </button>
                   </div>
                   <div class="caption-bar" id="captionBar" aria-live="polite">
-                    <span class="caption-who" id="captionWho">GEM</span>
+                    <span class="caption-who" id="captionWho">Gem</span>
                     <p class="caption-text" id="captionText"></p>
                   </div>
-                  <div class="orb-status" id="orbStatus">STANDBY</div>
+                  <div class="orb-status" id="orbStatus">Standby</div>
                 </div>
 
               <div class="hud-panel town-preview" id="townPreview">
@@ -326,9 +326,9 @@
 
               <div class="hud-panel expert-panel">
                 <div class="expert-tabs">
-                  <button class="expert-tab active" data-etab="voice">VOICE</button>
-                  <button class="expert-tab" data-etab="notes">NOTES</button>
-                  <button class="expert-tab" data-etab="desktop">DESKTOP</button>
+                  <button class="expert-tab active" data-etab="voice">Voice</button>
+                  <button class="expert-tab" data-etab="notes">Notes</button>
+                  <button class="expert-tab" data-etab="desktop">Desktop</button>
                   <span class="expert-plus">＋</span>
                 </div>
 
@@ -345,12 +345,12 @@
                 </div>
 
                 <div class="expert-pane" data-epane="desktop" id="etabDesktop">
-                  <h3 class="panel-title">DESKTOP STATE <span class="dim" id="desktopStateTitle">— LIVE</span>
+                  <h3 class="panel-title">Desktop <span class="dim" id="desktopStateTitle">— live</span>
                     <button class="refresh-btn" id="refreshDesktopBtn" style="padding:3px 10px;font-size:10px;">⟳ Refresh</button>
                   </h3>
                   <div class="desktop-context">
-                    <div class="dc-line"><span>FOCUSED</span><b id="focusedApp">—</b></div>
-                    <div class="dc-line"><span>TITLE</span><b id="focusedTitle">—</b></div>
+                    <div class="dc-line"><span>Focused</span><b id="focusedApp">—</b></div>
+                    <div class="dc-line"><span>Title</span><b id="focusedTitle">—</b></div>
                   </div>
                   <div class="memory-list" id="desktopWindowsList">
                     <div class="empty">Click refresh to see open windows</div>
@@ -387,7 +387,7 @@
               </div>
               <div class="radar-wrap">
                 <canvas id="radarCanvas" width="300" height="300" aria-hidden="true"></canvas>
-                <div class="globe-caption">RADAR · LIVE SWEEP MONITOR</div>
+                <div class="globe-caption">Radar · live</div>
               </div>
               <div class="skills-grid" style="margin-top:16px">
                 <span class="skill-chip">🎙 Audio Lip-Sync Engine</span>
@@ -796,7 +796,7 @@
 
   <div class="hud-dock" id="hudDock" aria-live="polite">
     <div class="hud-dock-head">
-      <span class="hud-dock-title" id="hudDockTitle">PANEL</span>
+      <span class="hud-dock-title" id="hudDockTitle">Panel</span>
       <button class="icon-btn" id="hudDockClose" title="Close panel">✕</button>
     </div>
     <div class="hud-dock-body" id="hudDockBody"></div>
@@ -805,7 +805,7 @@
   <div class="modal-backdrop" id="themeModal" role="dialog" aria-modal="true" aria-labelledby="themeModalTitle">
     <div class="modal theme-modal">
       <div class="modal-head">
-        <h2 id="themeModalTitle">PICK YOUR HUD THEME</h2>
+        <h2 id="themeModalTitle">Choose a theme</h2>
         <button class="icon-btn" id="themeModalClose" title="Close">✕</button>
       </div>
       <div class="modal-body">
@@ -894,30 +894,30 @@
   <!-- T4 — Stonic-style cinematic first-run onboarding -->
   <div class="onboard-backdrop" id="onboardOverlay" role="dialog" aria-modal="true" aria-labelledby="onboardTitle" hidden>
     <div class="onboard-card">
-      <button class="icon-btn onboard-skip" id="onboardSkip" title="Skip setup">SKIP »</button>
+      <button class="icon-btn onboard-skip" id="onboardSkip" title="Skip setup">Skip</button>
       <div class="onboard-dots" id="onboardDots" aria-hidden="true"></div>
       <section class="onboard-step active" data-ostep="welcome">
         <div class="onboard-orb" aria-hidden="true"></div>
         <h2 id="onboardTitle">GEMAIR</h2>
-        <p class="onboard-sub">Your own JARVIS — free forever, private by design.</p>
-        <p class="onboard-hint">VOICE · MEMORY · 79 TOOLS · AGENT TOWN · WORLD MONITOR</p>
+        <p class="onboard-sub">A private assistant that’s yours — free forever.</p>
+        <p class="onboard-hint">Voice · memory · 79 tools · agents · news</p>
       </section>
       <section class="onboard-step" data-ostep="name">
-        <h2>WHAT SHOULD I CALL YOU?</h2>
+        <h2>What should I call you?</h2>
         <p class="onboard-sub">Gem will remember it everywhere you sync.</p>
-        <input type="text" id="onboardName" maxlength="24" placeholder="Commander…" autocomplete="off" />
+        <input type="text" id="onboardName" maxlength="24" placeholder="Your name…" autocomplete="off" />
       </section>
       <section class="onboard-step" data-ostep="voice">
-        <h2>CHOOSE GEM'S VOICE</h2>
+        <h2>Choose Gem’s voice</h2>
         <p class="onboard-sub">You can change this anytime in Settings.</p>
         <div class="onboard-voices">
-          <button type="button" class="onboard-voice active" data-gender="female"><b>♀ FEMALE</b><span>warm · natural</span></button>
-          <button type="button" class="onboard-voice" data-gender="male"><b>♂ MALE</b><span>deep · measured</span></button>
+          <button type="button" class="onboard-voice active" data-gender="female"><b>♀ Female</b><span>warm · natural</span></button>
+          <button type="button" class="onboard-voice" data-gender="male"><b>♂ Male</b><span>deep · measured</span></button>
         </div>
       </section>
       <div class="onboard-actions">
-        <button class="ghost-btn" id="onboardBack">« BACK</button>
-        <button class="primary-btn" id="onboardNext">BEGIN »</button>
+        <button class="ghost-btn" id="onboardBack">Back</button>
+        <button class="primary-btn" id="onboardNext">Get started</button>
       </div>
     </div>
   </div>
@@ -959,11 +959,11 @@
               <!-- CHATGPT ROW -->
               <div class="conn-row" id="connChatGPTRow">
                 <span class="conn-dot" id="chatgptStatusDot" title="ChatGPT status">●</span>
-                <span class="conn-name">CHATGPT</span>
+                <span class="conn-name">ChatGPT</span>
                 <span class="conn-email" id="chatgptEmail">Not connected</span>
                 <span class="conn-badge" id="chatgptPlanBadge">—</span>
                 <span class="conn-usage" id="chatgptUsage">0 today</span>
-                <button class="primary-btn" id="connectChatGPTBtn" style="padding:6px 14px;font-size:11px;">CONNECT CHATGPT</button>
+                <button class="primary-btn" id="connectChatGPTBtn" style="padding:6px 14px;font-size:11px;">Connect ChatGPT</button>
                 <button class="ghost-btn" id="openChatGPTBtn" style="padding:6px 10px;font-size:10px;" title="Sign in inside GemAir's browser window, then press Capture Session.">Browser sign-in</button>
                 <button class="ghost-btn" id="disconnectChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Disconnect</button>
                 <button class="ghost-btn" id="captureChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Capture Session</button>
@@ -973,11 +973,11 @@
               <!-- GEMINI ROW -->
               <div class="conn-row" id="connGeminiRow">
                 <span class="conn-dot" id="geminiStatusDot" title="Gemini status">●</span>
-                <span class="conn-name">GEMINI</span>
+                <span class="conn-name">Gemini</span>
                 <span class="conn-email" id="geminiEmail">Not connected</span>
                 <span class="conn-badge" id="geminiPlanBadge">—</span>
                 <span class="conn-usage" id="geminiUsage">0 today</span>
-                <button class="primary-btn" id="connectGeminiBtn" style="padding:6px 14px;font-size:11px;">CONNECT GEMINI</button>
+                <button class="primary-btn" id="connectGeminiBtn" style="padding:6px 14px;font-size:11px;">Connect Gemini</button>
                 <button class="ghost-btn" id="openGeminiBtn" style="padding:6px 10px;font-size:10px;" title="Sign in with Google inside GemAir's browser window, then press Capture Session.">Browser sign-in</button>
                 <button class="ghost-btn" id="disconnectGeminiBtn" style="padding:6px 10px;font-size:10px;" hidden>Disconnect</button>
                 <button class="ghost-btn" id="captureGeminiBtn" style="padding:6px 10px;font-size:10px;" hidden>Capture Session</button>
@@ -987,7 +987,7 @@
                 <span class="conn-dot fallback" id="freeCoreDot" title="Free core status">●</span>
                 <span class="conn-name">FREE CORE</span>
                 <span class="conn-email">Live server tools /api/* — status checked now</span>
-                <span class="conn-badge" style="background:var(--accent-dim);">FALLBACK</span>
+                <span class="conn-badge" style="background:var(--accent-dim);">Fallback</span>
                 <span class="conn-usage" id="freeCoreUsage">∞</span>
                 <span class="conn-status">READY</span>
               </div>
@@ -1015,7 +1015,7 @@
           <fieldset>
             <legend>Identity</legend>
             <label>Your name (stored in memory)
-              <input type="text" id="setUserName" placeholder="e.g. Commander" />
+              <input type="text" id="setUserName" placeholder="Your name" />
             </label>
             <button type="button" class="ghost-btn" id="replayOnboardBtn" style="margin-top:10px;width:100%;">⟲ REPLAY FIRST-RUN INTRO</button>
           </fieldset>

@@ -995,7 +995,7 @@ function reportInitFailure(label, err) {
   if (_initFailures.length === 1 && window.gemair) {
     setTimeout(() => {
       try {
-        toast('DEGRADED', `${_initFailures.length} component(s) failed to start — the rest of GemAir still works.`, '⚠');
+        toast('Degraded', `${_initFailures.length} component(s) failed to start — the rest of GemAir still works.`, '⚠');
       } catch (e) {}
     }, 1200);
   }
@@ -1068,7 +1068,7 @@ function setCaption(who, text, opts) {
   if (!captionFullText) { bar.classList.remove('show'); return; }
 
   bar.classList.toggle('user', who === 'user');
-  if (whoEl) whoEl.textContent = who === 'user' ? (profile.name || 'YOU').toUpperCase() : 'GEM';
+  if (whoEl) whoEl.textContent = who === 'user' ? (profile.name || 'You') : 'Gem';
   textEl.innerHTML = `<span class="said"></span><span class="rest">${escapeHtml(captionFullText)}</span>`;
   bar.classList.add('show');
 
@@ -1505,7 +1505,7 @@ function triggerRgbBurst() {
   if (rgbBurstTimer) clearTimeout(rgbBurstTimer);
   document.body.classList.add('konami-burst');
   applyTheme('rgb');
-  toast('KONAMI UNLOCKED', 'Full-spectrum arc reactor burst engaged.', '🌈');
+  toast('Konami unlocked', 'Full-spectrum arc reactor burst engaged.', '🌈');
   rgbBurstTimer = setTimeout(() => {
     document.body.classList.remove('konami-burst');
     applyTheme(restore);
@@ -1528,7 +1528,7 @@ function applyAppearance(mode, { notify = false } = {}) {
     toggle.setAttribute('aria-pressed', String(light));
     toggle.textContent = light ? '🌙 SWITCH TO DARK' : '☀ SWITCH TO LIGHT';
   }
-  if (notify) toast('APPEARANCE', appearance.toUpperCase() + ' mode enabled.', appearance === 'light' ? '☀' : '🌙');
+  if (notify) toast('Appearance', appearance.toUpperCase() + ' mode enabled.', appearance === 'light' ? '☀' : '🌙');
   return appearance;
 }
 function toggleAppearance() {
@@ -1630,7 +1630,7 @@ function renderThemeGrid() {
       profile.theme = c.dataset.tid;
       applyTheme(profile.theme);
       persistProfile();
-      toast('THEMES', 'HUD theme → ' + c.dataset.tid.toUpperCase(), '🎨');
+      toast('Themes', 'HUD theme → ' + c.dataset.tid.toUpperCase(), '🎨');
     };
     c.addEventListener('click', pick);
     c.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
@@ -1793,10 +1793,10 @@ async function killProcessFromUi(pid, name) {
   if (res && res.ok) {
     processCache = processCache.filter((p) => p.pid !== Number(pid));
     paintProcessList();
-    toast('MONITOR', `Ended ${name} (PID ${pid})`, '🛑');
+    toast('Monitor', `Ended ${name} (PID ${pid})`, '🛑');
     playSfx('click');
   } else if (res && res.error && !/cancelled/i.test(res.error)) {
-    toast('MONITOR', res.error, '⚠️');
+    toast('Monitor', res.error, '⚠️');
   }
 }
 
@@ -1839,7 +1839,7 @@ async function addTodoFromUi() {
   await loadMemory();
   renderTodos();
   playSfx('click');
-  toast('TASKS', 'Task added', '✅');
+  toast('Tasks', 'Task added', '✅');
 }
 
 // ---------------------------------------------------------------------------
@@ -2148,7 +2148,7 @@ function addMessage(role, text, opts = {}) {
   head.className = 'msg-head';
   const label = document.createElement('span');
   label.className = 'label';
-  label.textContent = role === 'ai' ? '◈ GEM' : (profile.name || 'YOU').toUpperCase();
+  label.textContent = role === 'ai' ? 'Gem' : (profile.name || 'You');
   head.appendChild(label);
   const ts = document.createElement('span');
   ts.className = 'msg-time';
@@ -2170,7 +2170,7 @@ function addMessage(role, text, opts = {}) {
     copy.setAttribute('aria-label', 'Copy message');
     copy.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(p.textContent || ''); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy'; }, 1200); }
-      catch { toast('COPY', 'Clipboard access is unavailable.', '⚠'); }
+      catch { toast('Copy', 'Clipboard access is unavailable.', '⚠'); }
     });
     actions.appendChild(copy);
     if (role === 'ai') {
@@ -2305,7 +2305,7 @@ function renderRich(p, text) {
         await navigator.clipboard.writeText(codeEl.textContent);
         btn.textContent = '✓ COPIED';
         setTimeout(() => { btn.textContent = '📋 COPY'; }, 1500);
-      } catch { toast('COPY', 'Clipboard blocked by browser', '⚠'); }
+      } catch { toast('Copy', 'Clipboard blocked by browser', '⚠'); }
     });
   });
   mermaidBlocks.forEach((b) => {
@@ -2373,7 +2373,7 @@ function toolChipUpdate({ name, state }) {
   chip.innerHTML = `<span class="tc-dot"></span>${escapeHtml(label)}${state === 'done' ? ' ✓' : state === 'error' ? ' ✗' : ' …'}`;
   if (state === 'done') tickPlannerStep();
   const orb = $('#orbStatus');
-  if (orb && state === 'start') { orb.textContent = 'EXECUTING · ' + label.toUpperCase(); }
+  if (orb && state === 'start') { orb.textContent = 'Working · ' + label; }
 }
 
 function renderReply(p, text) {
@@ -2842,7 +2842,7 @@ async function sendMessage(text) {
     console.error('[sendMessage]', error);
     const message = `I couldn't complete that request: ${error && error.message ? error.message : 'Something went wrong. Please try again.'}`;
     addMessage('ai', message);
-    toast('REQUEST FAILED', 'The operation did not complete. You can safely try again.', '⚠️');
+    toast('Request failed', 'The operation did not complete. You can safely try again.', '⚠️');
     speak("I'm sorry, I encountered an error. Please try again.");
     return { error: error && error.message ? error.message : String(error) };
   } finally {
@@ -2994,7 +2994,7 @@ async function handleMessage(text) {
       renderPlanAct(plan, 'preview');
       const typingEl = document.querySelector('#chatLog .msg:last-child');
       if (typingEl) renderPlanner(typingEl, text);
-      toast('PLAN-ACT', 'Big request detected — showing plan before execution (SHOW PLAN / RUN)', '📋');
+      toast('Plan', 'Big request detected — showing plan before execution (SHOW PLAN / RUN)', '📋');
       // Execution requires the user's explicit RUN confirmation.
       return;
     }
@@ -3130,7 +3130,7 @@ async function handleMessage(text) {
       chatHistory.push({ role: 'assistant', content: reply });
       if (profile.memoryOn) {
         api.memoryExtract(cfg, text, reply).then(async (n)=>{
-          if (n>0) { await loadMemory(); renderAllMemory(); animateCircuits(); toast('MEMORY', `+${n} new memories stored`, '🧠'); }
+          if (n>0) { await loadMemory(); renderAllMemory(); animateCircuits(); toast('Memory', `+${n} new memories stored`, '🧠'); }
         });
       }
     } else {
@@ -3175,7 +3175,7 @@ async function handleMessage(text) {
       chatHistory.push({ role: 'assistant', content: reply });
       if (profile.memoryOn) {
         api.memoryExtract(cfg, text, reply).then(async (n) => {
-          if (n > 0) { await loadMemory(); renderAllMemory(); animateCircuits(); toast('MEMORY', `+${n} new memories stored`, '🧠'); }
+          if (n > 0) { await loadMemory(); renderAllMemory(); animateCircuits(); toast('Memory', `+${n} new memories stored`, '🧠'); }
         });
       }
     } else {
@@ -3309,7 +3309,7 @@ async function maybeConsolidateMemory() {
     for (const m of memory.transcript.slice(-60)) await api.memoryAppend(m.role, m.content);
     await loadMemory();
     renderAllMemory();
-    toast('MEMORY', 'Older conversation consolidated into long-term memory.', '🧠');
+    toast('Memory', 'Older conversation consolidated into long-term memory.', '🧠');
   }
 }
 
@@ -3908,7 +3908,7 @@ async function runCollaborationMission(task) {
     await api.memoryAppend('assistant', reply);
     await loadMemory(); renderMissionLog(); updateTranscriptCount();
     addActivity('TEAM', `${result.ok === false ? '✗' : '✓'} Mission complete`);
-    if (result.reportPath) toast('MISSION COMPLETE', `Report: ${result.reportPath}`, '✓');
+    if (result.reportPath) toast('Mission complete', `Report: ${result.reportPath}`, '✓');
     speak(reply);
   } catch (error) {
     replyEl.textContent = 'Mission failed: ' + humanError(error.message);
@@ -4278,13 +4278,13 @@ function setupAccountControls() {
     const ok = await window.webStore.signInWithGoogle(window.location.origin);
     if (!ok) {
       const err = (window.webStore.lastError || {});
-      toast('SIGN-IN', err.message || 'Google sign-in is unavailable on this deployment.', '🔒');
+      toast('Sign-in', err.message || 'Google sign-in is unavailable on this deployment.', '🔒');
     }
   });
   $('#signOutBtn')?.addEventListener('click', async () => {
     await window.webStore.signOut();
     renderAccountState();
-    toast('ACCOUNT', 'Signed out — back to an anonymous local identity.', '👋');
+    toast('Account', 'Signed out — back to an anonymous local identity.', '👋');
   });
   renderAccountState();
 }
@@ -4372,7 +4372,7 @@ function setupRatingUi() {
     buildStarRow(host, (stars) => {
       host.dataset.value = String(stars);
       recordRating(stars, 'settings');
-      toast('THANK YOU', `Rated ${stars}★ — stored locally only.`, '⭐');
+      toast('Thank you', `Rated ${stars}★ — stored locally only.`, '⭐');
     });
   }
   $('#exportRatingsBtn')?.addEventListener('click', () => {
@@ -4537,7 +4537,7 @@ function renderWorkflowGallery() {
       const wf = WORKFLOWS.find((w) => w.id === card.dataset.wf);
       if (!wf) return;
       playSfx('swoosh');
-      toast('WORKFLOW', wf.name, wf.icon);
+      toast('Workflow', wf.name, wf.icon);
       switchView('assistant');
       sendMessage(wf.prompt);
     });
@@ -4585,7 +4585,7 @@ function renderQuickCommands() {
       e.preventDefault();
       writeCustomQuickCommands(readCustomQuickCommands().filter((x) => x.cmd !== item.cmd || x.label !== item.label));
       renderQuickCommands();
-      toast('QUICK COMMANDS', `Removed “${item.label}”`, '⌫');
+      toast('Quick commands', `Removed “${item.label}”`, '⌫');
     });
     strip.appendChild(btn);
   }
@@ -4612,13 +4612,13 @@ function openQuickCommandEditor() {
     const [labelPart, ...rest] = raw.split(/⇢|=>|\|/);
     const label = (labelPart || '').trim().slice(0, 24);
     const cmd = (rest.join('⇢').trim() || labelPart || '').trim().slice(0, 200);
-    if (!label || !cmd) { toast('QUICK COMMANDS', 'Use “Label ⇢ command”.', '⚠️'); return; }
+    if (!label || !cmd) { toast('Quick commands', 'Use “Label ⇢ command”.', '⚠️'); return; }
     const list = readCustomQuickCommands();
     list.push({ label, cmd });
     writeCustomQuickCommands(list);
     renderQuickCommands();
     close();
-    toast('QUICK COMMANDS', `Added “${label}”`, '⚡');
+    toast('Quick commands', `Added “${label}”`, '⚡');
   };
   $('#qcEditorSave')?.addEventListener('click', save);
   $('#qcEditorCancel')?.addEventListener('click', close);
@@ -5064,7 +5064,7 @@ function renderMemoryBrowser() {
     const detail = row.querySelector('pre');
     row.querySelector('.mb-view').addEventListener('click', (event) => { detail.hidden = !detail.hidden; event.currentTarget.textContent = detail.hidden ? 'VIEW' : 'HIDE'; });
     row.querySelector('.mb-delete').addEventListener('click', async () => {
-      await entry.remove(); await loadMemory(); renderAllMemory(); toast('MEMORY', 'Individual memory deleted.', '⌫');
+      await entry.remove(); await loadMemory(); renderAllMemory(); toast('Memory', 'Individual memory deleted.', '⌫');
     });
     list.appendChild(row);
   });
@@ -5560,7 +5560,7 @@ function applyAvatarGender(gender) {
   if (window.gemAvatar) window.gemAvatar.setGender(g);
   if (window.ttsEngine) window.ttsEngine.gender = profile.voiceGender || g;
   const label = $('#avatarGenderLabel');
-  if (label) label.textContent = g === 'male' ? '♂ MALE' : '♀ FEMALE';
+  if (label) label.textContent = g === 'male' ? '♂ Male' : '♀ Female';
   const sel = $('#setAvatarGender');
   if (sel) sel.value = g;
   const vSel = $('#setVoiceGender');
@@ -5930,7 +5930,7 @@ async function checkForAppUpdates({ force = false, silent = false } = {}) {
     const result = await api.checkForUpdates(force);
     if (!result || !result.ok) {
       if (status) status.textContent = result && result.error === 'UPDATE_CHECK_TIMEOUT' ? 'Check timed out. Try again later.' : 'Could not check for updates.';
-      if (!silent) toast('UPDATE CHECK', 'GitHub release information is unavailable right now.', '⚠');
+      if (!silent) toast('Update check', 'GitHub release information is unavailable right now.', '⚠');
       return result || { ok: false, error: 'UPDATE_CHECK_FAILED' };
     }
     const releaseUrl = trustedReleasePage(result.url);
@@ -5941,11 +5941,11 @@ async function checkForAppUpdates({ force = false, silent = false } = {}) {
     if (result.available) {
       if (status) status.textContent = `GemAir ${result.latest} is available (installed: ${result.current}). Click INSTALL UPDATE once — no manual reinstall needed.`;
       if (viewButton) { viewButton.hidden = false; viewButton.dataset.url = releaseUrl; viewButton.textContent = result.windowsAssetUrl ? 'INSTALL UPDATE' : 'VIEW RELEASE'; }
-      toast('UPDATE AVAILABLE', `GemAir ${result.latest} is ready — one click to install.`, '⬆');
+      toast('Update available', `GemAir ${result.latest} is ready — one click to install.`, '⬆');
     } else {
       if (status) status.textContent = `GemAir ${result.current} is up to date.`;
       if (viewButton) { viewButton.hidden = true; delete viewButton.dataset.url; }
-      if (!silent) toast('UP TO DATE', `GemAir ${result.current} is the latest stable release.`, '✓');
+      if (!silent) toast('Up to date', `GemAir ${result.current} is the latest stable release.`, '✓');
     }
     return result;
   } finally {
@@ -5982,16 +5982,16 @@ async function renderUsageStats() {
 }
 async function exportUsageStats() {
   const stats = await renderUsageStats();
-  if (!stats || stats.disabled) { toast('USAGE STATS', 'Enable local statistics and save Settings first.', 'ℹ'); return; }
+  if (!stats || stats.disabled) { toast('Usage stats', 'Enable local statistics and save Settings first.', 'ℹ'); return; }
   downloadText(JSON.stringify(stats, null, 2), `gemair-usage-${new Date().toISOString().slice(0, 10)}.json`);
-  toast('USAGE STATS', 'Local aggregate counters exported.', '⇩');
+  toast('Usage stats', 'Local aggregate counters exported.', '⇩');
 }
 async function clearLocalUsageStats() {
   if (!window.confirm('Clear all local usage counters? This cannot be undone.')) return;
   await api.usageClear();
   lastUsageStats = null;
   await renderUsageStats();
-  toast('USAGE STATS', 'Local counters cleared.', '✓');
+  toast('Usage stats', 'Local counters cleared.', '✓');
 }
 
 function openSettings() {
@@ -6291,7 +6291,7 @@ function applyFreeModel(entry) {
   $('#setBaseURL').value = entry.baseURL;
   $('#setModel').value = entry.model;
   updateAiHint();
-  toast('FREE MODEL', 'Loaded ' + provider.name + ' · ' + entry.model, '🧠');
+  toast('Free model', 'Loaded ' + provider.name + ' · ' + entry.model, '🧠');
   if (entry.keyUrl) {
     window.open(entry.keyUrl, '_blank');
   }
@@ -6360,7 +6360,7 @@ async function refreshOllamaModels() {
       $('#setModel').value = btn.dataset.model;
       $('#setApiKey').value = '';
       updateAiHint();
-      toast('LOCAL MODEL', 'Using ' + btn.dataset.model + ' — keyless', '🪶');
+      toast('Local model', 'Using ' + btn.dataset.model + ' — keyless', '🪶');
     }));
   } catch (e) {
     box.innerHTML = '<div class="empty">Could not reach Ollama.</div>';
@@ -6409,7 +6409,7 @@ function bindEvents() {
       $('#chatLog').innerHTML = '<div class="msg system-msg"><p>Chat history cleared. Systems standing by.</p></div>';
       chatHistory.splice(0, chatHistory.length);
       updateContextMeter();
-      toast('CHAT', 'Chat history log cleared.', '🧹');
+      toast('Chat', 'Chat history log cleared.', '🧹');
     });
   }
 
@@ -6466,11 +6466,11 @@ function bindEvents() {
 
     if (agent === 'all') {
       addActivity('TEAM', `Multi-agent mission dispatched: "${task}"`);
-      toast('AGENTS', 'Alice → Bob → Carol collaboration initiated', '👥');
+      toast('Agents', 'Alice → Bob → Carol collaboration initiated', '👥');
       runCollaborationMission(task);
     } else {
       addActivity(agent, `Dispatched mission: "${task}"`);
-      toast('AGENT', `${agent} assigned task`, '🚀');
+      toast('Agent', `${agent} assigned task`, '🚀');
       switchView('assistant');
       $('#chatInput').value = `@${agent} ${task}`;
       sendMessage($('#chatInput').value);
@@ -6518,7 +6518,7 @@ function bindEvents() {
     if (!(await window.aiClient.isWebGpuSupported())) {
       localBrainToggle.checked = false;
       if (hint) hint.textContent = 'This browser has no WebGPU adapter, so the in-browser model cannot run here.';
-      toast('OFFLINE BRAIN', 'WebGPU is not available in this browser.', '⚠️');
+      toast('Offline brain', 'WebGPU is not available in this browser.', '⚠️');
       return;
     }
     if (hint) hint.textContent = 'Downloading model weights… this runs once and is cached by the browser.';
@@ -6529,7 +6529,7 @@ function bindEvents() {
     if (hint) hint.textContent = ok
       ? `Local model READY (${window.aiClient.LOCAL_MODEL.id}) — factual/current questions still use live tools first.`
       : 'Could not load the local model. Live tools remain available; generic answers require a configured model.';
-    toast('OFFLINE BRAIN', ok ? 'Local model ready' : 'Local model unavailable', ok ? '🧠' : '⚠️');
+    toast('Offline brain', ok ? 'Local model ready' : 'Local model unavailable', ok ? '🧠' : '⚠️');
   });
 
   // S10 — the expert-panel ＋ finally does something
@@ -6562,7 +6562,7 @@ function bindEvents() {
       profile.lang = next;
       persistProfile();
       playSfx('click');
-      toast('LANGUAGE', `Interface switched to ${(i18n.LANGUAGES.find((l) => l.id === next) || {}).native || next}`, '🌐');
+      toast('Language', `Interface switched to ${(i18n.LANGUAGES.find((l) => l.id === next) || {}).native || next}`, '🌐');
     });
   }
 
@@ -6615,7 +6615,7 @@ function bindEvents() {
     await api.memoryAddSkill(text, $('#skillName').value.trim());
     $('#skillInput').value = ''; $('#skillName').value = '';
     await loadMemory(); renderSkills();
-    toast('SKILL', 'Skill remembered — I\u2019ll reuse it from now on.', '🧠');
+    toast('Skill', 'Skill remembered — I\u2019ll reuse it from now on.', '🧠');
   });
   $('#skillInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#skillAdd').click(); });
   $('#instructionAdd').addEventListener('click', async () => {
@@ -6624,7 +6624,7 @@ function bindEvents() {
     await api.memoryAddInstruction(text);
     $('#instructionInput').value = '';
     await loadMemory(); renderInstructions();
-    toast('RULE', 'Standing instruction saved.', '📌');
+    toast('Rule', 'Standing instruction saved.', '📌');
   });
   $('#instructionInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#instructionAdd').click(); });
 
@@ -6687,7 +6687,7 @@ function bindEvents() {
   $('#reportClose').addEventListener('click', () => $('#reportModal').classList.remove('open'));
   $('#reportClose2').addEventListener('click', () => $('#reportModal').classList.remove('open'));
   $('#reportCopy').addEventListener('click', () => {
-    try { navigator.clipboard.writeText($('#reportContent').textContent); toast('REPORT', 'Copied to clipboard.', '📋'); } catch (e) {}
+    try { navigator.clipboard.writeText($('#reportContent').textContent); toast('Report', 'Copied to clipboard.', '📋'); } catch (e) {}
   });
 
   // Full profile + memory JSON backup and validated restore.
@@ -6695,7 +6695,7 @@ function bindEvents() {
     const data = await api.exportMemory();
     const backup = { schema: 'gemair-backup', schemaVersion: 2, appVersion: '2.1.0', exportedAt: new Date().toISOString(), profile: data.profile || profile, memory: data.memory || memory };
     downloadText(JSON.stringify(backup, null, 2), 'gemair-backup-' + new Date().toISOString().slice(0, 10) + '.json');
-    toast('BACKUP', 'Full profile and memory exported as JSON.', '⬇');
+    toast('Backup', 'Full profile and memory exported as JSON.', '⬇');
   });
   $('#importBtn').addEventListener('click', () => $('#importFile').click());
   $('#importFile').addEventListener('change', async () => {
@@ -6714,11 +6714,11 @@ function bindEvents() {
       await loadProfile(); await loadMemory(); applyTheme(profile.theme || DEFAULTS.theme); applyAvatarGender(profile.avatarGender || 'female');
       renderAllMemory(); updateContextMeter(); updateSttLanguageUi(); configureWakeWord(!!profile.wakeWord); configureScreenAwareness(!!profile.screenAwareness);
       $('#importFile').value = '';
-      toast('BACKUP RESTORED', 'Profile, memories, goals, voice and settings restored.', '✓');
+      toast('Backup restored', 'Profile, memories, goals, voice and settings restored.', '✓');
       closeSettings();
     } catch (error) {
       $('#importFile').value = '';
-      toast('IMPORT FAILED', error.message, '⚠');
+      toast('Import failed', error.message, '⚠');
     }
   });
 
@@ -6759,7 +6759,7 @@ function bindEvents() {
         viewButton.dataset.url = info.url;
         viewButton.textContent = info.downloaded ? 'RESTART TO UPDATE' : 'INSTALL UPDATE';
       }
-      try { toast('UPDATE AVAILABLE', info.downloaded ? `${display} downloaded — restart to install.` : `${display} published — downloading in the background.`, '⬆'); } catch {}
+      try { toast('Update available', info.downloaded ? `${display} downloaded — restart to install.` : `${display} published — downloading in the background.`, '⬆'); } catch {}
     });
     if (api.onUpdaterEvent) api.onUpdaterEvent((event) => {
       if (!event) return;
@@ -6773,7 +6773,7 @@ function bindEvents() {
         if (status) status.textContent = `Update ${event.version || ''} is downloaded. Click RESTART TO UPDATE.`;
         if (pill) { pill.hidden = false; pill.textContent = '⬆ Restart to update'; }
         if (viewButton) { viewButton.hidden = false; viewButton.textContent = 'RESTART TO UPDATE'; }
-        try { toast('UPDATE READY', 'Update downloaded — restart to install.', '⬆'); } catch {}
+        try { toast('Update ready', 'Update downloaded — restart to install.', '⬆'); } catch {}
       }
     });
   } catch {}
@@ -6782,7 +6782,7 @@ function bindEvents() {
     const label = btn ? btn.textContent : '';
     if (label === 'RESTART TO UPDATE' && window.gemair && window.gemair.applyUpdate) {
       const result = await api.applyUpdate();
-      if (!result.ok && result.error !== 'UPDATE_CANCELLED') toast('UPDATE', result.error || 'Could not start installer.', '⚠');
+      if (!result.ok && result.error !== 'UPDATE_CANCELLED') toast('Update', result.error || 'Could not start installer.', '⚠');
       return;
     }
     const url = trustedReleasePage(btn ? btn.dataset.url : '');
@@ -6791,7 +6791,7 @@ function bindEvents() {
       if (btn) btn.textContent = 'DOWNLOADING…';
       const result = await api.installUpdate(url);
       if (btn) btn.textContent = 'INSTALL UPDATE';
-      if (!result.ok && result.error !== 'UPDATE_CANCELLED') toast('UPDATE', result.error || 'Could not start installer.', '⚠');
+      if (!result.ok && result.error !== 'UPDATE_CANCELLED') toast('Update', result.error || 'Could not start installer.', '⚠');
     } else api.openExternal(url);
   });
   $('#downloadModal').addEventListener('click', (e) => { if (e.target === $('#downloadModal')) closeDownload(); });
@@ -6807,7 +6807,7 @@ function bindEvents() {
     profile.voiceGender = nextG;
     applyAvatarGender(nextG);
     persistProfile();
-    toast('VOICE & AVATAR', `Switched to ${nextG.toUpperCase()} — avatar and voice updated`, '🎙');
+    toast('Voice & avatar', `Switched to ${nextG.toUpperCase()} — avatar and voice updated`, '🎙');
   });
 
   $('#settingsBtn').addEventListener('click', openSettings);
@@ -7003,7 +7003,7 @@ function bindEvents() {
       { id: 'panel-focus', name: 'Focus Timer Panel', detail: 'HUD panel', icon: '◫', type: 'PANEL', action: () => openHudDock('focus') },
       { id: 'panel-system', name: 'Live Telemetry Panel', detail: 'HUD panel', icon: '⌁', type: 'PANEL', action: () => openHudDock('system') },
       { id: 'panel-news', name: 'Headlines Panel', detail: 'HUD panel', icon: '◎', type: 'PANEL', action: () => openHudDock('news') },
-      { id: 'toggle-memory', name: `${profile.memoryOn === false ? 'Enable' : 'Disable'} Auto Memory`, detail: 'settings toggle', icon: '🧠', type: 'TOGGLE', action: () => { profile.memoryOn = profile.memoryOn === false; persistProfile(); toast('MEMORY', profile.memoryOn ? 'Auto memory enabled.' : 'Auto memory disabled.', '🧠'); } },
+      { id: 'toggle-memory', name: `${profile.memoryOn === false ? 'Enable' : 'Disable'} Auto Memory`, detail: 'settings toggle', icon: '🧠', type: 'TOGGLE', action: () => { profile.memoryOn = profile.memoryOn === false; persistProfile(); toast('Memory', profile.memoryOn ? 'Auto memory enabled.' : 'Auto memory disabled.', '🧠'); } },
       { id: 'toggle-wake', name: `${profile.wakeWord ? 'Disable' : 'Enable'} Wake Word`, detail: `say “${profile.wakeWordText || 'Hey Gem'}”`, icon: '🎙', type: 'TOGGLE', action: () => { profile.wakeWord = !profile.wakeWord; persistProfile(); configureWakeWord(profile.wakeWord); } },
       { id: 'toggle-score', name: `${profile.ambientScore ? 'Disable' : 'Enable'} Ambient Score`, detail: 'local synthesized audio', icon: '♫', type: 'TOGGLE', action: () => { profile.ambientScore = !profile.ambientScore; setAmbientScore(profile.ambientScore); persistProfile(); } },
       ...AGENTS.map((a) => ({ id: 'agent-' + a.name.toLowerCase(), name: 'Assign ' + a.name, detail: a.role, icon: a.emoji, type: 'AGENT', action: () => { switchView('assistant'); $('#chatInput').value = '@' + a.name + ' '; $('#chatInput').focus(); } })),
@@ -7126,7 +7126,7 @@ function bindEvents() {
     if (/^(hi|ur)/i.test(profile.voice.sttLang) && matched) profile.voice.edgeVoice = matched;
     const evSel = $('#setEdgeVoice'); if (evSel && profile.voice.edgeVoice) evSel.value = profile.voice.edgeVoice;
     updateSttLanguageUi(); persistProfile(); playSfx('click');
-    toast('VOICE LANGUAGE', profile.voice.sttLang, '🎙');
+    toast('Voice language', profile.voice.sttLang, '🎙');
   });
   $('#previewVoice').addEventListener('click', () => {
     const previousVoice = { ...profile.voice };
@@ -7138,7 +7138,7 @@ function bindEvents() {
     profile.voice.rate = Number($('#setRate').value);
     profile.voice.pitch = Number($('#setPitch').value);
     profile.voiceGender = $('#setVoiceGender').value;
-    speak('Hello, I am Gem, your personal intelligence. All systems are ready.');
+    speak('Hello, I am Gem, your personal assistant. Ready when you are.');
     profile.voice = previousVoice; profile.voiceGender = previousGender;
   });
   $('#setRate').addEventListener('input', () => { $('#rateVal').textContent = $('#setRate').value; });
@@ -7330,7 +7330,7 @@ function bindEvents() {
           }
         },
         onLevel: ({ in: input, out }) => { liveMeter('#geminiLiveMeterIn', input); liveMeter('#geminiLiveMeterOut', out); },
-        onBargeIn: () => { try { toast('LIVE VOICE', 'Barged in — Gem stopped to listen.', '🎙'); } catch {} }
+        onBargeIn: () => { try { toast('Live voice', 'Barged in — Gem stopped to listen.', '🎙'); } catch {} }
       });
     } catch (e) {
       liveState('error');
@@ -7380,8 +7380,8 @@ function bindEvents() {
     if (isRunning) {
       isRunning = false;
       $('#startBtn').classList.remove('running');
-      $('#startLabel').textContent = 'START AI';
-      $('#orbStatus').textContent = 'STANDBY';
+      $('#startLabel').textContent = 'Start';
+      $('#orbStatus').textContent = 'Standby';
       $('#orbStatus').classList.remove('active');
       stopListening();
       stopSpeaking(); // U6: turning the loop OFF must also silence Gem mid-sentence
@@ -7488,7 +7488,7 @@ function bindEvents() {
     applyTheme(profile.theme);
     persistProfile();
     $('#themeModal').classList.remove('open');
-    toast('THEME', `${b.textContent.trim()} HUD applied across the whole command center.`, '🎨');
+    toast('Theme', `${b.textContent.trim()} HUD applied across the whole command center.`, '🎨');
   }));
   $('#themeSkipBtn')?.addEventListener('click', () => { $('#themeModal').classList.remove('open'); });
   $('#themeModalClose')?.addEventListener('click', () => { $('#themeModal').classList.remove('open'); });
@@ -7509,7 +7509,7 @@ async function inspectActiveScreen() {
     if (result && result.changed) {
       addActivity('SCREEN', '✓ ' + result.description);
       pushToolActivity('see_screen', { mode: 'change detection' }, result, 0);
-      toast('SCREEN AWARENESS', result.description, '◫');
+      toast('Screen awareness', result.description, '◫');
     }
   } catch (e) {
     addActivity('SCREEN', 'Screen awareness unavailable: ' + e.message);
@@ -7530,8 +7530,8 @@ function startAiLoop() {
   startMicMeter();
   if (profile.screenAwareness) inspectActiveScreen();
   $('#startBtn').classList.add('running');
-  $('#startLabel').textContent = 'AI ONLINE';
-  $('#orbStatus').textContent = 'LISTENING · SPEAK NOW';
+  $('#startLabel').textContent = 'Listening';
+  $('#orbStatus').textContent = 'Listening — speak now';
   $('#orbStatus').classList.add('active');
   if (recognition) { try { recognition.start(); $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); } catch (e) {} }
 }
@@ -7618,7 +7618,7 @@ function startBreathing() {
     count.textContent = remaining;
     if (remaining <= 0) {
       phase = (phase + 1) % 3;
-      if (phase === 0) { cycles++; if (cycles >= 4) { stopBreathing(); toast('BREATHING', 'Great job. Notice how much calmer you feel.', '🌬'); return; } }
+      if (phase === 0) { cycles++; if (cycles >= 4) { stopBreathing(); toast('Breathing', 'Great job. Notice how much calmer you feel.', '🌬'); return; } }
       remaining = BREATHE_PHASES[phase].seconds;
     }
     const p = BREATHE_PHASES[phase];
@@ -7879,15 +7879,15 @@ async function boot() {
       if (cfg && cfg.supabase && window.webStore) {
         const ok = await window.webStore.initSupabase(cfg.supabase);
         if (ok) {
-          toast('CLOUD', 'Supabase connected — your memory syncs across devices.', '🗄');
+          toast('Cloud', 'Supabase connected — your memory syncs across devices.', '🗄');
         } else {
           // Explain *why* rather than failing silently. Memory still works
           // locally, so this is a downgrade, not an error.
           const err = window.webStore.lastError || {};
           if (err.code === 'ANON_DISABLED') {
-            toast('CLOUD OFF', 'Enable Authentication → Providers → Anonymous in Supabase to sync across devices. Memory is saved on this device meanwhile.', '🔒');
+            toast('Cloud off', 'Enable Authentication → Providers → Anonymous in Supabase to sync across devices. Memory is saved on this device meanwhile.', '🔒');
           } else if (err.code && err.code !== 'NO_CONFIG') {
-            toast('CLOUD OFF', (err.message || 'Supabase unavailable') + ' Memory is saved on this device.', '🔒');
+            toast('Cloud off', (err.message || 'Supabase unavailable') + ' Memory is saved on this device.', '🔒');
           }
           console.warn('[GemAir] cloud sync unavailable:', err.code, err.message);
         }
@@ -7982,14 +7982,14 @@ async function boot() {
     addMessage('ai', greeting);
   }
 
-  toast('GEMAIR', 'GemAir is online — completely free out of the box!', '✨');
+  toast('GemAir', 'GemAir is online — completely free out of the box!', '✨');
 
   try {
     const recovery = await api.consumeRecovery();
     if (recovery && (recovery.recovered || (recovery.restored && recovery.restored.length))) {
       const restored = recovery.restored && recovery.restored.length ? ` Restored: ${recovery.restored.join(', ')}.` : '';
       addMessage('system-msg', `♻ GemAir recovered safely after an unexpected interruption.${restored} Your local profile and memory are available.`);
-      toast('STATE RECOVERED', 'Local profile and memory passed recovery checks.', '♻');
+      toast('State recovered', 'Local profile and memory passed recovery checks.', '♻');
     }
   } catch (error) { console.warn('[recovery-status]', error); }
 
@@ -8008,7 +8008,7 @@ async function boot() {
     if (await api.needsCheckIn()) {
       setTimeout(() => {
         addMessage('system-msg', '💙 I noticed things have felt heavy lately. I\u2019m here — no pressure, but I\u2019m listening if you want to talk.');
-        toast('CHECK-IN', 'Been a rough few days? I\u2019m here for you.', '💙');
+        toast('Check-in', 'Been a rough few days? I\u2019m here for you.', '💙');
       }, 2500);
     }
   } catch (e) {}
@@ -8023,13 +8023,13 @@ function runBootSequence() {
   if (REDUCED_MOTION) { overlay.classList.add('done'); return Promise.resolve(); }
   const bios = $('#bootBios'), bar = $('#bootBar'), line = $('#bootLine');
   const trace = [
-    ['GEMAIR BIOS // LOCAL INTELLIGENCE RUNTIME', 'dim'],
-    ['POST  CPU VECTOR MATRIX ..................... OK', 'ok'],
-    ['POST  MEMORY VAULT .......................... OK', 'ok'],
-    ['MOUNT VOICE / EARS .......................... READY', 'ok'],
-    ['LINK  AGENT TOWN ............................ 4 SEATS', ''],
-    ['SYNC  WORLD MONITOR ......................... UTC', ''],
-    ['HANDOFF TO HUD KERNEL', 'ok']
+    ['GemAir', 'dim'],
+    ['Memory ............................... ready', 'ok'],
+    ['Voice ................................ ready', 'ok'],
+    ['Agents ................................ ready', 'ok'],
+    ['Tools ................................. ready', 'ok'],
+    ['News .................................. ready', 'ok'],
+    ['Starting the assistant', 'ok']
   ];
 
   return new Promise((resolve) => {
@@ -8065,14 +8065,14 @@ function runBootSequence() {
     later(() => {
       if (finished) return;
       overlay.classList.add('logo-phase');
-      if (line) line.textContent = 'Ready';
+      if (line) line.textContent = 'Welcome';
       if (bar) bar.style.width = '88%';
       playSfx('activate');
     }, 1080);
     later(() => {
       if (finished) return;
       overlay.classList.add('sweep-phase');
-      if (line) line.textContent = 'HUD POWER-ON SWEEP · ONLINE';
+      if (line) line.textContent = 'Ready';
       if (bar) bar.style.width = '100%';
     }, 1880);
     later(finish, 2720); // hard bound: transition included, always under 4s
@@ -8094,7 +8094,7 @@ function bindSoulSliders() {
       profile.adaptivePersonality = adaptive.checked;
       persistProfile();
       renderAdaptivePersonalityState();
-      toast('SOUL', adaptive.checked ? 'Mood-adaptive personality enabled.' : 'Using manual personality sliders only.', '◇');
+      toast('Personality', adaptive.checked ? 'Mood-adaptive personality enabled.' : 'Using manual personality sliders only.', '◇');
     });
   }
   renderAdaptivePersonalityState();
@@ -8250,24 +8250,24 @@ function showExperimentalWarning(provider, onContinue) {
 async function handleConnectChatGPT() {
   showExperimentalWarning('chatgpt', async () => {
     try {
-      toast('CHATGPT', 'Opening ChatGPT sign-in… (OpenAI titles the page "Codex" — that is only the login method; you are connecting your ChatGPT account.)', '🔐');
+      toast('ChatGPT', 'Opening ChatGPT sign-in… (OpenAI titles the page "Codex" — that is only the login method; you are connecting your ChatGPT account.)', '🔐');
       const res = await api.connectionsOauthChatGPT();
       if (res && !res.error) {
         await loadConnectionsStatus();
-        toast('CHATGPT', 'Account connected securely.', '✅');
+        toast('ChatGPT', 'Account connected securely.', '✅');
         return;
       }
       // Direct OAuth rejected server-side: offer the paste-session flow,
       // which needs nothing but a ChatGPT login in your own browser.
       // (Timeouts/cancels stay as errors — no surprise popups.)
       if (res && /CHATGPT_OAUTH_CLIENT_REJECTED/.test(res.error || '')) {
-        toast('CHATGPT', 'Sign-in was rejected — use Paste session JSON instead (no extra tools).', '📋');
+        toast('ChatGPT', 'Sign-in was rejected — use Paste session JSON instead (no extra tools).', '📋');
         openSessionJsonModal();
         return;
       }
-      toast('CHATGPT', res.message || res.error || 'OAuth sign-in failed', '⚠️');
+      toast('ChatGPT', res.message || res.error || 'OAuth sign-in failed', '⚠️');
     } catch (e) {
-      toast('CHATGPT', e.message, '⚠️');
+      toast('ChatGPT', e.message, '⚠️');
     }
   });
 }
@@ -8280,28 +8280,28 @@ async function handleImportCodex() {
     if (codexPollTimer) { clearInterval(codexPollTimer); codexPollTimer = null; }
     const status = await api.connectionsCodexStatus().catch(() => ({ exists: false, valid: false }));
     if (status && status.valid) {
-      toast('CHATGPT', 'Reading your local Codex login…', '📥');
+      toast('ChatGPT', 'Reading your local Codex login…', '📥');
       const res = await api.connectionsImportCodex();
       if (res && !res.error) {
         await loadConnectionsStatus();
-        toast('CHATGPT', 'Codex login imported securely.', '✅');
+        toast('ChatGPT', 'Codex login imported securely.', '✅');
         return;
       }
-      toast('CHATGPT', res.message || res.error || 'Codex import failed', '⚠️');
+      toast('ChatGPT', res.message || res.error || 'Codex import failed', '⚠️');
       return;
     }
     const launched = await api.connectionsLaunchCodexLogin().catch((e) => ({ error: e.message }));
     if (launched && launched.error) {
-      toast('CHATGPT', launched.message || launched.error, '⚠️');
+      toast('ChatGPT', launched.message || launched.error, '⚠️');
       return;
     }
-    toast('CHATGPT', 'A login window opened — sign in to ChatGPT there. GemAir will pick up the login automatically.', '🔐');
+    toast('ChatGPT', 'A login window opened — sign in to ChatGPT there. GemAir will pick up the login automatically.', '🔐');
     const deadline = Date.now() + 5 * 60 * 1000;
     codexPollTimer = setInterval(async () => {
       try {
         if (Date.now() > deadline) {
           clearInterval(codexPollTimer); codexPollTimer = null;
-          toast('CHATGPT', 'Login window timed out. Press Import Codex login to try again.', '⚠️');
+          toast('ChatGPT', 'Login window timed out. Press Import Codex login to try again.', '⚠️');
           return;
         }
         const next = await api.connectionsCodexStatus();
@@ -8310,15 +8310,15 @@ async function handleImportCodex() {
           const res = await api.connectionsImportCodex();
           if (res && !res.error) {
             await loadConnectionsStatus();
-            toast('CHATGPT', 'Codex login imported securely.', '✅');
+            toast('ChatGPT', 'Codex login imported securely.', '✅');
           } else {
-            toast('CHATGPT', res.message || res.error || 'Codex import failed', '⚠️');
+            toast('ChatGPT', res.message || res.error || 'Codex import failed', '⚠️');
           }
         }
       } catch (e) { /* keep polling until the deadline */ }
     }, 3000);
   } catch (e) {
-    toast('CHATGPT', e.message, '⚠️');
+    toast('ChatGPT', e.message, '⚠️');
   }
 }
 
@@ -8326,7 +8326,7 @@ async function handleCaptureChatGPT() {
   try {
     const res = await api.connectionsCaptureChatGPT();
     if (res.ok) {
-      toast('CHATGPT', 'Connected as ' + res.email + ' (' + res.plan + ')', '✅');
+      toast('ChatGPT', 'Connected as ' + res.email + ' (' + res.plan + ')', '✅');
       profile.connectionsWarningAcknowledged = true;
       await persistProfile();
       await api.connectionsAcknowledgeWarning();
@@ -8335,21 +8335,21 @@ async function handleCaptureChatGPT() {
     } else if (res && /No auth window/.test(res.error || '')) {
       // No window open yet: open it and let the user sign in first.
       await api.connectionsOpenChatGPT();
-      toast('CHATGPT', 'Sign-in window opened — log in at chatgpt.com, then press Capture Session.', '🔐');
+      toast('ChatGPT', 'Sign-in window opened — log in at chatgpt.com, then press Capture Session.', '🔐');
     } else {
-      toast('CHATGPT', res.error || 'Capture failed', '⚠️');
+      toast('ChatGPT', res.error || 'Capture failed', '⚠️');
     }
   } catch (e) {
-    toast('CHATGPT', e.message, '⚠️');
+    toast('ChatGPT', e.message, '⚠️');
   }
 }
 
 async function handleOpenChatGPT() {
   try {
     await api.connectionsOpenChatGPT();
-    toast('CHATGPT', 'Sign-in window opened — log in, then press Capture Session.', '🔐');
+    toast('ChatGPT', 'Sign-in window opened — log in, then press Capture Session.', '🔐');
   } catch (e) {
-    toast('CHATGPT', e.message, '⚠️');
+    toast('ChatGPT', e.message, '⚠️');
   }
 }
 
@@ -8377,7 +8377,7 @@ async function handleImportSessionJson() {
       await api.connectionsAcknowledgeWarning();
       await loadConnectionsStatus();
       const until = res.expiresAt ? new Date(res.expiresAt).toLocaleString() : 'unknown expiry';
-      toast('CHATGPT', 'Connected as ' + (res.email || 'ChatGPT') + ' · valid until ' + until, '✅');
+      toast('ChatGPT', 'Connected as ' + (res.email || 'ChatGPT') + ' · valid until ' + until, '✅');
       speak('ChatGPT connected');
     } else {
       say('✗ ' + (res.message || res.error || 'Import failed'));
@@ -8390,23 +8390,23 @@ async function handleImportSessionJson() {
 async function handleConnectGemini() {
   showExperimentalWarning('gemini', async () => {
     try {
-      toast('GEMINI', 'Opening secure Google OAuth sign-in…', '🔐');
+      toast('Gemini', 'Opening secure Google OAuth sign-in…', '🔐');
       const res = await api.connectionsOauthGemini();
       if (res && !res.error) {
         await loadConnectionsStatus();
-        toast('GEMINI', 'Account connected securely.', '✅');
+        toast('Gemini', 'Account connected securely.', '✅');
         return;
       }
       // No operator OAuth client on this machine: fall through to browser
       // sign-in + capture, which needs no configuration.
       if (res && /GEMINI_OAUTH_CLIENT_MISSING/.test(res.error || '')) {
-        toast('GEMINI', 'Direct OAuth is not configured here — opening browser sign-in…', '🔀');
+        toast('Gemini', 'Direct OAuth is not configured here — opening browser sign-in…', '🔀');
         handleOpenGemini();
         return;
       }
-      toast('GEMINI', res.message || res.error || 'OAuth sign-in failed.', '⚠️');
+      toast('Gemini', res.message || res.error || 'OAuth sign-in failed.', '⚠️');
     } catch (e) {
-      toast('GEMINI', e.message, '⚠️');
+      toast('Gemini', e.message, '⚠️');
     }
   });
 }
@@ -8414,9 +8414,9 @@ async function handleConnectGemini() {
 async function handleOpenGemini() {
   try {
     await api.connectionsOpenGemini();
-    toast('GEMINI', 'Sign-in window opened — log in with Google, then press Capture Session.', '🔐');
+    toast('Gemini', 'Sign-in window opened — log in with Google, then press Capture Session.', '🔐');
   } catch (e) {
-    toast('GEMINI', e.message, '⚠️');
+    toast('Gemini', e.message, '⚠️');
   }
 }
 
@@ -8424,7 +8424,7 @@ async function handleCaptureGemini() {
   try {
     const res = await api.connectionsCaptureGemini(false);
     if (res.ok) {
-      toast('GEMINI', 'Connected as ' + res.email, '✅');
+      toast('Gemini', 'Connected as ' + res.email, '✅');
       profile.connectionsWarningAcknowledged = true;
       await persistProfile();
       await api.connectionsAcknowledgeWarning();
@@ -8432,23 +8432,23 @@ async function handleCaptureGemini() {
       speak('Gemini connected');
     } else if (res && /No auth window/.test(res.error || '')) {
       await api.connectionsOpenGemini();
-      toast('GEMINI', 'Sign-in window opened — log in with Google, then press Capture Session.', '🔐');
+      toast('Gemini', 'Sign-in window opened — log in with Google, then press Capture Session.', '🔐');
     } else {
-      toast('GEMINI', res.error, '⚠️');
+      toast('Gemini', res.error, '⚠️');
     }
   } catch (e) {
-    toast('GEMINI', e.message, '⚠️');
+    toast('Gemini', e.message, '⚠️');
   }
 }
 
 async function handleOpenAIStudio() {
   try {
-    toast('AI STUDIO', 'Opening AI Studio — sign in with Google', '🧪');
+    toast('AI Studio', 'Opening AI Studio — sign in with Google', '🧪');
     await api.connectionsOpenAIStudio();
     const cap = $('#captureGeminiBtn');
     if (cap) { cap.hidden = false; cap.textContent = 'Capture AI Studio'; cap.dataset.fallback = '1'; }
   } catch (e) {
-    toast('AI STUDIO', e.message, '⚠️');
+    toast('AI Studio', e.message, '⚠️');
   }
 }
 
@@ -8465,7 +8465,7 @@ function setupConnectionsHub() {
   $('#disconnectChatGPTBtn')?.addEventListener('click', async () => {
     await api.connectionsDisconnect('chatgpt');
     await loadConnectionsStatus();
-    toast('CHATGPT', 'Disconnected — encrypted storage cleared', '🔌');
+    toast('ChatGPT', 'Disconnected — encrypted storage cleared', '🔌');
   });
   $('#connectGeminiBtn')?.addEventListener('click', handleConnectGemini);
   $('#captureGeminiBtn')?.addEventListener('click', async () => {
@@ -8473,8 +8473,8 @@ function setupConnectionsHub() {
     const isFallback = btn && btn.dataset.fallback === '1';
     if (isFallback) {
       const res = await api.connectionsCaptureGemini(true);
-      if (res.ok) { toast('GEMINI', 'AI Studio credential captured', '✅'); await loadConnectionsStatus(); }
-      else toast('GEMINI', res.error, '⚠️');
+      if (res.ok) { toast('Gemini', 'AI Studio credential captured', '✅'); await loadConnectionsStatus(); }
+      else toast('Gemini', res.error, '⚠️');
     } else {
       await handleCaptureGemini();
     }
@@ -8482,12 +8482,12 @@ function setupConnectionsHub() {
   $('#disconnectGeminiBtn')?.addEventListener('click', async () => {
     await api.connectionsDisconnect('gemini');
     await loadConnectionsStatus();
-    toast('GEMINI', 'Disconnected', '🔌');
+    toast('Gemini', 'Disconnected', '🔌');
   });
   $('#clearAllConnectionsBtn')?.addEventListener('click', async () => {
     await api.connectionsClearAll();
     await loadConnectionsStatus();
-    toast('CONNECTIONS', 'All encrypted sessions cleared', '🧹');
+    toast('Connections', 'All encrypted sessions cleared', '🧹');
   });
   $('#openAIStudioBtn')?.addEventListener('click', handleOpenAIStudio);
   $('#brainPriorityPicker')?.addEventListener('change', async (e) => {
@@ -8496,7 +8496,7 @@ function setupConnectionsHub() {
     await persistProfile();
     await api.connectionsSetPriority(v);
     await loadConnectionsStatus();
-    toast('BRAIN', 'Priority → ' + v.toUpperCase(), '🧠');
+    toast('Brain', 'Priority → ' + v.toUpperCase(), '🧠');
   });
 
   // Experimental warning modal
@@ -8522,7 +8522,7 @@ function setupConnectionsHub() {
     const body = $('#reconnectBody');
     if (body) body.textContent = detail + ' Falling back to FREE CORE.';
     $('#reconnectModal').classList.add('open');
-    toast('CONNECTION LOST', detail, '⚠️');
+    toast('Connection lost', detail, '⚠️');
     // instant fallback: set active brain to free core
     updateActiveBrain();
   });
@@ -8573,7 +8573,7 @@ function renderModes() {
     btn.addEventListener('click', async (e)=>{ e.stopPropagation(); await applyMode(btn.dataset.apply); });
   });
   container.querySelectorAll('[data-del]').forEach(btn=>{
-    btn.addEventListener('click', async (e)=>{ e.stopPropagation(); await api.modesDelete(btn.dataset.del); await loadModes(); toast('MODES', 'Deleted ' + btn.dataset.del, '⌫'); });
+    btn.addEventListener('click', async (e)=>{ e.stopPropagation(); await api.modesDelete(btn.dataset.del); await loadModes(); toast('Modes', 'Deleted ' + btn.dataset.del, '⌫'); });
   });
   container.querySelectorAll('.mode-card').forEach(card=>{
     card.addEventListener('click', async ()=>{ await applyMode(card.dataset.mode); });
@@ -8621,7 +8621,7 @@ function renderSettingsModesList() {
           addModeSiteRow(typeof site==='string'?site:site.url, typeof site==='object'?site.browser:'chrome');
         });
       }
-      toast('MODE EDIT', 'Loaded ' + m.name + ' into designer — edit and save', '✏️');
+      toast('Mode edit', 'Loaded ' + m.name + ' into designer — edit and save', '✏️');
     });
   });
 }
@@ -8649,7 +8649,7 @@ function addModeSiteRow(url='', browser='chrome') {
 
 async function saveModeFromDesigner() {
   const name = ($('#modeNameInput')?.value||'').trim().toUpperCase();
-  if (!name) { toast('MODES', 'Provide mode name', '⚠️'); return; }
+  if (!name) { toast('Modes', 'Provide mode name', '⚠️'); return; }
   const label = ($('#modeLabelInput')?.value||'').trim() || name;
   const icon = ($('#modeIconInput')?.value||'').trim() || '◍';
   const appsRaw = ($('#modeAppsInput')?.value||'').trim();
@@ -8669,9 +8669,9 @@ async function saveModeFromDesigner() {
   const optimizeGaming = !!$('#modeGamingOptInput')?.checked;
   const mode = { name, label, icon, apps, sites, volume, theme, dnd, playlist, optimizeGaming, description: `${apps.length} apps, ${sites.length} sites, vol ${volume}, ${theme} theme${dnd?' + DND':''}` };
   const res = await api.modesSave(mode);
-  if (res && res.error) { toast('MODES', res.error, '⚠️'); return; }
+  if (res && res.error) { toast('Modes', res.error, '⚠️'); return; }
   await loadModes();
-  toast('MODES', 'Saved mode ' + name, '💾');
+  toast('Modes', 'Saved mode ' + name, '💾');
   // sync into profile
   profile.modes = profile.modes || {};
   profile.modes[name] = mode;
@@ -8689,7 +8689,7 @@ function modeSweep(theme) {
 
 async function applyMode(name) {
   const mode = modesCache[name] || (await api.modesGet(name));
-  if (!mode) { toast('MODES', 'Mode not found: ' + name, '⚠️'); return; }
+  if (!mode) { toast('Modes', 'Mode not found: ' + name, '⚠️'); return; }
   currentMode = mode.name;
   profile.currentMode = mode.name;
   await persistProfile();
@@ -8709,7 +8709,7 @@ async function applyMode(name) {
   // Announce via TTS
   const announcement = `${mode.label||mode.name} mode activated`;
   try { speak(announcement); } catch {}
-  toast('MODE', `${mode.icon||'◍'} ${mode.name} — ${mode.description||''}`, '🌟');
+  toast('Mode', `${mode.icon||'◍'} ${mode.name} — ${mode.description||''}`, '🌟');
   // Execute via main process
   try {
     const res = await api.modesApply(mode.name);
@@ -8752,7 +8752,7 @@ function setupModes() {
     const theme = $('#modeThemeInput')?.value||'crimson';
     modeSweep(theme);
     playSfx('swoosh');
-    toast('MODE', 'Preview sweep — ' + theme, '👁');
+    toast('Mode', 'Preview sweep — ' + theme, '👁');
   });
   $('#modeVolumeInput')?.addEventListener('input', (e)=>{ const v = $('#modeVolumeVal'); if (v) v.textContent = e.target.value; });
   $$('.topbar-mode-chips .mode-chip').forEach(btn=>{
@@ -8913,7 +8913,7 @@ function renderPlanAct(plan, state='preview') {
   const stateEl = $('#planActState');
   if (!panel || !body) return;
   panel.hidden = false;
-  if (stateEl) stateEl.textContent = '— ' + state.toUpperCase();
+  if (stateEl) stateEl.textContent = '— ' + state;
   body.innerHTML = plan.map(step=>`
     <div class="plan-step-row ${step.status}" data-step="${step.id}">
       <span class="step-num">${step.id}</span>
@@ -8992,7 +8992,7 @@ async function executePlanAct(plan) {
   renderPlanAct(plan, 'done');
   const skippedCount = results.filter((r) => r.skipped).length;
   const summary = `Mission complete — ${results.filter((r) => r.ok).length}/${results.length} steps succeeded${skippedCount ? ', ' + skippedCount + ' skipped (no tool mapped)' : ''}.`;
-  toast('PLAN-ACT', summary, '✅');
+  toast('Plan', summary, '✅');
   try { speak(summary); } catch {}
   // log to action log
   try { if (window.webStore && window.webStore.logAction) await window.webStore.logAction('plan_act', summary); } catch {}

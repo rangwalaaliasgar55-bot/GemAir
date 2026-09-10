@@ -59,7 +59,7 @@ console.log('  ok   emergency checkpoints are bounded, redacted, and lifecycle-a
 assert(main.includes("ipcMain.handle('recovery:consume'"), 'recovery status IPC is missing');
 assert(preload.includes("ipcRenderer.invoke('recovery:consume')"), 'recovery IPC is not exposed through preload');
 assert(renderer.includes('const recovery = await api.consumeRecovery()'), 'renderer does not consume recovery status');
-assert(renderer.includes("toast('STATE RECOVERED'"), 'user is not notified after recovery');
+assert(renderer.includes("toast('State recovered'"), 'user is not notified after recovery');
 console.log('  ok   recovery is reported once through guarded IPC');
 
 fs.rmSync(temporaryDirectory, { recursive: true, force: true });
