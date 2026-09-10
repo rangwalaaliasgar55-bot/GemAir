@@ -1,0 +1,4 @@
+# Normalize line endings to LF on checkout (Windows-safe JS repo).
+# Without this, core.autocrlf rewrites working-tree files to CRLF and breaks
+# every test that matches on \n anchors. Binaries are auto-detected and kept.
+* text=auto eol=lf
