@@ -7839,8 +7839,8 @@ async function renderSystemPane(body, title) {
 }
 
 async function renderNewsPane(body, title) {
-  title.textContent = 'HEADLINES';
-  body.innerHTML = '<div class="empty">Fetching intelligence feed…</div>';
+  title.textContent = 'Headlines';
+  body.innerHTML = '<div class="empty">Fetching headlines…</div>';
   const items = await api.getHeadlines(8);
   if (!items.length) { body.innerHTML = '<div class="empty">Feed unavailable right now.</div>'; return; }
   body.innerHTML = items.slice(0, 7).map((n) =>
@@ -7849,7 +7849,7 @@ async function renderNewsPane(body, title) {
 }
 
 async function renderReportPane(body, title) {
-  title.textContent = 'WEEKLY REPORT';
+  title.textContent = 'Weekly report';
   body.innerHTML = '<div class="empty">Compiling your week…</div>';
   const res = await api.generateReport();
   body.innerHTML = `<pre style="white-space:pre-wrap;font-family:var(--font-mono);font-size:11px;line-height:1.6;margin:0;">${escapeHtml(res.report)}</pre>`;
