@@ -265,6 +265,7 @@ const api = {
   async connectionsOpenChatGPT() { if (window.gemair) return window.gemair.connectionsOpenChatGPT(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'ChatGPT account access needs a server OAuth callback and encrypted session store. The browser cannot capture a ChatGPT session directly.' }; },
   async connectionsCaptureChatGPT() { if (window.gemair) return window.gemair.connectionsCaptureChatGPT(); return { error: 'desktop_only' }; },
   async connectionsImportSessionJson(text) { if (window.gemair && window.gemair.connectionsImportSessionJson) return window.gemair.connectionsImportSessionJson(text); return { error: 'desktop_only' }; },
+  async connectionsValidateSessionJson(text) { if (window.gemair && window.gemair.connectionsValidateSessionJson) return window.gemair.connectionsValidateSessionJson(text); return { error: 'desktop_only' }; },
   async connectionsOpenGemini() { if (window.gemair) return window.gemair.connectionsOpenGemini(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'Gemini account access needs a configured Google OAuth client and server callback. No account will be marked connected in browser mode.' }; },
   async connectionsCaptureGemini(isFallback) { if (window.gemair) return window.gemair.connectionsCaptureGemini(isFallback); return { error: 'desktop_only' }; },
   async connectionsOpenAIStudio() { if (window.gemair) return window.gemair.connectionsOpenAIStudio(); window.open('https://aistudio.google.com/', '_blank', 'noopener,noreferrer'); return { ok: true, browser: true }; },
@@ -6127,11 +6128,42 @@ async function runDesktopAgent() {
       logAgentLine('', '— performed ' + res.steps.length + ' action(s):');
       res.steps.forEach((s) => logAgentLine('step', `  ${s.step + 1}. ${s.tool} ${JSON.stringify(s.args)} → ${JSON.stringify(s.result).slice(0, 220)}`));
     }
+    // Failed runs get a one-click retry of the SAME task (approvals still
+    // apply per action inside the rerun — retry never skips confirmation).
+    if (!res.ok) logAgentRetry(task);
   } catch (e) {
     logAgentLine('warn', '✖ ' + (e && e.message ? e.message : String(e)));
+    logAgentRetry(task);
   } finally {
     setAgentRunning(false);
   }
+}
+
+// Retry entry for a failed desktop-agent run: restores the task text and
+// starts a fresh run through the normal approval flow.
+function logAgentRetry(taskText) {
+  const log = $('#agentLog');
+  if (!log || !taskText) return;
+  const entry = document.createElement('div');
+  entry.className = 'agent-entry';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'mini-btn';
+  btn.textContent = '↻ Retry this task';
+  btn.addEventListener('click', () => {
+    const input = $('#agentTaskInput');
+    if (input) input.value = taskText;
+    logAgentLine('', '↻ Retrying: ' + taskText);
+    runDesktopAgent();
+  });
+  entry.appendChild(btn);
+  const note = document.createElement('span');
+  note.className = 'dim';
+  note.style.marginLeft = '8px';
+  note.textContent = 're-runs the task; each action still asks first';
+  entry.appendChild(note);
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
 }
 
 function openCodingAgentModal() {
@@ -8357,9 +8389,40 @@ function openSessionJsonModal() {
   const m = $('#sessionJsonModal');
   const input = $('#sessionJsonInput');
   const hint = $('#sessionJsonHint');
+  const importBtn = $('#sessionJsonImportBtn');
   if (hint) hint.textContent = 'Tokens stay encrypted on this device and are never uploaded.';
   if (input) input.value = '';
+  if (importBtn) importBtn.disabled = true;
   if (m) { m.classList.add('open'); if (input) input.focus(); }
+}
+let sessionJsonValidateTimer = null;
+async function validateSessionJsonLive() {
+  const input = $('#sessionJsonInput');
+  const hint = $('#sessionJsonHint');
+  const importBtn = $('#sessionJsonImportBtn');
+  const text = (input && input.value || '').trim();
+  // Empty or browser-mode (no validator): neutral hint, Import clickable so
+  // the main-process import still gives the verdict on submit.
+  if (!text) {
+    if (hint) hint.textContent = 'Tokens stay encrypted on this device and are never uploaded.';
+    if (importBtn) importBtn.disabled = true;
+    return;
+  }
+  let res = null;
+  try { res = await api.connectionsValidateSessionJson(text); } catch (e) { res = null; }
+  if (!res || res.error === 'desktop_only') {
+    if (hint) hint.textContent = 'Pasted — press Import to check it.';
+    if (importBtn) importBtn.disabled = false;
+    return;
+  }
+  if (res.ok) {
+    const until = res.expiresAt ? new Date(res.expiresAt).toLocaleString() : 'unknown expiry';
+    if (hint) hint.textContent = '✓ Looks good: ' + (res.email || 'session') + ' · valid until ' + until;
+    if (importBtn) importBtn.disabled = false;
+  } else {
+    if (hint) hint.textContent = '✗ ' + (res.message || res.error || 'Invalid session JSON.');
+    if (importBtn) importBtn.disabled = true;
+  }
 }
 function closeSessionJsonModal() {
   $('#sessionJsonModal')?.classList.remove('open');
@@ -8459,6 +8522,10 @@ function setupConnectionsHub() {
   $('#sessionJsonClose')?.addEventListener('click', closeSessionJsonModal);
   $('#sessionJsonCancel')?.addEventListener('click', closeSessionJsonModal);
   $('#sessionJsonImportBtn')?.addEventListener('click', handleImportSessionJson);
+  $('#sessionJsonInput')?.addEventListener('input', () => {
+    try { clearTimeout(sessionJsonValidateTimer); } catch {}
+    sessionJsonValidateTimer = setTimeout(() => { validateSessionJsonLive().catch(() => {}); }, 400);
+  });
   $('#openGeminiBtn')?.addEventListener('click', handleOpenGemini);
   $('#importCodexBtn')?.addEventListener('click', handleImportCodex);
   $('#captureChatGPTBtn')?.addEventListener('click', handleCaptureChatGPT);

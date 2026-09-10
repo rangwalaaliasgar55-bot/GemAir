@@ -102,6 +102,13 @@ console.log('ok - ChatGPT and Gemini OAuth, encrypted storage, IPC, and provider
   assert.throws(() => connections.parseChatGPTSessionJson(JSON.stringify({ user: {} })), /SESSION_JSON_NO_TOKEN/);
   assert.throws(() => connections.parseChatGPTSessionJson(JSON.stringify({ accessToken: 'short' })), /SESSION_JSON_NO_TOKEN/);
   console.log('ok - Pasted session JSON parses honestly without credentials');
+  // Validate-before-import IPC, preload bridge, renderer wiring, and the
+  // agent retry entry (failed runs re-run through approvals, never silent).
+  assert(main.includes("ipcMain.handle('connections:validateSessionJson'"), 'session validate IPC handler is missing');
+  assert(preload.includes("connectionsValidateSessionJson: (text) => ipcRenderer.invoke('connections:validateSessionJson', text)"), 'session validate preload bridge is missing');
+  assert(renderer.includes('validateSessionJsonLive'), 'live session validation is not wired');
+  assert(renderer.includes('logAgentRetry'), 'agent retry entry is missing');
+  assert(renderer.includes('each action still asks first'), 'retry must disclose that approvals still apply');
   assert.equal(connections.isLiveOnlyModelId('gemini-2.5-flash-native-audio-preview-12-2025'), true);
   assert.equal(connections.isLiveOnlyModelId('gemini-2.0-flash-live-001'), true);
   assert.equal(connections.isLiveOnlyModelId('gemini-2.5-flash'), false);

@@ -4321,6 +4321,26 @@ ipcMain.handle('connections:captureChatGPT', async () => {
 // Paste-session import (free-chatgpt.js flow): the user logs in with their
 // own browser, copies the /api/auth/session JSON page, and pastes it here.
 // No scraping, no embedded browser — the tokens come straight from the user.
+function sessionJsonProblem(code) {
+  if (code === 'SESSION_JSON_EMPTY' || code === 'SESSION_JSON_INVALID') {
+    return 'That is not a session JSON page. Open the /api/auth/session URL after logging in, copy the ENTIRE page, and paste it here.';
+  }
+  if (code === 'SESSION_JSON_NO_TOKEN') {
+    return 'No access token in that JSON — you are probably logged out. Log in at chatgpt.com first, reload the session URL, and copy it again.';
+  }
+  return null;
+}
+ipcMain.handle('connections:validateSessionJson', async (_e, text) => {
+  // Pure validation: parses only, stores nothing. Powers live feedback
+  // while pasting so a bad paste is caught before Import is pressed.
+  try {
+    const parsed = connections.parseChatGPTSessionJson(text);
+    return { ok: true, email: parsed.email, plan: parsed.plan, expiresAt: parsed.expiresAt };
+  } catch (error) {
+    const code = (error && (error.code || error.message)) || 'IMPORT_FAILED';
+    return { ok: false, error: code, message: sessionJsonProblem(code) || ((error && error.message) || String(error)) };
+  }
+});
 ipcMain.handle('connections:importSessionJson', async (_e, text) => {
   try {
     const parsed = connections.parseChatGPTSessionJson(text);
@@ -4338,13 +4358,7 @@ ipcMain.handle('connections:importSessionJson', async (_e, text) => {
     return { ok: true, email: parsed.email, plan: parsed.plan, expiresAt: parsed.expiresAt };
   } catch (error) {
     const code = (error && (error.code || error.message)) || 'IMPORT_FAILED';
-    if (code === 'SESSION_JSON_EMPTY' || code === 'SESSION_JSON_INVALID') {
-      return { error: code, message: 'That is not a session JSON page. Open the /api/auth/session URL after logging in, copy the ENTIRE page, and paste it here.' };
-    }
-    if (code === 'SESSION_JSON_NO_TOKEN') {
-      return { error: code, message: 'No access token in that JSON — you are probably logged out. Log in at chatgpt.com first, reload the session URL, and copy it again.' };
-    }
-    return { error: code, message: (error && error.message) || String(error) };
+    return { error: code, message: sessionJsonProblem(code) || ((error && error.message) || String(error)) };
   }
 });
 ipcMain.handle('connections:openGemini', async () => {
