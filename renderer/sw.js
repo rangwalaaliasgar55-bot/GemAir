@@ -38,7 +38,9 @@ const SHELL = [
   'assets/gemair-512.png',
   'assets/logo-mark.svg',
   'assets/logo-mark-light.svg',
-  'assets/logo-mark-mono.svg'
+  'assets/logo-mark-mono.svg',
+  'assets/globe.jpg',
+  'assets/agent-town.jpg'
 ];
 
 self.addEventListener('install', (event) => {

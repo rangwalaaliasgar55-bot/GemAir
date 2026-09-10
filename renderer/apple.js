@@ -277,6 +277,190 @@
     try { if (navigator.vibrate) navigator.vibrate(5); } catch {}
   }
 
+  /* ============================================================
+     Reference-parity behaviors (all guarded, all functional —
+     every control below performs its labeled action).
+     ============================================================ */
+
+  function setupSatMap() {
+    try {
+      const stage = $('satStage');
+      const zoomWrap = $('satZoomWrap');
+      const img = $('satGlobeImg');
+      if (img && !img.dataset.appleBound) {
+        img.dataset.appleBound = '1';
+        // Missing art must never leave a broken-image box: canvas carries on.
+        img.addEventListener('error', () => { try { img.remove(); } catch {} });
+      }
+      const townImg = $('townStageImg');
+      if (townImg && !townImg.dataset.appleBound) {
+        townImg.dataset.appleBound = '1';
+        townImg.addEventListener('error', () => { try { townImg.remove(); } catch {} });
+      }
+      let zoom = 1;
+      const applyZoom = () => { try { if (zoomWrap) zoomWrap.style.transform = 'scale(' + zoom + ')'; } catch {} };
+      const zi = $('satZoomIn');
+      if (zi && !zi.dataset.appleBound) {
+        zi.dataset.appleBound = '1';
+        zi.addEventListener('click', () => { zoom = Math.min(2.5, +(zoom + 0.25).toFixed(2)); applyZoom(); tick(); });
+      }
+      const zo = $('satZoomOut');
+      if (zo && !zo.dataset.appleBound) {
+        zo.dataset.appleBound = '1';
+        zo.addEventListener('click', () => { zoom = Math.max(1, +(zoom - 0.25).toFixed(2)); applyZoom(); tick(); });
+      }
+      const zr = $('satZoomReset');
+      if (zr && !zr.dataset.appleBound) {
+        zr.dataset.appleBound = '1';
+        zr.addEventListener('click', () => { zoom = 1; applyZoom(); tick(); });
+      }
+      const toggle = $('satMapToggle');
+      const setMapOpen = (open) => {
+        try {
+          if (zoomWrap) zoomWrap.style.display = open ? '' : 'none';
+          if (img) img.style.display = open ? '' : 'none';
+          toggle.textContent = open ? 'Hide Map' : 'Show Map';
+          toggle.setAttribute('aria-expanded', String(open));
+        } catch {}
+      };
+      if (toggle && !toggle.dataset.appleBound) {
+        toggle.dataset.appleBound = '1';
+        toggle.addEventListener('click', () => {
+          const open = zoomWrap ? zoomWrap.style.display === 'none' : true;
+          setMapOpen(open); tick();
+        });
+      }
+      const b2d = $('satMode2d'), b3d = $('satMode3d');
+      const setMode = (flat) => {
+        try {
+          if (stage) stage.dataset.mode = flat ? '2d' : '3d';
+          if (b2d) { b2d.classList.toggle('active', flat); b2d.setAttribute('aria-pressed', String(flat)); }
+          if (b3d) { b3d.classList.toggle('active', !flat); b3d.setAttribute('aria-pressed', String(!flat)); }
+        } catch {}
+      };
+      if (b2d && !b2d.dataset.appleBound) { b2d.dataset.appleBound = '1'; b2d.addEventListener('click', () => { setMode(true); tick(); }); }
+      if (b3d && !b3d.dataset.appleBound) { b3d.dataset.appleBound = '1'; b3d.addEventListener('click', () => { setMode(false); tick(); }); }
+      const fs = $('satFullscreen');
+      if (fs && !fs.dataset.appleBound) {
+        fs.dataset.appleBound = '1';
+        fs.addEventListener('click', () => {
+          try {
+            if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+            else if (stage && stage.requestFullscreen) stage.requestFullscreen().catch(() => {});
+          } catch {}
+        });
+      }
+      // Bottom nav drives the REAL sat tabs; More jumps to the world view.
+      document.querySelectorAll('[data-goto-sat]').forEach((btn) => {
+        if (btn.dataset.appleBound) return;
+        btn.dataset.appleBound = '1';
+        btn.addEventListener('click', () => {
+          try {
+            const tab = document.querySelector('.sat-tab[data-sat="' + btn.dataset.gotoSat + '"]');
+            if (tab) tab.click();
+            document.querySelectorAll('[data-goto-sat]').forEach((b) => b.classList.toggle('on', b === btn));
+          } catch {}
+        });
+      });
+      document.querySelectorAll('[data-goto-view]').forEach((btn) => {
+        if (btn.dataset.appleBound) return;
+        btn.dataset.appleBound = '1';
+        btn.addEventListener('click', () => {
+          try {
+            const nav = document.querySelector('.nav-btn[data-view="' + btn.dataset.gotoView + '"]');
+            if (nav) nav.click();
+          } catch {}
+        });
+      });
+    } catch {}
+  }
+
+  function setupSatUpdateCard() {
+    try {
+      const card = $('satUpdateCard');
+      const pill = $('updatePill');
+      if (!card) return;
+      const sync = () => {
+        try {
+          const available = pill && !pill.hidden;
+          const dismissed = sessionStorage.getItem('gemair:sat-update-dismissed') === '1';
+          card.hidden = !(available && !dismissed);
+        } catch { card.hidden = true; }
+      };
+      sync();
+      try {
+        if (pill) new MutationObserver(sync).observe(pill, { attributes: true, attributeFilter: ['hidden'] });
+      } catch { setInterval(sync, 5000); }
+      const reload = $('satUpdateReload');
+      if (reload && !reload.dataset.appleBound) {
+        reload.dataset.appleBound = '1';
+        // Same flow as the topbar update pill — one code path, no duplicate.
+        reload.addEventListener('click', () => { try { if (pill) pill.click(); } catch {} });
+      }
+      const dismiss = $('satUpdateDismiss');
+      if (dismiss && !dismiss.dataset.appleBound) {
+        dismiss.dataset.appleBound = '1';
+        dismiss.addEventListener('click', () => {
+          try { sessionStorage.setItem('gemair:sat-update-dismissed', '1'); } catch {}
+          sync();
+        });
+      }
+    } catch {}
+  }
+
+  function setupChatNewPill() {
+    try {
+      const log = $('chatLog');
+      const pill = $('chatNewMsgPill');
+      if (!log || !pill || pill.dataset.appleBound) return;
+      pill.dataset.appleBound = '1';
+      const nearBottom = () => {
+        try { return log.scrollHeight - log.scrollTop - log.clientHeight < 90; } catch { return true; }
+      };
+      const onScroll = () => { try { if (nearBottom()) pill.hidden = true; } catch {} };
+      log.addEventListener('scroll', onScroll);
+      pill.addEventListener('click', () => {
+        try { log.scrollTop = log.scrollHeight; pill.hidden = true; } catch {}
+      });
+      try {
+        new MutationObserver(() => {
+          try { if (!nearBottom()) pill.hidden = false; } catch {}
+        }).observe(log, { childList: true, subtree: true });
+      } catch {}
+    } catch {}
+  }
+
+  function setupChatAttach() {
+    try {
+      const btn = $('chatAttachBtn');
+      const file = $('chatAttachInput');
+      const input = $('chatInput');
+      if (!btn || !file || !input || btn.dataset.appleBound) return;
+      btn.dataset.appleBound = '1';
+      btn.addEventListener('click', () => { try { file.click(); } catch {} });
+      file.addEventListener('change', () => {
+        try {
+          const f = file.files && file.files[0];
+          if (!f) return;
+          if (f.size > 256 * 1024) { toast('File too large — 256 KB max for chat attach.'); file.value = ''; return; }
+          const reader = new FileReader();
+          reader.onload = () => {
+            try {
+              const text = String(reader.result || '').slice(0, 8000);
+              input.value = (input.value ? input.value.replace(/\s+$/, '') + '\n\n' : '') +
+                '--- attached: ' + f.name + ' ---\n' + text;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.focus();
+            } catch {}
+          };
+          reader.onerror = () => toast('Could not read that file.');
+          reader.readAsText(f);
+          file.value = '';
+        } catch {}
+      });
+    } catch {}
+  }
+
   function init() {
     try { document.body.dataset.apple = '1'; } catch {}
     restoreDnd();
@@ -284,6 +468,10 @@
     setupControlCenter();
     setupCcControls();
     setupAppleSettingsShortcuts();
+    setupSatMap();
+    setupSatUpdateCard();
+    setupChatNewPill();
+    setupChatAttach();
     mirrorAppleId();
     updateNetBadge();
     updateBatteryBadge();

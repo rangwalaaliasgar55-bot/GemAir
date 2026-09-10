@@ -728,13 +728,86 @@ body[data-appearance='light'] .settings-nav { background: rgba(0,0,0,.03); }
   box-shadow: none;
 }
 body.rgb-speaking .start-btn, body.rgb-recording .orb-panel, .mic-btn.recording { animation: none; }
-.sat-stage { border-radius: 10px; border: 1px solid var(--apple-hairline); overflow: hidden; }
+.sat-stage { border-radius: 10px; border: 1px solid var(--apple-hairline); overflow: hidden; position: relative; }
+/* Reference map art: decorative layer behind the live canvas. Hides itself
+   (onerror) when missing so the canvas always carries the panel. */
+#satGlobeImg {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover;
+  opacity: 0.8;
+  transition: transform 0.25s ease, filter 0.25s ease;
+}
+#satStage[data-mode="2d"] #satGlobeImg { filter: grayscale(0.7) brightness(0.85); }
+.sat-zoomwrap { position: relative; transition: transform 0.25s ease; transform-origin: 50% 50%; }
+#satCanvas { position: relative; display: block; width: 100%; height: auto; }
+.sat-zoomctl {
+  position: absolute; right: 10px; top: 34px;
+  display: flex; flex-direction: column;
+  border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--apple-hairline);
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.sat-zoomctl button {
+  width: 28px; height: 28px;
+  border: none; background: transparent; color: var(--text);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.sat-zoomctl button + button { border-top: 1px solid var(--apple-hairline); }
+.sat-zoomctl button:hover { background: var(--apple-fill-strong); }
+.sat-mapbar { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.sat-mapbar .seg { display: flex; border-radius: 8px; overflow: hidden; background: var(--apple-fill); }
+.sat-mapbar .seg button {
+  border: none; background: transparent; color: var(--text-dim);
+  font-size: 11px; font-weight: 700; padding: 5px 12px; cursor: pointer;
+}
+.sat-mapbar .seg button.active { background: var(--apple-fill-strong); color: var(--text); }
+.sat-bottomnav {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  margin-top: 10px;
+  border-top: 1px solid var(--apple-hairline);
+  padding-top: 6px;
+}
+.sat-bottomnav button {
+  border: none; background: transparent; color: var(--text-dim);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: 13px; padding: 6px 2px; border-radius: 8px; cursor: pointer;
+}
+.sat-bottomnav button span { font-size: 10px; font-weight: 600; }
+.sat-bottomnav button:hover { color: var(--text); background: var(--apple-fill); }
+.sat-bottomnav button.on { color: var(--apple-blue); }
+/* Dismissible update card: mirrors the real updater pill, never fakes one. */
+.sat-update-card {
+  display: flex; gap: 10px; align-items: center;
+  border-radius: 12px; padding: 10px 12px; margin-bottom: 10px;
+  background: rgba(48, 209, 88, 0.1);
+  border: 1px solid rgba(48, 209, 88, 0.35);
+}
+.sat-update-card[hidden] { display: none; }
+.sat-update-ico {
+  width: 32px; height: 32px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; font-size: 16px;
+  background: rgba(48, 209, 88, 0.16); color: var(--apple-green);
+}
+.sat-update-copy { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.sat-update-copy b { font-size: 13px; }
+.sat-update-copy span { font-size: 11px; color: var(--text-dim); }
+.sat-update-x { margin-left: auto; flex: none; }
 .sat-beta {
   border-radius: 999px; padding: 3px 10px;
   font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
   background: var(--apple-fill); border: none; color: var(--text-dim);
 }
-.tp-stage, .town-stage { border-radius: 10px; border: 1px solid var(--apple-hairline); }
+.tp-stage, .town-stage { border-radius: 10px; border: 1px solid var(--apple-hairline); position: relative; overflow: hidden; }
+#townStageImg {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover;
+  opacity: 0.9;
+}
+#townMiniCanvas { position: relative; }
+/* Agent cards float above the town art backdrop. */
+.agent-card-grid-mini { position: relative; }
 .town-statusbar .ts-item {
   border-radius: 999px; padding: 4px 10px; font-size: 11.5px;
   background: var(--apple-fill); border: none;
@@ -743,6 +816,22 @@ body.rgb-speaking .start-btn, body.rgb-recording .orb-panel, .mic-btn.recording 
   border-radius: 999px; padding: 3px 10px;
   font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
   background: rgba(48, 209, 88, 0.16); border: none; color: var(--apple-green);
+}
+
+/* Headline index numbers: quiet blue mono, like the reference feed. */
+.news-item .n-idx {
+  font-size: 10px; font-weight: 700;
+  color: var(--apple-blue);
+}
+/* New-messages pill floats over the composer; hidden until needed. */
+.chat-panel { position: relative; }
+.chat-newpill[hidden] { display: none; }
+.chat-newpill {
+  position: absolute; left: 50%; bottom: 118px;
+  transform: translateX(-50%);
+  z-index: 5;
+  box-shadow: var(--apple-shadow) !important;
+  white-space: nowrap;
 }
 
 /* ============================================================

@@ -40,6 +40,16 @@ async function main() {
   assert(await evaluate("document.querySelector('#downloadModal.open') !== null"), 'download dialog failed to open');
   assert(await evaluate("document.querySelectorAll('#dlGrid .dl-card').length === 3"), 'download platform cards are incomplete');
 
+  // Reference-parity controls must DO their labeled action, not just exist.
+  assert(await evaluate("!!document.querySelector('#satGlobeImg') && !!document.querySelector('#townStageImg')"), 'reference map art is missing');
+  await evaluate("document.querySelector('#satZoomIn')?.click(); document.querySelector('#satZoomIn')?.click()");
+  assert(await evaluate("document.querySelector('#satZoomWrap')?.style.transform === 'scale(1.5)'"), 'map zoom-in does not scale');
+  await evaluate("document.querySelector('#satMode2d')?.click()");
+  assert(await evaluate("document.querySelector('#satStage')?.dataset.mode === '2d'"), 'map 2D mode does not engage');
+  await evaluate("document.querySelector('[data-goto-sat=alerts]')?.click()");
+  assert(await evaluate("document.querySelector('.sat-tab[data-sat=alerts]')?.classList.contains('active')"), 'bottom nav does not drive sat tabs');
+  await evaluate("document.querySelector('#chatAttachBtn') !== null && document.querySelector('#chatNewMsgPill') !== null"), 'chat attach/pill controls are missing';
+
   await win.loadFile(path.join(root, 'download.html'));
   assert(await evaluate("document.querySelector('#windows') && document.querySelector('#macos') && document.querySelector('#linux')"), 'public download page cards are missing');
   assert(await evaluate("document.querySelector('.nav a[href=\\\"/\\\"]') !== null"), 'public download page lacks web-app navigation');

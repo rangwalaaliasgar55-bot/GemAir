@@ -147,9 +147,31 @@
 
               <div class="hud-panel satlink">
                 <h3 class="panel-title">LOCAL BRIEF <span class="dim">— WEATHER &amp; SEARCH</span></h3>
-                <div class="sat-stage">
-                  <canvas id="satCanvas" width="260" height="160" aria-hidden="true"></canvas>
+                <div class="sat-update-card" id="satUpdateCard" hidden>
+                  <span class="sat-update-ico" aria-hidden="true">⟳</span>
+                  <div class="sat-update-copy"><b>Update Available</b><span>A new version is ready.</span></div>
+                  <button class="mini-btn" id="satUpdateReload" type="button">Reload</button>
+                  <button class="icon-btn sat-update-x" id="satUpdateDismiss" type="button" aria-label="Dismiss">✕</button>
+                </div>
+                <div class="sat-stage" id="satStage">
+                  <img id="satGlobeImg" src="assets/globe.jpg" alt="" aria-hidden="true" />
+                  <div class="sat-zoomwrap" id="satZoomWrap">
+                    <canvas id="satCanvas" width="260" height="160" aria-hidden="true"></canvas>
+                  </div>
                   <span class="sat-beta">DECORATIVE GLOBE</span>
+                  <div class="sat-zoomctl" role="toolbar" aria-label="Map controls">
+                    <button type="button" id="satZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+                    <button type="button" id="satZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
+                    <button type="button" id="satZoomReset" title="Reset view" aria-label="Reset view">⌂</button>
+                  </div>
+                </div>
+                <div class="sat-mapbar">
+                  <button class="mini-btn" id="satMapToggle" type="button" aria-expanded="true">Hide Map</button>
+                  <div class="seg" role="group" aria-label="Map mode">
+                    <button type="button" id="satMode2d" aria-pressed="false">2D</button>
+                    <button type="button" id="satMode3d" class="active" aria-pressed="true">3D</button>
+                  </div>
+                  <button class="mini-btn" id="satFullscreen" type="button">⛶ Fullscreen</button>
                 </div>
                 <div class="sat-tabs" role="tablist" aria-label="Local brief">
                   <button class="sat-tab active" data-sat="today" role="tab" aria-selected="true" aria-controls="satPanel">TODAY</button>
@@ -160,6 +182,13 @@
                 <div class="sat-panel" id="satPanel" role="tabpanel" aria-live="polite">
                   <div class="empty">Loading feed…</div>
                 </div>
+                <nav class="sat-bottomnav" aria-label="Feed navigation">
+                  <button type="button" data-goto-sat="today">◎<span>Today</span></button>
+                  <button type="button" data-goto-sat="rap">◈<span>Map</span></button>
+                  <button type="button" data-goto-sat="search">🔍<span>Search</span></button>
+                  <button type="button" data-goto-sat="alerts">🔔<span>Alerts</span></button>
+                  <button type="button" data-goto-view="world">⋯<span>More</span></button>
+                </nav>
               </div>
 
               <div class="hud-panel headlines-mini">
@@ -246,6 +275,7 @@
                 </div>
                 <div class="town-seatbar" id="townSeatBarMini"></div>
                 <div class="tp-stage tp-stage-cards">
+                  <img id="townStageImg" src="assets/agent-town.jpg" alt="" aria-hidden="true" />
                   <canvas id="townMiniCanvas" width="560" height="240" hidden aria-hidden="true"></canvas>
                   <div class="agent-card-grid agent-card-grid-mini" id="townMiniGrid" role="list" aria-label="Agent preview"></div>
                 </div>
@@ -314,8 +344,11 @@
                         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M19 11a7 7 0 01-14 0M12 18v3"/></svg>
                       </button>
                       <textarea id="chatInput" aria-label="Message Gem" placeholder="Type instruction or / command for Gem…" rows="1" autocomplete="off"></textarea>
+                      <button class="icon-btn" id="chatAttachBtn" type="button" title="Attach a text file (.txt/.md) into the message" aria-label="Attach a text file">📎</button>
+                      <input type="file" id="chatAttachInput" accept=".txt,.md,.json,.csv,.log" hidden />
                       <button class="send-btn" id="sendBtn" title="Send message" aria-label="Send message">➤</button>
                     </div>
+                    <button class="apple-btn chat-newpill" id="chatNewMsgPill" type="button" hidden>↓ New messages</button>
                     <div class="quick-commands" id="quickCommands" role="toolbar" aria-label="Quick assistant actions">
                       <button type="button" class="qc" data-cmd="Search the web for " data-shortcut="1" aria-keyshortcuts="Alt+1" title="Search the web (Alt+1)">🔎 Search</button>
                       <button type="button" class="qc" data-cmd="What's the weather?" data-shortcut="2" aria-keyshortcuts="Alt+2" title="Check weather (Alt+2)">🌦 Weather</button>
