@@ -75,6 +75,12 @@ Scale utilities: `.type-large-title` … `.type-caption` (Large Title → Captio
 
 Original (non-trademark) chrome dots: `--win-close`, `--win-min`, `--win-max` — slightly desaturated vs Apple’s exact traffic lights; used by the custom title bar only as decorative affordances (not OS window buttons).
 
+## AA contrast tokens (Phase 12)
+
+- `--color-system-blue-filled: #0066cc` (both appearances) — for filled surfaces that carry white text (user chat bubbles, primary/mini buttons, palette selection, `.ga-btn-primary`). Plain `--color-system-blue` (#0a84ff / #007aff) remains the accent for text-on-dark, borders, and icons (white on it is only 3.6:1).
+- Label tertiary alpha: dark 0.55, light 0.66 — captions/meta hit 4.5:1 on cards and page bg.
+- Light `--color-link` is #0066cc. Verify any change with `node scripts/contrast-audit.js`.
+
 ## Accent bridges
 
 `--accent`, `--accent-soft`, `--accent-glow`, `--accent-dim` default to calm system blue (dark `#0a84ff`, light `#007aff`). `themes.js` overwrites them on `<body>` when a HUD theme applies, so accents recolor small strokes and data viz only — never the chrome.

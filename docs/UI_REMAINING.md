@@ -14,22 +14,11 @@ Re-audit of main against the mission brief. Checked items are done and verified 
 - [ ] Accent bridges on `:root` (`--accent` = system blue until themes.js paints a theme) — verify first-paint in Electron.
 - [ ] `apple.css` residual: a final read-through for dead rules (RGB neutralizers etc.) once Phases 2–8 land.
 
-## B. Decorative canvas loops still scheduling RAF (default-on)
+## B. Decorative canvas loops (resolved in Phase 12)
 
-| Loop | Where | Gate today | Decision |
-| --- | --- | --- | --- |
-| Starfield + wireframe icosahedron `#bgCanvas` | `app.js startBackground3D()` 1899–1984 | `scheduleViewFrame(null, …)` → **always runs** | hide + no-op by default |
-| Orb particle field `#orbCanvas` | `app.js startOrb()` 1988–2023 | assistant view only | replace paint with CSS `.ga-voice-orb` states; keep node |
-| Wireframe globe `#globeCanvas` | `app.js startGlobe()` 2029–2125 | world view only | Option A: static soft map/list, pause paint |
-| 2D command map `#mapCanvas` | `app.js startCommandMap()` 5450+ | world view only | tone down or replace with list; keep node |
-| Radar sweep `#radarCanvas` | `app.js startRadar()` 3959–4046 | core view only | hide + stop RAF |
-| Sat radar sweep `#satCanvas` | `app.js startSatLink()` 4765–4823 | assistant view only | hide paint (stage already `display:none` in depth) |
-| Circuit wires `#wireCanvas` | `app.js startCircuitWires()` 4827–4863 | assistant view only, canvas `display:none` via apple.css → **wasted RAF** | early-return |
-| Town tick (250ms interval) | `app.js startAgentTown()` 3636+, tick at 3867 | always (interval, not RAF) | pause when view hidden / document.hidden |
-| Mic VU `#micVuCanvas` | `app.js startMicMeter()` 3526–3565 | gated by REDUCED_MOTION | keep (functional), restyle |
-| Avatar particles | `avatar.js drawParticles()` 299, 499 | own RAF | gate on reduced-motion / calm mode |
-
-Also: `setInterval` clocks/pollers (1s clock, 2.5s pollSystem, 4s radar sys poll, 250ms town tick) run regardless of `document.hidden` (visibilitychange only resumes view frames).
+- [x] **S2 done** — decorative paint is off by default (`window.__GA_DECOR = true` re-enables): starfield `#bgCanvas` (hidden), orb particles `#orbCanvas` (CSS orb replaces it), radar `#radarCanvas` (hidden), sat sweep `#satCanvas`, circuit wires `#wireCanvas`. Globe and 2D map draw **one static frame** (hotspots stay clickable; `worldGlobeRedraw()` repaints on headline load and resize). All canvas nodes stay in the DOM; guards never throw.
+- [x] **S12 done** — intervals pause while `document.hidden`: town tick (250ms), town chrome tick, radar sys poll (4s), `pollSystem` (2.5s), topbar clock (1s); avatar loop stops while hidden and restarts on `visibilitychange`; `scheduleViewFrame` already paused per-view frames and `reduced-motion.css` + per-animation `prefers-reduced-motion` blocks cover the new orb animations.
+- [x] **S11 done** — `scripts/contrast-audit.js` (WCAG AA, both appearances + 8 theme text/dim pairs): label tertiary alphas raised (dark .4→.55, light .42→.66), new `--color-system-blue-filled: #0066cc` for filled surfaces carrying white text (user bubbles, primary/mini buttons, palette selection, `.ga-btn-primary`), light link `#0066cc`, dark-green labels on green badges. Audit exits non-zero on failure — run it with `node scripts/contrast-audit.js`.
 
 ## C. IA / chrome
 

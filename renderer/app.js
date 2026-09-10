@@ -591,6 +591,7 @@ let memory = { facts: [], transcript: [], notes: [], reminders: [], todos: [], m
 let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
 let currentLang = 'en';
 let worldHeadlines = [];
+let worldGlobeRedraw = () => {}; // set by startGlobe; repaints the static globe
 let worldCategory = 'tech';
 let awaitingName = false;
 let connectionsStatus = { chatgpt: { connected: false }, gemini: { connected: false }, freeCore: { connected: true }, meta: { priority: 'chatgpt' } };
@@ -1652,6 +1653,7 @@ function renderThemeSwatches() {
 // Clock
 // ---------------------------------------------------------------------------
 setInterval(() => {
+  if (document.hidden) return; // S12: clock paused while hidden
   const now = new Date();
   $('#liveClock').textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
   $('#liveDate').textContent = now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
@@ -1902,7 +1904,10 @@ function startBackground3D() {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
+  // S2: the starfield/icosahedron is decorative — paint stays off unless
+  // re-enabled with window.__GA_DECOR = true.
   background3DStarted = true;
+  if (!window.__GA_DECOR) { canvas.style.display = 'none'; return; }
   let accent = getAccent();
   let w, h, dpr, mx = 0, my = 0;
   function resize() {
@@ -1988,6 +1993,9 @@ function startBackground3D() {
 function startOrb() {
   if (orbStarted) return;
   const canvas = $('#orbCanvas'); if (!canvas) return;
+  // S2: the orb is CSS now (.start-btn states); particle paint stays off
+  // unless window.__GA_DECOR = true.
+  if (!window.__GA_DECOR) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   orbStarted = true;
@@ -2057,6 +2065,7 @@ function startGlobe() {
     w = canvas.clientWidth; h = canvas.clientHeight;
     canvas.width = Math.max(1, Math.round(w * dpr)); canvas.height = Math.max(1, Math.round(h * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw(0); // S2: static globe repaints on resize
   }
   function project(lat, lon, rot) {
     const phi = lat * Math.PI / 180, lambda = (lon + rot) * Math.PI / 180;
@@ -2120,9 +2129,10 @@ function startGlobe() {
       visibleMarkers.push({ x, y, label: hotspot.label, headline });
     });
     ctx.globalAlpha = 1;
-    scheduleViewFrame('world', draw);
+    // S2: static globe — one calm frame; hotspots stay clickable and
+    // worldGlobeRedraw() repaints when headlines land.
   }
-  scheduleViewFrame('world', draw);
+  worldGlobeRedraw = () => { try { draw(0); } catch {} };
 }
 
 // ---------------------------------------------------------------------------
@@ -3865,7 +3875,7 @@ function startAgentTown() {
     maybeChatter();
     paint(false);
   }
-  tickTimer = setInterval(tick, 250);
+  tickTimer = setInterval(() => { if (!document.hidden) tick(); }, 250); // S12: paused while hidden
   try {
     if (typeof addLifecycleListener === 'function') {
       // no-op lifecycle hook for cleanup patterns elsewhere
@@ -3960,6 +3970,7 @@ function addActivity(who, text) {
 function startRadar() {
   const canvas = $('#radarCanvas');
   if (!canvas) return;
+  if (!window.__GA_DECOR) { canvas.style.display = 'none'; return; } // S2: decorative sweep off
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   const cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 - 10;
@@ -3967,6 +3978,7 @@ function startRadar() {
   let sys = { cpu: 12, mem: 40 };
   let blips = [];
   setInterval(async () => {
+    if (document.hidden) return; // S12: no sys polling while hidden
     try {
       const i = await api.getSystemInfo();
       sys = { cpu: i.cpuLoad || 0, mem: i.memPercent || 0 };
@@ -4218,6 +4230,7 @@ function initTownChrome() {
   // live chrome refresh (seat dots, status strip, visual hub, notes, media link)
   renderTownChrome();
   setInterval(() => {
+    if (document.hidden) return; // S12: paused while hidden
     safe('townChromeTick', () => {
       renderTownChrome();
       if (!$('#view-town .town-tab-pane[data-tpane="visualhub"]').hidden) renderVisualHub();
@@ -4766,6 +4779,7 @@ async function renderSatAlerts() {
 function startSatLink() {
   const canvas = $('#satCanvas');
   if (!canvas) return;
+  if (!window.__GA_DECOR) return; // S2: decorative sweep off (stage already hidden)
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   const cx = W / 2, cy = H / 2 + 4, R = Math.min(W, H) / 2 - 14;
@@ -4828,6 +4842,7 @@ function startSatLink() {
 function startCircuitWires() {
   const canvas = $('#wireCanvas');
   if (!canvas) return;
+  if (!window.__GA_DECOR) return; // S2: hidden canvas — never schedule its RAF
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   const colors = [null, '#ff9d3b', '#3dff9a', '#8a9bb2']; // memory uses theme accent
@@ -5500,9 +5515,9 @@ function startCommandMap() {
       ctx.fillText(c.name, p.x + 5, p.y - 3);
     }
     ctx.globalAlpha = 1;
-    scheduleViewFrame('world', draw);
+    // S2: static map — one frame, no loop.
   }
-  scheduleViewFrame('world', draw);
+  draw(0);
 }
 
 // ---------------------------------------------------------------------------
@@ -5516,6 +5531,7 @@ async function refreshHeadlines(category = worldCategory) {
   try {
     const items = await api.getHeadlines(14, worldCategory);
     worldHeadlines = Array.isArray(items) ? items.filter(item => !item.simulated) : [];
+    worldGlobeRedraw();
     if (!worldHeadlines.length) {
       lists.forEach(list => { list.innerHTML = '<div class="empty">No headlines available. Try refreshing the feed.</div>'; });
       return;
@@ -5526,8 +5542,8 @@ async function refreshHeadlines(category = worldCategory) {
         const div = document.createElement('div');
         div.className = 'news-item';
         div.dataset.newsId = String(headline.id);
-        const status = headline.simulated ? 'SIMULATED' : (headline.score ? '▲ ' + headline.score : 'LIVE');
-        const meta = [String(headline.category || worldCategory).toUpperCase(), headline.by, status].filter(Boolean).join(' · ');
+        const status = headline.simulated ? 'simulated' : (headline.score ? '▲ ' + headline.score : 'live');
+        const meta = [String(headline.category || worldCategory), headline.by, status].filter(Boolean).join(' · ');
         if (headline.simulated) div.classList.add('simulated');
         const idx = String(worldHeadlines.indexOf(headline) + 1).padStart(2, "0");
         div.innerHTML = `<span class="n-idx">${idx}</span><div class="n-body"><div class="n-title">${escapeHtml(headline.title)}</div><div class="n-meta">${escapeHtml(meta)}</div></div>`;
@@ -7994,7 +8010,7 @@ async function boot() {
     }
   } catch (error) { console.warn('[recovery-status]', error); }
 
-  pollSystem(); setInterval(pollSystem, 2500);
+  pollSystem(); setInterval(() => { if (!document.hidden) pollSystem(); }, 2500); // S12
   recognition = initRecognition();
   if (speechSynthesis) speechSynthesis.onvoiceschanged = populateVoices;
   try { $('#verTag').textContent = 'v' + (await api.version()); } catch (e) {}

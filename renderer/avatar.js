@@ -529,7 +529,9 @@
         ctx.restore();
       }
 
-      if (!reducedMotion) raf = requestAnimationFrame(draw);
+      // S12: pause the avatar loop while the page is hidden
+      if (!reducedMotion && !document.hidden) raf = requestAnimationFrame(draw);
+      else raf = 0;
     }
 
     function onPointer(e) {
@@ -553,6 +555,10 @@
         last = (typeof performance !== 'undefined' ? performance.now() : Date.now());
         cancelAnimationFrame(raf);
         raf = requestAnimationFrame(draw);
+        document.addEventListener('visibilitychange', () => {
+          cancelAnimationFrame(raf);
+          if (!document.hidden && !reducedMotion) raf = requestAnimationFrame(draw);
+        });
         return true;
       },
       setState(next) {

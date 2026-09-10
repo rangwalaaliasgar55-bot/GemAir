@@ -19,12 +19,15 @@
   --color-fill-tertiary: rgba(120, 128, 144, 0.08);
   --color-label-primary: #f5f5f7;
   --color-label-secondary: rgba(235, 235, 245, 0.6);
-  --color-label-tertiary: rgba(235, 235, 245, 0.4);
+  --color-label-tertiary: rgba(235, 235, 245, 0.55); /* AA: captions stay readable on cards */
   --color-label-quaternary: rgba(235, 235, 245, 0.22);
   --color-separator: rgba(255, 255, 255, 0.1);
   --color-separator-opaque: #38383a;
   --color-link: #0a84ff;
   --color-system-blue: #0a84ff;
+  /* Filled surfaces carrying white text (buttons, user bubbles) use a
+     deeper blue so the label hits WCAG AA (white on #0a84ff is 3.6:1). */
+  --color-system-blue-filled: #0066cc;
   --color-system-green: #30d158;
   --color-system-orange: #ff9f0a;
   --color-system-red: #ff453a;
@@ -261,12 +264,13 @@ body[data-appearance='light'] {
   --color-fill-tertiary: rgba(60, 70, 90, 0.05);
   --color-label-primary: #1d1d1f;
   --color-label-secondary: rgba(29, 29, 31, 0.64);
-  --color-label-tertiary: rgba(29, 29, 31, 0.42);
+  --color-label-tertiary: rgba(29, 29, 31, 0.66); /* AA on cards and page bg */
   --color-label-quaternary: rgba(29, 29, 31, 0.24);
   --color-separator: rgba(20, 35, 55, 0.12);
   --color-separator-opaque: #c6c6c8;
-  --color-link: #007aff;
+  --color-link: #0066cc; /* AA as text on light surfaces */
   --color-system-blue: #007aff;
+  --color-system-blue-filled: #0066cc;
   --color-system-green: #34c759;
   --color-system-orange: #ff9500;
   --color-system-red: #ff3b30;

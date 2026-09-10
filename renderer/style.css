@@ -416,7 +416,7 @@ body.ga-thinking .start-btn {
 .msg p:last-child { margin-bottom: 0; }
 .msg.user {
   align-self: flex-end;
-  background: var(--color-system-blue); color: #fff;
+  background: var(--color-system-blue-filled); color: #fff;
   border-radius: 18px 18px 6px 18px;
 }
 .msg.ai {
@@ -565,7 +565,7 @@ body.ga-thinking .start-btn {
 }
 .mini-btn {
   padding: 9px 16px; border-radius: var(--radius-sm);
-  background: var(--color-system-blue); color: #fff;
+  background: var(--color-system-blue-filled); color: #fff;
   border: none; font: 600 13px var(--font-text); cursor: pointer;
   transition: filter var(--transition-control), transform var(--transition-press);
 }
@@ -650,7 +650,7 @@ body.ga-thinking .start-btn {
   border-color: color-mix(in srgb, var(--color-system-green) 35%, transparent);
   background: color-mix(in srgb, var(--color-system-green) 8%, transparent);
 }
-.plan-step.done i { color: #fff; background: var(--color-system-green); }
+.plan-step.done i { color: #08341f; background: var(--color-system-green); }
 .agent-result-block { margin: 10px 0 2px; display: grid; gap: 7px; }
 .agent-result-title { color: var(--color-label-secondary); font: 600 10px var(--font-mono); letter-spacing: .04em; }
 .agent-result {
@@ -902,7 +902,7 @@ input:focus, select:focus, textarea:focus {
 }
 .primary-btn {
   padding: 8px 18px; border-radius: var(--radius-sm);
-  background: var(--color-system-blue); color: #fff;
+  background: var(--color-system-blue-filled); color: #fff;
   border: none; font: 600 13px var(--font-text); cursor: pointer;
   transition: filter var(--transition-control), transform var(--transition-press);
 }
@@ -983,7 +983,7 @@ input:focus, select:focus, textarea:focus {
   cursor: pointer; font-size: 13px; color: var(--color-label-primary);
 }
 .palette-item:hover, .palette-item.selected {
-  background: var(--color-system-blue); border-color: transparent; color: #fff;
+  background: var(--color-system-blue-filled); border-color: transparent; color: #fff;
 }
 .palette-item .item-type { font-family: var(--font-mono); font-size: 10px; color: var(--color-label-tertiary); letter-spacing: .02em; }
 .palette-item.selected .item-type, .palette-item.selected .item-detail { color: rgba(255, 255, 255, 0.75); }
@@ -1683,7 +1683,7 @@ body.sys-degraded .sys-chip .dot { background: var(--color-system-orange); }
   background: var(--color-fill-secondary); border: 1px solid var(--color-separator);
   color: var(--color-label-secondary);
 }
-.conn-badge.pro { background: var(--color-system-green); color: #fff; border-color: transparent; }
+.conn-badge.pro { background: var(--color-system-green); color: #08341f; border-color: transparent; }
 .conn-usage { font: 600 10.5px var(--font-text); color: var(--color-label-secondary); font-variant-numeric: tabular-nums; }
 .priority-row select { background: var(--color-fill-secondary); border: 1px solid var(--color-separator); border-radius: var(--radius-xs); padding: 6px 10px; color: var(--color-label-primary); font-size: 11px; }
 
