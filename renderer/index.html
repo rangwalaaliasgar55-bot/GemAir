@@ -572,7 +572,7 @@
         <section class="view" id="view-companion">
           <div class="companion-grid">
             <div class="hud-panel mood-panel">
-              <h3 class="panel-title">MOOD <span class="dim">— EMOTIONAL BASELINE</span></h3>
+              <h3 class="panel-title">Mood <span class="dim">— how you've been feeling</span></h3>
               <div class="mood-current" id="moodCurrent">
                 <span class="mood-emoji" id="moodEmoji">😊</span>
                 <div>
@@ -582,7 +582,7 @@
               </div>
               <canvas id="moodCanvas" width="520" height="140"></canvas>
               <div class="mood-checkin">
-                <span class="dim" style="font-size:11px;letter-spacing:2px">QUICK CHECK-IN</span>
+                <span class="dim" style="font-size:11px;">Quick check-in</span>
                 <div class="mood-btns" id="moodBtns">
                   <button data-mood="great 😄" title="Great">😄</button>
                   <button data-mood="good 🙂" title="Good">🙂</button>
@@ -595,7 +595,7 @@
             </div>
 
             <div class="hud-panel goals-panel">
-              <h3 class="panel-title">HABITS & GOALS <span class="dim">— CAREER & WELLNESS</span></h3>
+              <h3 class="panel-title">Habits & goals <span class="dim">— career & wellness</span></h3>
               <div class="inline-add">
                 <input type="text" id="goalInput" placeholder="Add a habit or goal…" />
                 <select id="goalCategory" class="goal-cat">
@@ -613,9 +613,9 @@
             </div>
 
             <div class="hud-panel wellness-panel">
-              <h3 class="panel-title">WELLNESS & FOCUS <span class="dim">— SELF-CARE</span></h3>
-              <div class="affirmation" id="affirmation">"You are capable of achieve extraordinary things."</div>
-              <button class="refresh-btn" id="newAffirmation">⟳ NEW AFFIRMATION</button>
+              <h3 class="panel-title">Wellness & focus <span class="dim">— self-care</span></h3>
+              <div class="affirmation" id="affirmation">&ldquo;You are capable of achieving extraordinary things.&rdquo;</div>
+              <button class="refresh-btn" id="newAffirmation">New affirmation</button>
               <div class="wellness-tips" id="wellnessTips">
                 <button class="tip-chip" data-area="focus">🎯 Focus</button>
                 <button class="tip-chip" data-area="stress">🌊 Stress</button>
@@ -625,17 +625,17 @@
               </div>
               <div class="tip-box" id="tipBox">Click a category above for actionable advice, or ask Gem in chat.</div>
               <div class="wellness-actions">
-                <button class="refresh-btn" id="focusBtn" style="flex:1">🍅 FOCUS POMODORO</button>
-                <button class="refresh-btn" id="weeklyReportBtn" style="flex:1">📊 WEEKLY REPORT</button>
+                <button class="refresh-btn" id="focusBtn" style="flex:1">🍅 Focus session</button>
+                <button class="refresh-btn" id="weeklyReportBtn" style="flex:1">📊 Weekly report</button>
               </div>
               <div class="focus-timer" id="focusTimer" hidden style="margin-top:14px;">
                 <div class="focus-time" id="focusTime" style="font-family:var(--font-mono);font-size:32px;font-weight:700;color:var(--accent);">25:00</div>
                 <div class="focus-controls" style="display:flex;gap:10px;margin-top:8px;">
-                  <button class="primary-btn" id="focusToggle">▶ START</button>
-                  <button class="ghost-btn" id="focusReset">RESET</button>
+                  <button class="primary-btn" id="focusToggle">Start</button>
+                  <button class="ghost-btn" id="focusReset">Reset</button>
                 </div>
                 <div class="ambient-sounds" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center;">
-                  <span class="dim" style="font-size:11px;font-family:var(--font-mono);">AMBIENT:</span>
+                  <span class="dim" style="font-size:11px;font-family:var(--font-mono);">Ambient</span>
                   <button class="qc ambient-btn active" data-sound="none">🔇 Off</button>
                   <button class="qc ambient-btn" data-sound="rain">🌧️ Rain</button>
                   <button class="qc ambient-btn" data-sound="space">🚀 Space Drone</button>
@@ -645,9 +645,9 @@
             </div>
 
             <div class="hud-panel career-panel">
-              <h3 class="panel-title">LIFE COMPASS <span class="dim">— ADVICE & STRATEGY</span></h3>
+              <h3 class="panel-title">Life compass <span class="dim">— advice &amp; strategy</span></h3>
               <p class="career-intro dim" style="font-size:12.5px;line-height:1.6;">
-                GemAir adaptively remembers your moods and long-term goals. Click a compass prompt to talk through your life decisions.
+                GemAir remembers your moods and long-term goals. Tap a prompt to talk through a decision.
               </p>
               <div class="career-prompts">
                 <button class="prompt-chip" data-prompt="I'm feeling stuck in my career. Help me figure out my next step.">🧭 Career direction & roadmap</button>

@@ -6452,7 +6452,7 @@ function bindEvents() {
       $$('.ambient-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       playAmbientSound(btn.dataset.sound);
-      toast('FOCUS', `Ambient sound: ${btn.textContent}`, '🎵');
+      toast('Focus', `Ambient sound: ${btn.textContent}`, '🎵');
     });
   });
 
@@ -6636,7 +6636,7 @@ function bindEvents() {
     await api.memoryAddMood(emo.emotion, b.dataset.mood);
     await loadMemory();
     renderMood();
-    toast('MOOD', 'Thanks for checking in. I\u2019ve got you.', MOOD_EMOJI[emo.emotion] || '💙');
+    toast('Mood', 'Thanks for checking in. I\u2019ve got you.', MOOD_EMOJI[emo.emotion] || '💙');
   }));
 
   // Companion: goals
@@ -6668,7 +6668,7 @@ function bindEvents() {
     if (focusRunning) {
       focusInterval = setInterval(() => {
         focusRemaining--;
-        if (focusRemaining <= 0) { focusRemaining = 0; clearInterval(focusInterval); focusRunning = false; $('#focusToggle').textContent = '▶'; toast('FOCUS', 'Session complete — take a 5-minute break!', '🍅'); speak('Great work. Time for a short break.'); }
+        if (focusRemaining <= 0) { focusRemaining = 0; clearInterval(focusInterval); focusRunning = false; $('#focusToggle').textContent = '▶'; toast('Focus', 'Session complete — take a 5-minute break!', '🍅'); speak('Great work. Time for a short break.'); }
         const m = Math.floor(focusRemaining / 60), s = focusRemaining % 60;
         $('#focusTime').textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
       }, 1000);
@@ -7793,7 +7793,7 @@ function renderFocusPane(body, title) {
           remaining = 0; running = false;
           if (hudFocusTimer) { clearInterval(hudFocusTimer); hudFocusTimer = null; }
           if (toggleBtn.isConnected) toggleBtn.textContent = '▶ START';
-          toast('FOCUS', 'Session complete — take a break!', '🍅');
+          toast('Focus', 'Session complete — take a break!', '🍅');
           speak('Focus session complete.');
         }
         paint();

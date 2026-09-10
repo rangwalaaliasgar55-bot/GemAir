@@ -646,10 +646,12 @@ body.wake-armed #micVuCanvas { opacity: 1; }
 
 .mood-checkin { margin-top: 18px; }
 .mood-btns { display: flex; gap: 10px; margin-top: 8px; }
+/* Health-style round emoji check-in buttons */
 .mood-btns button {
-  flex: 1; padding: 10px; border-radius: var(--radius-md);
+  flex: none; width: 46px; height: 46px; padding: 0;
+  border-radius: 50%; display: grid; place-items: center;
   background: var(--color-fill-secondary);
-  border: 1px solid var(--color-separator); font-size: 20px; cursor: pointer;
+  border: 1px solid var(--color-separator); font-size: 21px; cursor: pointer;
   transition: background var(--transition-control), transform var(--transition-press);
 }
 .mood-btns button:hover { background: var(--color-fill-primary); }
@@ -693,11 +695,23 @@ body.wake-armed #micVuCanvas { opacity: 1; }
 }
 .prompt-chip:hover { background: var(--color-fill-secondary); border-color: color-mix(in srgb, var(--color-system-blue) 30%, transparent); }
 
-.goal-item {
-  display: grid; gap: 6px; padding: 12px 14px;
-  background: var(--color-fill-tertiary); border: 1px solid var(--color-separator);
-  border-radius: var(--radius-md); font-size: 13px;
+/* Goals as a grouped list (Journal-style), matching .memory-list */
+.goals-list {
+  display: flex; flex-direction: column;
+  max-height: 420px; overflow-y: auto;
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-md);
+  background: var(--color-fill-tertiary);
+  padding: 3px 0;
 }
+.goal-item {
+  display: grid; gap: 6px; padding: 11px 14px;
+  background: transparent; border: none;
+  border-bottom: 1px solid var(--color-separator);
+  border-radius: 0; font-size: 13px;
+}
+.goals-list > .goal-item:last-child,
+.goals-list > .empty:last-child { border-bottom: none; }
 
 /* ============ AUTOMATIONS (town) VIEW ============ */
 .town-head { margin-bottom: 20px; }
