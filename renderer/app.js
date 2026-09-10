@@ -3926,7 +3926,7 @@ function renderAgentToolResults(messageEl, agentName, runs) {
   const stringify = (value) => {
     try { return typeof value === 'string' ? value : JSON.stringify(value, null, 2); } catch (e) { return String(value); }
   };
-  block.innerHTML = `<div class="agent-result-title">${escapeHtml(agentName)} · REAL TOOL RESULTS</div>` + runs.map((run) => {
+  block.innerHTML = `<div class="agent-result-title">${escapeHtml(agentName)} · tool results</div>` + runs.map((run) => {
     const icon = run.ok ? '✓' : '✗';
     const state = run.ok ? 'done' : 'error';
     return `<div class="agent-result ${state}"><div><b>${icon} ${escapeHtml(run.name)}</b><span>${Math.round(run.ms || 0)}ms</span></div><pre>${escapeHtml(stringify(run.result).slice(0, 1200))}</pre></div>`;
@@ -4112,10 +4112,10 @@ function renderTownChrome() {
   const provName = { gemini: 'GEMINI', chatgpt: 'GPT', claude: 'CLAUDE', groq: 'LLAMA', openrouter: 'OPENROUTER' }[prov];
   const model = (cfg.baseURL && cfg.apiKey) ? (cfg.model || provName || 'MODEL') : (cfg.baseURL ? (cfg.model || 'LOCAL MODEL') : 'No model yet');
   const set = (id, val) => { const el = $(id); if (el && el.textContent !== val) el.textContent = val; };
-  set('#townSeats', seated + '/' + total + ' seat');
-  set('#townBusy', busy + '/' + total + ' busy');
-  set('#townSeatsMini', seated + '/' + total + ' seat');
-  set('#townBusyMini', busy + '/' + total + ' busy');
+  set('#townSeats', seated + ' of ' + total + ' seated');
+  set('#townBusy', busy + ' of ' + total + ' busy');
+  set('#townSeatsMini', seated + ' of ' + total + ' seated');
+  set('#townBusyMini', busy + ' of ' + total + ' busy');
   set('#townModel', model);
   set('#townModelMini', model);
   // U2: townHeadState / townPreviewState were literally hardcoded "READY" in the
