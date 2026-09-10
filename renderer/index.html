@@ -951,7 +951,7 @@
         <!-- CONNECTIONS SECTION: one guided path per provider, no dead ends -->
         <div class="settings-section active" data-section="connections">
           <fieldset id="connectionHubCard">
-            <legend>CONNECTION HUB — ACCOUNTS → FREE CORE → OFFLINE</legend>
+            <legend>Connections — accounts, Free Core, offline</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
               Press Connect and follow the steps — GemAir picks the working method automatically and says exactly what it needs. Sessions are encrypted on this device; nothing is uploaded.
             </p>
@@ -1013,14 +1013,14 @@
         <!-- BRAIN SECTION -->
         <div class="settings-section" data-section="brain">
           <fieldset>
-            <legend>IDENTITY</legend>
+            <legend>Identity</legend>
             <label>Your name (stored in memory)
               <input type="text" id="setUserName" placeholder="e.g. Commander" />
             </label>
             <button type="button" class="ghost-btn" id="replayOnboardBtn" style="margin-top:10px;width:100%;">⟲ REPLAY FIRST-RUN INTRO</button>
           </fieldset>
           <fieldset>
-            <legend>AI BRAIN — FREE CORE + OPTIONAL OWN PROVIDER</legend>
+            <legend>AI brain — Free Core, or your own provider</legend>
             <div class="groq-callout free-core-badge" style="font-size:12px;line-height:1.5;margin-bottom:8px;">
               <b>✔ LIVE TOOLS READY</b> — Search, weather, headlines, translation, prices and dictionary lookups work in the browser without an API key. A server model is used only when the deployment is configured with a real provider.
             </div>
@@ -1099,7 +1099,7 @@
             </details>
           </fieldset>
           <fieldset>
-            <legend>ACCOUNT</legend>
+            <legend>Account</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
               GemAir works fully signed-out — memory is local-first and always yours. Signing in with Google gives you a stable identity, so your memory follows you across devices.
             </p>
@@ -1110,7 +1110,7 @@
             </div>
           </fieldset>
           <fieldset>
-            <legend>LOCAL USAGE STATISTICS</legend>
+            <legend>Local usage statistics</legend>
             <label class="check-label">
               <input type="checkbox" id="setUsageStats" /> Keep anonymous aggregate counters on this device
             </label>
@@ -1123,7 +1123,7 @@
             </div>
           </fieldset>
           <fieldset>
-            <legend>RATE GEMAIR</legend>
+            <legend>Rate GemAir</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">
               Ratings are stored locally and never uploaded. Export them any time.
             </p>
@@ -1134,7 +1134,7 @@
             </div>
           </fieldset>
           <fieldset>
-            <legend>LANGUAGE</legend>
+            <legend>Language</legend>
             <label><span data-i18n="settings.language">Interface language</span>
               <select id="setLanguage" aria-label="Interface language"></select>
             </label>
@@ -1144,7 +1144,7 @@
         <!-- VOICE SECTION -->
         <div class="settings-section" data-section="voice">
           <fieldset>
-            <legend>AVATAR & VOICE</legend>
+            <legend>Avatar &amp; voice</legend>
             <label>Avatar Gender
               <select id="setAvatarGender">
                 <option value="female">Female (Gem)</option>
@@ -1218,7 +1218,7 @@
             </div>
           </fieldset>
           <fieldset>
-            <legend>GEMINI LIVE DIALOG (WEBSOCKET)</legend>
+            <legend>Gemini Live dialog (WebSocket)</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
               Real-time text dialog over Google's Live API socket. Needs an API key from AI Studio and a live model ID you verify in the AI Studio docs — GemAir ships no model names because availability changes.
               The same key powers desktop Gemini chat: Google sign-in alone grants no API scope, so connect Google for identity, then paste the key here.
@@ -1262,7 +1262,7 @@
             </div>
           </fieldset>
           <fieldset>
-            <legend>AMBIENCE</legend>
+            <legend>Ambience</legend>
             <label class="check-label">
               <input type="checkbox" id="setAmbientScore" /> Ambient command-center score (default off)
             </label>
@@ -1283,7 +1283,7 @@
         <!-- DESKTOP & MODES SECTION (A, M) -->
         <div class="settings-section" data-section="desktop">
           <fieldset>
-            <legend>DESKTOP MANAGEMENT — WINDOW TOOLS</legend>
+            <legend>Desktop management — window tools</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
               Agentic desktop management like a coding-agent CLI, but for Windows. Tools: launch_app, focus_app, snap_window, minimize_all, next_virtual_desktop, open_site, list_windows. Cross-platform where possible.
             </p>
@@ -1309,7 +1309,7 @@
           </fieldset>
 
           <fieldset id="desktopAgentCard">
-            <legend>🤖 DESKTOP AGENT — COMPUTER USE (KEYLESS, NO CLAUDE)</legend>
+            <legend>🤖 Desktop agent — computer use (keyless)</legend>
               <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
                A connected ChatGPT or Gemini brain can plan real desktop tasks through the guarded tool layer. Ollama is optional, not required. Turn it on to let Gem take
               screenshots, move the mouse, click, type and press keys to carry out a task you describe.
@@ -1331,7 +1331,7 @@
           </fieldset>
 
           <fieldset id="codingAgentCard">
-            <legend>👨‍💻 CODING AGENT — KEYLESS, GEMAIR</legend>
+            <legend>👨‍💻 Coding agent — keyless</legend>
               <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
                GemAir's coding agent uses your connected ChatGPT or Gemini brain when available. Point it at a
                project folder and describe a change — it reads your repo, plans, edits files and validates. Ollama remains optional.
@@ -1353,7 +1353,7 @@
           </fieldset>
 
           <fieldset id="modeDesignerCard">
-            <legend>MODE DESIGNER — CREATE CUSTOM MODES</legend>
+            <legend>Mode designer — create custom modes</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
               Mode = bundle of apps, websites (+browser), volume, HUD theme, DND, playlist. Built-ins: WORK, GAMING, CHILL, STUDY. One sentence arranges everything.
             </p>
@@ -1410,13 +1410,13 @@
           </fieldset>
 
           <fieldset>
-            <legend>CURRENT MODES</legend>
+            <legend>Current modes</legend>
             <div class="modes-list" id="settingsModesList">
               <div class="empty">Loading modes…</div>
             </div>
           </fieldset>
           <fieldset>
-            <legend>APP UPDATES</legend>
+            <legend>App updates</legend>
             <label class="check-label">
               <input type="checkbox" id="setAutoUpdateChecks" checked /> Check GitHub automatically for app updates
             </label>
@@ -1434,7 +1434,7 @@
             </div>
           </fieldset>
           <fieldset>
-            <legend>GET DESKTOP APP</legend>
+            <legend>Get the desktop app</legend>
               <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">The desktop build adds real app launching, window control, files, system telemetry, voice, local memory, and commander automation.</p>
             <button class="primary-btn" id="settingsDownloadBtn" style="width:100%;">Download GemAir for desktop</button>
           </fieldset>
@@ -1443,21 +1443,21 @@
         <!-- APPEARANCE SECTION -->
         <div class="settings-section" data-section="appearance">
           <fieldset>
-            <legend>LIGHT / DARK MODE</legend>
+            <legend>Light / dark mode</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
               Switch interface brightness without changing your selected HUD accent theme.
             </p>
             <button class="ghost-btn" id="appearanceToggle" type="button" aria-pressed="false">☀ SWITCH TO LIGHT</button>
           </fieldset>
           <fieldset>
-            <legend>HUD THEMES</legend>
+            <legend>Themes</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">
               Recolour the entire interface — orb, panels, canvases and glows. Defined as string tokens in <b>themes.js</b>; your choice is saved and applies everywhere.
             </p>
             <div class="theme-grid" id="themeGrid"></div>
           </fieldset>
           <fieldset>
-            <legend>COST — FREE FOREVER AUDIT</legend>
+            <legend>Cost — free forever</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">
               Every feature runs on a free, keyless service. Nothing here costs money — ever.
             </p>
@@ -1473,7 +1473,7 @@
         </div>
         <div class="settings-section" data-section="apple">
           <fieldset>
-            <legend>APPLE &amp; SYSTEM — CONTROL CENTER</legend>
+            <legend>Apple &amp; system — Control Center</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
               macOS-style quick controls. Network and battery are live readings only — GemAir never invents them.
               Brightness dims this app window; volume applies to in-app audio.
@@ -1488,7 +1488,7 @@
             </div>
           </fieldset>
           <fieldset>
-            <legend>FOCUS &amp; NOTIFICATIONS</legend>
+            <legend>Focus &amp; notifications</legend>
             <label class="check-label"><input type="checkbox" id="appleDndCheck" /> Do Not Disturb — silence toast notifications</label>
             <p class="hint" style="font-size:11px;color:var(--text-dim);">Focus modes reuse the existing WORK / GAMING / CHILL / STUDY chips in the top bar.</p>
             <div class="apple-slider-row">
