@@ -163,6 +163,17 @@
   #view-assistant .tp-head { flex-wrap: wrap; gap: 8px; }
 }
 
+@media (max-width: 480px) {
+  /* Narrow phones: the topbar keeps brand · Spotlight · CC · Settings;
+     net, brain and language live in Control Center / Settings. */
+  .apple-extras .apple-online,
+  .active-brain-chip,
+  .stt-lang-chip { display: none; }
+  .brand-text h1 { font-size: 14px; }
+  .topbar { gap: 8px; }
+  #settingsSearch { width: min(180px, 44vw); }
+}
+
 @media (max-width: 600px) {
   body { overflow: auto; }
   .app { height: auto; min-height: 100dvh; }
@@ -173,6 +184,8 @@
   #view-assistant .expert-panel { padding: 10px; }
   #view-assistant .expert-pane { padding-inline: 0; }
   #view-assistant .chat-log { height: clamp(200px, 38svh, 360px); padding: 8px; }
+  .palette input { font-size: 16px; }
+  #settingsSearch { font-size: 16px; }
   #view-assistant .msg { padding: 10px; }
   #view-assistant .orb-panel { min-height: 300px; }
   .footer { flex-wrap: wrap; gap: 8px; overflow-wrap: anywhere; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
