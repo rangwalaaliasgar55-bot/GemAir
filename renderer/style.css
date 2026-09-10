@@ -536,7 +536,31 @@ body.wake-armed #micVuCanvas { opacity: 1; }
 .mini-btn:hover { filter: brightness(1.1); }
 .mini-btn:active { transform: scale(.97); }
 
-.memory-list { display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; }
+/* Settings-grade grouped list: one inset card, hairline rows */
+.memory-list {
+  display: flex; flex-direction: column; gap: 0;
+  max-height: 480px; overflow-y: auto;
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-md);
+  background: var(--color-fill-tertiary);
+  padding: 3px 0;
+}
+.memory-list .empty { border-bottom: none; }
+.memory-list > .mem-item,
+.memory-list > .memory-browser-entry {
+  border: none; border-radius: 0;
+  border-bottom: 1px solid var(--color-separator);
+  background: transparent;
+}
+.memory-list > .mem-item:last-child,
+.memory-list > .memory-browser-entry:last-child { border-bottom: none; }
+.memory-list > .proc-row,
+.memory-list > .todo-item {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--color-separator);
+}
+.memory-list > .proc-row:last-child,
+.memory-list > .todo-item:last-child { border-bottom: none; }
 .memory-browser-entry {
   padding: 10px 12px; border: 1px solid var(--color-separator);
   border-radius: var(--radius-sm); background: var(--color-fill-tertiary);
@@ -1008,7 +1032,7 @@ input:focus, select:focus, textarea:focus {
 .hud-dock-body .news-mini .score { color: var(--color-label-tertiary); font-size: 10.5px; }
 
 /* Radar monitor (decorative canvas — hidden by later layers, rule kept for compat) */
-.radar-wrap { margin-top: 16px; text-align: center; }
+.radar-wrap { display: none; } /* sweep hidden — canvas kept bound (S2 handles the RAF) */
 .radar-wrap canvas { width: 200px; height: 200px; border-radius: 50%; }
 
 /* ============================================================

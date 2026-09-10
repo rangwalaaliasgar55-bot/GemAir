@@ -2483,8 +2483,8 @@ function renderAdaptivePersonalityState() {
   if (!state) return;
   const effective = getPersonalityAdjustments();
   state.textContent = effective.adaptive
-    ? `${effective.mode.toUpperCase()} · W ${effective.warmth} · WIT ${effective.wit} · B ${effective.brevity}`
-    : 'OFF · USING MANUAL SLIDERS';
+    ? `${effective.mode} · warmth ${effective.warmth} · wit ${effective.wit} · brevity ${effective.brevity}`
+    : 'Manual sliders';
 }
 
 function buildSystemPrompt() {
