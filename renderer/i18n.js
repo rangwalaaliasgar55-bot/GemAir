@@ -19,20 +19,20 @@
 
   const dictionaries = {
     en: {
-      'nav.assistant': 'Voice Core',
-      'nav.core': 'Desktop Manager',
-      'nav.companion': 'Life Companion',
-      'nav.town': 'Agent Town',
-      'nav.world': 'Global Intel',
+      'nav.assistant': 'Assistant',
+      'nav.core': 'Workspace',
+      'nav.companion': 'Tasks & Goals',
+      'nav.town': 'Automations',
+      'nav.world': 'Discover',
       'status.nominal': 'Ready',
-      'status.degraded': 'DEGRADED',
-      'status.offline': 'OFFLINE',
-      'settings.title': 'SETTINGS',
+      'status.degraded': 'Degraded',
+      'status.offline': 'Offline',
+      'settings.title': 'Settings',
       'settings.language': 'Interface language',
       'palette.placeholder': 'Type a command, search memory, or ask a question…',
       'memory.empty': 'No memories match this search.',
       'audit.empty': 'No matching tool actions.',
-      'tasks.title': 'TASKS',
+      'tasks.title': 'Tasks',
       'tasks.add': 'Add a task…',
       'tasks.empty': 'No tasks yet.',
       'chat.placeholder': 'Ask me anything…',
@@ -46,17 +46,17 @@
       'common.close': 'Close',
       'common.refresh': 'Refresh',
       'common.loading': 'Loading…',
-      'proc.title': 'ACTIVE PROCESSES',
+      'proc.title': 'Processes',
       'proc.end': 'End',
-      'sat.title': 'SAT-LINK FEED'
+      'sat.title': 'Local brief'
     },
 
     hi: {
-      'nav.assistant': 'वॉइस कोर',
-      'nav.core': 'डेस्कटॉप प्रबंधक',
-      'nav.companion': 'जीवन साथी',
-      'nav.town': 'एजेंट टाउन',
-      'nav.world': 'वैश्विक सूचना',
+      'nav.assistant': 'असिस्टेंट',
+      'nav.core': 'वर्कस्पेस',
+      'nav.companion': 'कार्य और लक्ष्य',
+      'nav.town': 'ऑटोमेशन',
+      'nav.world': 'डिस्कवर',
       'status.nominal': 'सिस्टम सामान्य',
       'status.degraded': 'आंशिक रूप से बाधित',
       'status.offline': 'ऑफ़लाइन',
@@ -81,15 +81,15 @@
       'common.loading': 'लोड हो रहा है…',
       'proc.title': 'सक्रिय प्रक्रियाएँ',
       'proc.end': 'समाप्त करें',
-      'sat.title': 'सैट-लिंक फ़ीड'
+      'sat.title': 'लोकल ब्रीफ'
     },
 
     ur: {
-      'nav.assistant': 'وائس کور',
-      'nav.core': 'ڈیسک ٹاپ مینیجر',
-      'nav.companion': 'زندگی کا ساتھی',
-      'nav.town': 'ایجنٹ ٹاؤن',
-      'nav.world': 'عالمی معلومات',
+      'nav.assistant': 'اسسٹنٹ',
+      'nav.core': 'ورک اسپیس',
+      'nav.companion': 'ٹاسک اور اہداف',
+      'nav.town': 'آٹومیشن',
+      'nav.world': 'ڈسکور',
       'status.nominal': 'نظام معمول پر',
       'status.degraded': 'کارکردگی متاثر',
       'status.offline': 'آف لائن',
@@ -114,7 +114,7 @@
       'common.loading': 'لوڈ ہو رہا ہے…',
       'proc.title': 'فعال پروسیسز',
       'proc.end': 'ختم کریں',
-      'sat.title': 'سیٹ لنک فیڈ'
+      'sat.title': 'لوکل بریف'
     }
   };
 

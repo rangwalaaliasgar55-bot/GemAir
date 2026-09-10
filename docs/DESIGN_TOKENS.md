@@ -74,3 +74,37 @@ Scale utilities: `.type-large-title` … `.type-caption` (Large Title → Captio
 ## Window controls
 
 Original (non-trademark) chrome dots: `--win-close`, `--win-min`, `--win-max` — slightly desaturated vs Apple’s exact traffic lights; used by the custom title bar only as decorative affordances (not OS window buttons).
+
+## Accent bridges
+
+`--accent`, `--accent-soft`, `--accent-glow`, `--accent-dim` default to calm system blue (dark `#0a84ff`, light `#007aff`). `themes.js` overwrites them on `<body>` when a HUD theme applies, so accents recolor small strokes and data viz only — never the chrome.
+
+## Component recipes — `renderer/components.css`
+
+Purely additive `.ga-*` classes, token-driven, documented in the file header. Legacy mapping:
+
+| Recipe | Legacy class it replaces |
+| --- | --- |
+| `.ga-card` | `.hud-panel` |
+| `.ga-section-title` | `.panel-title` |
+| `.ga-row` (+ `-icon/-main/-title/-sub/-value/-chevron`) | new (Settings list rows) |
+| `.ga-btn-primary / -secondary / -ghost / -destructive` | `.primary-btn` / `.ghost-btn` / `.mini-btn` |
+| `.ga-icon-btn` (`.is-round`) | `.icon-btn` |
+| `.ga-segmented > button.active` | `.core-tabs` / `.sat-tabs` / `.town-tabs` |
+| `.ga-field` | `input[type=text]…` base styles |
+| `.ga-switch` | `.check-label input[type=checkbox]` (apple.css skin) |
+| `.ga-slider` | `input[type=range]` |
+| `.ga-chip` / `.ga-status-pill` (`is-ready/-working/-queued/-done/-error`) | `.qc` / `.tp-ready` / `.seat-chip` |
+| `.ga-msg-user / -assistant / -system` | `.msg.user` / `.msg.ai` / `.msg.system-msg` |
+| `.ga-tool-call` (details/summary; `is-done`/`is-error`) | `.tool-card` |
+| `.ga-agent-card` (+ `-avatar`) | `.agent-card` |
+| `.ga-sheet` (+ `-head/-title/-body/-foot`) | `.modal` |
+| `.ga-toast` | `.toast` |
+| `.ga-empty` (+ `-icon/-title/-hint`) | `.empty` |
+| `.ga-skeleton` | new |
+| `.ga-meter` (`is-green/-orange/-red`) | `.ctx-meter` |
+| `.ga-voice-orb` (`data-state=idle/listening/thinking/speaking`) | replaces `#orbCanvas` particle paint |
+
+## Stylesheet cascade (order matters)
+
+`design-tokens.css` → `style.css` (calm token-driven base) → `light-mode.css` (scrim tints) → `depth.css` (layout/responsive/a11y/motion) → `apple.css` (Apple skin refinements) → `components.css` (`.ga-*` recipes) → `reduced-motion.css` (global kill-switch).

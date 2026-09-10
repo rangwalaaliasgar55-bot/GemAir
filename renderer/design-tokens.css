@@ -49,6 +49,15 @@
   --error: var(--color-danger);
   --info: var(--color-info);
 
+  /* Accent bridges — calm system-blue until themes.js applies a HUD theme.
+     themes.js writes the real accent set onto <body> at boot; these defaults
+     only paint the first frames (and the no-theme case). Literals (not var()
+     aliases) so the light block below can flip them reliably. */
+  --accent: #0a84ff;
+  --accent-soft: rgba(10, 132, 255, 0.45);
+  --accent-glow: rgba(10, 132, 255, 0.16);
+  --accent-dim: rgba(10, 132, 255, 0.1);
+
   /* ---------- Materials · Liquid Glass tiers ---------- */
   /* thin: menus, chips */
   --material-thin-bg: rgba(30, 32, 40, 0.55);

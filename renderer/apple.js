@@ -108,7 +108,7 @@
 
   function updateBatteryBadge() {
     try {
-      const els = [$('appleBattery'), $('appleBattery2')].filter(Boolean);
+      const els = [$('appleBattery'), $('appleBattery2'), $('ccBattery')].filter(Boolean);
       if (!els.length) return;
       if (navigator.getBattery) {
         navigator.getBattery().then((b) => {
@@ -184,6 +184,30 @@
         obs.observe(src, { childList: true, characterData: true, subtree: true });
       } catch { setInterval(sync, 3000); }
     } catch {}
+  }
+
+  // Control Center is the rich surface for topbar overflow status. The topbar
+  // elements stay the single source of truth (app.js keeps writing them); we
+  // just mirror their text into the panel. #ccBattery is updated directly
+  // by updateBatteryBadge().
+  function mirrorText(srcId, dstId) {
+    try {
+      const src = $(srcId), dst = $(dstId);
+      if (!src || !dst) return;
+      const sync = () => { try { dst.textContent = src.textContent; } catch {} };
+      sync();
+      try {
+        const obs = new MutationObserver(sync);
+        obs.observe(src, { childList: true, characterData: true, subtree: true });
+      } catch { setInterval(sync, 3000); }
+    } catch {}
+  }
+
+  function mirrorCcStatus() {
+    mirrorText('activeBrainName', 'ccBrainName');
+    mirrorText('currentModeChip', 'ccModeValue');
+    mirrorText('contextValue', 'ccCtxValue');
+    mirrorText('sysChipText', 'ccSysStatus');
   }
 
   function setupAppleSettingsShortcuts() {
@@ -285,6 +309,7 @@
     setupCcControls();
     setupAppleSettingsShortcuts();
     mirrorAppleId();
+    mirrorCcStatus();
     updateNetBadge();
     updateBatteryBadge();
     try {

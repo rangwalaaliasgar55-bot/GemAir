@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="light-mode.css" />
   <link rel="stylesheet" href="depth.css" />
   <link rel="stylesheet" href="apple.css" />
+  <link rel="stylesheet" href="components.css" />
   <link rel="stylesheet" href="reduced-motion.css" />
 </head>
 <body>
@@ -43,12 +44,19 @@
   <div class="toasts" id="toasts"></div>
   <div id="appleDim" aria-hidden="true"></div>
   <section class="apple-cc" id="appleControlPanel" aria-label="Control Center" hidden>
-    <h3>CONTROL CENTER</h3>
+    <h3>Control Center</h3>
     <div class="apple-cc-grid">
       <button class="apple-toggle" id="ccWifi" type="button" aria-pressed="false"><span class="led"></span><span>Wi-Fi<small>Checking…</small></span></button>
       <button class="apple-toggle" id="ccDnd" type="button" aria-pressed="false"><span class="led"></span><span>Focus · DND<small>Allowed</small></span></button>
       <button class="apple-toggle" id="ccFocus" type="button" aria-pressed="false"><span class="led"></span><span>Work Focus<small>Mode chip</small></span></button>
-      <button class="apple-toggle" id="ccTheme" type="button" aria-pressed="false"><span class="led"></span><span>Theme<small>Cycle HUD</small></span></button>
+      <button class="apple-toggle" id="ccTheme" type="button" aria-pressed="false"><span class="led"></span><span>Theme<small>Cycle accent</small></span></button>
+    </div>
+    <div class="apple-cc-status" role="status" aria-label="System status">
+      <div class="cc-stat"><span>Brain</span><b id="ccBrainName">Free core</b></div>
+      <div class="cc-stat"><span>Mode</span><b id="ccModeValue">No mode</b></div>
+      <div class="cc-stat"><span>Context</span><b id="ccCtxValue">0</b></div>
+      <div class="cc-stat"><span>Status</span><b id="ccSysStatus">Ready</b></div>
+      <div class="cc-stat"><span>Battery</span><b id="ccBattery">🔋 —</b></div>
     </div>
     <div class="apple-slider-row">
       <label>Display brightness<input type="range" id="ccBrightness" min="40" max="100" value="100" /></label>
@@ -85,10 +93,10 @@
 
       <div class="topbar-right">
         <div class="apple-extras" role="toolbar" aria-label="System shortcuts">
-          <span class="apple-online" id="appleNet" title="Network status">● ONLINE</span>
+          <span class="apple-online" id="appleNet" title="Network status">● Online</span>
           <span class="apple-online" id="appleBattery" title="Battery status">🔋 —</span>
-          <button class="apple-btn" id="appleSpotlightBtn" type="button" title="Spotlight search (Ctrl+K)">🔍 Spotlight</button>
-          <button class="apple-btn" id="appleControlBtn" type="button" title="Control Center" aria-expanded="false" aria-controls="appleControlPanel">◉ Control Center</button>
+          <button class="apple-btn" id="appleSpotlightBtn" type="button" title="Spotlight search (Ctrl+K)" aria-label="Spotlight search (Ctrl+K)">🔍</button>
+          <button class="apple-btn" id="appleControlBtn" type="button" title="Control Center" aria-label="Control Center" aria-expanded="false" aria-controls="appleControlPanel">◉</button>
         </div>
         <button id="updatePill" type="button" title="A newer GemAir release is available" hidden>⬆ Update</button>
         <button class="download-app-btn" id="topbarDownloadBtn" type="button" title="Download GemAir for desktop">Download desktop</button>
@@ -184,119 +192,16 @@
             </div>
 
             <div class="stx-center">
-              <div class="stx-core">
-                <div class="stx-circuits">
-                  <button type="button" class="stx-circuit" id="memCircuitRow" data-circ="memory" title="View memory details">
-                    <span class="sc-ico">⬡</span>
-                    <span class="sc-name">MEMORY</span>
-                    <span class="circuit-bar"><i id="memCircuit" style="width:0%"></i></span>
-                    <span class="circuit-val" id="memCircuitVal">0%</span>
-                  </button>
-                  <button type="button" class="stx-circuit" id="skillCircuitRow" data-circ="skills" title="View learned skills">
-                    <span class="sc-ico"></span>
-                    <span class="sc-name">SKILLS</span>
-                    <span class="circuit-bar"><i id="skillCircuit" style="width:0%"></i></span>
-                    <span class="circuit-val" id="skillCircuitVal">0%</span>
-                  </button>
-                  <button type="button" class="stx-circuit" id="soulCircuitRow" data-circ="soul" title="Tune personality">
-                    <span class="sc-ico">✧</span>
-                    <span class="sc-name">SOUL</span>
-                    <span class="circuit-bar"><i id="soulCircuit" style="width:0%"></i></span>
-                    <span class="circuit-val" id="soulCircuitVal">0%</span>
-                  </button>
-                  <button type="button" class="stx-circuit" id="settingCircuitRow" title="Open settings">
-                    <span class="sc-ico">⚙</span>
-                    <span class="sc-name">SETTING</span>
-                    <span class="circuit-bar"><i style="width:100%"></i></span>
-                    <span class="circuit-val dim">ON</span>
-                  </button>
-                </div>
-
-                <canvas id="wireCanvas" width="120" height="420" aria-hidden="true"></canvas>
-
-                <div class="orb-panel hud-panel">
-                  <div class="thinking-pill" id="thinkingPill"><span>THINKING</span><i></i></div>
-                  <canvas id="orbCanvas" width="560" height="560" aria-hidden="true"></canvas>
-                  <canvas id="micVuCanvas" width="180" height="34" aria-label="Microphone input level"></canvas>
-                  <div class="gem-nameplate">
-                    <span class="gem-name">GEM</span>
-                    <span class="gem-role" id="gemRole">personal intelligence</span>
-                    <button class="gender-toggle-btn" id="avatarGenderToggle" title="Switch Voice (Female / Male)">
-                      <span id="avatarGenderLabel">♀ FEMALE</span>
-                    </button>
-                  </div>
-                  <div class="orb-center">
-                    <button class="start-btn" id="startBtn">
-                      <span class="start-ring"></span>
-                      <span class="start-label" id="startLabel">START AI</span>
-                    </button>
-                  </div>
-                  <div class="caption-bar" id="captionBar" aria-live="polite">
-                    <span class="caption-who" id="captionWho">GEM</span>
-                    <p class="caption-text" id="captionText"></p>
-                  </div>
-                  <div class="orb-status" id="orbStatus">STANDBY</div>
-                </div>
-              </div>
-
-              <div class="hud-panel town-preview" id="townPreview">
-                <div class="tp-head">
-                  <h3 class="panel-title">Agents <span class="tp-ready" id="townPreviewState">Ready</span></h3>
-                  <button class="refresh-btn" id="openTownBtn" style="padding:4px 12px;font-size:10px;">Open →</button>
-                </div>
-                <div class="town-seatbar" id="townSeatBarMini"></div>
-                <div class="tp-stage tp-stage-cards">
-                  <canvas id="townMiniCanvas" width="560" height="240" hidden aria-hidden="true"></canvas>
-                  <div class="agent-card-grid agent-card-grid-mini" id="townMiniGrid" role="list" aria-label="Agent preview"></div>
-                </div>
-                <div class="town-statusbar">
-                  <span class="ts-item online" id="townOnlineMini"><i></i>Online</span>
-                  <span class="ts-item" id="townModelMini">No model yet</span>
-                  <span class="ts-item">CTX <span class="ctx-meter"><i id="townCtxMini"></i></span></span>
-                  <span class="ts-item" id="townSeatsMini">0/4 seat</span>
-                  <span class="ts-item" id="townBusyMini">0/4 busy</span>
-                  <button class="ts-chat" id="townChatMini">Chat</button>
-                </div>
-              </div>
-
-              <!-- A1 Plan-Act live progress -->
-              <div class="hud-panel plan-act-panel" id="planActPanel" hidden>
-                <h3 class="panel-title">PLAN-ACT <span class="dim" id="planActState">— IDLE</span>
-                  <span class="dry-run-chip" id="dryRunChip">
-                    <button class="mini-btn" id="showPlanBtn">SHOW PLAN</button>
-                    <button class="primary-btn" id="runPlanBtn">RUN</button>
-                  </span>
-                </h3>
-                <div class="plan-act-body" id="planActBody">
-                  <div class="empty">No active mission</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="stx-right">
-              <div class="hud-panel expert-panel">
-                <div class="expert-tabs">
-                  <button class="expert-tab" data-etab="voice">VOICE</button>
-                  <button class="expert-tab active" data-etab="agent">AGENT</button>
-                  <button class="expert-tab" data-etab="notes">NOTES</button>
-                  <button class="expert-tab" data-etab="desktop">DESKTOP</button>
-                  <span class="expert-plus">＋</span>
-                </div>
-
-                <div class="expert-pane" data-epane="voice" id="etabVoice">
-                  <div class="voice-status" id="voiceStatusList"></div>
-                  <button class="refresh-btn" id="voiceSettingsBtn" style="margin-top:12px;">⚙ TUNE VOICE IN SETTINGS</button>
-                </div>
-
-                <div class="expert-pane active" data-epane="agent" id="etabAgent">
-                  <div class="chat-panel" style="min-height:0;">
+              <!-- Conversation is the primary surface (S1) -->
+              <div class="chat-panel hud-panel" id="chatPanel">
                     <h3 class="panel-title">Conversation <span class="dim" id="linkMode">— FREE CORE</span>
                       <button class="refresh-btn" id="clearChatBtn" style="padding:3px 10px;font-size:10px;">Clear</button>
                     </h3>
                     <div class="chat-log" id="chatLog" role="log" aria-label="Conversation" tabindex="0">
                       <div class="msg system-msg">
-                        <p>Start a conversation with Gem.</p>
-                        <p class="sub">Speak naturally, or type below. Press <b>Ctrl+K</b> for instant command palette.</p>
+                        <span class="chat-empty-mark" aria-hidden="true">◈</span>
+                        <p>Ask Gem anything</p>
+                        <p class="sub">Speak naturally or type below — press <b>Ctrl+K</b> for the command palette.</p>
                       </div>
                     </div>
                     <div class="tool-activity">
@@ -328,7 +233,108 @@
                       <button type="button" class="qc" data-cmd="gaming setup">🎮 Gaming</button>
                       <button type="button" class="qc" data-cmd="list windows">🖥 Windows</button>
                     </div>
+              </div>
+
+              <!-- A1 Plan-Act live progress -->
+              <div class="hud-panel plan-act-panel" id="planActPanel" hidden>
+                <h3 class="panel-title">PLAN-ACT <span class="dim" id="planActState">— IDLE</span>
+                  <span class="dry-run-chip" id="dryRunChip">
+                    <button class="mini-btn" id="showPlanBtn">SHOW PLAN</button>
+                    <button class="primary-btn" id="runPlanBtn">RUN</button>
+                  </span>
+                </h3>
+                <div class="plan-act-body" id="planActBody">
+                  <div class="empty">No active mission</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="stx-right">
+              <div class="stx-core-right">
+                <div class="stx-circuits">
+                  <button type="button" class="stx-circuit" id="memCircuitRow" data-circ="memory" title="View memory details">
+                    <span class="sc-ico">⬡</span>
+                    <span class="sc-name">MEMORY</span>
+                    <span class="circuit-bar"><i id="memCircuit" style="width:0%"></i></span>
+                    <span class="circuit-val" id="memCircuitVal">0%</span>
+                  </button>
+                  <button type="button" class="stx-circuit" id="skillCircuitRow" data-circ="skills" title="View learned skills">
+                    <span class="sc-ico"></span>
+                    <span class="sc-name">SKILLS</span>
+                    <span class="circuit-bar"><i id="skillCircuit" style="width:0%"></i></span>
+                    <span class="circuit-val" id="skillCircuitVal">0%</span>
+                  </button>
+                  <button type="button" class="stx-circuit" id="soulCircuitRow" data-circ="soul" title="Tune personality">
+                    <span class="sc-ico">✧</span>
+                    <span class="sc-name">SOUL</span>
+                    <span class="circuit-bar"><i id="soulCircuit" style="width:0%"></i></span>
+                    <span class="circuit-val" id="soulCircuitVal">0%</span>
+                  </button>
+                  <button type="button" class="stx-circuit" id="settingCircuitRow" title="Open settings">
+                    <span class="sc-ico">⚙</span>
+                    <span class="sc-name">SETTING</span>
+                    <span class="circuit-bar"><i style="width:100%"></i></span>
+                    <span class="circuit-val dim">ON</span>
+                  </button>
+                </div>
+                <canvas id="wireCanvas" width="120" height="420" aria-hidden="true"></canvas>
+              </div>
+
+                <div class="orb-panel hud-panel">
+                  <div class="thinking-pill" id="thinkingPill"><span>THINKING</span><i></i></div>
+                  <canvas id="orbCanvas" width="560" height="560" aria-hidden="true"></canvas>
+                  <canvas id="micVuCanvas" width="180" height="34" aria-label="Microphone input level"></canvas>
+                  <div class="gem-nameplate">
+                    <span class="gem-name">GEM</span>
+                    <span class="gem-role" id="gemRole">personal intelligence</span>
+                    <button class="gender-toggle-btn" id="avatarGenderToggle" title="Switch Voice (Female / Male)">
+                      <span id="avatarGenderLabel">♀ FEMALE</span>
+                    </button>
                   </div>
+                  <div class="orb-center">
+                    <button class="start-btn" id="startBtn">
+                      <span class="start-ring"></span>
+                      <span class="start-label" id="startLabel">START AI</span>
+                    </button>
+                  </div>
+                  <div class="caption-bar" id="captionBar" aria-live="polite">
+                    <span class="caption-who" id="captionWho">GEM</span>
+                    <p class="caption-text" id="captionText"></p>
+                  </div>
+                  <div class="orb-status" id="orbStatus">STANDBY</div>
+                </div>
+
+              <div class="hud-panel town-preview" id="townPreview">
+                <div class="tp-head">
+                  <h3 class="panel-title">Agents <span class="tp-ready" id="townPreviewState">Ready</span></h3>
+                  <button class="refresh-btn" id="openTownBtn" style="padding:4px 12px;font-size:10px;">Open →</button>
+                </div>
+                <div class="town-seatbar" id="townSeatBarMini"></div>
+                <div class="tp-stage tp-stage-cards">
+                  <canvas id="townMiniCanvas" width="560" height="240" hidden aria-hidden="true"></canvas>
+                  <div class="agent-card-grid agent-card-grid-mini" id="townMiniGrid" role="list" aria-label="Agent preview"></div>
+                </div>
+                <div class="town-statusbar">
+                  <span class="ts-item online" id="townOnlineMini"><i></i>Online</span>
+                  <span class="ts-item" id="townModelMini">No model yet</span>
+                  <span class="ts-item">CTX <span class="ctx-meter"><i id="townCtxMini"></i></span></span>
+                  <span class="ts-item" id="townSeatsMini">0/4 seat</span>
+                  <span class="ts-item" id="townBusyMini">0/4 busy</span>
+                  <button class="ts-chat" id="townChatMini">Chat</button>
+                </div>
+              </div>
+
+              <div class="hud-panel expert-panel">
+                <div class="expert-tabs">
+                  <button class="expert-tab active" data-etab="voice">VOICE</button>
+                  <button class="expert-tab" data-etab="notes">NOTES</button>
+                  <button class="expert-tab" data-etab="desktop">DESKTOP</button>
+                  <span class="expert-plus">＋</span>
+                </div>
+
+                <div class="expert-pane active" data-epane="voice" id="etabVoice">
+                  <div class="voice-status" id="voiceStatusList"></div>
+                  <button class="refresh-btn" id="voiceSettingsBtn" style="margin-top:12px;">⚙ TUNE VOICE IN SETTINGS</button>
                 </div>
 
                 <div class="expert-pane" data-epane="notes" id="etabNotes">
@@ -919,7 +925,7 @@
   <div class="modal-backdrop" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
     <div class="modal" style="width:min(860px,96vw);">
       <div class="modal-head">
-        <h2 id="settingsModalTitle">SETTINGS</h2>
+        <h2 id="settingsModalTitle">Settings</h2>
         <div style="display:flex;gap:10px;align-items:center;">
           <input type="text" id="settingsSearch" placeholder="Search settings… (connections, voice, desktop, appearance, system)" style="width:260px;" />
           <button class="icon-btn" id="settingsClose">✕</button>

@@ -4908,7 +4908,7 @@ function pushToolActivity(name, args, result, ms) {
     <div class="tool-io"><span class="io-label">OUTPUT</span><pre>${escapeHtml(str(result).slice(0, 260))}</pre></div>`;
   feed.prepend(div);
   while (feed.children.length > 12) feed.removeChild(feed.lastChild);
-  const pane = $('#etabAgent');
+  const pane = $('#chatPanel');
   if (pane) pane.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 window.__pushToolActivity = pushToolActivity;
@@ -8065,7 +8065,7 @@ function runBootSequence() {
     later(() => {
       if (finished) return;
       overlay.classList.add('logo-phase');
-      if (line) line.textContent = 'CORE SIGNATURE VERIFIED';
+      if (line) line.textContent = 'Ready';
       if (bar) bar.style.width = '88%';
       playSfx('activate');
     }, 1080);
