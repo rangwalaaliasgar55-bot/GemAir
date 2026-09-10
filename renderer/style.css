@@ -30,6 +30,16 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Skip-to-chat link: hidden until keyboard-focused */
+.chat-skip {
+  position: fixed; left: 10px; top: -60px; z-index: 220;
+  padding: 10px 16px; border-radius: var(--radius-sm);
+  background: var(--color-system-blue-filled); color: #fff;
+  font: 600 13px var(--font-text); text-decoration: none;
+  transition: top var(--transition-control);
+}
+.chat-skip:focus { top: 10px; }
+
 ::selection { background: color-mix(in srgb, var(--color-system-blue) 30%, transparent); }
 
 /* --- ambient overlays: decorative nodes kept in the DOM, paint off --- */

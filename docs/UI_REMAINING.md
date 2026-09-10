@@ -26,21 +26,16 @@ Re-audit of main against the mission brief. Checked items are done and verified 
 - [x] **Phase 2 done** — i18n dictionaries (en/hi/ur) relabeled to the new IA (Assistant / Workspace / Tasks & Goals / Automations / Discover; `sat.title` → Local brief; sentence-case status strings). Topbar de-cluttered: clock + date restored to center; Spotlight/CC compacted to icon buttons (aria-labelled); mode/context/system/battery/download chips hidden from the bar and surfaced as a live status section in Control Center (apple.js `mirrorCcStatus()` MutationObservers, `#appleBattery2` via existing `updateBatteryBadge`). Assistant stacking conversation-first ≤1050px/≤720px. PWA standalone safe-area padding. Boot line + Settings sheet titles sentence-cased; `.assistant-grid` breakpoints consolidated into depth.css.
 - [x] **Phase 3 done** — conversation-first Assistant: the chat panel (now `#chatPanel`) moved from the AGENT expert tab into the hero center column (log + activity + composer + quick commands); the AGENT tab/pane was removed (Voice tab active by default; `activateQuickButton`'s agent-tab click is guarded and stays for the quick-access test contract); the right rail is now context meters (2×2 circuits) → voice orb → town preview → expert tabs (Voice/Notes/Desktop). Designed chat empty state (`.chat-empty-mark`), readable tool cards (text-face head, clipped mono I/O), chat-first stacking at ≤1050/≤720. `pushToolActivity` scrolls to `#chatPanel`.
      Note: the sandbox was re-cloned mid-mission (branch history reset to 75e4046; phases 0–2 commits lost, never pushed) — this commit re-lands phases 0–3 together; a few silently-lost edits (icon-btn base, CC battery/status styles, settings title, depth breakpoints) were re-applied and verified.
-- [ ] Topbar on very narrow widths (<420px): brand, net, brain, STT, 3 icon buttons — may still crowd; revisit with Phase 13 responsive pass.
+- [x] **Phase 13 done** — ≤480px topbar keeps brand · Spotlight · Control Center · Settings; net/brain/language chips hand off to CC/Settings. iOS 16px input guard; view grids collapse ≤1100px; assistant stack conversation-first at every width.
 - [ ] Footer copy + clock/date casing fine; ensure single quiet sentence (already calm).
 - [ ] Boot: apple.css already hides BIOS; remove the boot-scan/BIOS markup weight in style.css source; verify skip affordance.
 - [ ] Windows safe-area / `-webkit-app-region` for Electron titlebar not verified (main.js frame config untouched).
 
-## D. View-by-view remaining sci-fi / HUD copy
+## D. View-by-view copy (resolved in Phases 4–9)
 
-ALL-CAPS `panel-title`s in `renderer/index.html` (sentence-case pass pending):
-- Assistant: 139 `NOW — DASHBOARD`, 149 `LOCAL BRIEF — WEATHER & SEARCH`, 166 `TODAY HEADLINES`, 264 `PLAN-ACT — IDLE`, 342 `DESKTOP STATE — LIVE`; 218 `THINKING` pill, 223 gem role, 231 `START AI`, 238 `STANDBY`.
-- Core: 361 `LIVE TELEMETRY`, 418 `LONG-TERM MEMORY`, 438 `MEMORY BROWSER`, 457 `ACTIVE PROCESSES — SYSTEM MONITOR`, 468 `TASKS`, 479 `NOTEBOOK`, 490 `REMINDERS — ACTIVE ALARMS`, 502 `LEARNED SKILLS`, 514 `STANDING RULES`, 525 `ACTION AUDIT LOG — FED BY GET_ACTION_LOG`, 536 `SOUL — PERSONALITY TUNING`, 557 `DESKTOP MODES — ONE SENTENCE ARRANGES EVERYTHING`.
-- Companion: 569 `MOOD — EMOTIONAL BASELINE`, 592 `HABITS & GOALS`, 610 `WELLNESS & FOCUS`, 642 `LIFE COMPASS`; 601 `⟳ NEW AFFIRMATION`, 619 `🍅 FOCUS POMODORO`, 620 `📊 WEEKLY REPORT`.
-- World: 743 `DUAL / GLOBE / 2D COMMAND MAP` modes, 754 `WORLD MONITOR — UTC`, 756 globe caption `DOTTED WIREFRAME EARTH · CLICKABLE NEWS HOTSPOTS`, 761 `COMMAND MAP — LIVE 2D GRID`, 768 `GLOBAL HEADLINES — LIVE INTELLIGENCE FEED`, 778 `⟳ REFRESH FEED`.
-- Modals: 802 `PICK YOUR HUD THEME`, 821 `⚠️ EXPERIMENTAL CONNECTION`, 845 `🔌 CONNECTION LOST`, 866 `📋 PASTE CHATGPT SESSION`, 922 `SETTINGS`; 553 `STEADY · W 60 · WIT 40 · B 70` adaptive chip; 960 `CONNECT CHATGPT`, 974 `CONNECT GEMINI`.
-- app.js strings: 4876–4877 `VOICE/GENDER` rows, `SAT-LINK FEED` (i18n `sat.title`), greeting "all systems online" (~boot), `NO MODE`/`FREE CORE` chips, topbar `WORK/GAMING/CHILL/STUDY` chips (index.html:79–82).
-- View structure: core radar panel (index.html:381–384) hides; world grid keeps canvas ids; settings sections structurally OK (860px sidebar collapse exists).
+- [x] Workspace, Tasks & Goals, Automations, Discover, Settings, onboarding, toasts, orb/status strings and news meta all sentence-cased (Phases 4–9). Boot BIOS markup/strings remain in source but stay hidden (apple.css) with the skip path intact — deleting them is a separate cleanup, not needed for the redesign.
+- [x] `download.html` tone check: no mission-control/telemetry language remains.
+- [x] Skip-to-chat link present and styled (visible on keyboard focus).
 
 ## E. Component system (`.ga-*` recipes) — base library landed (Phase 1)
 
@@ -48,12 +43,14 @@ ALL-CAPS `panel-title`s in `renderer/index.html` (sentence-case pass pending):
 
 ## F. Assets, marketing, misc
 
-- [ ] `build/icon*.png|ico`, `renderer/assets/gemair-512.png`, `gemair-logo.png` still pre-SVG-mark rasters; regenerate from `assets/logo-mark.svg` (selfcheck enforces sizes/thresholds).
-- [ ] `download.html` tone sweep (Mission Control language check).
-- [ ] Light-mode AA audit across 8 themes (accents via `themes.js derive()`).
-- [ ] Onboarding overlay copy still cinematic (index.html:889–915 `GEMAIR` / `Commander…` / orb pulse).
-- [x] `<860px` assistant stacking: conversation first (chat is the hero center column at every breakpoint; ≤1050/≤720 put it first).
-- [ ] Empty/loading skeletons inconsistent (`.empty` text-only) — chat empty state designed in Phase 3; remaining views in Phases 4–8.
+- [x] Icon pipeline (Phase 11): `node scripts/generate-icons.js` regenerates all rasters from `renderer/assets/logo-mark.svg` (zero deps); outputs verified by pixel probe. `docs/LOGO.md` documents it.
+- [x] Light/dark AA audit (Phase 12): `node scripts/contrast-audit.js` — all pairs pass.
+- [x] Onboarding copy humanized (Phase 9). Responsive pass incl. ≤480px topbar (Phase 13).
+- [x] Chat empty state designed; remaining views keep quiet text-only `.empty` states — accepted as calm (no skeleton shimmer by default).
+- [ ] `stonic-skin.css` still on disk, unlinked (dead weight; `scripts/apply_stonic_skin.js` would re-link it — do not run).
+- [ ] Accent bridges on `:root` (system blue until themes.js paints) — verify first paint in a real Electron window.
+- [ ] `apple.css` final dead-rule read-through (RGB neutralizers etc.) — cosmetic only.
+- [ ] Electron titlebar safe-area / `-webkit-app-region` unverified (main.js frame config intentionally untouched).
 
 ## Quality gates (every commit)
 
