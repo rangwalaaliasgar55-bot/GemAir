@@ -8,7 +8,26 @@
    control below is wired in apple.js to a real action.
    ============================================================ */
 
-/* ---------- command-center panels: sharp, hairline, calm glow ---------- */
+/* The upstream redesign hides the map stage; the reference (and the user)
+   requires it back — now a real map with art + canvas + toolbar. */
+.sat-stage { display: block !important; }
+/* Media Link leads the left rail, exactly like the reference column. */
+.media-link { order: -4; }
+/* The upstream redesign dropped the height cap, pushing the composer below
+   the fold. Lock the panel to the viewport like the reference: everything
+   visible, chat log scrolls internally. */
+.expert-panel { max-height: calc(100dvh - 170px) !important; }
+.expert-pane.active, .expert-pane.active .chat-panel { min-height: 0; }
+/* The log is the ONLY shrinkable region: it scrolls internally while the
+   title, activity, composer and quick actions always stay visible. */
+.expert-pane.active .chat-log { min-height: 140px !important; flex: 1 1 auto !important; }
+/* Distribution CTA quiets down to a ghost link, reference style. */
+.download-app-btn {
+  background: transparent !important;
+  border: 1px solid var(--apple-hairline) !important;
+  box-shadow: none !important;
+  font-weight: 600 !important;
+}
 #view-assistant .hud-panel {
   border-radius: 6px !important;
   border: 1px solid var(--panel-border) !important;
@@ -27,6 +46,7 @@
   clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%);
   box-shadow: inset 3px 0 0 var(--circ, var(--accent)) !important;
   border-radius: 0 !important;
+  gap: 5px 12px !important;
 }
 .stx-circuit::after { right: 14px; }
 
