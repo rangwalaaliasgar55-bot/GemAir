@@ -21,6 +21,7 @@ const SHELL = [
   'light-mode.css',
   'depth.css',
   'apple.css',
+  'reference.css',
   'reduced-motion.css',
   'app.js',
   'apple.js',

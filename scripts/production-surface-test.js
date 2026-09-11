@@ -60,5 +60,15 @@ for (const art of ['renderer/assets/globe.jpg', 'renderer/assets/agent-town.jpg'
 }
 assert(read('renderer/sw.js').includes('assets/globe.jpg'), 'map art is not precached offline');
 assert(appleCss.includes('#satGlobeImg') && appleCss.includes('.sat-bottomnav'), 'reference surfaces lack Apple styling');
+const themes = read('renderer/themes.js');
+assert(/const DEFAULT = 'cyan'/.test(themes), 'default theme must be cyan (reference look)');
+assert(html.includes('href="reference.css"'), 'reference fidelity layer is not loaded');
+assert(read('renderer/sw.js').includes('reference.css'), 'reference layer is not precached offline');
+for (const id of ['mediaLinkPanel', 'mediaMicBtn', 'mediaShotBtn', 'mediaBrainState', 'mediaLinkState', 'feedbackBtn']) {
+  assert(html.includes('id="' + id + '"'), 'media/feedback surface missing: ' + id);
+}
+for (const id of ['mediaMicBtn', 'mediaShotBtn', 'mediaBrainState', 'mediaLinkState', 'feedbackBtn']) {
+  assert(apple.includes("'" + id + "'"), 'media/feedback control unwired: ' + id);
+}
 console.log('ok - reference parity surfaces exist, wired, and precached');
 console.log('ok - production accessibility, navigation, motion, and website surface contracts');

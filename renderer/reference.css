@@ -1,0 +1,146 @@
+/* ============================================================
+   GemAir — reference fidelity layer (original work).
+   Loaded last. Adapts the reference command-center language —
+   sharp panels, hairline borders, cyan glow details, mono
+   micro-labels, angled node rows — onto GemAir's real views.
+   Dialogs/sheets keep the system look; only the command
+   center takes the reference finish. No fake states: every
+   control below is wired in apple.js to a real action.
+   ============================================================ */
+
+/* ---------- command-center panels: sharp, hairline, calm glow ---------- */
+#view-assistant .hud-panel {
+  border-radius: 6px !important;
+  border: 1px solid var(--panel-border) !important;
+  box-shadow: 0 10px 28px -14px rgba(0, 0, 0, 0.8) !important;
+}
+#view-assistant .hud-panel:hover {
+  border-color: rgba(59, 201, 255, 0.28) !important;
+}
+#view-assistant .panel-title {
+  font-size: 11px !important;
+  letter-spacing: 0.14em !important;
+}
+
+/* ---------- node rows: angled corner + title-case labels ---------- */
+.stx-circuit {
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%);
+  box-shadow: inset 3px 0 0 var(--circ, var(--accent)) !important;
+  border-radius: 0 !important;
+}
+.stx-circuit::after { right: 14px; }
+
+/* ---------- expert tabs: underline indicator, reference style ---------- */
+.expert-tabs {
+  background: transparent !important;
+  border-bottom: 1px solid var(--apple-hairline);
+  border-radius: 0 !important;
+  padding: 0 12px !important;
+  gap: 18px !important;
+}
+.expert-tab {
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.18em !important;
+  text-transform: uppercase;
+  color: var(--text-dim) !important;
+  padding: 10px 2px !important;
+  position: relative;
+}
+.expert-tab:hover { color: var(--text) !important; }
+.expert-tab.active {
+  background: transparent !important;
+  color: var(--apple-blue) !important;
+  box-shadow: inset 0 -2px 0 var(--apple-blue) !important;
+}
+body[data-appearance='light'] .expert-tab.active { color: #007aff !important; }
+
+/* ---------- Media Link panel ---------- */
+.media-link .media-screen {
+  position: relative;
+  height: 132px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--apple-hairline);
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+}
+.media-link .media-screen img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: contain;
+  background: #000;
+}
+.media-link .media-screen img[hidden] { display: none; }
+.media-off {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--text-dim);
+  border: 1px solid var(--apple-hairline);
+  padding: 6px 14px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.media-link .media-row {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 10px; flex-wrap: wrap;
+}
+.media-link .media-state {
+  margin-left: auto;
+  font-size: 10.5px; font-weight: 600;
+  color: var(--text-dim);
+  max-width: 55%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.media-link .icon-btn {
+  width: 30px; height: 30px;
+  border-radius: 6px !important;
+}
+
+/* ---------- reveal-on-load + live dots ---------- */
+@keyframes ref-reveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+#view-assistant .hud-panel { animation: ref-reveal 0.45s ease both; }
+#view-assistant .stx-center .hud-panel:nth-child(2) { animation-delay: 0.08s; }
+#view-assistant .stx-right .hud-panel { animation-delay: 0.14s; }
+@keyframes ref-ping {
+  0% { box-shadow: 0 0 0 0 rgba(48, 209, 88, 0.55); }
+  70% { box-shadow: 0 0 0 7px rgba(48, 209, 88, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(48, 209, 88, 0); }
+}
+.ts-item.online i {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--apple-green);
+  animation: ref-ping 2.4s ease-out infinite;
+}
+@keyframes ref-spin-slow { to { transform: rotate(360deg); } }
+.sat-update-ico { animation: ref-spin-slow 6s linear infinite; }
+
+/* ---------- sat feed card + town status strip ---------- */
+.sat-update-card { border-radius: 4px !important; }
+.sat-bottomnav button.on { color: var(--apple-blue); }
+.town-statusbar {
+  border-top: 1px solid var(--apple-hairline);
+  padding-top: 8px;
+}
+
+/* ---------- topbar quick links ---------- */
+.topbar-links { display: flex; gap: 6px; align-items: center; }
+.topbar-links .ghost-btn { white-space: nowrap; }
+.ver-tag {
+  font-size: 10px; color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #view-assistant .hud-panel { animation: none; }
+  .ts-item.online i, .sat-update-ico { animation: none; }
+}
+@media (max-width: 860px) {
+  .stx-circuit { clip-path: none; }
+}

@@ -120,7 +120,7 @@
   };
 
   const ORDER = ['crimson', 'emerald', 'cyan', 'violet', 'amber', 'graphite', 'ocean', 'rgb'];
-  const DEFAULT = 'crimson';
+  const DEFAULT = 'cyan';
 
   // "#rrggbb" → "rgba(r, g, b, a)" (string in, string out)
   function rgba(hex, a) {

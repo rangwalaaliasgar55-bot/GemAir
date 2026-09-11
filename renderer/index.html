@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="light-mode.css" />
   <link rel="stylesheet" href="depth.css" />
   <link rel="stylesheet" href="apple.css" />
+  <link rel="stylesheet" href="reference.css" />
   <link rel="stylesheet" href="reduced-motion.css" />
 </head>
 <body>
@@ -91,6 +92,7 @@
           <button class="apple-btn" id="appleControlBtn" type="button" title="Control Center" aria-expanded="false" aria-controls="appleControlPanel">◉ Control Center</button>
         </div>
         <button id="updatePill" type="button" title="A newer GemAir release is available" hidden>⬆ Update</button>
+        <button class="ghost-btn" id="feedbackBtn" type="button" title="Report an issue on GitHub">Feedback</button>
         <button class="download-app-btn" id="topbarDownloadBtn" type="button" title="Download GemAir for desktop">Download desktop</button>
         <span class="current-mode-chip" id="currentModeChip" title="Current desktop mode">◍ NO MODE</span>
         <span class="active-brain-chip" id="activeBrainChip" title="Active AI brain"><span class="dot" id="activeBrainDot"></span><span id="activeBrainName">FREE CORE</span></span>
@@ -134,6 +136,21 @@
         <section class="view active" id="view-assistant">
           <div class="assistant-grid">
             <div class="stx-left">
+              <!-- Media Link: live mic + screen capture, real actions only -->
+              <div class="hud-panel media-link" id="mediaLinkPanel">
+                <h3 class="panel-title">MEDIA LINK
+                  <span class="dim" id="mediaLinkState">— STANDBY</span>
+                </h3>
+                <div class="media-screen" id="mediaScreen">
+                  <span class="media-off" id="mediaOffLabel">No preview</span>
+                  <img id="mediaShotImg" alt="Screen capture preview" hidden />
+                </div>
+                <div class="media-row">
+                  <button class="icon-btn" id="mediaMicBtn" type="button" title="Talk to Gem (same as chat mic)" aria-label="Talk to Gem">🎙</button>
+                  <button class="icon-btn" id="mediaShotBtn" type="button" title="Capture the screen" aria-label="Capture the screen">📷</button>
+                  <span class="media-state" id="mediaBrainState">—</span>
+                </div>
+              </div>
               <!-- U2 Dashboard NOW card -->
               <div class="hud-panel now-card" id="nowCard">
                 <h3 class="panel-title">NOW <span class="dim">— DASHBOARD</span></h3>

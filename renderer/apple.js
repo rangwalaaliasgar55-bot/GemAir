@@ -461,6 +461,77 @@
     } catch {}
   }
 
+  /* Media Link panel: the mic button drives the REAL chat mic, the camera
+     button runs the REAL screen capture, and the state line mirrors the
+     live orb status + active brain. No staged video, ever. */
+  function setupMediaLink() {
+    try {
+      const mic = $('mediaMicBtn');
+      if (mic && !mic.dataset.appleBound) {
+        mic.dataset.appleBound = '1';
+        mic.addEventListener('click', () => {
+          try { document.getElementById('micBtn')?.click(); } catch {}
+        });
+      }
+      const shot = $('mediaShotBtn');
+      if (shot && !shot.dataset.appleBound) {
+        shot.dataset.appleBound = '1';
+        shot.addEventListener('click', async () => {
+          const state = $('mediaLinkState');
+          const off = $('mediaOffLabel');
+          try {
+            if (state) state.textContent = '— CAPTURING…';
+            const api = window.gemair;
+            const r = api && api.computerUseScreen ? await api.computerUseScreen() : { error: 'desktop_only' };
+            if (r && r.ok) {
+              if (state) state.textContent = '— SAVED ✓';
+              if (off) off.textContent = 'Saved ' + (r.width && r.height ? r.width + '×' + r.height : '');
+              toast('Screen saved: ' + (r.file || 'capture'));
+            } else {
+              if (state) state.textContent = '— STANDBY';
+              toast((r && r.error) || 'Capture unavailable in the browser.');
+            }
+          } catch {
+            try { if (state) state.textContent = '— STANDBY'; } catch {}
+          }
+        });
+      }
+      const brain = $('mediaBrainState');
+      const src = $('activeBrainName');
+      const syncBrain = () => {
+        try { if (brain && src) brain.textContent = 'Brain · ' + src.textContent; } catch {}
+      };
+      syncBrain();
+      try {
+        if (src) new MutationObserver(syncBrain).observe(src, { childList: true, characterData: true, subtree: true });
+      } catch { setInterval(syncBrain, 4000); }
+      const orb = $('orbStatus');
+      const orbState = $('mediaLinkState');
+      const syncOrb = () => {
+        try { if (orb && orbState) orbState.textContent = '— ' + orb.textContent; } catch {}
+      };
+      syncOrb();
+      try {
+        if (orb) new MutationObserver(syncOrb).observe(orb, { childList: true, characterData: true, subtree: true });
+      } catch {}
+    } catch {}
+  }
+
+  function setupFeedbackBtn() {
+    try {
+      const btn = $('feedbackBtn');
+      if (!btn || btn.dataset.appleBound) return;
+      btn.dataset.appleBound = '1';
+      btn.addEventListener('click', () => {
+        try {
+          const url = 'https://github.com/rangwalaaliasgar55-bot/GemAir/issues/new';
+          if (window.gemair && window.gemair.openExternal) window.gemair.openExternal(url);
+          else window.open(url, '_blank', 'noopener');
+        } catch {}
+      });
+    } catch {}
+  }
+
   function init() {
     try { document.body.dataset.apple = '1'; } catch {}
     restoreDnd();
@@ -472,6 +543,8 @@
     setupSatUpdateCard();
     setupChatNewPill();
     setupChatAttach();
+    setupMediaLink();
+    setupFeedbackBtn();
     mirrorAppleId();
     updateNetBadge();
     updateBatteryBadge();
