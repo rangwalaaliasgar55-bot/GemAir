@@ -4185,6 +4185,19 @@ function initTownChrome() {
 
   // open town / chat shortcuts
   $('#openTownBtn')?.addEventListener('click', () => { playSfx('swoosh'); switchView('town'); });
+  // Reference town tools: share copies the live town status (real numbers).
+  $('#townShareMini')?.addEventListener('click', async () => {
+    try {
+      const text = ['Agent Town — ' + ($('#townPreviewState')?.textContent || 'READY'),
+        'Model: ' + ($('#townModelMini')?.textContent || 'none'),
+        'Seats: ' + ($('#townSeatsMini')?.textContent || '—'),
+        'Busy: ' + ($('#townBusyMini')?.textContent || '—')].join('\n');
+      await navigator.clipboard.writeText(text);
+      toast('AGENT TOWN', 'Status copied to clipboard.', '⤴');
+    } catch (e) {
+      toast('AGENT TOWN', 'Clipboard unavailable in this context.', '⚠️');
+    }
+  });
   const focusChat = () => { switchView('assistant'); $('#chatInput').focus(); };
   $('#townChatBtn')?.addEventListener('click', focusChat);
   $('#townChatMini')?.addEventListener('click', focusChat);
@@ -7429,6 +7442,7 @@ function bindEvents() {
   });
 
   $('#refreshNews').addEventListener('click', () => refreshHeadlines(worldCategory));
+  $('#refreshNewsMini')?.addEventListener('click', () => refreshHeadlines(worldCategory));
   $$('.news-filter').forEach((button) => button.addEventListener('click', () => refreshHeadlines(button.dataset.newsCategory)));
   $$('.world-mode').forEach((button) => button.addEventListener('click', () => {
     $$('.world-mode').forEach((item) => item.classList.toggle('active', item === button));
