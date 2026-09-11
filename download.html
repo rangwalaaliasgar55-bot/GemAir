@@ -2,65 +2,144 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="dark light" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light" />
   <meta name="description" content="Download GemAir for Windows, macOS, or Linux." />
   <title>Download GemAir</title>
   <style>
-    :root { color-scheme:dark; --bg:#090a0c; --surface:rgba(31,32,36,.72); --surface-2:#17181c; --text:#f5f5f7; --muted:#a1a1aa; --line:rgba(255,255,255,.12); --blue:#409cff; --good:#5bd699; }
+    :root { color-scheme:light; --bg:#F2F2F4; --card:#FFFFFF; --ink:#111114; --muted:#6E6E73; --line:rgba(0,0,0,.1); --blue:#007AFF; --blue-ink:#FFFFFF; --radius:18px; }
     * { box-sizing:border-box; }
     html { scroll-behavior:smooth; }
-    body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(900px 600px at 50% -12%,#292b31,transparent 65%),var(--bg); font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+    body { margin:0; min-height:100vh; color:var(--ink); background:var(--bg); font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
     a { color:inherit; }
-    .nav { position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between; width:min(1120px,100%); margin:auto; padding:16px 22px; background:rgba(9,10,12,.76); backdrop-filter:blur(20px); border-bottom:1px solid var(--line); }
-    .brand { font-weight:700; letter-spacing:-.02em; text-decoration:none; }
-    .nav-links { display:flex; align-items:center; gap:18px; font-size:13px; color:var(--muted); }
-    .nav-links a { text-decoration:none; }
-    .nav-links a:hover { color:var(--text); }
-    .shell { width:min(1120px,100%); margin:auto; padding:84px 22px 64px; }
-    .hero { max-width:760px; margin:auto; text-align:center; }
-    .eyebrow { color:var(--blue); font-weight:650; font-size:13px; }
-    h1 { margin:14px 0 18px; font-size:clamp(3rem,9vw,6.6rem); line-height:.94; letter-spacing:-.065em; }
-    .lede { margin:auto; max-width:650px; color:var(--muted); font-size:clamp(17px,2.2vw,22px); letter-spacing:-.015em; }
+    .skip { position:absolute; left:-999px; }
+    .skip:focus { left:12px; top:12px; z-index:50; background:var(--ink); color:#fff; padding:8px 14px; border-radius:10px; }
+    /* Floating pill nav */
+    .pillwrap { position:fixed; top:14px; left:0; right:0; z-index:20; display:flex; justify-content:center; pointer-events:none; }
+    .pillnav { pointer-events:auto; position:relative; display:flex; align-items:center; gap:2px; padding:5px; border-radius:999px; background:rgba(255,255,255,.82); border:1px solid var(--line); box-shadow:0 8px 28px -12px rgba(0,0,0,.25); backdrop-filter:blur(20px); }
+    .pillnav .thumb { position:absolute; top:5px; bottom:5px; left:0; width:0; border-radius:999px; background:var(--ink); transition:transform .25s ease,width .25s ease; }
+    .pillnav button, .pillnav a { position:relative; z-index:1; border:0; background:transparent; color:var(--muted); font:600 13px/1 inherit; padding:8px 14px; border-radius:999px; cursor:pointer; text-decoration:none; white-space:nowrap; }
+    .pillnav .on { color:#fff; }
+    .pillnav .brand { display:flex; align-items:center; gap:7px; color:var(--ink); font-weight:700; }
+    .pillnav .brand svg { display:block; }
+    .shell { width:min(1020px,100%); margin:auto; padding:120px 22px 64px; }
+    .hero { max-width:720px; margin:auto; text-align:center; }
+    .eyebrow { color:var(--muted); font-weight:650; font-size:12px; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:14px 0 16px; font-size:clamp(2.6rem,7vw,4.8rem); line-height:1.02; letter-spacing:-.05em; }
+    .lede { margin:auto; max-width:600px; color:var(--muted); font-size:clamp(16px,2vw,20px); letter-spacing:-.01em; }
     .actions { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top:28px; }
-    .button { display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 18px; border-radius:999px; text-decoration:none; background:var(--blue); color:white; font-weight:600; font-size:14px; }
-    .button.secondary { background:rgba(255,255,255,.08); color:var(--text); border:1px solid var(--line); }
-    .section { margin-top:92px; }
-    .section-head { max-width:660px; margin-bottom:24px; }
-    h2 { margin:0 0 8px; font-size:clamp(28px,4vw,44px); letter-spacing:-.045em; line-height:1.05; }
-    .section-head p,.fine { color:var(--muted); }
+    .button { display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 20px; border-radius:999px; text-decoration:none; background:var(--ink); color:#fff; font-weight:600; font-size:14px; }
+    .button.secondary { background:var(--card); color:var(--ink); border:1px solid var(--line); }
+    .section { margin-top:88px; }
+    .section-head { max-width:640px; margin:0 auto 26px; text-align:center; }
+    h2 { margin:0 0 8px; font-size:clamp(26px,3.6vw,38px); letter-spacing:-.04em; line-height:1.08; }
+    .section-head p, .fine { color:var(--muted); }
+    /* Feature tabs */
+    .featnav { position:relative; display:flex; gap:2px; width:max-content; max-width:100%; margin:0 auto; padding:5px; overflow-x:auto; border-radius:999px; background:var(--card); border:1px solid var(--line); }
+    .featnav .thumb { position:absolute; top:5px; bottom:5px; left:0; width:0; border-radius:999px; background:var(--ink); transition:transform .25s ease,width .25s ease; }
+    .featnav button { position:relative; z-index:1; display:flex; align-items:center; gap:7px; border:0; background:transparent; color:var(--muted); font:600 13px/1 inherit; padding:9px 15px; border-radius:999px; cursor:pointer; white-space:nowrap; }
+    .featnav button svg { display:block; }
+    .featnav button.on { color:#fff; }
+    .featpanel { display:none; max-width:620px; margin:22px auto 0; padding:26px 28px; border-radius:var(--radius); background:var(--card); border:1px solid var(--line); text-align:center; }
+    .featpanel.on { display:block; }
+    .featpanel h3 { margin:0 0 6px; font-size:20px; letter-spacing:-.02em; }
+    .featpanel p { margin:0; color:var(--muted); font-size:15px; }
     .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
-    .card { position:relative; display:flex; flex-direction:column; min-height:190px; padding:24px; border:1px solid var(--line); border-radius:22px; background:var(--surface); backdrop-filter:blur(22px); text-decoration:none; transition:transform .22s ease,border-color .22s ease,background .22s ease; }
-    .card:hover { transform:translateY(-4px); border-color:rgba(255,255,255,.3); background:rgba(48,49,54,.82); }
-    .card.recommended { box-shadow:0 0 0 3px rgba(64,156,255,.22); border-color:var(--blue); }
-    .badge { align-self:flex-start; min-height:22px; padding:2px 8px; border-radius:999px; background:rgba(64,156,255,.14); color:#85beff; font-size:11px; font-weight:650; }
-    .card h3 { margin:28px 0 5px; font-size:22px; letter-spacing:-.03em; }
+    .card { display:flex; flex-direction:column; min-height:190px; padding:24px; border:1px solid var(--line); border-radius:var(--radius); background:var(--card); text-decoration:none; transition:transform .22s ease,box-shadow .22s ease; }
+    .card:hover { transform:translateY(-3px); box-shadow:0 14px 34px -18px rgba(0,0,0,.35); }
+    .card.recommended { box-shadow:0 0 0 2px var(--blue); }
+    .badge { align-self:flex-start; min-height:22px; padding:2px 9px; border-radius:999px; background:rgba(0,122,255,.1); color:var(--blue); font-size:11px; font-weight:650; }
+    .card h3 { margin:26px 0 5px; font-size:22px; letter-spacing:-.02em; }
     .asset { color:var(--muted); font-size:13px; overflow-wrap:anywhere; }
     .cta { margin-top:auto; padding-top:20px; color:var(--blue); font-size:13px; font-weight:600; }
-    .status { margin-top:16px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; color:var(--muted); background:rgba(255,255,255,.035); font-size:13px; text-align:center; }
+    .status { margin-top:16px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; color:var(--muted); background:var(--card); font-size:13px; text-align:center; }
     .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; counter-reset:steps; }
-    .step { padding:20px; border-top:1px solid var(--line); color:var(--muted); }
-    .step::before { counter-increment:steps; content:counter(steps); display:grid; place-items:center; width:28px; height:28px; margin-bottom:14px; border-radius:50%; background:rgba(255,255,255,.08); color:var(--text); font-size:12px; }
-    .step b { display:block; margin-bottom:5px; color:var(--text); }
+    .step { padding:20px; border-top:2px solid var(--ink); color:var(--muted); font-size:14px; }
+    .step::before { counter-increment:steps; content:counter(steps); display:grid; place-items:center; width:28px; height:28px; margin-bottom:14px; border-radius:50%; background:var(--ink); color:#fff; font-size:12px; font-weight:700; }
+    .step b { display:block; margin-bottom:5px; color:var(--ink); }
     footer { display:flex; justify-content:space-between; gap:20px; margin-top:80px; padding-top:24px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
-    @media (max-width:760px) { .grid,.steps { grid-template-columns:1fr; } .shell { padding-top:52px; } .section { margin-top:64px; } .nav-links a:first-child { display:none; } footer { flex-direction:column; } }
-    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .card { transition:none; } }
+    @media (max-width:760px) { .grid,.steps { grid-template-columns:1fr; } .shell { padding-top:104px; } .section { margin-top:64px; } footer { flex-direction:column; } .pillnav button.hide-sm { display:none; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .pillnav .thumb,.featnav .thumb,.card { transition:none; } }
   </style>
 </head>
 <body>
-  <nav class="nav" aria-label="Product navigation"><a class="brand" href="/">GemAir</a><div class="nav-links"><a href="#features">Why desktop</a><a href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases">All releases</a><a href="/">Open web app</a><a class="button" href="#downloads">Download desktop</a></div></nav>
-  <main class="shell">
-    <section class="hero"><span class="eyebrow">GemAir for desktop</span><h1>Your assistant, closer to your work.</h1><p class="lede">Use voice, files, apps, tasks, local memory, and desktop automations from one private workspace.</p><div class="actions"><a class="button" id="heroDownload" href="#downloads">Download the desktop app</a><a class="button secondary" href="/">Try the web app</a></div></section>
-    <section class="section" id="downloads"><div class="section-head"><h2>Download the latest release.</h2><p>Choose your platform. Available cards link directly to assets published on GitHub Releases.</p></div><div class="grid">
+  <a class="skip" href="#downloads">Skip to downloads</a>
+  <div class="pillwrap"><nav class="pillnav nav" id="pillnav" aria-label="Product"><span class="thumb" id="pillThumb" aria-hidden="true"></span><a class="brand on" href="#top" data-pill><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>GemAir</a><a href="#features" data-pill class="hide-sm">Features</a><a href="#downloads" data-pill>Download</a><a href="/">Open web app</a><a href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases">Releases</a></nav></div>
+  <main class="shell" id="top">
+    <section class="hero"><span class="eyebrow">GemAir for desktop</span><h1>Your assistant, closer to your work.</h1><p class="lede">Voice, memory, agents, focus modes, and live world tools in one private workspace. Free forever, no account needed.</p><div class="actions"><a class="button" id="heroDownload" href="#downloads">Download the desktop app</a><a class="button secondary" href="/">Try the web app</a></div></section>
+    <section class="section" id="features"><div class="section-head"><span class="eyebrow">What it actually does</span><h2>Six tools, one calm place.</h2><p>Everything below ships in the app today — no mockups, no coming-soon.</p></div>
+      <div class="featnav" id="featnav" role="tablist" aria-label="Features"><span class="thumb" id="featThumb" aria-hidden="true"></span></div>
+      <div id="featpanels"></div>
+    </section>
+    <section class="section" id="downloads"><div class="section-head"><span class="eyebrow">Get the app</span><h2>Download the latest release.</h2><p>Choose your platform. Available cards link directly to assets published on GitHub Releases.</p></div><div class="grid">
       <a class="card" id="windows" data-os="windows" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest"><span class="badge">Windows 10 / 11</span><h3>Windows</h3><span class="asset">Checking for installer…</span><span class="cta">View release</span></a>
       <a class="card" id="macos" data-os="macos" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest"><span class="badge">macOS</span><h3>Mac</h3><span class="asset">Checking for disk image…</span><span class="cta">View release</span></a>
       <a class="card" id="linux" data-os="linux" href="https://github.com/rangwalaaliasgar55-bot/GemAir/releases/latest"><span class="badge">Linux desktop</span><h3>Linux</h3><span class="asset">Checking for package…</span><span class="cta">View release</span></a>
     </div><div class="status" id="releaseStatus" role="status" aria-live="polite">Checking GitHub Releases…</div></section>
-    <section class="section" id="features"><div class="section-head"><h2>Desktop capabilities, explained.</h2><p>The browser app handles conversations and live web tools. The desktop app adds operating-system access that browsers cannot provide.</p></div><div class="steps"><div class="step"><b>Install</b>Open the downloaded installer and follow your operating system’s prompts.</div><div class="step"><b>Choose permissions</b>GemAir asks before sensitive file, microphone, or desktop actions.</div><div class="step"><b>Stay in control</b>Memory is local-first. Connected services and automation permissions can be removed in Settings.</div></div></section>
-    <footer><span>GemAir 2.5.3 · MIT licensed</span><span>Not affiliated with Apple, OpenAI, Google, or Stonic AI.</span></footer>
+    <section class="section" id="how"><div class="section-head"><span class="eyebrow">Private by design</span><h2>You stay in control.</h2></div><div class="steps"><div class="step"><b>Install</b>Open the downloaded installer and follow your operating system’s prompts.</div><div class="step"><b>Choose permissions</b>GemAir asks before sensitive file, microphone, or desktop actions.</div><div class="step"><b>Stay in control</b>Memory is local-first. Connected services and automation permissions can be removed in Settings.</div></div></section>
+    <footer><span>GemAir 2.5.3 · MIT licensed</span><span>Not affiliated with Apple, OpenAI, or Google.</span></footer>
   </main>
   <script>
     (() => {
+      const FEATURES = [
+        { id:'voice', label:'Voice', title:'Talk, it answers out loud', body:'Edge neural voices with live captions and lip-synced avatar. Optional Gemini voice with your free AI Studio key.', icon:'<circle cx="12" cy="11" r="3.2"/><path d="M6.5 11.5v-1a5.5 5.5 0 0 1 11 0v1"/><path d="M12 17.5v3.5M8.5 21h7"/>' },
+        { id:'memory', label:'Memory', title:'It remembers, locally', body:'Facts, notes, reminders, goals and moods persist on your device. Search, export, or wipe them anytime.', icon:'<rect x="5" y="4.5" width="14" height="15" rx="2.5"/><path d="M9 9.5h6M9 13h6M9 16.5h4"/>' },
+        { id:'agents', label:'Agents', title:'A town that does things', body:'Agent Town collaborates on research and files; the desktop agent acts with per-action approval — never silently.', icon:'<circle cx="8.5" cy="8.5" r="2.6"/><circle cx="15.5" cy="8.5" r="2.6"/><path d="M4 19c.6-3.2 2.4-5 4.5-5s3.9 1.8 4.5 5M11 19c.6-3.2 2.4-5 4.5-5s3.9 1.8 4.5 5"/>' },
+        { id:'focus', label:'Focus', title:'Modes that set the scene', body:'Work, Gaming, Chill and Study modes switch apps, sites, volume and theme with one command.', icon:'<path d="M20 13.5A8 8 0 0 1 10.5 4 8 8 0 1 0 20 13.5Z"/>' },
+        { id:'world', label:'World', title:'Live answers, no key needed', body:'Weather, headlines, search, translate, prices and definitions work out of the box in the browser too.', icon:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.3 3.9 5.2 3.9 8.5s-1.3 6.2-3.9 8.5c-2.6-2.3-3.9-5.2-3.9-8.5s1.3-6.2 3.9-8.5Z"/>' },
+        { id:'connections', label:'Accounts', title:'Your accounts, encrypted', body:'Optional ChatGPT and Gemini links stored with OS-level encryption. Disconnect anytime with one click.', icon:'<path d="M10 14a4 4 0 0 0 6 .4l3-3a4 4 0 0 0-5.6-5.6l-1.5 1.5"/><path d="M14 10a4 4 0 0 0-6-.4l-3 3a4 4 0 0 0 5.6 5.6l1.5-1.5"/>' }
+      ];
+      const svgOpen = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+      const nav = document.getElementById('featnav'), panels = document.getElementById('featpanels'), thumb = document.getElementById('featThumb');
+      FEATURES.forEach((f, i) => {
+        const b = document.createElement('button');
+        b.setAttribute('role', 'tab'); b.dataset.feat = f.id;
+        b.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+        if (i === 0) b.classList.add('on');
+        b.innerHTML = svgOpen + f.icon + '</svg>' + f.label;
+        b.addEventListener('click', () => select(i));
+        nav.appendChild(b);
+        const p = document.createElement('div');
+        p.className = 'featpanel' + (i === 0 ? ' on' : '');
+        p.setAttribute('role', 'tabpanel');
+        p.innerHTML = '<h3>' + f.title + '</h3><p>' + f.body + '</p>';
+        panels.appendChild(p);
+      });
+      function select(i) {
+        const btns = [...nav.querySelectorAll('button')];
+        btns.forEach((b, j) => { b.classList.toggle('on', i === j); b.setAttribute('aria-selected', i === j ? 'true' : 'false'); });
+        [...panels.children].forEach((p, j) => p.classList.toggle('on', i === j));
+        moveThumb(nav, thumb, btns[i]);
+      }
+      function moveThumb(container, el, target) {
+        if (!target) return;
+        el.style.width = target.offsetWidth + 'px';
+        el.style.transform = `translateX(${target.offsetLeft - 5}px)`;
+      }
+      // Pill-nav thumb follows the in-view section.
+      const pillnav = document.getElementById('pillnav'), pillThumb = document.getElementById('pillThumb');
+      const links = [...pillnav.querySelectorAll('[data-pill]')];
+      function paintThumb() {
+        const cur = links.find((a) => a.classList.contains('on')) || links[0];
+        moveThumb(pillnav, pillThumb, cur);
+      }
+      links.forEach((a) => a.addEventListener('click', () => { links.forEach((x) => x.classList.remove('on')); a.classList.add('on'); paintThumb(); }));
+      const sections = ['#top', '#features', '#downloads'].map((s) => document.querySelector(s));
+      const spy = new IntersectionObserver((entries) => {
+        entries.forEach((e) => {
+          if (!e.isIntersecting) return;
+          const map = { top: 0, features: 1, downloads: 2 };
+          links.forEach((x) => x.classList.remove('on'));
+          const link = links[map[e.target.id] ?? 0] || links[0];
+          if (link) link.classList.add('on');
+          paintThumb();
+        });
+      }, { rootMargin: '-40% 0px -55% 0px' });
+      sections.forEach((s) => s && spy.observe(s));
+      window.addEventListener('resize', () => { paintThumb(); const on = nav.querySelector('button.on'); if (on) moveThumb(nav, thumb, on); });
+      window.addEventListener('load', () => { paintThumb(); const on = nav.querySelector('button.on'); if (on) moveThumb(nav, thumb, on); });
+      paintThumb();
+      select(0);
       const RELEASES = 'https://github.com/rangwalaaliasgar55-bot/GemAir/releases';
       const status = document.getElementById('releaseStatus');
       const ua = navigator.userAgent || '';

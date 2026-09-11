@@ -111,23 +111,23 @@
     <div class="layout">
       <nav class="sidenav" aria-label="Main navigation">
         <button class="nav-btn active" data-view="assistant" aria-label="Assistant" aria-current="page">
-          <span class="nav-ico">◉</span>
+          <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg></span>
           <span class="nav-label" data-i18n="nav.assistant">Assistant</span>
         </button>
         <button class="nav-btn" data-view="core" aria-label="Workspace" aria-current="false">
-          <span class="nav-ico">⬢</span>
+          <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 20 8v8l-8 4.5L4 16V8Z"/></svg></span>
           <span class="nav-label" data-i18n="nav.core">Workspace</span>
         </button>
         <button class="nav-btn" data-view="companion" aria-label="Tasks and Goals" aria-current="false">
-          <span class="nav-ico">♥</span>
+          <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 3c0 5.4-7.5 10-7.5 10Z"/></svg></span>
           <span class="nav-label" data-i18n="nav.companion">Tasks &amp; Goals</span>
         </button>
         <button class="nav-btn" data-view="town" aria-label="Automations" aria-current="false">
-          <span class="nav-ico">▦</span>
+          <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4.5" y="4.5" width="6.5" height="6.5" rx="1.5"/><rect x="13" y="4.5" width="6.5" height="6.5" rx="1.5"/><rect x="4.5" y="13" width="6.5" height="6.5" rx="1.5"/><rect x="13" y="13" width="6.5" height="6.5" rx="1.5"/></svg></span>
           <span class="nav-label" data-i18n="nav.town">Automations</span>
         </button>
         <button class="nav-btn" data-view="world" aria-label="Discover" aria-current="false">
-          <span class="nav-ico">◍</span>
+          <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.3 3.9 5.2 3.9 8.5s-1.3 6.2-3.9 8.5c-2.6-2.3-3.9-5.2-3.9-8.5s1.3-6.2 3.9-8.5Z"/></svg></span>
           <span class="nav-label" data-i18n="nav.world">Discover</span>
         </button>
       </nav>
@@ -209,7 +209,9 @@
               </div>
 
               <div class="hud-panel headlines-mini">
-                <h3 class="panel-title">TODAY HEADLINES</h3>
+                <h3 class="panel-title">TODAY HEADLINES
+                  <button class="refresh-btn" id="refreshNewsMini" type="button" title="Refresh headlines" style="padding:3px 10px;font-size:10px;">⟳</button>
+                </h3>
                 <div class="news-list mini" id="newsListMini">
                   <div class="empty">Fetching headlines…</div>
                 </div>
@@ -288,6 +290,7 @@
               <div class="hud-panel town-preview" id="townPreview">
                 <div class="tp-head">
                   <h3 class="panel-title">Agents <span class="tp-ready" id="townPreviewState">Ready</span></h3>
+                  <button class="refresh-btn" id="townShareMini" type="button" title="Copy town status" style="padding:4px 10px;font-size:10px;">⤴ Share</button>
                   <button class="refresh-btn" id="openTownBtn" style="padding:4px 12px;font-size:10px;">Open →</button>
                 </div>
                 <div class="town-seatbar" id="townSeatBarMini"></div>

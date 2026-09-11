@@ -70,5 +70,21 @@ for (const id of ['mediaLinkPanel', 'mediaMicBtn', 'mediaShotBtn', 'mediaBrainSt
 for (const id of ['mediaMicBtn', 'mediaShotBtn', 'mediaBrainState', 'mediaLinkState', 'feedbackBtn']) {
   assert(apple.includes("'" + id + "'"), 'media/feedback control unwired: ' + id);
 }
+assert(html.includes('id="refreshNewsMini"'), 'headlines refresh control is missing');
+assert(app.includes("$('#refreshNewsMini')"), 'headlines refresh is unwired');
+assert(html.includes('id="townShareMini"'), 'town share control is missing');
+assert(app.includes("$('#townShareMini')"), 'town share is unwired');
+// Landing page: Apple-minimal pill nav + real-feature tabs, GemAir brand only.
+assert(website.includes('id="pillnav"'), 'landing pill nav is missing');
+assert(website.includes('id="featnav"'), 'landing feature tabs are missing');
+for (const label of ["label:'Voice'", "label:'Memory'", "label:'Agents'", "label:'Focus'", "label:'World'", "label:'Accounts'"]) {
+  assert(website.includes(label), 'landing feature missing: ' + label);
+}
+assert(!/boredom/i.test(website), 'landing page must not carry third-party branding');
+// App sidebar uses the original thin-stroke icon set, not emoji glyphs.
+for (const glyph of ['>◉<', '>⬢<', '>♥<', '>▦<', '>◍<']) {
+  assert(!app.includes(glyph) && !html.includes(glyph), 'emoji nav glyph still present: ' + glyph);
+}
+assert(html.includes('class="nav-ico"><svg'), 'thin sidebar icons are missing');
 console.log('ok - reference parity surfaces exist, wired, and precached');
 console.log('ok - production accessibility, navigation, motion, and website surface contracts');

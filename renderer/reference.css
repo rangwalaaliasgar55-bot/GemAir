@@ -11,6 +11,8 @@
 /* The upstream redesign hides the map stage; the reference (and the user)
    requires it back — now a real map with art + canvas + toolbar. */
 .sat-stage { display: block !important; }
+/* Thin minimal sidebar icons (original stroke set, Apple-like weight). */
+.nav-ico svg { width: 18px; height: 18px; display: block; }
 /* Media Link leads the left rail, exactly like the reference column. */
 .media-link { order: -4; }
 /* The upstream redesign dropped the height cap, pushing the composer below
