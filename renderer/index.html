@@ -70,7 +70,7 @@
         </div>
         <div class="brand-text">
           <h1>GemAir</h1>
-          <p>Personal assistant <span class="ver" id="verTag">v2.7.0</span></p>
+          <p>Personal assistant <span class="ver" id="verTag">v2.8.0</span></p>
         </div>
       </div>
 
@@ -1103,14 +1103,39 @@
                 <button class="ghost-btn" id="disconnectGeminiBtn" style="padding:6px 10px;font-size:10px;" hidden>Disconnect</button>
                 <button class="ghost-btn" id="captureGeminiBtn" style="padding:6px 10px;font-size:10px;" hidden>Capture Session</button>
               </div>
-              <!-- FREE CORE ROW -->
+              <!-- ANONYMOUS FREEGPT35 SIDECAR -->
               <div class="conn-row" id="connFreeRow">
-                <span class="conn-dot fallback" id="freeCoreDot" title="Free core status">●</span>
-                <span class="conn-name">FREE CORE</span>
-                <span class="conn-email">Live server tools /api/* — status checked now</span>
-                <span class="conn-badge" style="background:var(--accent-dim);">FALLBACK</span>
+                <span class="conn-dot fallback" id="freeCoreDot" title="Anonymous sidecar status">●</span>
+                <span class="conn-name">ANONYMOUS GPT</span>
+                <span class="conn-email">FreeGPT35-compatible private loopback sidecar · no account</span>
+                <span class="conn-badge" style="background:var(--accent-dim);">AGPL SIDECAR</span>
                 <span class="conn-usage" id="freeCoreUsage">∞</span>
-                <span class="conn-status">READY</span>
+                <span class="conn-status" id="freeGPT35Status">CHECKING</span>
+                <label class="check-label" style="margin:0 0 0 auto;font-size:10px;">
+                  <input type="checkbox" id="setAnonymousChat" checked /> Enable fallback
+                </label>
+              </div>
+              <!-- OPENJARVIS REASONING SIDECAR -->
+              <div class="conn-row" id="connOpenJarvisRow">
+                <span class="conn-dot disconnected" id="openJarvisStatusDot" title="OpenJarvis status">○</span>
+                <span class="conn-name">OPENJARVIS</span>
+                <span class="conn-email" id="openJarvisStatusText">Bundled Python/Rust reasoning, research, memory, MCP policy, guardrails and sandbox support</span>
+                <span class="conn-badge" id="openJarvisRustBadge">PYTHON</span>
+                <button class="primary-btn" id="installOpenJarvisBtn" type="button" style="padding:6px 14px;font-size:11px;">INSTALL RUNTIME</button>
+                <button class="ghost-btn" id="cancelOpenJarvisInstallBtn" type="button" style="padding:6px 10px;font-size:10px;" hidden>CANCEL</button>
+                <label class="check-label" style="margin:0;font-size:10px;">
+                  <input type="checkbox" id="setOpenJarvisEnabled" /> Deep reasoning
+                </label>
+                <label class="check-label" style="margin:0;font-size:10px;">
+                  <input type="checkbox" id="setOpenJarvisPlanning" checked /> Pre-plan replies
+                </label>
+                <label class="check-label" style="margin:0;font-size:10px;">
+                  <input type="checkbox" id="setOpenJarvisMcp" /> Local MCP
+                </label>
+                <input type="url" id="setOpenJarvisMcpUrl" placeholder="http://127.0.0.1:3000/mcp" aria-label="Allowlisted loopback MCP URL" style="width:250px;font-size:10px;padding:6px;" />
+                <button class="ghost-btn" id="testOpenJarvisMcpBtn" type="button" style="padding:6px 10px;font-size:10px;">DISCOVER MCP</button>
+                <div id="openJarvisInstallProgress" class="hint" style="flex-basis:100%;font-size:10px;display:none;white-space:pre-wrap;"></div>
+                <div class="hint" style="flex-basis:100%;font-size:10px;">MCP is default-deny and accepts only an explicitly enabled loopback HTTP(S) URL. External commands, remote hosts, credentials, file writes, code execution, and system-admin capabilities remain blocked.</div>
               </div>
             </div>
 
@@ -1148,9 +1173,9 @@
             <div class="priority-row" style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
               <span class="dim" style="font:600 10px var(--font-mono);">PRIORITY PICKER — which brain answers first:</span>
               <select id="brainPriorityPicker" aria-label="Brain priority">
-                <option value="chatgpt">ChatGPT → Gemini → Free Core → Offline</option>
-                <option value="gemini">Gemini → ChatGPT → Free Core → Offline</option>
-                <option value="free">Free Core → ChatGPT → Gemini → Offline</option>
+                <option value="chatgpt">ChatGPT → Gemini → Anonymous GPT → Offline</option>
+                <option value="gemini">Gemini → ChatGPT → Anonymous GPT → Offline</option>
+                <option value="free">Anonymous GPT → ChatGPT → Gemini → Offline</option>
               </select>
               <button class="ghost-btn" id="clearAllConnectionsBtn" style="padding:5px 10px;font-size:10px;">Clear Encrypted Storage</button>
             </div>

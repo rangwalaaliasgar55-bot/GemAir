@@ -4,11 +4,11 @@
 
 ### A calm, open-source personal assistant for your work
 
-**Meet Gem** — the assistant inside GemAir. GemAir combines conversation, live web tools, local memory, voice, tasks, and optional desktop automation in a focused workspace. Browser tools work without an API key; general model answers require a connected ChatGPT account, a configured provider, or the optional local WebGPU model.
+**Meet Gem** — the assistant inside GemAir. GemAir combines conversation, live web tools, local memory, voice, tasks, and optional desktop automation in a focused workspace. Desktop chat can use a connected ChatGPT account, an optional local/provider model, or the separately licensed anonymous GPT fallback.
 
 No subscription, no license fee, no cloud lock-in. **Yours. Forever.**
 
-> **GemAir 2.7.0** adds a real ChatGPT account connection: OpenAI device sign-in, OS-encrypted rotating tokens, account model discovery, Responses streaming, and native permission-gated tools — no OpenAI Platform API key required.
+> **GemAir 2.8.0** adds an authenticated, loopback-only FreeGPT35-compatible anonymous chat sidecar and an explicitly installed OpenJarvis Python/Rust reasoning runtime for planning, deep research, memory, guardrails, MCP policy, and sandbox readiness. GemAir 2.7's account-backed ChatGPT Codex path remains the preferred stable brain.
 
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Windows-macOS-Linux-2b7a78?style=for-the-badge)]()
@@ -48,7 +48,7 @@ npm start
 | 🎙️ **Voice Assistant** | Speak naturally or type. Live streaming replies (sentence-by-sentence audio while the answer still types), a real **local, offline wake-word engine** for "Hey Gem" (on-device Vosk/WASM recognizer — audio never leaves the machine until the phrase is heard, with automatic 2-minute auto-sleep and a cloud-based fallback loop when the local engine can't load), mic VU, instant speech barge-in, **Microsoft Edge neural voices** as the primary engine (real voice picker, incl. Hindi/Urdu), emotion-aware rate/pitch/volume, Gem/JARVIS/Nova presets, language quick-switch, and neural or offline OS fallbacks. |
 | ⌨️ **Human-like typing** | Replies stream and type out in real time, with code blocks and a save-to-file action. |
 | 👋 **Personalized** | Greets you by name and time of day, and remembers who you are forever. |
-| 🧠 **AI Brain** | **Desktop:** connect your own ChatGPT account through OpenAI's one-time device page; tokens stay OS-encrypted and the model picker comes from your plan. Or use local Ollama / any OpenAI-compatible provider. **Web:** live keyless tools plus a configured server provider. GemAir `/models`, `/providers`, `/use`, `/local` commands switch configured models. |
+| 🧠 **AI Brain** | **Desktop:** ChatGPT account via OpenAI's one-time device page, local Ollama / any OpenAI-compatible provider, or an isolated anonymous GPT fallback. Optional OpenJarvis pre-plans difficult replies and provides `/research`, `/plan`, and sidecar memory. **Web:** live keyless tools plus a configured server provider. |
 | 💾 **Long-term memory (never lost)** | Automatically extracts durable facts about you (name, preferences, projects, goals), stores them on disk forever, and injects them into every conversation. Full chat history is persisted and restored on launch. |
 | 🛠️ **Tool-calling (98 tools)** | **Web**: weather, real web search, fetch & read any page, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, AI image generation, keyless flight search. **Computer**: open apps, files, clipboard, volume, screenshots, system control, email drafts, WhatsApp, to-dos, file-organizing missions, optional shell commands with confirmation, Steam/Epic game updates. **Mind & life**: quotes, breathing exercises, weekly reports, emotional support, background topic monitoring with proactive alerts. |
 | 🌍 **World clock** | Time in any city, 12-hour format, live UTC clock. |
@@ -116,6 +116,8 @@ GemAir supports two transport families while keeping one permission-gated tool e
 | Brain | Connection | Model |
 | --- | --- | --- |
 | **ChatGPT account** (Desktop) | Settings → AI & Connections → **Connect ChatGPT** | Discovered from your account |
+| **Anonymous GPT sidecar** (Desktop, experimental) | Enabled by default as a fallback; no account or key | FreeGPT35-compatible `gpt-3.5-turbo` route |
+| **OpenJarvis reasoning** (Desktop, optional) | Settings → Connections → **Install runtime**; requires Python 3.10–3.13 and normally local Ollama | Orchestrator/ReAct, deep research, memory, guardrails, and opt-in read-only loopback MCP; optional Rust acceleration |
 | **Google Gemini** (free tier) | [aistudio.google.com](https://aistudio.google.com/apikey) | `gemini-2.5-flash` |
 | **Groq** (free tier) | [console.groq.com/keys](https://console.groq.com/keys) | `llama-3.3-70b-versatile` |
 | **Cerebras** (free tier) | [cloud.cerebras.ai](https://cloud.cerebras.ai) | `llama-3.3-70b` |
@@ -138,7 +140,7 @@ GemAir supports two transport families while keeping one permission-gated tool e
 > list of any local Ollama models — no credit card required. You can also switch models
 > from chat with GemAir slash commands: `/providers`, `/models`, `/use <model>`, `/local`.
 
-Provider keys are stored locally. ChatGPT bearer/refresh/ID tokens and the account id stay in the Electron main process and are encrypted at rest with the operating system's credential protection. The browser build still offers keyless live tools; general model answers require a configured provider. See **[AI-FRAMEWORK.md](AI-FRAMEWORK.md)** and the exact upstream/license review in **[docs/UPSTREAM-INTEGRATION.md](docs/UPSTREAM-INTEGRATION.md)**.
+Provider keys are stored locally. ChatGPT bearer/refresh/ID tokens and the account id stay in the Electron main process and are encrypted at rest with the operating system's credential protection. The browser build still offers keyless live tools; general model answers require a configured provider. The anonymous desktop route depends on undocumented OpenAI web endpoints and can break upstream; GemAir reports failures rather than pretending it answered. See **[AI-FRAMEWORK.md](AI-FRAMEWORK.md)** and the exact upstream/license review in **[docs/UPSTREAM-INTEGRATION.md](docs/UPSTREAM-INTEGRATION.md)**.
 
 ---
 
@@ -231,10 +233,21 @@ GemAir vendors the source of two open-source projects so its capabilities stay a
 
 Both are reference-only and excluded from the packaged app.
 
+### Packaged sidecars
+
+| Folder | Upstream | License | Runtime boundary |
+| --- | --- | --- | --- |
+| `sidecars/freegpt35/` | [missuo/FreeGPT35](https://github.com/missuo/FreeGPT35) | **AGPL-3.0-only** | Separate authenticated loopback child process; complete corresponding source ships with the app |
+| `sidecars/openjarvis/` | [open-jarvis/OpenJarvis](https://github.com/open-jarvis/OpenJarvis) | Apache-2.0 | Separate app-private Python/Rust process over JSON lines; installed only after explicit confirmation |
+
+These folders retain their upstream licenses and are not relicensed under the
+GemAir MIT core. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and
+[docs/UPSTREAM-INTEGRATION.md](docs/UPSTREAM-INTEGRATION.md).
+
 ## 🚀 Contributing
 
 Found a bug or have an idea? Open an [Issue](https://github.com/rangwalaaliasgar55-bot/GemAir/issues) using the templates, or submit a [Pull Request](https://github.com/rangwalaaliasgar55-bot/GemAir/pulls). See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## 📄 License
 
-MIT — see [LICENSE](LICENSE). Free to use, modify and distribute. Packaged dependency attribution is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+GemAir's core is MIT — see [LICENSE](LICENSE). Packaged sidecars retain their own licenses, including AGPL-3.0-only for `sidecars/freegpt35/` and Apache-2.0 for `sidecars/openjarvis/`. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

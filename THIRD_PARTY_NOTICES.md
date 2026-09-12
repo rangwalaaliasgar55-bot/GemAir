@@ -32,10 +32,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## FreeGPT35-derived sidecar
+
+- Project: <https://github.com/missuo/FreeGPT35>
+- Revision: `3bf421eecee954a5361677ec225f61348684f6bc`
+- License: GNU Affero General Public License v3.0 only
+- Shipped source: [`sidecars/freegpt35/`](sidecars/freegpt35/)
+- Full license: [`sidecars/freegpt35/LICENSE`](sidecars/freegpt35/LICENSE)
+
+GemAir's production anonymous-chat sidecar is derived from FreeGPT35. It is a
+separately licensed child program and remains AGPL-3.0-only; it is not
+relicensed under GemAir's MIT license. The complete corresponding sidecar
+source, upstream snapshot, provenance, modifications, and license are included
+in the paths above. Network operators who modify this sidecar must comply with
+the AGPL source-offer requirements.
+
+## OpenJarvis Python/Rust sidecar
+
+- Project: <https://github.com/open-jarvis/OpenJarvis>
+- Revision: `b1055c983b25b298c7e97723847d215df18de4a8`
+- License: Apache License 2.0
+- Shipped source: [`sidecars/openjarvis/`](sidecars/openjarvis/)
+- Full license: [`sidecars/openjarvis/LICENSE`](sidecars/openjarvis/LICENSE)
+
+GemAir includes the reviewed OpenJarvis Python source and Rust workspace for an
+explicitly installed, app-private reasoning runtime. GemAir-specific bridge and
+lifecycle code is identified separately in source. OpenJarvis retains its
+Apache-2.0 notices, attribution, and license.
+
 ## Reviewed but not included
 
-GemAir's 2.7 design review also studied `missuo/FreeGPT35` (AGPL-3.0),
-`isair/jarvis` (custom non-commercial license), and
-`open-jarvis/OpenJarvis` (Apache-2.0). Their source and assets are not included
-in GemAir. See [`docs/UPSTREAM-INTEGRATION.md`](docs/UPSTREAM-INTEGRATION.md)
-for the exact revisions, architecture comparison, and license decisions.
+GemAir's design review also studied `isair/jarvis` at revision
+`d22ed8b975792842dc09e49861f31a39cbb302a6`. Its custom non-commercial license
+is incompatible with GemAir's general MIT distribution, so no source, prompts,
+assets, or tests from that project are included. See
+[`docs/UPSTREAM-INTEGRATION.md`](docs/UPSTREAM-INTEGRATION.md) for the detailed
+architecture and license review.

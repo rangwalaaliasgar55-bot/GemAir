@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('gemair', {
     const reqId = 'r' + Math.random().toString(36).slice(2);
     return new Promise((resolve, reject) => {
       const onChunk = (_e, data) => { if (data.reqId === reqId) onDelta(data.delta); };
-      const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply }); } };
+      const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply, provider: data.provider, model: data.model, fallbackFrom: data.fallbackFrom }); } };
       const onErr = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: false, error: data.error }); } };
       const cleanup = () => { ipcRenderer.removeListener('ai:chunk', onChunk); ipcRenderer.removeListener('ai:streamEnd', onEnd); ipcRenderer.removeListener('ai:streamError', onErr); };
       ipcRenderer.on('ai:chunk', onChunk);
@@ -37,6 +37,15 @@ contextBridge.exposeInMainWorld('gemair', {
   aiAgentChat: (agentName, config, messages) => ipcRenderer.invoke('ai:agentChat', agentName, config, messages),
   collaborateAgents: (task) => ipcRenderer.invoke('agent:collaborate', task),
   aiOffline: (text) => ipcRenderer.invoke('ai:offline', text),
+  sidecarsStatus: () => ipcRenderer.invoke('sidecars:status'),
+  openJarvisInstall: () => ipcRenderer.invoke('openjarvis:install'),
+  openJarvisCancelInstall: () => ipcRenderer.invoke('openjarvis:cancelInstall'),
+  openJarvisAsk: (mode, query, context) => ipcRenderer.invoke('openjarvis:ask', mode, query, context),
+  openJarvisMemorySearch: (query, topK) => ipcRenderer.invoke('openjarvis:memorySearch', query, topK),
+  openJarvisScan: (text, includePii) => ipcRenderer.invoke('openjarvis:scan', text, !!includePii),
+  openJarvisCapabilities: () => ipcRenderer.invoke('openjarvis:capabilities'),
+  openJarvisMcpDiscover: () => ipcRenderer.invoke('openjarvis:mcpDiscover'),
+  onOpenJarvisInstallProgress: (cb) => subscribeIpc('openjarvis:installProgress', cb),
   listLocalModels: () => ipcRenderer.invoke('ai:listLocalModels'),
   getHeadlines: (limit, category) => ipcRenderer.invoke('news:get', limit, category),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
@@ -109,7 +118,7 @@ contextBridge.exposeInMainWorld('gemair', {
     const reqId = 'r' + Math.random().toString(36).slice(2);
     return new Promise((resolve, reject) => {
       const onChunk = (_e, data) => { if (data.reqId === reqId) onDelta(data.delta); };
-      const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply }); } };
+      const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply, provider: data.provider, model: data.model, fallbackFrom: data.fallbackFrom }); } };
       const onErr = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: false, error: data.error, detail: data.detail, provider: data.provider, sessionExpired: data.sessionExpired === true }); } };
       const cleanup = () => { ipcRenderer.removeListener('ai:chunk', onChunk); ipcRenderer.removeListener('ai:streamEnd', onEnd); ipcRenderer.removeListener('ai:streamError', onErr); };
       ipcRenderer.on('ai:chunk', onChunk);

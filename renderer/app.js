@@ -142,6 +142,15 @@ const api = {
     if (window.gemair) return window.gemair.aiOffline(text);
     return { ok: true, reply: await offlineBrain(text) };
   },
+  async sidecarsStatus() { if (window.gemair && window.gemair.sidecarsStatus) return window.gemair.sidecarsStatus(); return { freeGPT35: { available: false }, openJarvis: { sourceBundled: false, installed: false } }; },
+  async openJarvisInstall() { if (window.gemair && window.gemair.openJarvisInstall) return window.gemair.openJarvisInstall(); return { ok: false, error: 'DESKTOP_ONLY' }; },
+  async openJarvisCancelInstall() { if (window.gemair && window.gemair.openJarvisCancelInstall) return window.gemair.openJarvisCancelInstall(); return { ok: false, error: 'DESKTOP_ONLY' }; },
+  async openJarvisAsk(mode, query, context) { if (window.gemair && window.gemair.openJarvisAsk) return window.gemair.openJarvisAsk(mode, query, context); return { ok: false, error: 'DESKTOP_ONLY' }; },
+  async openJarvisMemorySearch(query, topK) { if (window.gemair && window.gemair.openJarvisMemorySearch) return window.gemair.openJarvisMemorySearch(query, topK); return { ok: false, error: 'DESKTOP_ONLY' }; },
+  async openJarvisScan(text, includePii) { if (window.gemair && window.gemair.openJarvisScan) return window.gemair.openJarvisScan(text, includePii); return { ok: false, error: 'DESKTOP_ONLY' }; },
+  async openJarvisCapabilities() { if (window.gemair && window.gemair.openJarvisCapabilities) return window.gemair.openJarvisCapabilities(); return { ok: false, error: 'DESKTOP_ONLY' }; },
+  async openJarvisMcpDiscover() { if (window.gemair && window.gemair.openJarvisMcpDiscover) return window.gemair.openJarvisMcpDiscover(); return { ok: false, error: 'DESKTOP_ONLY' }; },
+  onOpenJarvisInstallProgress(cb) { return registerRendererDisposer(window.gemair && window.gemair.onOpenJarvisInstallProgress ? window.gemair.onOpenJarvisInstallProgress(cb) : null); },
   async listLocalModels() { if (window.gemair && window.gemair.listLocalModels) return window.gemair.listLocalModels(); return { models: [] }; },
 
   // memory (Electron IPC | browser localStorage + optional Supabase)
@@ -212,7 +221,7 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.7.0'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.8.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
@@ -571,6 +580,8 @@ function makeDefaultProfile() {
     currentMode: DEFAULTS.currentMode,
     brainPriority: DEFAULTS.brainPriority,
     connectionsWarningAcknowledged: DEFAULTS.connectionsWarningAcknowledged,
+    anonymousChat: true,
+    openJarvis: { enabled: false, planning: true, agent: 'orchestrator', engine: 'ollama', model: '', mcpEnabled: false, mcpUrl: '' },
     ai: { baseURL: '', apiKey: '', model: DEFAULTS.model },
     voice: {
       preset: DEFAULTS.voicePreset,
@@ -600,6 +611,7 @@ let worldHeadlines = [];
 let worldCategory = 'tech';
 let awaitingName = false;
 let connectionsStatus = { chatgpt: { connected: false }, gemini: { connected: false }, freeCore: { connected: true }, meta: { priority: 'chatgpt' } };
+let sidecarsStatus = { freeGPT35: { available: isElectron }, openJarvis: { installed: false, running: false } };
 let currentMode = '';
 let desktopFocused = { app: '', title: '', pid: 0 };
 let recentMissions = [];
@@ -2815,6 +2827,32 @@ async function handleSlashCommand(text) {
     return true;
   }
 
+  if (cmd === '/jarvis') {
+    const status = await api.sidecarsStatus().catch(() => null);
+    const jarvis = status && status.openJarvis;
+    if (!jarvis || !jarvis.installed) replyLine('OpenJarvis is bundled but its isolated Python runtime is not installed. Open Settings → Connections and choose INSTALL RUNTIME.');
+    else replyLine(`OpenJarvis ${jarvis.openjarvisVersion || ''} is ${jarvis.running ? 'running' : 'installed'} · Python ${jarvis.pythonVersion || jarvis.python || 'ready'} · Rust ${jarvis.rustAvailable ? 'enabled' : 'optional/not built'} · telemetry OFF.`);
+    return true;
+  }
+
+  if (cmd.startsWith('/research ') || cmd.startsWith('/plan ')) {
+    const mode = cmd.startsWith('/research ') ? 'research' : 'plan';
+    const query = text.replace(/^\/(?:research|plan)\s+/i, '').trim();
+    if (!query) { replyLine(`Usage: /${mode} <question>`); return true; }
+    showOperationProgress(mode === 'research' ? 'OpenJarvis deep research…' : 'OpenJarvis planning…');
+    const result = await api.openJarvisAsk(mode, query, getContextMessages(24)).catch((error) => ({ ok: false, message: error.message }));
+    if (result && result.ok && result.content) replyLine(`[OPENJARVIS ${mode.toUpperCase()}]\n${result.content}`);
+    else replyLine('OpenJarvis could not run: ' + ((result && (result.message || result.error)) || 'Install and configure the runtime in Settings.'));
+    return true;
+  }
+
+  if (cmd.startsWith('/memory-search ')) {
+    const query = text.replace(/^\/memory-search\s+/i, '').trim();
+    const result = await api.openJarvisMemorySearch(query, 8).catch((error) => ({ ok: false, message: error.message }));
+    replyLine(result && result.ok ? `[OPENJARVIS MEMORY]\n${JSON.stringify(result.results || [], null, 2)}` : 'OpenJarvis memory search failed: ' + ((result && (result.message || result.error)) || 'unavailable'));
+    return true;
+  }
+
   if (cmd === '/local') {
     const box = await api.listLocalModels().catch(() => ({ models: [] }));
     const local = (box && box.models) || [];
@@ -3045,7 +3083,7 @@ async function handleMessage(text) {
   const cfg = profile.ai || {};
   const hasKey = !!(cfg.apiKey && cfg.baseURL);
   const isLocal = !!(cfg.baseURL && /localhost|127\.0\.0\.1/.test(cfg.baseURL));
-  const useAI = hasKey || isLocal || (!isElectron && connectionsStatus.freeCore.serverAiConfigured === true);
+  const useAI = hasKey || isLocal || (isElectron && profile.anonymousChat !== false) || (!isElectron && connectionsStatus.freeCore.serverAiConfigured === true);
   // 2.4: determine active brain from connections
   const activeBrain = getActiveBrain();
   let useConnected = null;
@@ -3053,7 +3091,8 @@ async function handleMessage(text) {
   else if (activeBrain === 'GEMINI' && connectionsStatus.gemini.connected) useConnected = 'gemini';
   else {
     const prio = connectionsStatus.meta ? connectionsStatus.meta.priority : (profile.brainPriority||'chatgpt');
-    if (prio === 'chatgpt' && connectionsStatus.chatgpt.connected) useConnected = 'chatgpt';
+    if (prio === 'free') useConnected = null;
+    else if (prio === 'chatgpt' && connectionsStatus.chatgpt.connected) useConnected = 'chatgpt';
     else if (prio === 'gemini' && connectionsStatus.gemini.connected) useConnected = 'gemini';
     else if (connectionsStatus.chatgpt.connected) useConnected = 'chatgpt';
     else if (connectionsStatus.gemini.connected) useConnected = 'gemini';
@@ -3134,6 +3173,12 @@ async function handleMessage(text) {
       reply = res.reply || acc;
       if (!streamed) { await renderReply(replyEl, reply); }
       else if (streamingVoice) { try { skipFinalSpeak = flushStreamSpeech(reply); } catch (e) {} }
+      if (res.provider === 'FreeGPT35') {
+        const label = document.createElement('div');
+        label.className = 'response-source';
+        label.textContent = `Source: FreeGPT35 / ${res.model || 'gpt-3.5-turbo'}${res.fallbackFrom ? ' · fallback from ' + String(res.fallbackFrom).toUpperCase() : ''}`;
+        typing.appendChild(label);
+      }
       chatHistory.push({ role: 'assistant', content: reply });
       if (profile.memoryOn) {
         api.memoryExtract(cfg, text, reply).then(async (n)=>{
@@ -6042,6 +6087,11 @@ function openSettings() {
   $('#setSttLang').value = profile.voice?.sttLang || DEFAULTS.sttLang;
   $('#setMemoryOn').checked = profile.memoryOn !== false;
   $('#setContextStrategy').value = CONTEXT_STRATEGIES[profile.contextStrategy] ? profile.contextStrategy : DEFAULTS.contextStrategy;
+  if ($('#setAnonymousChat')) $('#setAnonymousChat').checked = profile.anonymousChat !== false;
+  if ($('#setOpenJarvisEnabled')) $('#setOpenJarvisEnabled').checked = profile.openJarvis?.enabled === true;
+  if ($('#setOpenJarvisPlanning')) $('#setOpenJarvisPlanning').checked = profile.openJarvis?.planning !== false;
+  if ($('#setOpenJarvisMcp')) $('#setOpenJarvisMcp').checked = profile.openJarvis?.mcpEnabled === true;
+  if ($('#setOpenJarvisMcpUrl')) $('#setOpenJarvisMcpUrl').value = profile.openJarvis?.mcpUrl || '';
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setAutoUpdateChecks').checked = profile.autoUpdateChecks !== false;
   { const channel = $('#setUpdateChannel'); if (channel) channel.value = profile.updateChannel === 'nightly' ? 'nightly' : 'stable'; }
@@ -6918,6 +6968,16 @@ function bindEvents() {
     profile.voice.sttLang = $('#setSttLang').value;
     profile.memoryOn = $('#setMemoryOn').checked;
     profile.contextStrategy = CONTEXT_STRATEGIES[$('#setContextStrategy').value] ? $('#setContextStrategy').value : DEFAULTS.contextStrategy;
+    profile.anonymousChat = $('#setAnonymousChat') ? $('#setAnonymousChat').checked : profile.anonymousChat !== false;
+    profile.openJarvis = {
+      ...(profile.openJarvis || {}),
+      enabled: $('#setOpenJarvisEnabled') ? $('#setOpenJarvisEnabled').checked : false,
+      planning: $('#setOpenJarvisPlanning') ? $('#setOpenJarvisPlanning').checked : true,
+      mcpEnabled: $('#setOpenJarvisMcp') ? $('#setOpenJarvisMcp').checked : false,
+      mcpUrl: ($('#setOpenJarvisMcpUrl')?.value || '').trim().slice(0, 2048),
+      agent: 'orchestrator',
+      engine: 'ollama'
+    };
     profile.allowShell = $('#setAllowShell').checked;
     profile.autoUpdateChecks = $('#setAutoUpdateChecks').checked;
     profile.updateChannel = $('#setUpdateChannel')?.value === 'nightly' ? 'nightly' : 'stable';
@@ -8248,6 +8308,7 @@ function bindSoulSliders() {
 // ---------------------------------------------------------------------------
 function getActiveBrain() {
   const prio = connectionsStatus.meta ? connectionsStatus.meta.priority : (profile.brainPriority || 'chatgpt');
+  if (prio === 'free') return 'FREE CORE';
   if (prio === 'chatgpt' && connectionsStatus.chatgpt && connectionsStatus.chatgpt.connected) return 'CHATGPT';
   if (prio === 'gemini' && connectionsStatus.gemini && connectionsStatus.gemini.connected) return 'GEMINI';
   // check any connected as fallback
@@ -8272,7 +8333,12 @@ let chatgptDevicePollTimer = null;
 
 async function loadConnectionsStatus() {
   try {
-    connectionsStatus = await api.connectionsGetStatus();
+    const [connections, sidecars] = await Promise.all([
+      api.connectionsGetStatus(),
+      api.sidecarsStatus().catch(() => null)
+    ]);
+    connectionsStatus = connections;
+    if (sidecars) sidecarsStatus = sidecars;
     if (profile.brainPriority && connectionsStatus.meta) {
       // sync profile priority to meta if different
       if (connectionsStatus.meta.priority !== profile.brainPriority) {
@@ -8324,9 +8390,29 @@ function renderConnectionHub() {
     geminiDot.title = status.gemini.dot + (status.gemini.experimental ? ' (EXPERIMENTAL)' : '');
   }
   if (freeDot) {
-    freeDot.className = 'conn-dot fallback';
-    freeDot.textContent = '●';
+    const free = sidecarsStatus.freeGPT35 || {};
+    freeDot.className = 'conn-dot ' + (free.running ? 'connected' : (free.available ? 'fallback' : 'disconnected'));
+    freeDot.textContent = free.running ? '●' : '○';
+    freeDot.title = free.running ? 'Authenticated loopback sidecar ready' : (free.lastError || 'Sidecar available on demand');
+    const label = $('#freeGPT35Status');
+    if (label) label.textContent = free.running ? 'READY' : (free.available ? 'ON DEMAND' : 'UNAVAILABLE');
   }
+  const jarvis = sidecarsStatus.openJarvis || {};
+  const jarvisDot = $('#openJarvisStatusDot');
+  if (jarvisDot) {
+    jarvisDot.className = 'conn-dot ' + (jarvis.running ? 'connected' : (jarvis.installed ? 'fallback' : 'disconnected'));
+    jarvisDot.textContent = jarvis.running ? '●' : '○';
+  }
+  const jarvisText = $('#openJarvisStatusText');
+  if (jarvisText) {
+    jarvisText.textContent = jarvis.installed
+      ? `Installed · Python ${jarvis.pythonVersion || jarvis.python || 'ready'} · telemetry/analytics OFF${jarvis.lastError ? ' · ' + jarvis.lastError : ''}`
+      : `Bundled source ready · ${jarvis.python ? 'Python found' : 'Python 3.10–3.13 required'} · explicit install only`;
+  }
+  const rustBadge = $('#openJarvisRustBadge');
+  if (rustBadge) { rustBadge.textContent = jarvis.rustAvailable ? 'RUST + PYTHON' : 'PYTHON'; rustBadge.className = 'conn-badge' + (jarvis.rustAvailable ? ' pro' : ''); }
+  const installButton = $('#installOpenJarvisBtn');
+  if (installButton) installButton.textContent = jarvis.installed ? 'REPAIR / ENABLE RUST' : 'INSTALL RUNTIME';
   if (chatgptEmail) chatgptEmail.textContent = status.chatgpt.connected ? (status.chatgpt.email || 'connected') : 'Not connected';
   if (geminiEmail) geminiEmail.textContent = status.gemini.connected ? (status.gemini.email || 'connected') : 'Not connected';
   if (chatgptBadge) {
@@ -8771,6 +8857,55 @@ function setupConnectionsHub() {
     toast('CONNECTIONS', 'All encrypted sessions cleared', '🧹');
   });
   $('#openAIStudioBtn')?.addEventListener('click', handleOpenAIStudio);
+  $('#installOpenJarvisBtn')?.addEventListener('click', async () => {
+    const button = $('#installOpenJarvisBtn');
+    const cancel = $('#cancelOpenJarvisInstallBtn');
+    const progress = $('#openJarvisInstallProgress');
+    if (button) button.disabled = true;
+    if (cancel) cancel.hidden = false;
+    if (progress) { progress.style.display = 'block'; progress.textContent = 'Preparing isolated runtime…'; }
+    const result = await api.openJarvisInstall().catch((error) => ({ ok: false, message: error.message }));
+    if (button) button.disabled = false;
+    if (cancel) cancel.hidden = true;
+    if (result && result.ok) {
+      if (progress) progress.textContent = result.rustInstalled ? 'Ready — Python and Rust acceleration installed.' : `Ready — Python installed. ${result.rustMessage || 'Rust acceleration is optional.'}`;
+      profile.openJarvis = { ...(profile.openJarvis || {}), enabled: true, planning: true, agent: 'orchestrator', engine: 'ollama' };
+      await persistProfile();
+      if ($('#setOpenJarvisEnabled')) $('#setOpenJarvisEnabled').checked = true;
+      await loadConnectionsStatus();
+      toast('OPENJARVIS', result.rustInstalled ? 'Python + Rust reasoning ready' : 'Python reasoning ready; Rust is optional', '🧠');
+    } else if (result && !result.cancelled) {
+      if (progress) progress.textContent = 'Install failed: ' + (result.message || result.error || 'Unknown error');
+      toast('OPENJARVIS', result.message || result.error || 'Install failed', '⚠️');
+    } else if (progress) progress.style.display = 'none';
+  });
+  $('#cancelOpenJarvisInstallBtn')?.addEventListener('click', async () => {
+    const progress = $('#openJarvisInstallProgress');
+    if (progress) progress.textContent = 'Cancelling OpenJarvis installation…';
+    await api.openJarvisCancelInstall();
+  });
+  $('#testOpenJarvisMcpBtn')?.addEventListener('click', async () => {
+    const enabled = $('#setOpenJarvisMcp')?.checked === true;
+    const url = ($('#setOpenJarvisMcpUrl')?.value || '').trim();
+    try {
+      const parsed = new URL(url);
+      if (!enabled || !['http:', 'https:'].includes(parsed.protocol) || !['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname) || parsed.username || parsed.password) {
+        throw new Error('Enable Local MCP and enter a loopback HTTP(S) URL without credentials.');
+      }
+    } catch (error) { toast('OPENJARVIS MCP', error.message || 'Invalid loopback URL', '⚠️'); return; }
+    profile.openJarvis = { ...(profile.openJarvis || {}), mcpEnabled: true, mcpUrl: url };
+    await persistProfile();
+    const button = $('#testOpenJarvisMcpBtn');
+    if (button) button.disabled = true;
+    const result = await api.openJarvisMcpDiscover().catch((error) => ({ ok: false, message: error.message }));
+    if (button) button.disabled = false;
+    if (result && result.ok) toast('OPENJARVIS MCP', `${(result.tools || []).length} tool(s) discovered and permission-gated`, '🔌');
+    else toast('OPENJARVIS MCP', result.message || result.error || 'Discovery failed', '⚠️');
+  });
+  api.onOpenJarvisInstallProgress((update) => {
+    const progress = $('#openJarvisInstallProgress');
+    if (progress) { progress.style.display = 'block'; progress.textContent = `[${update.stage || 'install'}] ${update.line || ''}`; }
+  });
   $('#brainPriorityPicker')?.addEventListener('change', async (e) => {
     const v = e.target.value;
     profile.brainPriority = v;
