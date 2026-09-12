@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.6.0] — 2026-09-11
+
+Concept-ported four features from [Mark-LIII](https://github.com/FatihMakes/Mark-LIII) into GemAir's own keyless, sandboxed architecture — no code copied, no new dependencies on Mark-LIII's Python/Gemini stack, no new frontend surface for the backend tools. Tool count: 91 → 98.
+
+### Added — Local, offline wake-word engine ("Hey Gem")
+- `renderer/wake-word.js` adds a real on-device wake-word detector using [vosk-browser](https://github.com/ccoreilly/vosk-browser) (Vosk/Kaldi compiled to WebAssembly, vendored at `renderer/vendor/vosk-browser/`). Mic audio is processed entirely on-device through a grammar-restricted recognizer (the wake phrase plus a catch-all token) for fast, accurate detection — nothing is sent anywhere until the phrase is heard. The small English model (~40 MB) downloads once, opt-in, on first use, and is cached by the browser engine afterward.
+- Mirrors Mark-LIII's "Hey Jarvis" behavior: after a wake-triggered conversation goes quiet for 2 minutes, GemAir automatically stops listening and re-arms the wake word (`armWakeAutoSleep`/`resetWakeAutoSleep` in `renderer/app.js`), so voice mode costs nothing while idle.
+- If the local engine can't load (unsupported browser, model fetch failure, mic permission denied), GemAir automatically falls back to its existing cloud-based `SpeechRecognition` wake loop — voice wake-up never breaks, it just degrades gracefully.
+- Regression-covered by `scripts/wake-word-test.js` (API shape, privacy contract, grammar restriction, full resource teardown, app wiring, auto-sleep timing).
+
+### Added — Keyless flight search tool
+- New `find_flights` tool (`lib/flight-finder.js`) builds a pre-filled Google Flights search URL from natural origin/destination/date input and opens it — no scraping, no Gemini/API-key dependency, unlike Mark-LIII's browser-scrape-and-parse approach.
+
+### Added — Game update tools (Steam & Epic)
+- New `update_game` and `list_installed_epic_games` tools (`lib/game-updater.js`) detect installed Steam libraries (via `libraryfolders.vdf`/`appmanifest_*.acf`) and trigger updates or launches through OS-native `steam://` and `com.epicgames.launcher://` deep links — no screenshot-based UI automation, no scraping.
+
+### Added — Background topic monitoring
+- New `add_topic_monitor`, `remove_topic_monitor`, `list_topic_monitors`, and `check_topic_monitors` tools (`lib/background-monitor.js`) let GemAir watch a news topic and proactively alert only when the top headline changes, once per day per topic. Ships with the same crypto/finance topic block-list as Mark-LIII's `background_monitor.py`. A new hourly scheduler in `main.js` runs the check automatically and surfaces alerts through a new `monitor:alert` IPC event.
+- All seven new tools are registered like GemAir's other 91 tools — same OpenAI-compatible tool-calling loop, same input validation/risk gating (`'safe'` risk level), callable from voice or chat with no UI changes.
+- Regression-covered by `scripts/mark3-ports-test.js`.
+
 ## [2.5.3] — 2026-09-07
 
 Apple HIG interface overhaul (original CSS only, no third-party assets): translucent menu bar with traffic lights, Finder-style sidebar, grouped cards, iOS switches and segmented controls, iMessage chat bubbles, sheet modals, Spotlight command palette, iOS-style Control Center with live network/battery readings, macOS System Settings layout with Apple & System section, calm Siri-style orb, Notification Center toasts, and PWA precache for the new Apple layer. Gemini Live model picker now filters to exact free-catalog IDs only.

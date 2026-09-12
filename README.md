@@ -8,7 +8,7 @@
 
 No subscription, no license fee, no cloud lock-in. **Yours. Forever.**
 
-> **GemAir 2.5.3** is local-first and capability-transparent: live browser tools work without a key, configured providers produce model answers, and desktop-only features are clearly separated from the web app.
+> **GemAir 2.6.0** is local-first and capability-transparent: live browser tools work without a key, configured providers produce model answers, and desktop-only features are clearly separated from the web app.
 
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Windows-macOS-Linux-2b7a78?style=for-the-badge)]()
@@ -45,12 +45,12 @@ npm start
 
 | Module | What it does |
 | --- | --- |
-| 🎙️ **Voice Assistant** | Speak naturally or type. Live streaming replies (sentence-by-sentence audio while the answer still types), “Hey Gem” interim wake loop, mic VU, instant speech barge-in, **Microsoft Edge neural voices** as the primary engine (real voice picker, incl. Hindi/Urdu), emotion-aware rate/pitch/volume, Gem/JARVIS/Nova presets, language quick-switch, and neural or offline OS fallbacks. |
+| 🎙️ **Voice Assistant** | Speak naturally or type. Live streaming replies (sentence-by-sentence audio while the answer still types), a real **local, offline wake-word engine** for "Hey Gem" (on-device Vosk/WASM recognizer — audio never leaves the machine until the phrase is heard, with automatic 2-minute auto-sleep and a cloud-based fallback loop when the local engine can't load), mic VU, instant speech barge-in, **Microsoft Edge neural voices** as the primary engine (real voice picker, incl. Hindi/Urdu), emotion-aware rate/pitch/volume, Gem/JARVIS/Nova presets, language quick-switch, and neural or offline OS fallbacks. |
 | ⌨️ **Human-like typing** | Replies stream and type out in real time, with code blocks and a save-to-file action. |
 | 👋 **Personalized** | Greets you by name and time of day, and remembers who you are forever. |
 | 🧠 **AI Brain (free out of the box)** | Runs on a free server-side AI core — no key, no card. **Free models are surfaced in-app**: a FREE MODELS panel with one-click setup for 38 free-tier OpenAI-compatible models (Gemini, Groq, Cerebras, SambaNova, NVIDIA NIM, Together, Fireworks, xAI/Grok, GLM, Cohere, HuggingFace, DeepSeek, Mistral, OpenRouter…) plus a live local-Ollama list — all keyless. Power users can also add their own key. GemAir `/models`, `/providers`, `/use`, `/local` slash commands switch models in chat. |
 | 💾 **Long-term memory (never lost)** | Automatically extracts durable facts about you (name, preferences, projects, goals), stores them on disk forever, and injects them into every conversation. Full chat history is persisted and restored on launch. |
-| 🛠️ **Tool-calling (91 tools)** | **Web**: weather, real web search, fetch & read any page, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, AI image generation. **Computer**: open apps, files, clipboard, volume, screenshots, system control, email drafts, WhatsApp, to-dos, file-organizing missions, optional shell commands with confirmation. **Mind & life**: quotes, breathing exercises, weekly reports, emotional support. |
+| 🛠️ **Tool-calling (98 tools)** | **Web**: weather, real web search, fetch & read any page, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, AI image generation, keyless flight search. **Computer**: open apps, files, clipboard, volume, screenshots, system control, email drafts, WhatsApp, to-dos, file-organizing missions, optional shell commands with confirmation, Steam/Epic game updates. **Mind & life**: quotes, breathing exercises, weekly reports, emotional support, background topic monitoring with proactive alerts. |
 | 🌍 **World clock** | Time in any city, 12-hour format, live UTC clock. |
 | ⌨️ **Command palette** | Fuzzy `Ctrl/Cmd+K` search across views, themes, HUD panels, agents, memories and settings toggles, with recents; `Ctrl/Cmd+L` focuses chat. |
 | ❤️ **Emotional intelligence** | Detects **17 emotions** in real time, adapts tone, voice and empathy, and responds with structured compassion when you're low, guilty or anxious (crisis-aware, with real helplines). |
