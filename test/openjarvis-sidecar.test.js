@@ -206,3 +206,31 @@ test('runtime installation can be cancelled and clears installer state', { skip:
     fs.rmSync(cancelRoot, { recursive: true, force: true });
   }
 });
+
+test('python gate accepts 3.10-3.13 and rejects everything else', () => {
+  for (const minor of [10, 11, 12, 13]) assert.equal(controller.isSupportedPythonVersion(3, minor), true);
+  for (const [major, minor] of [[2, 7], [3, 9], [3, 14], [3, 15], [4, 0]]) {
+    assert.equal(controller.isSupportedPythonVersion(major, minor), false, `${major}.${minor} must be rejected`);
+  }
+});
+
+test('python probe skips a newer default and takes a compatible interpreter', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gemair-openjarvis-py-'));
+  try {
+    const fake = path.join(dir, 'fake-python.js');
+    fs.writeFileSync(fake, 'console.log(process.argv[2] || "3.12.9");\n');
+    const picked = await controller.findPython({
+      candidates: [
+        [process.execPath, [fake, '3.14.5']],
+        [process.execPath, [fake, '3.12.9']]
+      ]
+    });
+    assert.deepEqual(picked, { command: process.execPath, prefix: [fake, '3.12.9'] });
+    await assert.rejects(
+      controller.findPython({ candidates: [[process.execPath, [fake, '3.14.5']]] }),
+      (error) => error.code === 'OPENJARVIS_PYTHON_REQUIRED'
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

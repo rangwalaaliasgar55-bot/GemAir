@@ -66,6 +66,24 @@ function testJwt(expSeconds) {
   assert.equal(connections.isTokenExpired('chatgpt'), false, 'fresh import already reads as expired');
   console.log('  ok   pasted session JSON imports and reads back connected');
 
+  // 1a. Copy/paste whitespace around tokens is a transport artifact, never a
+  // reason to fail sign-in — and failures name the bad field, not a bare code.
+  const padded = connections.setChatGPTConnection({
+    email: 'pad@example.com', plan: 'free',
+    sessionToken: '  ' + jwt + '\n', accessToken: '\t' + jwt + ' ',
+    refreshToken: '', idToken: '', expiresAt: Date.now() + 3600000
+  });
+  assert.ok(!padded.error, 'padded tokens were rejected: ' + (padded && padded.error));
+  assert.equal(connections.getDecryptedTokens('chatgpt').accessToken, jwt, 'stored token kept its whitespace');
+  const bad = connections.setChatGPTConnection({
+    email: 'bad@example.com', plan: 'free', sessionToken: '', accessToken: 'short',
+    refreshToken: '', idToken: '', expiresAt: Date.now() + 3600000
+  });
+  assert.equal(bad.error, 'INVALID_TOKEN');
+  assert.equal(bad.field, 'accessToken', 'failure must name the bad field');
+  assert.ok(/accessToken/.test(bad.message || ''), 'failure message must stay actionable');
+  console.log('  ok   pasted whitespace is trimmed; failures name the field');
+
   // 1b. Refreshable Codex metadata survives encrypted storage, while the
   // sanitized renderer status exposes only model/profile preferences.
   const idToken = testJwt(7200);
