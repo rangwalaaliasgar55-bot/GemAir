@@ -21,6 +21,18 @@
 
 const http = require('http');
 const { createHash, randomInt, randomUUID, timingSafeEqual } = require('crypto');
+const { sha3_512_hex } = require('./sha3');
+
+// OpenAI's proof-of-work mandates sha3-512, but Electron's BoringSSL build
+// has no SHA-3 ("Digest method not supported"). Prefer native, fall back to
+// the verified pure-JS implementation so the sidecar works in both runtimes.
+function sha3_512_hex_any(message) {
+  try {
+    return createHash('sha3-512').update(message, 'utf8').digest('hex');
+  } catch {
+    return sha3_512_hex(message);
+  }
+}
 
 // Keep the pinned upstream connection host and protocol shape verbatim. Fetch
 // follows OpenAI's redirect if the service moves the anonymous endpoint.
@@ -75,7 +87,7 @@ function generateProofToken(seed, difficulty, userAgent = USER_AGENT) {
   for (let index = 0; index < 100000; index++) {
     config[3] = index;
     const base = Buffer.from(JSON.stringify(config)).toString('base64');
-    const hash = createHash('sha3-512').update(cleanSeed + base).digest('hex');
+    const hash = sha3_512_hex_any(cleanSeed + base);
     if (hash.substring(0, prefixLength) <= cleanDifficulty) return 'gAAAAAB' + base;
   }
   return 'gAAAAABwQ8Lk5FbGpA2NcR9dShT6gYjU7VxZ4D' + Buffer.from(JSON.stringify(cleanSeed)).toString('base64');

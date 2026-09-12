@@ -149,3 +149,29 @@ test('manager lifecycle shuts down and can restart cleanly', async () => {
   assert.equal(health.running, true);
   assert.equal(health.tlsVerification, true);
 });
+
+test('pure-JS SHA3-512 matches OpenSSL (NIST vectors + randomized cross-check)', () => {
+  const { createHash } = require('node:crypto');
+  const { sha3_512_hex } = require('../sidecars/freegpt35/sha3');
+  assert.equal(
+    sha3_512_hex(''),
+    'a69f73cca23a9ac5c8b567dc185a756e97c982164fe25859e0d1dcc1475c80a615b2123af1f5f94c11e3e9402c3ac558f500199d95b6d3e301758586281dcd26'
+  );
+  assert.equal(
+    sha3_512_hex('abc'),
+    'b751850b1a57168a5693cd924b6b096e08f621827444f70d884f5d0240d2712e10e116e9192af3c91a7ec57647e3934057340b4cf408d5a56592f8274eec53f0'
+  );
+  const chars = 'abcdef0123456789!@#é中😀業\ud800\udc00';
+  let seed = 20260912;
+  const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let i = 0; i < 120; i++) {
+    const length = Math.floor(rand() * 260);
+    let input = '';
+    for (let j = 0; j < length; j++) input += chars[Math.floor(rand() * chars.length)];
+    assert.equal(
+      sha3_512_hex(input),
+      createHash('sha3-512').update(input, 'utf8').digest('hex'),
+      `mismatch at case ${i} (len ${length})`
+    );
+  }
+});

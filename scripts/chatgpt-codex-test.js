@@ -202,5 +202,33 @@ const accessToken = jwt({
     console.log('  ok   context-aware tool routing limits context without losing intent');
   }
 
+  // 5. SSE body WITHOUT the event-stream header must parse as a stream,
+  // not crash JSON.parse on the first `event:` line (the exact user report).
+  {
+    const text = 'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Hi "}\n\nevent: response.completed\ndata: {"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"Hi there"}]}]}}\n\ndata: [DONE]\n\n';
+    const fetch = async () => new Response(text, { status: 200, headers: { 'content-type': 'text/plain' } });
+    const chunks = [];
+    const result = await codex.callCodexResponses({
+      fetch, accessToken, accountId, model: 'gpt-test',
+      instructions: 'Be useful.',
+      input: [{ role: 'user', content: 'Hi' }],
+      tools: [],
+      onDelta: (delta) => chunks.push(delta)
+    });
+    assert.ok(String(result.text || '').includes('Hi'), 'headerless SSE body was not parsed, got: ' + JSON.stringify(result.text));
+    console.log('  ok   headerless SSE bodies parse instead of crashing JSON');
+  }
+
+  // 6. A 200 with a non-JSON, non-stream body reports honestly with a snippet.
+  {
+    const fetch = async () => new Response('<html>bad gateway</html>', { status: 200, headers: { 'content-type': 'text/html' } });
+    await assert.rejects(
+      codex.callCodexResponses({ fetch, accessToken, accountId, model: 'gpt-test', instructions: 'x', input: [], tools: [] }),
+      /CODEX_BAD_RESPONSE/,
+      'garbage error bodies must stay actionable'
+    );
+    console.log('  ok   non-JSON error bodies stay actionable');
+  }
+
   console.log('\n  All ChatGPT Codex integration tests passed.\n');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

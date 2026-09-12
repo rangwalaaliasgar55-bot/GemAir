@@ -8887,12 +8887,13 @@ function setupConnectionsHub() {
   $('#testOpenJarvisMcpBtn')?.addEventListener('click', async () => {
     const enabled = $('#setOpenJarvisMcp')?.checked === true;
     const url = ($('#setOpenJarvisMcpUrl')?.value || '').trim();
-    try {
-      const parsed = new URL(url);
-      if (!enabled || !['http:', 'https:'].includes(parsed.protocol) || !['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname) || parsed.username || parsed.password) {
-        throw new Error('Enable Local MCP and enter a loopback HTTP(S) URL without credentials.');
-      }
-    } catch (error) { toast('OPENJARVIS MCP', error.message || 'Invalid loopback URL', '⚠️'); return; }
+    if (!url) { toast('OPENJARVIS MCP', 'Enter a loopback MCP URL first (e.g. http://127.0.0.1:8000), then Discover.', '⚠️'); return; }
+    let parsed = null;
+    try { parsed = new URL(url); } catch { parsed = null; }
+    if (!enabled || !parsed || !['http:', 'https:'].includes(parsed.protocol) || !['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname) || parsed.username || parsed.password) {
+      toast('OPENJARVIS MCP', 'Enable Local MCP and enter a loopback HTTP(S) URL without credentials.', '⚠️');
+      return;
+    }
     profile.openJarvis = { ...(profile.openJarvis || {}), mcpEnabled: true, mcpUrl: url };
     await persistProfile();
     const button = $('#testOpenJarvisMcpBtn');
