@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'" />
+<title>Gem Air</title>
+<link rel="stylesheet" href="island.css" />
+</head>
+<body>
+  <div id="island" class="island compact" data-mode="working">
+    <!-- compact capsule -->
+    <div class="capsule" id="capsule">
+      <span class="grip" id="grip" title="Drag to move"></span>
+      <span class="dot" id="dot"></span>
+      <span class="subject" id="subject">Gem Air</span>
+      <span class="divider"></span>
+      <span class="meta" id="meta">Starting…</span>
+      <span class="timer" id="timer"></span>
+    </div>
+
+    <!-- expanded body -->
+    <div class="body" id="body">
+      <div class="row head">
+        <div class="idc">
+          <span class="mark"></span>
+          <span class="name">Gem Air</span>
+        </div>
+        <div class="head-actions">
+          <button class="ghost" id="btn-dashboard" title="Open dashboard">Dashboard</button>
+          <button class="ghost" id="btn-collapse" title="Collapse">&#9662;</button>
+        </div>
+      </div>
+
+      <div class="context" id="context">
+        <div class="ctx-main">
+          <span class="ctx-subject" id="ctx-subject">—</span>
+          <span class="chip" id="ctx-chip">—</span>
+        </div>
+        <div class="ctx-sub" id="ctx-sub"></div>
+        <div class="ctx-timer" id="ctx-timer">00:00:00</div>
+      </div>
+
+      <div class="panel question" id="question" hidden>
+        <div class="q-prompt" id="q-prompt">Is this what you're supposed to be doing?</div>
+        <div class="q-subject" id="q-subject"></div>
+        <div class="q-actions" id="q-actions"></div>
+        <div class="q-new" id="q-new" hidden>
+          <input id="q-label" type="text" maxlength="24" placeholder="New label, e.g. Research" />
+          <div class="swatches" id="q-swatches"></div>
+          <div class="q-new-actions">
+            <button class="primary" id="q-create">Create &amp; file</button>
+            <button class="ghost" id="q-cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel state" id="state-panel">
+        <div class="state-row" id="row-plan"><span class="k">Plan</span><span class="v" id="v-plan">None active</span></div>
+        <div class="state-row" id="row-block"><span class="k">Blocking</span><span class="v" id="v-block">Idle</span></div>
+        <div class="state-row" id="row-sleep"><span class="k">Sleep</span><span class="v" id="v-sleep">Off</span></div>
+        <div class="state-row" id="row-next"><span class="k">Next</span><span class="v" id="v-next">—</span></div>
+      </div>
+
+      <div class="controls">
+        <button class="pill" data-nav="plans">Plans</button>
+        <button class="pill" data-nav="blocking">Blocks</button>
+        <button class="pill" data-nav="activity">Activity</button>
+        <button class="pill" data-nav="sleep">Sleep</button>
+      </div>
+
+      <div class="confirm" id="confirm" hidden></div>
+    </div>
+  </div>
+  <script src="island-boot.js"></script>
+  <script src="island.js"></script>
+</body>
+</html>
