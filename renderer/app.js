@@ -212,10 +212,11 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.5.3'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.6.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
+  onTopicMonitorAlert(cb) { return registerRendererDisposer(window.gemair && window.gemair.onTopicMonitorAlert ? window.gemair.onTopicMonitorAlert(cb) : null); },
   onWakeToggle(cb) { return registerRendererDisposer(window.gemair && window.gemair.onWakeToggle ? window.gemair.onWakeToggle(cb) : null); },
   onActivity(cb) { return registerRendererDisposer(window.gemair && window.gemair.onActivity ? window.gemair.onActivity(cb) : null); },
   async collaborateAgents(task) {
@@ -2829,6 +2830,7 @@ async function handleSlashCommand(text) {
 async function sendMessage(text) {
   text = (text || '').trim();
   if (!text) return;
+  resetWakeAutoSleep();
   api.trackUsage('message');
   addMessage('user', text);
   $('#chatInput').value = '';
@@ -7430,6 +7432,7 @@ function bindEvents() {
       $('#orbStatus').classList.remove('active');
       stopListening();
       stopSpeaking(); // U6: turning the loop OFF must also silence Gem mid-sentence
+      clearTimeout(wakeAutoSleepTimer);
       updateMediaLink();
     }
     else { startAiLoop(); addMessage('system-msg', 'Listening. Speak naturally.'); speak('I am listening. How can I help?'); updateMediaLink(); }
@@ -7454,6 +7457,13 @@ function bindEvents() {
   api.onReminder((r) => {
     addMessage('system-msg', `⏰ REMINDER: ${r.text}`);
     speak('Reminder: ' + r.text);
+  });
+
+  // Background Monitor (ported from Mark-LIII) — proactive headline alerts
+  if (api.onTopicMonitorAlert) api.onTopicMonitorAlert((alert) => {
+    if (!alert || !alert.title) return;
+    addMessage('system-msg', `📰 ${alert.topic}: ${alert.title}`);
+    speak(`Update on ${alert.topic}: ${alert.title}`);
   });
 
   // visible reasoning: live tool-activity chips (single global listener)
@@ -7580,21 +7590,92 @@ function startAiLoop() {
   $('#orbStatus').textContent = 'LISTENING · SPEAK NOW';
   $('#orbStatus').classList.add('active');
   if (recognition) { try { recognition.start(); $('#micBtn').classList.add('recording'); document.body.classList.add('rgb-recording'); } catch (e) {} }
+  if (profile.wakeWord) armWakeAutoSleep();
+}
+
+// Wake-word auto-sleep (ported from Mark-LIII's "Hey Jarvis": auto-sleeps
+// after 2 minutes of silence). Only active when a session was opened by the
+// wake word; the manual START AI button stays on until the user turns it off.
+const WAKE_AUTO_SLEEP_MS = 2 * 60 * 1000;
+let wakeAutoSleepTimer = null;
+function armWakeAutoSleep() {
+  clearTimeout(wakeAutoSleepTimer);
+  wakeAutoSleepTimer = setTimeout(() => {
+    if (!profile.wakeWord || !isRunning) return;
+    isRunning = false;
+    $('#startBtn').classList.remove('running');
+    $('#startLabel').textContent = 'START AI';
+    $('#orbStatus').textContent = 'STANDBY';
+    $('#orbStatus').classList.remove('active');
+    stopListening();
+    addMessage('system-msg', `Going quiet after 2 minutes of silence — say “${profile.wakeWordText || 'Hey Gem'}” to wake me.`);
+    configureWakeWord(true);
+  }, WAKE_AUTO_SLEEP_MS);
+}
+function resetWakeAutoSleep() {
+  if (profile.wakeWord && isRunning && wakeAutoSleepTimer) armWakeAutoSleep();
 }
 
 // Continuous wake-word listening ("Hey GemAir")
+// Two engines, tried in order:
+//   1. Local wake word (renderer/wake-word.js) — on-device Vosk/WASM model,
+//     ported concept from Mark-LIII's "Hey Jarvis": the mic is processed
+//     only on this machine and nothing streams anywhere until the phrase
+//     is heard. Opt-in one-time model download, then fully offline.
+//   2. Cloud wake loop (browser SpeechRecognition) — the previous GemAir
+//     behavior, used automatically if the local engine can't start
+//     (no WebAssembly/Worker support, mic denied, offline first-run).
 let wakeRecognition = null;
 let wakeArmed = false;
 let wakeBackoff = 250;
+let localWakeActive = false;
+function useLocalWakeWord() {
+  return !!(window.GemWakeWord && window.GemWakeWord.isSupported());
+}
+async function armLocalWakeWord(phrase) {
+  try {
+    await window.GemWakeWord.start({
+      phrase,
+      onStatus: (message) => addMessage('system-msg', message),
+      onWake: (heard) => {
+        addMessage('system-msg', `Wake phrase “${phrase}” detected (on-device) — listening.`);
+        startAiLoop();
+        setCaption('user', heard, { autoHide: 1600 });
+        // The grammar-restricted recognizer is single-shot; re-arm for the
+        // next wake once the active conversation ends.
+        window.GemWakeWord.stop();
+        localWakeActive = false;
+        setTimeout(() => { if (profile.wakeWord && !listening) configureWakeWord(true); }, 400);
+      }
+    });
+    localWakeActive = true;
+    addMessage('system-msg', `Wake word armed (on-device) — say “${phrase}” anytime. Your mic never leaves this machine while asleep.`);
+    return true;
+  } catch (error) {
+    localWakeActive = false;
+    addMessage('system-msg', `Local wake word unavailable (${error.message}) — using cloud wake loop instead.`);
+    return false;
+  }
+}
 function configureWakeWord(enabled) {
   document.body.classList.toggle('wake-armed', !!enabled);
   if (!enabled) {
+    if (localWakeActive && window.GemWakeWord) { try { window.GemWakeWord.stop(); } catch (e) {} }
+    localWakeActive = false;
     if (wakeRecognition) { try { wakeRecognition.stop(); } catch (e) {} }
     wakeRecognition = null;
     wakeArmed = false;
     stopMicMeter();
     return;
   }
+  if (useLocalWakeWord() && !localWakeActive && !wakeArmed) {
+    const phrase = profile.wakeWordText || 'Hey Gem';
+    armLocalWakeWord(phrase).then((started) => { if (!started) configureWakeWordCloud(); });
+    return;
+  }
+  if (!localWakeActive) configureWakeWordCloud();
+}
+function configureWakeWordCloud() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return;
   startMicMeter();

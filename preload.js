@@ -142,6 +142,7 @@ contextBridge.exposeInMainWorld('gemair', {
   onCodingUseEvent: (cb) => subscribeIpc('agent:codingEvent', cb),
 
   onReminder: (cb) => subscribeIpc('reminder:due', cb),
+  onTopicMonitorAlert: (cb) => subscribeIpc('monitor:alert', cb),
   onWakeToggle: (cb) => subscribeIpc('wake:toggle', cb),
   onActivity: (cb) => subscribeIpc('ai:activity', cb),
   onHudPanel: (cb) => subscribeIpc('hud:panel', cb),

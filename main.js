@@ -13,6 +13,9 @@ const windowTools = require('./lib/window-tools');
 const modesLib = require('./lib/modes');
 const computerAgent = require('./lib/computer-agent');
 computerAgent.setWindowTools(windowTools);
+const backgroundMonitor = require('./lib/background-monitor');
+const flightFinder = require('./lib/flight-finder');
+const gameUpdater = require('./lib/game-updater');
 
 const isDev = process.argv.includes('--dev');
 const userDataDir = app.getPath('userData');
@@ -286,6 +289,7 @@ app.whenReady().then(() => {
   try { scheduleChatGPTRefresh(); } catch (e) { console.error('[token-refresh] disabled:', e.message); }
   try { setupSilentUpdater(); } catch (e) { console.error('[silent-updater] disabled:', e.message); }
   startReminderScheduler();
+  try { startTopicMonitorScheduler(); } catch (e) { console.error('[topic-monitor] disabled:', e.message); }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     else mainWindow.show();
@@ -362,8 +366,8 @@ function readJSON(file, fallback, recoveryKey = null) {
 function writeJSON(file, data) { return atomicWriteJSON(file, data); }
 const readProfile = () => readJSON(PROFILE_FILE, {}, 'profile');
 const writeProfile = (data) => writeJSON(PROFILE_FILE, data);
-const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' };
-const freshEmptyMemory = () => ({ facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], summary: '' });
+const EMPTY_MEMORY = { facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], monitors: [], summary: '' };
+const freshEmptyMemory = () => ({ facts: [], transcript: [], notes: [], reminders: [], todos: [], mood: [], goals: [], skills: [], instructions: [], actionLog: [], monitors: [], summary: '' });
 const readMemory = () => {
   const memory = readJSON(MEMORY_FILE, freshEmptyMemory(), 'memory');
   for (const key of Object.keys(EMPTY_MEMORY)) {
@@ -742,7 +746,15 @@ const TOOLS = [
   { type: 'function', function: { name: 'upload_file', description: 'Upload a local file (maximum 25 MB) to an HTTPS signed or public PUT URL.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Local file inside the user home folder' }, destination: { type: 'string', description: 'HTTPS upload URL' } }, required: ['path', 'destination'] } } },
   { type: 'function', function: { name: 'download_file', description: 'Download a public HTTP(S) file (maximum 25 MB) into the user home folder.', parameters: { type: 'object', properties: { url: { type: 'string' }, destination: { type: 'string', description: 'Optional local output path inside the user home folder' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'add_calendar_event', description: 'Create an iCalendar event and open it in the system calendar.', parameters: { type: 'object', properties: { title: { type: 'string' }, start: { type: 'string', description: 'ISO 8601 date/time' }, end: { type: 'string', description: 'Optional ISO 8601 date/time' }, description: { type: 'string' }, location: { type: 'string' } }, required: ['title', 'start'] } } },
-  { type: 'function', function: { name: 'create_mode', description: 'Create or update a custom mode bundle.', parameters: { type: 'object', properties: { name: { type: 'string' }, apps: { type: 'array', items: { type: 'string' } }, sites: { type: 'array', items: { type: 'object' } }, volume: { type: 'number' }, theme: { type: 'string' }, dnd: { type: 'boolean' }, playlist: { type: 'string' } }, required: ['name'] } } }
+  { type: 'function', function: { name: 'create_mode', description: 'Create or update a custom mode bundle.', parameters: { type: 'object', properties: { name: { type: 'string' }, apps: { type: 'array', items: { type: 'string' } }, sites: { type: 'array', items: { type: 'object' } }, volume: { type: 'number' }, theme: { type: 'string' }, dnd: { type: 'boolean' }, playlist: { type: 'string' } }, required: ['name'] } } },
+  // Ported from Mark-LIII (FatihMakes/Mark-LIII, MIT) — backend-only, no new UI.
+  { type: 'function', function: { name: 'find_flights', description: 'Find flights between two cities/airports on a given date. Opens a pre-filled live Google Flights search (GemAir does not scrape fares). Dates: YYYY-MM-DD, "tomorrow", a weekday name, or DD/MM/YYYY.', parameters: { type: 'object', properties: { origin: { type: 'string', description: 'Departure city or airport' }, destination: { type: 'string', description: 'Arrival city or airport' }, date: { type: 'string', description: 'Departure date, e.g. "2026-10-04", "tomorrow", "next friday"' }, returnDate: { type: 'string', description: 'Optional return date for a round trip' }, cabin: { type: 'string', enum: ['economy', 'premium', 'business', 'first'] } }, required: ['origin', 'destination', 'date'] } } },
+  { type: 'function', function: { name: 'update_game', description: 'Trigger a game update/launch check via Steam or Epic Games (OS-native deep links; no scraping, no API keys). Omit `name` to just open the launcher and let it check everything.', parameters: { type: 'object', properties: { launcher: { type: 'string', enum: ['steam', 'epic'] }, name: { type: 'string', description: 'Game name, e.g. "GTA V", "CS2" (optional)' } }, required: ['launcher'] } } },
+  { type: 'function', function: { name: 'list_installed_epic_games', description: 'List Epic Games titles installed on this machine (reads local install manifests; Windows/macOS only).', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'add_topic_monitor', description: 'Start watching a news topic in the background. Once a day GemAir checks for a new headline and proactively alerts you the next time you talk, only when the top headline actually changed. Crypto/stock/trading topics are refused.', parameters: { type: 'object', properties: { topic: { type: 'string', description: 'Topic to watch, e.g. "iPhone 17", "Formula 1"' } }, required: ['topic'] } } },
+  { type: 'function', function: { name: 'remove_topic_monitor', description: 'Stop watching a previously added background topic.', parameters: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] } } },
+  { type: 'function', function: { name: 'list_topic_monitors', description: 'List topics currently being watched in the background.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'check_topic_monitors', description: 'Force an immediate check of all background topic monitors right now (bypasses the once-a-day throttle) and return any new headlines found.', parameters: { type: 'object', properties: {} } } }
 ];
 
 function safeEval(expr) {
@@ -2594,12 +2606,15 @@ const TOOL_RISK = {
   get_screen_size: 'safe', capture_agent_screen: 'safe', describe_screen: 'safe',
   move_mouse: 'computer', mouse_click: 'computer', type_text: 'computer', press_key: 'computer', scroll_mouse: 'computer',
   // Coding Agent
-  run_coding_cli: 'coding'
+  run_coding_cli: 'coding',
+  // Ported from Mark-LIII — read-only lookups / memory writes, all safe
+  find_flights: 'safe', update_game: 'safe', list_installed_epic_games: 'safe',
+  add_topic_monitor: 'safe', remove_topic_monitor: 'safe', list_topic_monitors: 'safe', check_topic_monitors: 'safe'
 };
 
 const TOOL_SCHEMAS = new Map(TOOLS.map((tool) => [tool.function.name, tool.function.parameters || { type: 'object', properties: {} }]));
 const TOOL_DEFAULT_STRING_LIMIT = 20000;
-const TOOL_STRING_LIMITS = { path: 4096, content: 1024 * 1024, query: 2000, prompt: 10000, text: 20000, command: 400, url: 2048 };
+const TOOL_STRING_LIMITS = { path: 4096, content: 1024 * 1024, query: 2000, prompt: 10000, text: 20000, command: 400, url: 2048, topic: 120, origin: 120, destination: 120, date: 40, returnDate: 40 };
 function validateToolInput(name, input) {
   const schema = TOOL_SCHEMAS.get(name);
   if (!schema) return { error: `Unknown tool: ${name}` };
@@ -2923,6 +2938,47 @@ async function executeToolNow(name, args) {
         const res = modesLib.saveMode(args);
         if (res.error) return res;
         return { ok: true, mode: res.mode };
+      }
+      // ---- Ported from Mark-LIII (FatihMakes/Mark-LIII, MIT) ----
+      case 'find_flights': {
+        const result = flightFinder.findFlights(args);
+        if (result.error) return result;
+        openExternalSafely(result.url);
+        logAction('find_flights', `${result.origin} → ${result.destination} on ${result.date}`);
+        return result;
+      }
+      case 'update_game': {
+        const result = gameUpdater.updateGame(args);
+        if (result.error) return result;
+        openExternalSafely(result.uri);
+        logAction('update_game', result.note);
+        return result;
+      }
+      case 'list_installed_epic_games':
+        return { games: gameUpdater.listInstalledEpicGames() };
+      case 'add_topic_monitor': {
+        const m = readMemory();
+        const result = backgroundMonitor.addMonitor(m, args.topic);
+        if (result.error) return result;
+        writeMemory(m);
+        logAction('add_topic_monitor', 'Now watching: ' + result.topic);
+        return result;
+      }
+      case 'remove_topic_monitor': {
+        const m = readMemory();
+        const result = backgroundMonitor.removeMonitor(m, args.topic);
+        if (result.error) return result;
+        writeMemory(m);
+        logAction('remove_topic_monitor', 'Stopped watching: ' + result.topic);
+        return result;
+      }
+      case 'list_topic_monitors':
+        return { monitors: backgroundMonitor.listMonitors(readMemory()) };
+      case 'check_topic_monitors': {
+        const m = readMemory();
+        const alerts = await backgroundMonitor.checkMonitors(m, fetchTopicHeadline, { force: true });
+        writeMemory(m);
+        return { alerts };
       }
       default:
         return { error: 'Unknown tool: ' + name };
@@ -3312,6 +3368,22 @@ async function getHeadlines(limit = 12, category = 'tech') {
     return items.filter(Boolean).filter((item) => item.title).map((item) => ({ id: item.id, title: item.title, url: item.url || `https://news.ycombinator.com/item?id=${item.id}`, score: item.score || 0, by: item.by || '', category: safeCategory }));
   } catch { return []; }
 }
+// Background Monitor support — top headline for an arbitrary free-text topic
+// (Google News RSS search, same keyless source as getHeadlines/getHeadlines()).
+async function fetchTopicHeadline(topic) {
+  const decodeXml = (value) => String(value || '').replace(/<!\[CDATA\[|\]\]>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  const q = String(topic || '').slice(0, 120);
+  if (!q) return null;
+  try {
+    const rss = await fetchDeadline(`https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`, { headers: { 'User-Agent': BROWSER_UA } }, 9000).then((r) => r.text());
+    const block = (rss.match(/<item>[\s\S]*?<\/item>/) || [])[0];
+    if (!block) return null;
+    const field = (name) => { const match = block.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`, 'i')); return decodeXml(match && match[1]); };
+    const title = field('title');
+    if (!title) return null;
+    return { title, url: field('link') || null, source: field('source') || 'Google News' };
+  } catch { return null; }
+}
 function sendToRenderer(channel, payload) {
   try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload); } catch {}
 }
@@ -3341,6 +3413,25 @@ function startReminderScheduler() {
     }
     if (changed) writeMemory(m);
   }, 15000);
+}
+// Background Monitor (ported from Mark-LIII): each topic self-throttles to
+// once a day inside checkMonitors(), so this timer just needs to run often
+// enough to catch that window — no network calls happen for topics that
+// were already checked today.
+function startTopicMonitorScheduler() {
+  const run = async () => {
+    try {
+      const m = readMemory();
+      if (!Array.isArray(m.monitors) || !m.monitors.length) return;
+      const alerts = await backgroundMonitor.checkMonitors(m, fetchTopicHeadline, { force: false });
+      writeMemory(m);
+      for (const alert of alerts) {
+        if (mainWindow) mainWindow.webContents.send('monitor:alert', alert);
+      }
+    } catch {}
+  };
+  setInterval(run, 60 * 60 * 1000);
+  setTimeout(run, 30000);
 }
 function startFocusPolling() {
   if (focusPollTimer) clearInterval(focusPollTimer);
