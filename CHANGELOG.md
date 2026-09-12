@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.8.0] — 2026-09-12
+
+Anonymous chat and opt-in local reasoning sidecars, implemented after a source and license review of FreeGPT35 and OpenJarvis. GemAir's Electron host, existing JavaScript tool executor, and permission gates remain authoritative.
+
+### Added — FreeGPT35-compatible anonymous chat
+- Added a separately licensed, source-available AGPL-3.0 sidecar pinned to FreeGPT35 revision `3bf421eecee954a5361677ec225f61348684f6bc`. It preserves the upstream anonymous session and proof-token flow, OpenAI-compatible `/v1/chat/completions` request shape, and streaming/non-streaming semantics.
+- Keyless desktop conversations use anonymous chat by default and clearly identify the responding provider/model. Connected ChatGPT or Gemini turns may fall back only before provider output starts; once text is emitted, failures stay visible instead of splicing providers.
+- The local boundary is hardened relative to upstream: random bearer authentication, loopback-only binding, no CORS, bounded input/output/concurrency/deadlines, and normal TLS verification. The upstream TLS-certificate bypass was deliberately not copied.
+
+### Added — OpenJarvis reasoning runtime
+- Bundled pinned Apache-2.0 OpenJarvis source at revision `b1055c983b25b298c7e97723847d215df18de4a8` behind an explicit app-private Python install. Setup reports progress, supports cancellation, and optionally builds the included PyO3/Rust workspace when Cargo is available.
+- Added optional orchestrator/ReAct planning, deep research, conversation-memory digests, memory search, prompt-injection guardrails, direct `/jarvis` reasoning, capability reporting, and sandbox-runtime detection. `/plan`, `/research`, `/memory-search`, and `/jarvis` expose the main workflows.
+- Added an opt-in loopback HTTP(S) MCP connection with tool discovery. Only tools that declare themselves read-only and non-destructive are eligible for non-interactive reasoning; remote endpoints, embedded credentials, command transports, and mutating MCP tools remain blocked.
+
+### Security, privacy, and packaging
+- OpenJarvis telemetry and PostHog analytics are disabled in both environment and generated configuration. The private policy is default-deny, while file writes, code execution, system administration, and channel sends remain outside the reasoning sidecar.
+- Sidecar source, revision records, upstream notices, and license files ship as unpacked application resources. FreeGPT35 remains an AGPL-separated process; GemAir core remains MIT and OpenJarvis remains Apache-2.0.
+- Added network-isolated FreeGPT35 integration tests plus OpenJarvis configuration, bridge, guardrail, cancellation, capability, and optional MCP-discovery coverage to the normal test suite.
+
 ## [2.7.0] — 2026-09-12
 
 ChatGPT account connection overhaul, based on a full source/license review of `opencoredev/login-with-chatgpt`, `missuo/FreeGPT35`, `isair/jarvis`, and `open-jarvis/OpenJarvis`.

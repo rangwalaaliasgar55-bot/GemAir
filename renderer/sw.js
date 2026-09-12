@@ -13,7 +13,7 @@
    ============================================================ */
 'use strict';
 
-const CACHE_VERSION = 'gemair-shell-v2.7.0-production1';
+const CACHE_VERSION = 'gemair-shell-v2.8.0-production1';
 const SHELL = [
   'index.html',
   'design-tokens.css',

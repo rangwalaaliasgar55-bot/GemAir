@@ -1,20 +1,20 @@
 # Upstream integration review — ChatGPT, FreeGPT and JARVIS projects
 
-Reviewed on **2026-09-12** for GemAir 2.7.0. This document records what was
-inspected, what was integrated, and what was deliberately not copied.
+Reviewed on **2026-09-12** for the release after GemAir 2.7.0. This document
+records what was inspected, what is shipped, and the licensing/security boundaries.
 
 ## Repositories and exact revisions
 
 | Repository | Revision reviewed | License | Decision |
 | --- | --- | --- | --- |
-| [`missuo/FreeGPT35`](https://github.com/missuo/FreeGPT35) | `3bf421eecee954a5361677ec225f61348684f6bc` | AGPL-3.0 | Protocol ideas only; no source copied or bundled |
+| [`missuo/FreeGPT35`](https://github.com/missuo/FreeGPT35) | `3bf421eecee954a5361677ec225f61348684f6bc` | AGPL-3.0-only | Source-derived anonymous sidecar, kept under a separate AGPL program boundary |
 | [`opencoredev/login-with-chatgpt`](https://github.com/opencoredev/login-with-chatgpt) | `3befb7fb625170cb305b116a654c7e2f8672bae4` | MIT | Integrated its published core package, pinned at `0.2.0` |
 | [`isair/jarvis`](https://github.com/isair/jarvis) | `d22ed8b975792842dc09e49861f31a39cbb302a6` | custom non-commercial license | Product patterns studied; no source copied |
-| [`open-jarvis/OpenJarvis`](https://github.com/open-jarvis/OpenJarvis) | `b1055c983b25b298c7e97723847d215df18de4a8` | Apache-2.0 | Architecture compared; GemAir-native implementation retained |
+| [`open-jarvis/OpenJarvis`](https://github.com/open-jarvis/OpenJarvis) | `b1055c983b25b298c7e97723847d215df18de4a8` | Apache-2.0 | Python/Rust source included as an explicitly installed reasoning sidecar |
 
-The repositories were cloned separately and their source trees, manifests,
-documentation, tests, workflows, and license files were reviewed. GemAir does
-not vendor those clones.
+The complete relevant source trees were inspected. FreeGPT35 and OpenJarvis are
+now present under `sidecars/` with pinned revision files and their original
+licenses. They are not relicensed as part of GemAir's MIT core.
 
 ---
 
@@ -134,39 +134,47 @@ OpenAI access tokens are short lived and refresh tokens may rotate. GemAir now:
 
 ---
 
-## 2. `FreeGPT35`: what was learned and why it was not copied
+## 2. `FreeGPT35`: separately licensed anonymous chat sidecar
 
-The reviewed project is a roughly 400-line Express gateway exposing
-`POST /v1/chat/completions`. It obtains an anonymous ChatGPT web session,
-computes a proof token, calls the undocumented web conversation endpoint, and
-translates the stream into an OpenAI-compatible response.
+GemAir ships a source-derived AGPL-3.0-only sidecar under
+`sidecars/freegpt35/`. It follows the reviewed upstream behavior closely:
 
-### Useful idea
+1. create a new anonymous device id;
+2. call `backend-anon/sentinel/chat-requirements`;
+3. calculate the sentinel proof token from the returned challenge;
+4. submit the legacy anonymous conversation request;
+5. translate cumulative assistant snapshots into OpenAI-compatible streaming
+   deltas or a buffered `POST /v1/chat/completions` response.
 
-An OpenAI-compatible local gateway is a good interoperability boundary. GemAir
-already accepts arbitrary OpenAI-compatible base URLs, including local services
-such as Ollama. A separately operated gateway can therefore be connected
-without changing GemAir's renderer or tool loop.
+The upstream source snapshot, README, license, package manifest, and exact
+revision are retained next to the production sidecar. `lib/freegpt35-sidecar.js`
+is the Electron-main lifecycle/client boundary. The renderer never receives the
+sidecar port or token.
 
-### Reasons not to embed its implementation
+### Deliberate security differences from upstream
 
-- **License:** FreeGPT35 is AGPL-3.0 while GemAir is MIT. Copying or combining
-  its server implementation would add copyleft distribution/network-source
-  obligations to the combined work.
-- **Transport age:** the code targets the old anonymous
-  `text-davinci-002-render-sha` web flow and its own README redirects users to a
-  different DuckDuckGo-based project because OpenAI changes broke the route.
-- **Security:** its Axios agent sets `rejectUnauthorized: false`, disabling TLS
-  certificate verification. GemAir will not ship that.
-- **Reliability:** it depends on undocumented proof-of-work and browser
-  fingerprint details that can change without notice.
-- **Account model access:** anonymous GPT-3.5 emulation does not satisfy the
-  requested “use my ChatGPT account and plan” behavior.
+GemAir does **not** reproduce unsafe deployment defaults:
 
-The obsolete `lib/free-chatgpt.js` script in GemAir was replaced with a
-side-effect-free compatibility facade over the new device OAuth/Codex adapter.
-It no longer writes bearer tokens to plaintext or launches a Windows shell at
-module import time.
+- TLS certificate verification is never disabled;
+- the server binds only to an ephemeral `127.0.0.1` port;
+- every route requires a random, per-process bearer token;
+- CORS is not enabled;
+- request size, message count, concurrency, and deadlines are bounded;
+- upstream errors are surfaced instead of being presented as valid answers;
+- the process is shut down with GemAir.
+
+This sidecar is an anonymous fallback, not a replacement for account-backed
+Codex OAuth. It uses an undocumented, historically fragile OpenAI web route and
+may stop working when OpenAI changes that route. The UI identifies answers as
+`FreeGPT35 / gpt-3.5-turbo` and labels the code's AGPL boundary.
+
+### License boundary
+
+`sidecars/freegpt35/` remains AGPL-3.0-only. Its full corresponding source and
+license ship with packaged builds. GemAir's MIT main process controls it as a
+separate child program over an authenticated loopback HTTP interface. Changes
+to the AGPL sidecar must continue to be offered under AGPL-3.0-only, including
+when the modified sidecar is made available over a network.
 
 ---
 
@@ -192,8 +200,8 @@ No source, prompts, assets, or tests from it were copied.
 | Barge-in and TTS | Existing streaming TTS and barge-in |
 | Tool selection to reduce context rot | **Added in 2.7:** original JS relevance router, max 24 tools/turn |
 | Task planner | Existing plan/act workflow and coding/computer agents |
-| Tool and memory digest passes | Partial: bounded histories and selected tools; deeper digest remains future work |
-| MCP catalog/runtime | Not added in this release; requires a permission and process-isolation design |
+| Tool and memory digest passes | Conversation digests are now persisted through the separately licensed OpenJarvis sidecar |
+| MCP catalog/runtime | Implemented through the Apache-2.0 OpenJarvis sidecar; no `isair/jarvis` source was copied |
 | Dictation into any application | Not added; global hotkeys/accessibility permissions need platform-specific work |
 | Nutrition journal | Existing life/mood/goals focus; nutrition remains optional future scope |
 | Behavioral eval suite | Existing Node regression suite; expanded for OAuth, SSE, tool calls and routing |
@@ -205,46 +213,68 @@ retains stable catalog order.
 
 ---
 
-## 4. `OpenJarvis`: patterns reviewed
+## 4. `OpenJarvis`: isolated Python/Rust reasoning sidecar
 
-OpenJarvis is a much broader Python/Rust/Tauri platform. The reviewed source
-covers:
+The complete reviewed OpenJarvis Python source and Rust workspace are pinned in
+`sidecars/openjarvis/`. GemAir does not silently download or start the large
+runtime. Settings presents an explicit **Install runtime** action which:
 
-- multiple local/cloud inference engines and model discovery;
-- simple, ReAct, orchestrator, proactive, research, coding, and channel agents;
-- tool registries, confirmation flags, schedulers, MCP, skills and workflows;
-- memory stores, extraction, session compression and learning;
-- many messaging channels and personal-data connectors;
-- credential stripping, SSRF controls, injection scanning, file policy,
-  capabilities, sandboxing, signing, audit and rate limiting;
-- speech backends, telemetry/energy benchmarks, a desktop app, API server and
-  a large test suite.
+1. locates Python 3.10–3.13;
+2. creates an app-private virtual environment under Electron `userData`;
+3. installs the bundled pinned source into that environment;
+4. builds the bundled PyO3 Rust extension when Cargo is available;
+5. writes a private configuration with analytics and telemetry disabled;
+6. starts a JSON-lines bridge over stdio (no listening network port).
 
-GemAir and OpenJarvis have different runtime goals: GemAir is one Electron app
-with a browser build; OpenJarvis is a Python platform with optional Rust and
-Tauri components. Vendoring its 175k-line tree would add a second application
-rather than improve this one.
+A missing Rust toolchain is reported honestly and does not disable the Python
+runtime. The stable PyPI wheel is pure Python; GemAir never attempts to install
+a nonexistent `openjarvis-rust` distribution. GemAir's pinned source patch keeps
+capability enforcement and SQLite/FTS5 memory available through conservative
+Python fallbacks when the optional native module is absent. It also retains MCP
+clients for the full agent run, closes them deterministically, and excludes MCP
+tools unless their protocol annotations explicitly mark them read-only and
+non-destructive.
 
-### Architecture comparison
+### Connected capabilities
 
-| OpenJarvis capability | GemAir equivalent / decision |
-| --- | --- |
-| Engine abstraction | Existing OpenAI-compatible provider catalog + Ollama + free core |
-| Model discovery | Existing Ollama/Gemini discovery; **ChatGPT account discovery added** |
-| Native tool schema | Existing OpenAI chat tools; **Responses native tools added** |
-| Tool confirmation | Existing `TOOL_RISK` and human-in-the-loop policy |
-| Agent loop guard | Existing bounded tool loops; ChatGPT capped at six rounds |
-| Scheduler/proactive work | Existing reminders and background topic monitors |
-| Persistent memory | Existing local-first facts, transcript, notes, tasks, mood, goals |
-| Skills/workflows | Existing learned skills, modes, workflow gallery and agents |
-| Security boundary | Electron sandbox + context isolation + preload allowlist + path/URL guards |
-| MCP | Future work; must not launch arbitrary servers without clear consent |
-| Messaging channel matrix | Not imported; each channel adds credentials and abuse surface |
-| Mining/telemetry stack | Not aligned with GemAir's no-telemetry desktop goal |
+The bridge exposes bounded operations for:
 
-OpenJarvis is Apache-2.0 and could be reused with notices, but this release did
-not copy its source. The useful architectural ideas were implemented against
-GemAir's existing APIs instead of embedding Python/Rust services.
+- orchestrator/ReAct reasoning and an advisory pre-plan pass;
+- the `deep_research` multi-hop researcher with retrieval-only tools;
+- SQLite/Rust-backed memory search and storage plus conversation summaries;
+- injection, secret, and optional PII scanning;
+- MCP discovery and agent use for an explicitly enabled loopback HTTP(S)
+  server; only tools declaring `readOnlyHint=true` and
+  `destructiveHint=false` are eligible for non-interactive reasoning;
+- sandbox/runtime status with network-none and default-deny/read-only mount
+  policy;
+- capability-policy and guardrail status.
+
+ChatGPT, Gemini, custom provider, local model, and anonymous fallback messages
+can receive an OpenJarvis planning brief when the user enables **Deep
+reasoning**. `/research`, `/plan`, `/memory-search`, and `/jarvis` provide
+explicit access from chat.
+
+### Authority and safety model
+
+OpenJarvis is a reasoning sidecar, not a second desktop-control authority.
+Only allowlisted agents and reasoning/retrieval/memory tools can be requested by
+the bridge. It cannot directly invoke GemAir's JavaScript file, shell, browser,
+mouse, keyboard, or operating-system tools. Concrete actions still return to
+GemAir's existing `executeTool` validation, risk policy, user confirmation, and
+audit log.
+
+Generated OpenJarvis configuration enforces:
+
+- `[telemetry].enabled = false` and `[analytics].enabled = false`;
+- personal security profile, scanning, SSRF checks, rate limits, and tool
+  confirmation;
+- `[security.capabilities]` enabled with `default_deny = true`;
+- an empty MCP server list by default;
+- sandbox disabled until a compatible Docker/Podman runtime and image are
+  explicitly configured; declared sandbox network policy is `none`.
+
+OpenJarvis is Apache-2.0. Its original license and notices ship with the source.
 
 ---
 
@@ -257,10 +287,12 @@ GemAir's existing APIs instead of embedding Python/Rust services.
 | `lib/connections.js` | Encrypted ID/account token fields plus model/reasoning/tier preferences |
 | `lib/codex-auth-import.js` | Current nested Codex token shape, account metadata and refresh-on-import |
 | `lib/tool-router.js` | Turn-aware catalog reduction |
-| `main.js` | IPC endpoints and connected-brain Codex routing |
-| `preload.js` | Narrow device/model IPC surface |
-| `renderer/index.html`, `renderer/app.js`, `renderer/style.css` | One-time-code UI and account model controls |
-| `scripts/chatgpt-codex-test.js` | Network-free protocol and tool-loop regression tests |
+| `sidecars/freegpt35/`, `lib/freegpt35-sidecar.js` | AGPL anonymous gateway and authenticated lifecycle/client |
+| `sidecars/openjarvis/`, `lib/openjarvis-sidecar.js` | Pinned Python/Rust source, bridge, isolated installer and JSON-lines controller |
+| `main.js` | IPC endpoints, provider fallback, sidecar lifecycle, planning and memory integration |
+| `preload.js` | Narrow account and sidecar IPC surfaces |
+| `renderer/index.html`, `renderer/app.js`, `renderer/style.css` | Account controls plus anonymous/OpenJarvis install and status UI |
+| `scripts/chatgpt-codex-test.js`, `test/*sidecar.test.js` | Network-free OAuth, protocol, lifecycle, policy and fallback regressions |
 | `THIRD_PARTY_NOTICES.md` | Required attribution for the shipped MIT dependency |
 
 Legacy web-session capture remains available as a clearly labelled fallback.
@@ -271,6 +303,9 @@ the old web transport and custom marker adapter.
 
 ## 6. Security and operational limitations
 
+- FreeGPT35 relies on undocumented anonymous OpenAI endpoints. Matching the upstream protocol cannot guarantee current or future availability.
+- OpenJarvis installation can download a large Python dependency set and therefore only runs after explicit confirmation. It requires Python 3.10–3.13 and a local inference engine/configuration to reason.
+- External MCP servers and execution sandboxes are default-deny and unconfigured. Source/runtime support is reported separately from readiness; GemAir never claims Docker, Podman, Rust, or an MCP server is ready when it is not.
 - The ChatGPT Codex endpoints and device flow are account-backed but can change
   upstream. They are not equivalent to an OpenAI Platform API key.
 - Requests use the signed-in user's ChatGPT limits. GemAir cannot guarantee a
@@ -290,14 +325,12 @@ the old web transport and custom marker adapter.
 
 ## 7. Next integrations worth doing
 
-1. Add a permission-scoped MCP host with an explicit server allowlist,
-   per-tool confirmation metadata, process limits, and a visible activity log.
-2. Add conversation/tool-result digest passes for small local models.
-3. Add a provider health/model-capability cache with expiry and manual refresh.
+1. Extend MCP beyond one loopback HTTP(S) endpoint only after implementing
+   encrypted bearer-token custody and interactive approval for mutating tools;
+   subprocess MCP transports and remote hosts remain blocked.
+2. Add byte-level package download progress where pip exposes totals.
+3. Publish and sign platform-specific sandbox images before enabling sandboxed
+   execution; keep network disabled and mounts read-only/default-deny.
 4. Add opt-in system-wide dictation after implementing platform accessibility
    permission checks and a clear recording indicator.
-5. Add account request budgeting in the desktop process (per-minute guard and
-   user-visible counters), analogous to the reviewed server SDK guardrail.
-
-These should be implemented as GemAir-native modules, with license review and
-security tests before any upstream source is copied.
+5. Add provider health/model-capability caching with expiry and manual refresh.
