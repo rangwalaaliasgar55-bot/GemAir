@@ -16,6 +16,9 @@ const modesLib = require('./lib/modes');
 const computerAgent = require('./lib/computer-agent');
 computerAgent.setWindowTools(windowTools);
 const backgroundMonitor = require('./lib/background-monitor');
+const { AttentionService } = require('./lib/attention/service');
+const attentionIpc = require('./lib/attention/ipc');
+const islandWindow = require('./lib/attention/island-window');
 const flightFinder = require('./lib/flight-finder');
 const gameUpdater = require('./lib/game-updater');
 
@@ -43,6 +46,8 @@ const USAGE_STATS_FILE = path.join(userDataDir, 'gemair-usage-stats.json');
 })();
 
 let mainWindow = null;
+let islandWin = null;
+let attention = null;
 let tray = null;
 let isQuitting = false;
 let authWindow = null;
@@ -260,6 +265,10 @@ function createTray() {
   tray.setToolTip('GemAir — your personal AI');
   const menu = Menu.buildFromTemplate([
     { label: 'Open GemAir', click: () => { mainWindow.show(); mainWindow.focus(); if (process.platform === 'darwin') app.dock.show(); } },
+    { label: 'Show Gem Air island', click: () => setIslandVisible(true) },
+    { label: 'Hide Gem Air island', click: () => setIslandVisible(false) },
+    { label: 'Attention dashboard', click: () => { mainWindow.show(); mainWindow.focus(); sendToRenderer('air:navigate', 'dashboard'); } },
+    { type: 'separator' },
     { label: 'Start listening', click: () => mainWindow.webContents.send('wake:toggle', true) },
     { type: 'separator' },
     { label: 'Quit', click: () => { isQuitting = true; app.quit(); } }
@@ -284,8 +293,72 @@ function fallbackTrayIcon() {
   return nativeImage.createFromBuffer(buf, { width: size, height: size });
 }
 
+/* ---------- Gem Air: attention layer ---------- */
+function broadcastAir(channel, payload) {
+  for (const win of [mainWindow, islandWin]) {
+    try { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); } catch {}
+  }
+}
+
+function ensureIslandWindow() {
+  if (islandWin && !islandWin.isDestroyed()) return islandWin;
+  islandWin = islandWindow.createIslandWindow({ BrowserWindow, screen }, {
+    preloadPath: path.join(__dirname, 'preload.js'),
+    position: attention ? attention.state.settings.islandPosition : null,
+    onMoved: (pos) => {
+      if (!attention) return;
+      attention.store.update((s) => { s.settings.islandPosition = pos; return s; });
+    }
+  });
+  islandWin.on('closed', () => { islandWin = null; });
+  return islandWin;
+}
+
+function setIslandVisible(visible) {
+  if (visible) {
+    const win = ensureIslandWindow();
+    if (!win.isVisible()) win.showInactive();
+  } else if (islandWin && !islandWin.isDestroyed()) {
+    islandWin.hide();
+  }
+  return { ok: true, visible: !!visible };
+}
+
+function startAttention() {
+  attention = new AttentionService({
+    userDataDir,
+    notify: ({ title, body }) => {
+      try {
+        if (Notification.isSupported()) new Notification({ title: title || 'Gem Air', body: body || '' }).show();
+      } catch {}
+    }
+  });
+  attentionIpc.register(ipcMain, attention, {
+    broadcast: broadcastAir,
+    setIslandVisible,
+    openIsland: () => { const w = ensureIslandWindow(); w.show(); w.focus(); return { ok: true }; },
+    openExternal: (url) => openExternalSafely(url)
+  });
+  ipcMain.handle('air:islandResize', (_e, mode) => {
+    islandWindow.resizeIsland(islandWin, mode === 'expanded' ? 'expanded' : 'compact');
+    return { ok: true };
+  });
+  ipcMain.handle('air:openMain', (_e, tab) => {
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+    mainWindow.show();
+    mainWindow.focus();
+    sendToRenderer('air:navigate', String(tab || 'dashboard'));
+    return { ok: true };
+  });
+  attention.start().then(() => {
+    ensureIslandWindow();
+    attention.emitState();
+  }).catch((e) => console.error('[gem-air]', e.message));
+}
+
 app.whenReady().then(() => {
   createWindow();
+  try { startAttention(); } catch (e) { console.error('[gem-air] disabled:', e.message); }
   try { createTray(); } catch (e) { console.error('[tray] disabled:', e.message); }
   try { startAutoUpdateWatcher(); } catch (e) { console.error('[auto-update] disabled:', e.message); }
   try { scheduleChatGPTRefresh(); } catch (e) { console.error('[token-refresh] disabled:', e.message); }
@@ -299,6 +372,7 @@ app.whenReady().then(() => {
 });
 app.on('before-quit', () => {
   isQuitting = true;
+  try { if (attention) attention.stop(); } catch {}
   if (focusPollTimer) clearInterval(focusPollTimer);
   if (!fatalCrashInProgress) clearNonfatalRecoveryCheckpoint();
 });

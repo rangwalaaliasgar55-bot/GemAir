@@ -158,3 +158,60 @@ contextBridge.exposeInMainWorld('gemair', {
   onDesktopDnd: (cb) => subscribeIpc('desktop:dnd', cb),
   onModeChanged: (cb) => subscribeIpc('mode:changed', cb)
 });
+
+/* ---------- Gem Air — attention layer API ----------
+   Exposed separately so the island window and the main UI share one contract. */
+contextBridge.exposeInMainWorld('air', {
+  platform: process.platform,
+  snapshot: () => ipcRenderer.invoke('air:snapshot'),
+  state: () => ipcRenderer.invoke('air:state'),
+  capabilities: () => ipcRenderer.invoke('air:capabilities'),
+
+  summary: (day) => ipcRenderer.invoke('air:summary', day),
+  timeline: (day) => ipcRenderer.invoke('air:timeline', day),
+  trend: (days) => ipcRenderer.invoke('air:trend', days),
+  recent: (limit) => ipcRenderer.invoke('air:recent', limit),
+  lastHour: () => ipcRenderer.invoke('air:lastHour'),
+  resetActivity: () => ipcRenderer.invoke('air:resetActivity'),
+  exportData: () => ipcRenderer.invoke('air:export'),
+
+  answer: (questionId, categoryId) => ipcRenderer.invoke('air:answer', questionId, categoryId),
+  dismissQuestion: () => ipcRenderer.invoke('air:dismissQuestion'),
+  createCategory: (payload) => ipcRenderer.invoke('air:createCategory', payload),
+  deleteCategory: (id) => ipcRenderer.invoke('air:deleteCategory', id),
+  classify: (payload) => ipcRenderer.invoke('air:classify', payload),
+  deleteRule: (kind, match) => ipcRenderer.invoke('air:deleteRule', kind, match),
+
+  addBlock: (payload) => ipcRenderer.invoke('air:addBlock', payload),
+  removeBlock: (kind, id) => ipcRenderer.invoke('air:removeBlock', kind, id),
+  toggleBlock: (kind, id, enabled) => ipcRenderer.invoke('air:toggleBlock', kind, id, enabled),
+  addException: (payload) => ipcRenderer.invoke('air:addException', payload),
+  removeException: (id) => ipcRenderer.invoke('air:removeException', id),
+  attempts: (limit) => ipcRenderer.invoke('air:attempts', limit),
+  requestSystemBlock: (hosts) => ipcRenderer.invoke('air:systemBlockRequest', hosts),
+
+  savePlan: (plan) => ipcRenderer.invoke('air:savePlan', plan),
+  deletePlan: (id) => ipcRenderer.invoke('air:deletePlan', id),
+  togglePlan: (id, enabled) => ipcRenderer.invoke('air:togglePlan', id, enabled),
+  activeBlocks: () => ipcRenderer.invoke('air:activeBlocks'),
+
+  setSleep: (sleep) => ipcRenderer.invoke('air:setSleep', sleep),
+  sleepStatus: () => ipcRenderer.invoke('air:sleepStatus'),
+
+  setSettings: (patch) => ipcRenderer.invoke('air:setSettings', patch),
+  setStartup: (enabled) => ipcRenderer.invoke('air:setStartup', enabled),
+  bridgeStatus: () => ipcRenderer.invoke('air:bridgeStatus'),
+  bridgePair: () => ipcRenderer.invoke('air:bridgePair'),
+  browserPolicy: () => ipcRenderer.invoke('air:browserPolicy'),
+
+  island: (action, payload) => ipcRenderer.invoke('air:island', action, payload),
+  islandResize: (mode) => ipcRenderer.invoke('air:islandResize', mode),
+  openMain: (tab) => ipcRenderer.invoke('air:openMain', tab),
+  openFocusx: (path) => ipcRenderer.invoke('air:openFocusx', path),
+
+  onUpdate: (cb) => subscribeIpc('air:update', cb),
+  onQuestion: (cb) => subscribeIpc('air:question', cb),
+  onAttempt: (cb) => subscribeIpc('air:attempt', cb),
+  onEnforced: (cb) => subscribeIpc('air:enforced', cb),
+  onNavigate: (cb) => subscribeIpc('air:navigate', cb)
+});

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gem Air — preview harness</title>
+<link rel="stylesheet" href="../air/attention.css" />
+<link rel="stylesheet" href="preview.css" />
+</head>
+<body>
+  <!-- simulated Windows desktop, so the floating island can be seen in context -->
+  <div class="desk">
+    <div class="desk-wall"></div>
+
+    <!-- the real island, loaded in an iframe exactly as the Electron window loads it -->
+    <iframe id="islandFrame" class="island-frame" src="../air/island.html" title="Gem Air island"></iframe>
+
+    <!-- the real attention UI -->
+    <div class="win">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-title">Gem Air</span></div>
+      <div class="win-body">
+        <div id="view-attention" class="active">
+          <div class="air-shell">
+            <header class="air-head">
+              <div class="air-title">
+                <span class="air-mark"></span>
+                <div><h2>Gem Air</h2><p id="airHeadline">Attention control for this machine.</p></div>
+              </div>
+              <div class="air-head-right">
+                <button class="air-ghost" id="airIslandToggle">Show island</button>
+                <a class="air-ghost" id="airFocusx" href="#">focusx.site</a>
+              </div>
+            </header>
+            <nav class="air-tabs" id="airTabs" role="tablist">
+              <span class="air-tab-indicator" id="airTabIndicator"></span>
+              <button class="air-tab active" data-air-tab="dashboard" role="tab">Dashboard</button>
+              <button class="air-tab" data-air-tab="activity" role="tab">Activity</button>
+              <button class="air-tab" data-air-tab="plans" role="tab">Plans</button>
+              <button class="air-tab" data-air-tab="blocking" role="tab">Blocking</button>
+              <button class="air-tab" data-air-tab="browser" role="tab">Browser</button>
+              <button class="air-tab" data-air-tab="sleep" role="tab">Sleep</button>
+              <button class="air-tab" data-air-tab="settings" role="tab">Settings</button>
+            </nav>
+            <div class="air-panels" id="airPanels">
+              <section class="air-panel active" data-air-panel="dashboard"></section>
+              <section class="air-panel" data-air-panel="activity"></section>
+              <section class="air-panel" data-air-panel="plans"></section>
+              <section class="air-panel" data-air-panel="blocking"></section>
+              <section class="air-panel" data-air-panel="browser"></section>
+              <section class="air-panel" data-air-panel="sleep"></section>
+              <section class="air-panel" data-air-panel="settings"></section>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- foreground-window simulator: stands in for the OS detector -->
+    <div class="sim">
+      <div class="sim-head">
+        <b>Foreground simulator</b>
+        <span>Stands in for the Windows detection engine. Everything downstream is the real engine.</span>
+      </div>
+      <div class="sim-apps" id="simApps"></div>
+      <div class="sim-note" id="simNote"></div>
+    </div>
+  </div>
+
+  <script src="bridge.js"></script>
+  <script src="../air/attention-ui.js"></script>
+  <script src="preview.js"></script>
+</body>
+</html>

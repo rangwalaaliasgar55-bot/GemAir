@@ -81,6 +81,31 @@ npm start
 
 ---
 
+## 🎯 Gem Air — attention control
+
+A floating always-on-top **island** that knows what application or website you are
+actually using, learns how to classify it, blocks what you asked it to block, runs
+scheduled plans and a nightly Sleep cutoff, and keeps a private activity dashboard.
+
+* **Knows** — `Figma → Design`, `VS Code → Development`, and the *site* inside Chrome
+  rather than "Chrome is open". Unknown app? The island asks *What is this for?* and
+  remembers your answer.
+* **Blocks** — real enforcement: blocked applications are closed, blocked sites are
+  stopped in the browser by the Gem Air extension. Protected blocks ignore exceptions.
+* **Plans** — reusable focus schedules with allowed/blocked apps, sites and categories.
+* **Sleep** — a genuine scheduled restriction: `23:30 → 07:00`.
+* **Activity** — focus / distraction / other / idle timeline, trends, top subjects.
+  Local only. No community, no leaderboard, no ranking.
+
+```bash
+npm start                 # the app, with the island and tray
+npm run test:attention    # 48 engine, service and contract checks
+npm run preview:air       # browser harness for the UI (real engines)
+```
+
+Architecture, and an honest table of what is **implemented** vs what **requires native
+integration**: [`docs/GEM_AIR.md`](docs/GEM_AIR.md).
+
 ## 🔌 AI brains: ChatGPT, Gemini, Claude & more
 
 GemAir supports two transport families while keeping one permission-gated tool executor:
