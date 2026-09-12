@@ -11,10 +11,9 @@ const root = path.join(__dirname, '..');
 const pkce = require(path.join(root, 'lib/oauth-chatgpt-pkce.js'));
 const bridge = require(path.join(root, 'lib/oauth-bridge.js'));
 
-const json = (data, status = 200) => ({
-  ok: status >= 200 && status < 300,
+const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
-  text: async () => JSON.stringify(data)
+  headers: { 'content-type': 'application/json' }
 });
 
 function fakeStore(tokens) {
@@ -27,8 +26,8 @@ function fakeStore(tokens) {
 }
 
 (async () => {
-  // 1. refresh request shape: form-encoded, refresh grant, client id present,
-  //    and NO code_verifier (verifier belongs only to the code exchange).
+  // 1. Current OpenAI refresh request shape: JSON refresh grant with client id
+  //    + scope and NO code_verifier (that belongs only to the code exchange).
   {
     let seen = null;
     const fetchFn = async (url, options) => {
@@ -38,10 +37,13 @@ function fakeStore(tokens) {
     const data = await pkce.refreshChatGPTAccessToken('old-refresh', fetchFn);
     assert.equal(data.access_token, 'new-access');
     assert.ok(seen.url.includes('auth.openai.com/oauth/token'), 'wrong token endpoint');
-    assert.ok(seen.body.includes('grant_type=refresh_token'), 'wrong grant type');
-    assert.ok(seen.body.includes('refresh_token=old-refresh'), 'refresh token missing');
-    assert.ok(seen.body.includes('client_id='), 'client id missing');
-    assert.ok(!seen.body.includes('code_verifier'), 'code_verifier must not appear in refresh requests');
+    const body = JSON.parse(seen.body);
+    assert.equal(body.grant_type, 'refresh_token', 'wrong grant type');
+    assert.equal(body.refresh_token, 'old-refresh', 'refresh token missing');
+    assert.ok(body.client_id, 'client id missing');
+    assert.match(body.scope, /offline_access/, 'refresh scope missing');
+    assert.equal(body.code_verifier, undefined, 'code_verifier must not appear in refresh requests');
+    assert.match(String(seen.options.headers['Content-Type'] || seen.options.headers.get && seen.options.headers.get('content-type')), /application\/json/i);
     console.log('  ok   refresh request shape (grant, no verifier, token endpoint)');
   }
 
@@ -107,7 +109,7 @@ function fakeStore(tokens) {
     const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
     assert(main.includes('function scheduleChatGPTRefresh'), 'refresh scheduler is missing');
     assert(main.includes('tokens.expiresAt - Date.now() - 5 * 60 * 1000'), 'refresh is not scheduled 5 minutes before expiry');
-    assert(main.includes('ChatGPT session expired — re-import Codex login'), 'expiry message is missing');
+    assert(main.includes('ChatGPT session expired — sign in with ChatGPT again'), 'expiry message is missing');
     assert(main.includes("send('connections:expired'"), 'expiry is not broadcast to the renderer');
     const app = fs.readFileSync(path.join(root, 'renderer/app.js'), 'utf8');
     assert(app.includes('data.message') && app.includes('CONNECTION LOST'), 'renderer does not surface the exact expiry message');

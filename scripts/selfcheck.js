@@ -64,14 +64,14 @@ ok('JSON files parse');
 try {
   const pkg = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
-  if (pkg.version !== '2.6.0') fail(`package version must be 2.6.0 (found ${pkg.version})`);
+  if (pkg.version !== '2.7.0') fail(`package version must be 2.7.0 (found ${pkg.version})`);
   if (lock.version !== pkg.version || (lock.packages && lock.packages[''] && lock.packages[''].version !== pkg.version)) fail('package-lock version does not match package.json');
   for (const asset of ['build/icon.png', 'build/icon.ico', 'build/icons/16x16.png', 'build/icons/256x256.png', 'build/icons/512x512.png', 'build/icons/1024x1024.png']) {
     const full = path.join(ROOT, asset);
     if (!fs.existsSync(full) || fs.statSync(full).size < 100) fail(`missing/empty release icon: ${asset}`);
   }
-  if (!fs.existsSync(path.join(ROOT, 'CHANGELOG.md')) || !read('CHANGELOG.md').includes('## [2.6.0]')) fail('CHANGELOG.md must document 2.6.0');
-  else ok('2.6.0 release metadata and platform icons present');
+  if (!fs.existsSync(path.join(ROOT, 'CHANGELOG.md')) || !read('CHANGELOG.md').includes('## [2.7.0]')) fail('CHANGELOG.md must document 2.7.0');
+  else ok('2.7.0 release metadata and platform icons present');
   // 2.4 new lib files must exist
   for (const f of ['lib/connections.js', 'lib/modes.js', 'lib/window-tools.js', 'CONNECTIONS.md']) {
     if (!fs.existsSync(path.join(ROOT, f))) fail(`missing 2.4 file: ${f}`);
@@ -205,7 +205,7 @@ const REQUIRED_IDS = {
   'T1 account controls': ['accountState', 'signInGoogleBtn', 'signOutBtn'],
   'T3 rating controls': ['settingsStars', 'ratingSummary', 'exportRatingsBtn'],
   'T5 ambient controls': ['setAmbientTrack', 'setAmbientVolume', 'ambientVolVal'],
-  'C1 Connection Hub': ['connectionHubCard', 'connectChatGPTBtn', 'chatgptStatusDot', 'chatgptEmail', 'chatgptPlanBadge', 'chatgptUsage', 'disconnectChatGPTBtn', 'captureChatGPTBtn'],
+  'C1 Connection Hub': ['connectionHubCard', 'connectChatGPTBtn', 'chatgptStatusDot', 'chatgptEmail', 'chatgptPlanBadge', 'chatgptUsage', 'disconnectChatGPTBtn', 'captureChatGPTBtn', 'chatgptDeviceModal', 'chatgptDeviceCode', 'chatgptModelPicker', 'chatgptReasoningPicker', 'chatgptTierPicker'],
   'D Gemini Connect': ['connectGeminiBtn', 'geminiStatusDot', 'geminiEmail', 'geminiPlanBadge', 'geminiUsage', 'disconnectGeminiBtn', 'captureGeminiBtn', 'openAIStudioBtn'],
   'H Hub UI': ['freeCoreDot', 'brainPriorityPicker', 'clearAllConnectionsBtn', 'activeBrainChip', 'activeBrainName', 'activeBrainDot', 'connectionsStatusRow'],
   'A Window Tools': ['etabDesktop', 'desktopWindowsList', 'focusedApp', 'focusedTitle', 'refreshDesktopBtn'],
@@ -448,7 +448,7 @@ for (const f of ['renderer/store.js', 'renderer/avatar.js', 'renderer/app.js']) 
  */
 function printManualMatrix() {
   const rows = [
-    ['1', 'Boot', 'Launch GemAir. Boot sequence completes; SYS chip reads SYSTEMS NOMINAL (or names degraded). Version tag v2.6.0'],
+    ['1', 'Boot', 'Launch GemAir. Boot sequence completes; SYS chip reads SYSTEMS NOMINAL (or names degraded). Version tag v2.7.0'],
     ['2', 'Free reply', 'With NO API key, send "hello". Real reply streams in. TEST CONNECTION reports free core'],
     ['3', 'Bad key honest', 'Paste bogus key + Groq preset, TEST CONNECTION must FAIL visibly, says free core NOT used'],
     ['4', 'EDGE voice', 'Voice engine = Edge neural. Send message. Gem speaks with Microsoft neural voice'],
@@ -465,14 +465,14 @@ function printManualMatrix() {
     ['15', 'Settings persist', 'Change voice, theme, language, ambient track+volume, save, quit, relaunch restored'],
     ['16', 'Ambient preview', 'Toggle ambient score — audio starts immediately, track+volume change live'],
     ['17', 'Language RTL', 'Language → اردو translates and mirrors RTL'],
-    ['18', 'Accessibility', 'Open each modal (settings, theme, download, breathe, report, experimental, reconnect). Tab trapped, Escape closes all'],
+    ['18', 'Accessibility', 'Open each modal (settings, theme, download, breathe, report, ChatGPT device login, experimental, reconnect). Tab trapped, Escape closes all'],
     ['19', 'Layout', 'Resize to 950px wide and 700px tall — topbar wraps, nothing clipped'],
     ['20', 'Reasoning', 'Multi-step request shows REASONING strip narrating real tool calls'],
     ['21', 'Window memory', 'Move/resize, quit, relaunch returns same place; unplug monitor clamped on-screen'],
     ['22', 'Rating', 'After 8 missions star prompt appears once, average shown, export JSON'],
-    ['23', 'Connect ChatGPT', 'Settings → CONNECTIONS → CONNECT CHATGPT → embedded real chatgpt.com login (email/Google SSO) → Capture → shows email + plan badge, dot green/amber, encrypted via safeStorage (never renderer-visible)'],
-    ['24', 'Streamed via ChatGPT', 'With ChatGPT connected, chat streams reply voiced via Edge TTS, MEDIA LINK shows ACTIVE brain CHATGPT live'],
-    ['25', 'Tools over connected', 'Over connected ChatGPT brain, run 3 tools: get_weather, web_search, list_windows — adapter injects TOOLS as JSON-in-prompt, parses tool-calls from plain text, feeds SAME executeTool loop'],
+    ['23', 'Connect ChatGPT', 'Settings → CONNECT CHATGPT → OpenAI device page opens → enter one-time code → shows account + plan + discovered models; tokens encrypted via safeStorage and never renderer-visible'],
+    ['24', 'Streamed via ChatGPT', 'Pick an account model/reasoning level, then chat: Codex Responses SSE streams and MEDIA LINK shows CHATGPT live'],
+    ['25', 'Native ChatGPT tools', 'Run get_weather, web_search, list_windows — context router sends a relevant subset, native function calls execute through the same permission-gated executeTool loop, encrypted reasoning carries across rounds'],
     ['26', 'Disconnect fallback', 'Disconnect ChatGPT → dot gray, free-core fallback instant, never dead air, toast shows fallback'],
     ['27', 'Gemini connect', 'CONNECT GEMINI → Google login embedded → capture Gemini web session (PSID) → route through consumer backend with identical adapter, fallback and warning'],
     ['28', 'AI Studio fallback', 'If Gemini capture unstable, one tap opens AI Studio, user signs in with Google inside it, app reads credential locally — still zero key copy-paste'],

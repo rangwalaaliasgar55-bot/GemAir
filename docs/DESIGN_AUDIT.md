@@ -122,7 +122,7 @@
 ## 6. Tests that gate UI changes
 
 - `scripts/appearance-test.js` — light/dark token derivation, toggle, `light-mode.css` link, SW cache
-- `scripts/selfcheck.js` — parse all JS, no dup IDs, boot wiring; **version locked at 2.6.0**
+- `scripts/selfcheck.js` — parse all JS, no dup IDs, boot wiring; **version locked at 2.7.0**
 - `scripts/product-experience-test.js` — composer, download route
 - Full `npm test` suite covers connections, chat transport, security, etc.
 

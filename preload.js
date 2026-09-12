@@ -85,6 +85,10 @@ contextBridge.exposeInMainWorld('gemair', {
   importMemory: (data) => ipcRenderer.invoke('memory:import', data),
 
   connectionsOauthChatGPT: () => ipcRenderer.invoke('connections:oauthChatGPT'),
+  connectionsPollChatGPT: (loginId) => ipcRenderer.invoke('connections:pollChatGPT', loginId),
+  connectionsCancelChatGPT: (loginId) => ipcRenderer.invoke('connections:cancelChatGPT', loginId),
+  connectionsRefreshChatGPTModels: () => ipcRenderer.invoke('connections:refreshChatGPTModels'),
+  connectionsSetChatGPTPreferences: (prefs) => ipcRenderer.invoke('connections:setChatGPTPreferences', prefs),
   connectionsImportCodex: () => ipcRenderer.invoke('connections:importCodex'),
   connectionsCodexStatus: () => ipcRenderer.invoke('connections:codexStatus'),
   connectionsLaunchCodexLogin: () => ipcRenderer.invoke('connections:launchCodexLogin'),
@@ -106,7 +110,7 @@ contextBridge.exposeInMainWorld('gemair', {
     return new Promise((resolve, reject) => {
       const onChunk = (_e, data) => { if (data.reqId === reqId) onDelta(data.delta); };
       const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply }); } };
-      const onErr = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: false, error: data.error, detail: data.detail, provider: data.provider }); } };
+      const onErr = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: false, error: data.error, detail: data.detail, provider: data.provider, sessionExpired: data.sessionExpired === true }); } };
       const cleanup = () => { ipcRenderer.removeListener('ai:chunk', onChunk); ipcRenderer.removeListener('ai:streamEnd', onEnd); ipcRenderer.removeListener('ai:streamError', onErr); };
       ipcRenderer.on('ai:chunk', onChunk);
       ipcRenderer.on('ai:streamEnd', onEnd);

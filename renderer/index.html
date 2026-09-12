@@ -70,7 +70,7 @@
         </div>
         <div class="brand-text">
           <h1>GemAir</h1>
-          <p>Personal assistant <span class="ver" id="verTag">v2.6.0</span></p>
+          <p>Personal assistant <span class="ver" id="verTag">v2.7.0</span></p>
         </div>
       </div>
 
@@ -920,17 +920,47 @@
       </div>
       <div class="modal-body">
         <p style="font-size:13px;line-height:1.6;">
-          You're about to connect your ChatGPT/Gemini account via an <b>unofficial method</b>.<br><br>
-          • It uses your real chatgpt.com / gemini.google.com login — no API key copy-paste<br>
-          • Session is captured locally and encrypted with Electron safeStorage<br>
-          • This may break if OpenAI/Google changes their site, and carries a <b>small account risk</b><br>
-          • You can disconnect anytime and it clears encrypted storage<br><br>
-          <span class="dim">This is a one-time warning. By continuing, you accept this experimental method.</span>
+          You're about to connect an account-backed AI transport. <b>Review the access carefully.</b><br><br>
+          • ChatGPT uses OpenAI's device authorization page; Gemini may use its web/API fallback<br>
+          • Requests consume your own account plan and limits — no separate GemAir API key<br>
+          • Passwords never enter GemAir; tokens stay OS-encrypted in the desktop main process<br>
+          • ChatGPT's Codex transport and Gemini's web fallback can change upstream<br>
+          • Disconnect deletes the encrypted credentials from this device<br><br>
+          <span class="dim">This is a one-time warning. Continue only if you trust this app with AI requests on your account.</span>
         </p>
       </div>
       <div class="modal-foot">
         <button class="ghost-btn" id="expWarnCancel">Cancel</button>
         <button class="primary-btn" id="expWarnContinue">I Understand — Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ChatGPT device-code login. Only the short code is renderer-visible;
+       bearer and refresh tokens stay in the Electron main process. -->
+  <div class="modal-backdrop" id="chatgptDeviceModal" role="dialog" aria-modal="true" aria-labelledby="chatgptDeviceTitle">
+    <div class="modal" style="width:min(560px,94vw);">
+      <div class="modal-head">
+        <h2 id="chatgptDeviceTitle">🔐 SIGN IN WITH CHATGPT</h2>
+        <button class="icon-btn" id="chatgptDeviceClose" aria-label="Cancel ChatGPT sign-in">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:12.5px;line-height:1.65;margin-top:0;">
+          OpenAI's verification page has opened. Sign in there, then enter this one-time code if requested. GemAir never sees your password.
+        </p>
+        <div class="device-code-card">
+          <span class="dim">ONE-TIME CODE</span>
+          <strong id="chatgptDeviceCode" aria-live="polite">—</strong>
+          <button class="ghost-btn" id="chatgptCopyCodeBtn" type="button">COPY CODE</button>
+        </div>
+        <p class="hint" id="chatgptDeviceStatus" role="status" aria-live="polite">Waiting for OpenAI authorization…</p>
+        <p class="dim" style="font-size:10.5px;line-height:1.55;">
+          Requests use your own ChatGPT plan and its limits. Prompts are sent directly from this device to ChatGPT's Codex endpoint. Tokens are encrypted by your operating system and deleted when you disconnect.
+        </p>
+      </div>
+      <div class="modal-foot">
+        <button class="ghost-btn" id="chatgptDeviceCancel" type="button">Cancel</button>
+        <button class="primary-btn" id="chatgptOpenVerifyBtn" type="button">OPEN OPENAI PAGE</button>
       </div>
     </div>
   </div>
@@ -1044,7 +1074,7 @@
           <fieldset id="connectionHubCard">
             <legend>CONNECTION HUB — ACCOUNTS → FREE CORE → OFFLINE</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
-              Press Connect and follow the steps — GemAir picks the working method automatically and says exactly what it needs. Sessions are encrypted on this device; nothing is uploaded.
+              ChatGPT opens OpenAI's one-time device sign-in; passwords and tokens never enter this page. Credentials stay OS-encrypted on this device, while prompts go directly to the selected AI provider.
             </p>
             <div class="connection-rows">
               <!-- CHATGPT ROW -->
@@ -1054,12 +1084,12 @@
                 <span class="conn-email" id="chatgptEmail">Not connected</span>
                 <span class="conn-badge" id="chatgptPlanBadge">—</span>
                 <span class="conn-usage" id="chatgptUsage">0 today</span>
-                <button class="primary-btn" id="connectChatGPTBtn" style="padding:6px 14px;font-size:11px;">CONNECT CHATGPT</button>
-                <button class="ghost-btn" id="openChatGPTBtn" style="padding:6px 10px;font-size:10px;" title="Sign in inside GemAir's browser window, then press Capture Session.">Browser sign-in</button>
+                <button class="primary-btn" id="connectChatGPTBtn" style="padding:6px 14px;font-size:11px;" title="Recommended: OpenAI device sign-in with refreshable tokens.">CONNECT CHATGPT</button>
+                <button class="ghost-btn" id="openChatGPTBtn" style="padding:6px 10px;font-size:10px;" title="Legacy fallback: sign in inside GemAir's browser window, then capture the web session.">Browser fallback</button>
                 <button class="ghost-btn" id="disconnectChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Disconnect</button>
-                <button class="ghost-btn" id="captureChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Capture Session</button>
-                <button class="ghost-btn" id="pasteSessionBtn" style="padding:6px 10px;font-size:10px;" title="Log in at chatgpt.com in your own browser, copy the session JSON page, paste it here.">Paste session JSON</button>
-                <button class="ghost-btn" id="importCodexBtn" style="padding:6px 10px;font-size:10px;" hidden>Import Codex login</button>
+                <button class="ghost-btn" id="captureChatGPTBtn" style="padding:6px 10px;font-size:10px;" hidden>Capture web session</button>
+                <button class="ghost-btn" id="pasteSessionBtn" style="padding:6px 10px;font-size:10px;" title="Legacy fallback: copy your chatgpt.com session JSON page and import it locally.">Paste web session</button>
+                <button class="ghost-btn" id="importCodexBtn" style="padding:6px 10px;font-size:10px;">Import local Codex login</button>
               </div>
               <!-- GEMINI ROW -->
               <div class="conn-row" id="connGeminiRow">
@@ -1082,6 +1112,37 @@
                 <span class="conn-usage" id="freeCoreUsage">∞</span>
                 <span class="conn-status">READY</span>
               </div>
+            </div>
+
+            <div class="chatgpt-controls" id="chatgptControls" hidden>
+              <div class="chatgpt-control-head">
+                <span><b>CHATGPT ACCOUNT MODEL</b><small id="chatgptAuthMode">OpenAI device OAuth</small></span>
+                <button class="ghost-btn" id="refreshChatGPTModelsBtn" type="button">↻ REFRESH MODELS</button>
+              </div>
+              <div class="chatgpt-control-grid">
+                <label>Model
+                  <select id="chatgptModelPicker" aria-label="ChatGPT account model"></select>
+                </label>
+                <label>Thinking
+                  <select id="chatgptReasoningPicker" aria-label="ChatGPT reasoning effort">
+                    <option value="none">None</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="xhigh">Extra high</option>
+                  </select>
+                </label>
+                <label>Service tier
+                  <select id="chatgptTierPicker" aria-label="ChatGPT service tier">
+                    <option value="auto">Auto</option>
+                    <option value="default">Default</option>
+                    <option value="flex">Flex</option>
+                    <option value="priority">Priority</option>
+                    <option value="fast">Fast (eligible plans)</option>
+                  </select>
+                </label>
+              </div>
+              <p class="hint">The model list comes from your signed-in account. Availability and fast-tier support depend on your ChatGPT plan.</p>
             </div>
 
             <div class="priority-row" style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">

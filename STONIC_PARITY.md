@@ -8,9 +8,9 @@ GemAir already implements the Stonic Gen 2 experience surface. This document map
 | Agent Town (Alice, Bob, Carol, Dave) | Agent Town 2.0 in renderer + tool missions |
 | System Core (Memory / Skills / Soul / Settings) | System Core panel — CPU/RAM, memory tabs, settings |
 | Voice assistant | Edge neural TTS + wake loop + barge-in (`renderer/tts-engine.js`, `edge-tts.js`) |
-| Desktop automation | 79 tools + missions (organize, files, apps) in main process |
+| Desktop automation | 98 tools + missions (organize, files, apps) in main process |
 | World Monitor | Globe / news hotspots |
-| ChatGPT account connect (no API key paste) | `lib/connections.js` — encrypted store + session/OAuth capture |
+| ChatGPT account connect (no API key paste) | OpenAI device authorization + account model discovery + Codex Responses; encrypted store in `lib/connections.js` |
 | Gemini account connect | `lib/connections.js` — Gemini connection path |
 | Free core fallback | Vercel serverless free provider chain |
 
@@ -18,15 +18,15 @@ GemAir already implements the Stonic Gen 2 experience surface. This document map
 
 In the app: **Settings → Connections** (or COST / AI Brain area depending on build).
 
-- **ChatGPT**: Sign in with your ChatGPT account → tokens stored via Electron `safeStorage` (encrypted on disk).
+- **ChatGPT**: press Connect, finish OpenAI's one-time device flow in the system browser, then choose a model discovered from your account. Tokens remain main-process-only and encrypted via Electron `safeStorage`.
 - **Gemini**: Sign in / link Google session → same encrypted store.
 - Priority: ChatGPT → Gemini → Free Core.
 
-## Optional: OAuth PKCE helpers (SocialBot-compatible)
+## Optional: legacy OAuth helpers
 
-For CLI / headless tests, see:
+The desktop UI uses the device flow in `lib/chatgpt-codex.js`. For compatibility or headless diagnostics, see:
 
-- `lib/oauth-chatgpt-pkce.js` — Codex-style PKCE (same public client pattern as SocialBot)
+- `lib/oauth-chatgpt-pkce.js` — legacy loopback Codex-style PKCE
 - `lib/oauth-gemini-pkce.js` — Google OAuth Desktop client (requires `GEMAIR_GEMINI_CLIENT_ID`)
 
 ```bash

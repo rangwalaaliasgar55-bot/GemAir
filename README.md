@@ -4,11 +4,11 @@
 
 ### A calm, open-source personal assistant for your work
 
-**Meet Gem** — the assistant inside GemAir. GemAir combines conversation, live web tools, local memory, voice, tasks, and optional desktop automation in a focused workspace. Browser tools work without an API key; general model answers require a configured provider or the optional local WebGPU model.
+**Meet Gem** — the assistant inside GemAir. GemAir combines conversation, live web tools, local memory, voice, tasks, and optional desktop automation in a focused workspace. Browser tools work without an API key; general model answers require a connected ChatGPT account, a configured provider, or the optional local WebGPU model.
 
 No subscription, no license fee, no cloud lock-in. **Yours. Forever.**
 
-> **GemAir 2.6.0** is local-first and capability-transparent: live browser tools work without a key, configured providers produce model answers, and desktop-only features are clearly separated from the web app.
+> **GemAir 2.7.0** adds a real ChatGPT account connection: OpenAI device sign-in, OS-encrypted rotating tokens, account model discovery, Responses streaming, and native permission-gated tools — no OpenAI Platform API key required.
 
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Windows-macOS-Linux-2b7a78?style=for-the-badge)]()
@@ -27,7 +27,7 @@ No subscription, no license fee, no cloud lock-in. **Yours. Forever.**
 | **macOS** (Apple Silicon & Intel) | Use the deployed `/download` page or latest release |
 | **Linux** | AppImage / `.deb` from the latest release |
 
-Or run from source:
+Or run from source (requires **Node.js 22.12+**):
 
 ```bash
 git clone https://github.com/rangwalaaliasgar55-bot/GemAir.git
@@ -48,7 +48,7 @@ npm start
 | 🎙️ **Voice Assistant** | Speak naturally or type. Live streaming replies (sentence-by-sentence audio while the answer still types), a real **local, offline wake-word engine** for "Hey Gem" (on-device Vosk/WASM recognizer — audio never leaves the machine until the phrase is heard, with automatic 2-minute auto-sleep and a cloud-based fallback loop when the local engine can't load), mic VU, instant speech barge-in, **Microsoft Edge neural voices** as the primary engine (real voice picker, incl. Hindi/Urdu), emotion-aware rate/pitch/volume, Gem/JARVIS/Nova presets, language quick-switch, and neural or offline OS fallbacks. |
 | ⌨️ **Human-like typing** | Replies stream and type out in real time, with code blocks and a save-to-file action. |
 | 👋 **Personalized** | Greets you by name and time of day, and remembers who you are forever. |
-| 🧠 **AI Brain (free out of the box)** | Runs on a free server-side AI core — no key, no card. **Free models are surfaced in-app**: a FREE MODELS panel with one-click setup for 38 free-tier OpenAI-compatible models (Gemini, Groq, Cerebras, SambaNova, NVIDIA NIM, Together, Fireworks, xAI/Grok, GLM, Cohere, HuggingFace, DeepSeek, Mistral, OpenRouter…) plus a live local-Ollama list — all keyless. Power users can also add their own key. GemAir `/models`, `/providers`, `/use`, `/local` slash commands switch models in chat. |
+| 🧠 **AI Brain** | **Desktop:** connect your own ChatGPT account through OpenAI's one-time device page; tokens stay OS-encrypted and the model picker comes from your plan. Or use local Ollama / any OpenAI-compatible provider. **Web:** live keyless tools plus a configured server provider. GemAir `/models`, `/providers`, `/use`, `/local` commands switch configured models. |
 | 💾 **Long-term memory (never lost)** | Automatically extracts durable facts about you (name, preferences, projects, goals), stores them on disk forever, and injects them into every conversation. Full chat history is persisted and restored on launch. |
 | 🛠️ **Tool-calling (98 tools)** | **Web**: weather, real web search, fetch & read any page, Wikipedia, YouTube search, translate, dictionary, crypto prices, currency conversion, AI image generation, keyless flight search. **Computer**: open apps, files, clipboard, volume, screenshots, system control, email drafts, WhatsApp, to-dos, file-organizing missions, optional shell commands with confirmation, Steam/Epic game updates. **Mind & life**: quotes, breathing exercises, weekly reports, emotional support, background topic monitoring with proactive alerts. |
 | 🌍 **World clock** | Time in any city, 12-hour format, live UTC clock. |
@@ -108,10 +108,14 @@ integration**: [`docs/GEM_AIR.md`](docs/GEM_AIR.md).
 
 ## 🔌 AI brains: ChatGPT, Gemini, Claude & more
 
-Every brain speaks one protocol — the OpenAI-compatible `chat/completions` endpoint — so the **same streaming + tool-calling engine** drives all of them. One-click presets in **Settings → AI BRAIN**:
+GemAir supports two transport families while keeping one permission-gated tool executor:
 
-| Brain | Where to get a key | Example model |
+- **ChatGPT account (Desktop):** OpenAI device authorization → ChatGPT-backed Codex Responses API → native function calls. No OpenAI Platform key; usage follows the signed-in account's plan and limits.
+- **Provider/local models:** OpenAI-compatible `chat/completions` endpoints for Gemini, Groq, Ollama, OpenRouter and others.
+
+| Brain | Connection | Model |
 | --- | --- | --- |
+| **ChatGPT account** (Desktop) | Settings → AI & Connections → **Connect ChatGPT** | Discovered from your account |
 | **Google Gemini** (free tier) | [aistudio.google.com](https://aistudio.google.com/apikey) | `gemini-2.5-flash` |
 | **Groq** (free tier) | [console.groq.com/keys](https://console.groq.com/keys) | `llama-3.3-70b-versatile` |
 | **Cerebras** (free tier) | [cloud.cerebras.ai](https://cloud.cerebras.ai) | `llama-3.3-70b` |
@@ -134,7 +138,7 @@ Every brain speaks one protocol — the OpenAI-compatible `chat/completions` end
 > list of any local Ollama models — no credit card required. You can also switch models
 > from chat with GemAir slash commands: `/providers`, `/models`, `/use <model>`, `/local`.
 
-Keys are stored only on your machine (Electron) or your browser storage (web); the app also runs **100% free with no key at all** (serverless core, then the offline brain). The complete walkthrough — how the ChatGPT and Gemini connections work under the hood, how Stonic's "sign in with your ChatGPT account" differs, Gemini Live voice, the tool loop, and the string-driven theme system — lives in **[AI-FRAMEWORK.md](AI-FRAMEWORK.md)**.
+Provider keys are stored locally. ChatGPT bearer/refresh/ID tokens and the account id stay in the Electron main process and are encrypted at rest with the operating system's credential protection. The browser build still offers keyless live tools; general model answers require a configured provider. See **[AI-FRAMEWORK.md](AI-FRAMEWORK.md)** and the exact upstream/license review in **[docs/UPSTREAM-INTEGRATION.md](docs/UPSTREAM-INTEGRATION.md)**.
 
 ---
 
@@ -233,4 +237,4 @@ Found a bug or have an idea? Open an [Issue](https://github.com/rangwalaaliasgar
 
 ## 📄 License
 
-MIT — see [LICENSE](LICENSE). Free to use, modify and distribute.
+MIT — see [LICENSE](LICENSE). Free to use, modify and distribute. Packaged dependency attribution is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

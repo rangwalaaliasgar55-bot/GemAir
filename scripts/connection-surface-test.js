@@ -12,16 +12,17 @@ const renderer = read('renderer/app.js');
 const bridge = read('lib/oauth-bridge.js');
 const store = read('lib/connections.js');
 
-for (const channel of ['connections:oauthChatGPT', 'connections:oauthGemini', 'connections:getStatus', 'connections:chatStream', 'connections:disconnect']) {
+for (const channel of ['connections:oauthChatGPT', 'connections:pollChatGPT', 'connections:cancelChatGPT', 'connections:refreshChatGPTModels', 'connections:setChatGPTPreferences', 'connections:oauthGemini', 'connections:getStatus', 'connections:chatStream', 'connections:disconnect']) {
   assert(main.includes(`ipcMain.handle('${channel}'`), `missing main handler: ${channel}`);
 }
 assert(preload.includes("connectionsOauthChatGPT: () => ipcRenderer.invoke('connections:oauthChatGPT')"), 'ChatGPT OAuth preload bridge missing');
 assert(preload.includes("connectionsOauthGemini: () => ipcRenderer.invoke('connections:oauthGemini')"), 'Gemini OAuth preload bridge missing');
 assert(renderer.includes('async connectionsOauthChatGPT()'), 'ChatGPT renderer bridge missing');
 assert(renderer.includes('async connectionsOauthGemini()'), 'Gemini renderer bridge missing');
-assert(renderer.includes('Opening ChatGPT sign-in'), 'renderer does not use secure OAuth flow');
-assert(bridge.includes('CHATGPT_OAUTH_CLIENT_REJECTED'), 'ChatGPT OAuth rejection is not explained');
-assert(read('lib/oauth-chatgpt-pkce.js').includes('built-in public Codex client'), 'ChatGPT flow does not use the built-in public client');
+assert(renderer.includes('Requesting a one-time sign-in code from OpenAI'), 'renderer does not use device OAuth');
+assert(bridge.includes('startChatGPTDeviceLogin') && bridge.includes('pollChatGPTDeviceLogin'), 'ChatGPT device-code state machine is missing');
+assert(read('lib/chatgpt-codex.js').includes('@opencoredev/loginwithchatgpt-core'), 'maintained ChatGPT SDK adapter is missing');
+assert(preload.includes("connectionsPollChatGPT: (loginId) => ipcRenderer.invoke('connections:pollChatGPT', loginId)"), 'device login poll is not isolated behind preload');
 assert(bridge.includes('GEMINI_OAUTH_CLIENT_MISSING'), 'Gemini OAuth configuration failure is not explained');
 assert(bridge.includes('setChatGPTConnection') && bridge.includes('setGeminiConnection'), 'OAuth bridge does not persist both providers');
 assert(store.includes('safeStorage.encryptString'), 'connection store is not encrypted');
@@ -30,6 +31,8 @@ assert(!read('lib/oauth-gemini-pkce.js').includes('generative-language.retriever
 assert(!read('lib/oauth-gemini-pkce.js').includes('auth/generative-language'), 'generative-language OAuth scope is still requested (Google rejects it with invalid_scope)');
 assert(store.includes('apiKeyEnc'), 'Gemini AI Studio key is not stored encrypted');
 assert(main.includes('connections.getDecryptedTokens(provider)'), 'connected brain does not read encrypted tokens');
+assert(main.includes('connections.clearConnection(provider)') && preload.includes('sessionExpired: data.sessionExpired === true'), 'dead account sessions do not clear and cross the IPC fallback boundary');
+assert(renderer.includes('SESSION EXPIRED — LIVE TOOLS / LOCAL FALLBACK'), 'the failed turn does not finish through the local fallback');
 assert(main.includes("if (stored.chatgpt && stored.chatgpt.connected) return { connectedProvider: 'chatgpt' }"), 'ChatGPT is not primary for desktop agent resolution');
 assert(main.includes("if (stored.gemini && stored.gemini.connected) return { connectedProvider: 'gemini' }"), 'Gemini is not primary for desktop agent resolution');
 assert(main.includes("ipcMain.handle('connections:importCodex'"), 'Codex import IPC handler is missing');

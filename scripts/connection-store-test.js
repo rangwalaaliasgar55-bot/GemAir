@@ -15,8 +15,10 @@ const Module = require('module');
 const root = path.join(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gemair-conn-test-'));
 
+let selectedStorageBackend = 'kwallet6';
 const fakeSafeStorage = {
   isEncryptionAvailable: () => true,
+  getSelectedStorageBackend: () => selectedStorageBackend,
   encryptString: (s) => Buffer.from('enc:' + String(s), 'utf8'),
   decryptString: (b) => Buffer.from(b).toString('utf8').replace(/^enc:/, '')
 };
@@ -64,7 +66,39 @@ function testJwt(expSeconds) {
   assert.equal(connections.isTokenExpired('chatgpt'), false, 'fresh import already reads as expired');
   console.log('  ok   pasted session JSON imports and reads back connected');
 
-  // 2. Expired tokens never become live sessions.
+  // 1b. Refreshable Codex metadata survives encrypted storage, while the
+  // sanitized renderer status exposes only model/profile preferences.
+  const idToken = testJwt(7200);
+  const codexStored = connections.setChatGPTConnection({
+    email: 'plus@example.com', plan: 'plus', sessionToken: jwt,
+    accessToken: jwt, refreshToken: 'refresh-token-value-that-is-long-enough',
+    idToken, accountId: 'acct_test_123', authMode: 'codex-oauth',
+    availableModels: ['gpt-test-a', 'gpt-test-b'], selectedModel: 'gpt-test-b',
+    reasoningEffort: 'high', serviceTier: 'fast', expiresAt: Date.now() + 3600000
+  });
+  assert.ok(!codexStored.error);
+  const publicStatus = connections.getSanitizedStatus().chatgpt;
+  assert.equal(publicStatus.authMode, 'codex-oauth');
+  assert.equal(publicStatus.selectedModel, 'gpt-test-b');
+  assert.deepEqual(publicStatus.availableModels, ['gpt-test-a', 'gpt-test-b']);
+  assert.equal(publicStatus.accessToken, undefined, 'bearer token leaked into sanitized status');
+  assert.equal(publicStatus.accountId, undefined, 'account id leaked into sanitized status');
+  const privateTokens = connections.getDecryptedTokens('chatgpt');
+  assert.equal(privateTokens.accountId, 'acct_test_123');
+  assert.equal(privateTokens.idToken, idToken);
+  const preferred = connections.setChatGPTPreferences({ selectedModel: 'gpt-test-a', reasoningEffort: 'low', serviceTier: 'auto' });
+  assert.equal(preferred.chatgpt.selectedModel, 'gpt-test-a');
+  assert.equal(preferred.chatgpt.reasoningEffort, 'low');
+  const preservedOldIdentity = connections.setChatGPTConnection({
+    email: 'plus@example.com', plan: 'plus', sessionToken: jwt,
+    accessToken: jwt, refreshToken: 'rotated-refresh-token-that-is-long-enough',
+    idToken: testJwt(-60), accountId: 'acct_test_123', authMode: 'codex-oauth',
+    expiresAt: Date.now() + 3600000
+  });
+  assert.ok(!preservedOldIdentity.error, 'an expired metadata-only ID token blocked fresh access-token rotation');
+  console.log('  ok   Codex tokens stay private while model controls persist');
+
+  // 2. Expired access tokens never become live sessions.
   assert.throws(
     () => connections.parseChatGPTSessionJson(JSON.stringify({
       user: { email: 'old@example.com' }, accessToken: testJwt(-7200)
@@ -88,6 +122,17 @@ function testJwt(expSeconds) {
   assert.equal(gtok.psid, psid, 'PSID did not survive the encrypted round-trip');
   assert.equal(connections.isWebSessionOnlyToken(gtok.psid), true, 'PSID would be sent as Bearer (401 loop)');
   console.log('  ok   captured PSID stores connected and is flagged non-API');
+
+  // Linux's basic_text backend is obfuscation, not protected storage.
+  if (process.platform === 'linux') {
+    selectedStorageBackend = 'basic_text';
+    const insecure = connections.setChatGPTConnection({
+      accessToken: testJwt(3600), expiresAt: Date.now() + 3600000
+    });
+    assert.equal(insecure.error, 'ENCRYPTION_UNAVAILABLE');
+    selectedStorageBackend = 'kwallet6';
+    console.log('  ok   insecure Linux basic_text credential storage is refused');
+  }
 
   // 4. Clear path still works (disconnect buttons).
   connections.clearConnection('chatgpt');

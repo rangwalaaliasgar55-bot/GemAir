@@ -212,7 +212,7 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.6.0'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.7.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
@@ -243,7 +243,11 @@ const api = {
   async codingUseStatus() { if (window.gemair && window.gemair.codingUseStatus) return window.gemair.codingUseStatus(); return { active: false }; },
   onCodingUseEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onCodingUseEvent ? window.gemair.onCodingUseEvent(cb) : null); },
   // 2.4 Connections
-  async connectionsOauthChatGPT() { if (window.gemair && window.gemair.connectionsOauthChatGPT) return window.gemair.connectionsOauthChatGPT(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'ChatGPT OAuth requires GemAir Desktop or a configured web callback.' }; },
+  async connectionsOauthChatGPT() { if (window.gemair && window.gemair.connectionsOauthChatGPT) return window.gemair.connectionsOauthChatGPT(); return { ok: false, error: 'DESKTOP_ONLY', message: 'ChatGPT device sign-in is available in GemAir Desktop.' }; },
+  async connectionsPollChatGPT(loginId) { if (window.gemair && window.gemair.connectionsPollChatGPT) return window.gemair.connectionsPollChatGPT(loginId); return { status: 'idle', error: 'DESKTOP_ONLY' }; },
+  async connectionsCancelChatGPT(loginId) { if (window.gemair && window.gemair.connectionsCancelChatGPT) return window.gemair.connectionsCancelChatGPT(loginId); return { status: 'cancelled' }; },
+  async connectionsRefreshChatGPTModels() { if (window.gemair && window.gemair.connectionsRefreshChatGPTModels) return window.gemair.connectionsRefreshChatGPTModels(); return { error: 'DESKTOP_ONLY' }; },
+  async connectionsSetChatGPTPreferences(prefs) { if (window.gemair && window.gemair.connectionsSetChatGPTPreferences) return window.gemair.connectionsSetChatGPTPreferences(prefs); return { error: 'DESKTOP_ONLY' }; },
   async connectionsImportCodex() { if (window.gemair && window.gemair.connectionsImportCodex) return window.gemair.connectionsImportCodex(); return { ok: false, error: 'DESKTOP_ONLY', message: 'Codex login import needs GemAir Desktop (it reads your local ~/.codex/auth.json).' }; },
   async connectionsCodexStatus() { if (window.gemair && window.gemair.connectionsCodexStatus) return window.gemair.connectionsCodexStatus(); return { exists: false, valid: false }; },
   async connectionsLaunchCodexLogin() { if (window.gemair && window.gemair.connectionsLaunchCodexLogin) return window.gemair.connectionsLaunchCodexLogin(); return { ok: false, error: 'DESKTOP_ONLY' }; },
@@ -3136,6 +3140,17 @@ async function handleMessage(text) {
           if (n>0) { await loadMemory(); renderAllMemory(); animateCircuits(); toast('MEMORY', `+${n} new memories stored`, '🧠'); }
         });
       }
+    } else if (res.sessionExpired) {
+      // The main process has deleted the provider-rejected credential. Finish
+      // this same turn with the honest local fallback instead of making the
+      // user resend while the reconnect dialog is open.
+      resetStreamSpeech();
+      const local = await api.aiOffline(text).catch(() => null);
+      reply = local && local.reply
+        ? '[' + String(useConnected).toUpperCase() + ' SESSION EXPIRED — LIVE TOOLS / LOCAL FALLBACK]\n' + local.reply
+        : String(useConnected).toUpperCase() + ' session expired — reconnect in Settings.';
+      replyEl.textContent = reply;
+      chatHistory.push({ role: 'assistant', content: reply });
     } else {
       replyFailed = true;
       resetStreamSpeech();
@@ -8251,6 +8266,9 @@ function getModesForPrompt() {
 
 let modesCache = {};
 let connectionsWarningPendingProvider = null;
+let chatgptDeviceLoginId = '';
+let chatgptDeviceVerificationUrl = '';
+let chatgptDevicePollTimer = null;
 
 async function loadConnectionsStatus() {
   try {
@@ -8289,6 +8307,11 @@ function renderConnectionHub() {
   const captureChatGPTBtn = $('#captureChatGPTBtn');
   const captureGeminiBtn = $('#captureGeminiBtn');
   const priorityPicker = $('#brainPriorityPicker');
+  const chatgptControls = $('#chatgptControls');
+  const chatgptModelPicker = $('#chatgptModelPicker');
+  const chatgptReasoningPicker = $('#chatgptReasoningPicker');
+  const chatgptTierPicker = $('#chatgptTierPicker');
+  const chatgptAuthMode = $('#chatgptAuthMode');
 
   if (chatgptDot) {
     chatgptDot.className = 'conn-dot ' + (status.chatgpt.connected ? (status.chatgpt.experimental ? 'experimental' : 'connected') : 'disconnected');
@@ -8306,16 +8329,38 @@ function renderConnectionHub() {
   }
   if (chatgptEmail) chatgptEmail.textContent = status.chatgpt.connected ? (status.chatgpt.email || 'connected') : 'Not connected';
   if (geminiEmail) geminiEmail.textContent = status.gemini.connected ? (status.gemini.email || 'connected') : 'Not connected';
-  if (chatgptBadge) { chatgptBadge.textContent = status.chatgpt.connected ? (status.chatgpt.plan || 'free').toUpperCase() : '—'; chatgptBadge.className = 'conn-badge ' + (status.chatgpt.plan||''); }
+  if (chatgptBadge) {
+    const plan = String(status.chatgpt.plan || 'free');
+    chatgptBadge.textContent = status.chatgpt.connected ? plan.toUpperCase() : '—';
+    chatgptBadge.className = 'conn-badge' + (/^(plus|pro|team|business|enterprise)$/i.test(plan) ? ' pro' : '');
+  }
   if (geminiBadge) { geminiBadge.textContent = status.gemini.connected ? (status.gemini.plan || 'free').toUpperCase() : '—'; }
   if (chatgptUsage) chatgptUsage.textContent = (status.chatgpt.usage||0) + ' today';
   if (geminiUsage) geminiUsage.textContent = (status.gemini.usage||0) + ' today';
 
+  if (chatgptControls) chatgptControls.hidden = !status.chatgpt.connected || status.chatgpt.authMode === 'web-session';
+  if (chatgptModelPicker && status.chatgpt.connected) {
+    const models = Array.isArray(status.chatgpt.availableModels) ? status.chatgpt.availableModels.slice() : [];
+    const selected = status.chatgpt.selectedModel || 'gpt-5.5';
+    if (!models.includes(selected)) models.unshift(selected);
+    chatgptModelPicker.replaceChildren(...models.map((model) => {
+      const option = document.createElement('option');
+      option.value = model;
+      option.textContent = model;
+      return option;
+    }));
+    chatgptModelPicker.value = selected;
+  }
+  if (chatgptReasoningPicker) chatgptReasoningPicker.value = status.chatgpt.reasoningEffort || 'medium';
+  if (chatgptTierPicker) chatgptTierPicker.value = status.chatgpt.serviceTier || 'auto';
+  if (chatgptAuthMode) {
+    const modes = { 'codex-oauth': 'OpenAI device OAuth · refreshable', 'codex-import': 'Imported local Codex session', 'web-session': 'Legacy browser session' };
+    chatgptAuthMode.textContent = modes[status.chatgpt.authMode] || 'OpenAI account connection';
+  }
+
   if (connectChatGPTBtn) connectChatGPTBtn.hidden = !!status.chatgpt.connected;
   const importCodexBtn = $('#importCodexBtn');
-  // Codex path stays in the DOM (tests pin it) but out of sight: this app
-  // connects plain ChatGPT only — direct sign-in, browser capture, paste.
-  if (importCodexBtn) importCodexBtn.hidden = true;
+  if (importCodexBtn) importCodexBtn.hidden = !!status.chatgpt.connected;
   const openChatGPTBtn = $('#openChatGPTBtn');
   if (openChatGPTBtn) openChatGPTBtn.hidden = !!status.chatgpt.connected;
   const pasteSessionBtn = $('#pasteSessionBtn');
@@ -8343,7 +8388,9 @@ function renderConnectionsStatusRow() {
     const connected = prov.connected;
     const cls = connected ? (prov.experimental ? 'experimental' : 'connected') : 'disconnected';
     const dot = connected ? '●' : '○';
-    return `<span class="conn-status-chip ${cls}">${dot} ${name} ${prov.email ? '('+prov.email.split('@')[0]+')' : ''} ${prov.usage ? prov.usage+' today' : ''}</span>`;
+    const identity = prov.email ? '(' + escapeHtml(String(prov.email).split('@')[0]) + ')' : '';
+    const usage = Math.max(0, Number(prov.usage) || 0);
+    return `<span class="conn-status-chip ${cls}">${dot} ${name} ${identity} ${usage ? usage + ' today' : ''}</span>`;
   };
   row.innerHTML = mkChip('CHATGPT', s.chatgpt) + mkChip('GEMINI', s.gemini) + `<span class="conn-status-chip fallback">● FREE CORE</span>`;
 }
@@ -8374,27 +8421,71 @@ function showExperimentalWarning(provider, onContinue) {
   window.__expContinue = onContinue;
 }
 
+function stopChatGPTDevicePolling(cancelUpstream) {
+  if (chatgptDevicePollTimer) { clearInterval(chatgptDevicePollTimer); chatgptDevicePollTimer = null; }
+  if (cancelUpstream && chatgptDeviceLoginId) api.connectionsCancelChatGPT(chatgptDeviceLoginId).catch(() => {});
+  chatgptDeviceLoginId = '';
+  chatgptDeviceVerificationUrl = '';
+}
+
+function closeChatGPTDeviceModal(cancelUpstream) {
+  $('#chatgptDeviceModal')?.classList.remove('open');
+  stopChatGPTDevicePolling(cancelUpstream);
+}
+
+async function pollChatGPTDeviceLogin() {
+  if (!chatgptDeviceLoginId) return;
+  const statusLine = $('#chatgptDeviceStatus');
+  try {
+    const res = await api.connectionsPollChatGPT(chatgptDeviceLoginId);
+    if (res && res.status === 'authenticated') {
+      closeChatGPTDeviceModal(false);
+      profile.connectionsWarningAcknowledged = true;
+      await persistProfile();
+      await api.connectionsAcknowledgeWarning();
+      await loadConnectionsStatus();
+      const label = res.user && (res.user.email || res.user.name) || 'ChatGPT';
+      const model = res.selectedModel ? ' · ' + res.selectedModel : '';
+      toast('CHATGPT', 'Connected as ' + label + model, '✅');
+      speak('ChatGPT connected');
+      if (res.warning) toast('MODEL DISCOVERY', 'Connected, but the model list could not refresh yet. Use Refresh Models later.', '⚠️');
+      return;
+    }
+    if (res && (res.status === 'expired' || res.error)) {
+      stopChatGPTDevicePolling(false);
+      if (statusLine) statusLine.textContent = '✗ ' + (res.message || res.error || 'Sign-in expired. Close and try again.');
+      return;
+    }
+    if (statusLine) {
+      const seconds = Math.max(0, Math.ceil(Number(res && res.retryAfterMs || 0) / 1000));
+      statusLine.textContent = seconds ? 'Waiting for authorization… checking again in ' + seconds + 's.' : 'Waiting for OpenAI authorization…';
+    }
+  } catch (error) {
+    if (statusLine) statusLine.textContent = 'Temporary connection problem — still waiting…';
+  }
+}
+
 async function handleConnectChatGPT() {
   showExperimentalWarning('chatgpt', async () => {
     try {
-      toast('CHATGPT', 'Opening ChatGPT sign-in… (OpenAI titles the page "Codex" — that is only the login method; you are connecting your ChatGPT account.)', '🔐');
+      toast('CHATGPT', 'Requesting a one-time sign-in code from OpenAI…', '🔐');
       const res = await api.connectionsOauthChatGPT();
-      if (res && !res.error) {
-        await loadConnectionsStatus();
-        toast('CHATGPT', 'Account connected securely.', '✅');
+      if (!res || res.error || res.status !== 'pending') {
+        toast('CHATGPT', (res && (res.message || res.error)) || 'Device sign-in could not start.', '⚠️');
         return;
       }
-      // Direct OAuth rejected server-side: offer the paste-session flow,
-      // which needs nothing but a ChatGPT login in your own browser.
-      // (Timeouts/cancels stay as errors — no surprise popups.)
-      if (res && /CHATGPT_OAUTH_CLIENT_REJECTED/.test(res.error || '')) {
-        toast('CHATGPT', 'Sign-in was rejected — use Paste session JSON instead (no extra tools).', '📋');
-        openSessionJsonModal();
-        return;
-      }
-      toast('CHATGPT', res.message || res.error || 'OAuth sign-in failed', '⚠️');
-    } catch (e) {
-      toast('CHATGPT', e.message, '⚠️');
+      stopChatGPTDevicePolling(false);
+      chatgptDeviceLoginId = res.loginId;
+      chatgptDeviceVerificationUrl = res.verificationUrl;
+      const code = $('#chatgptDeviceCode');
+      const statusLine = $('#chatgptDeviceStatus');
+      if (code) code.textContent = res.userCode || '—';
+      if (statusLine) statusLine.textContent = 'Waiting for OpenAI authorization…';
+      $('#chatgptDeviceModal')?.classList.add('open');
+      chatgptDevicePollTimer = setInterval(pollChatGPTDeviceLogin, 1500);
+      setTimeout(pollChatGPTDeviceLogin, 400);
+    } catch (error) {
+      toast('CHATGPT', error.message || 'Sign-in failed.', '⚠️');
     }
   });
 }
@@ -8612,6 +8703,33 @@ async function handleOpenAIStudio() {
 
 function setupConnectionsHub() {
   $('#connectChatGPTBtn')?.addEventListener('click', handleConnectChatGPT);
+  $('#chatgptDeviceClose')?.addEventListener('click', () => closeChatGPTDeviceModal(true));
+  $('#chatgptDeviceCancel')?.addEventListener('click', () => closeChatGPTDeviceModal(true));
+  $('#chatgptOpenVerifyBtn')?.addEventListener('click', () => {
+    if (chatgptDeviceVerificationUrl) api.openExternal(chatgptDeviceVerificationUrl);
+  });
+  $('#chatgptCopyCodeBtn')?.addEventListener('click', async () => {
+    const code = ($('#chatgptDeviceCode')?.textContent || '').trim();
+    if (!code || code === '—') return;
+    try { await navigator.clipboard.writeText(code); toast('CHATGPT', 'One-time code copied.', '📋'); }
+    catch { toast('CHATGPT', 'Select the code and copy it manually.', '📋'); }
+  });
+  $('#refreshChatGPTModelsBtn')?.addEventListener('click', async () => {
+    const button = $('#refreshChatGPTModelsBtn');
+    if (button) button.disabled = true;
+    const res = await api.connectionsRefreshChatGPTModels().catch((error) => ({ error: error.message }));
+    if (button) button.disabled = false;
+    if (res && res.ok) { await loadConnectionsStatus(); toast('CHATGPT', (res.models || []).length + ' account models found.', '↻'); }
+    else toast('CHATGPT', res.message || res.error || 'Could not refresh models.', '⚠️');
+  });
+  const saveChatGPTPreference = async (key, value) => {
+    const res = await api.connectionsSetChatGPTPreferences({ [key]: value });
+    if (res && res.error) toast('CHATGPT', res.error, '⚠️');
+    else { connectionsStatus = res; renderConnectionHub(); toast('CHATGPT', key + ' updated.', '✓'); }
+  };
+  $('#chatgptModelPicker')?.addEventListener('change', (event) => saveChatGPTPreference('selectedModel', event.target.value));
+  $('#chatgptReasoningPicker')?.addEventListener('change', (event) => saveChatGPTPreference('reasoningEffort', event.target.value));
+  $('#chatgptTierPicker')?.addEventListener('change', (event) => saveChatGPTPreference('serviceTier', event.target.value));
   $('#openChatGPTBtn')?.addEventListener('click', handleOpenChatGPT);
   $('#pasteSessionBtn')?.addEventListener('click', openSessionJsonModal);
   $('#sessionJsonClose')?.addEventListener('click', closeSessionJsonModal);
@@ -8625,6 +8743,7 @@ function setupConnectionsHub() {
   $('#importCodexBtn')?.addEventListener('click', handleImportCodex);
   $('#captureChatGPTBtn')?.addEventListener('click', handleCaptureChatGPT);
   $('#disconnectChatGPTBtn')?.addEventListener('click', async () => {
+    stopChatGPTDevicePolling(true);
     await api.connectionsDisconnect('chatgpt');
     await loadConnectionsStatus();
     toast('CHATGPT', 'Disconnected — encrypted storage cleared', '🔌');

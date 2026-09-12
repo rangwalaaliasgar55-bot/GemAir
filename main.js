@@ -1,5 +1,5 @@
-// GemAir 2.5 — main process
-// Leaps: account connect without API keys · agentic desktop management · MODES · guarded IPC surface
+// GemAir 2.7 — main process
+// Account-backed AI · agentic desktop management · MODES · guarded IPC surface
 const { app, BrowserWindow, ipcMain, shell, dialog, Notification, desktopCapturer, clipboard, Tray, Menu, nativeImage, screen, safeStorage, session } = require('electron');
 const path = require('path');
 const os = require('os');
@@ -9,6 +9,8 @@ const net = require('net');
 const { exec, execFile, spawn, spawnSync } = require('child_process');
 
 const connections = require('./lib/connections');
+const chatgptCodex = require('./lib/chatgpt-codex');
+const { selectRelevantTools } = require('./lib/tool-router');
 const windowTools = require('./lib/window-tools');
 const modesLib = require('./lib/modes');
 const computerAgent = require('./lib/computer-agent');
@@ -3730,6 +3732,9 @@ async function captureChatGPTSession() {
     sessionToken: sessionCookie ? sessionCookie.value : '',
     accessToken: sessionData.accessToken,
     refreshToken: sessionData.refreshToken || '',
+    idToken: '',
+    accountId: '',
+    authMode: 'web-session',
     expiresAt: Date.now() + 14*24*3600000
   });
   if (stored && stored.error) return stored;
@@ -3811,47 +3816,78 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
     if (detail !== undefined) err.detail = detail;
     return err;
   };
-  const toolPrompt = connections.buildToolPrompt(TOOLS);
+  const selectedTools = selectRelevantTools(TOOLS, messages, { limit: 24 });
+  const toolPrompt = connections.buildToolPrompt(selectedTools);
   const nowStamp = new Date().toLocaleString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  const baseInstructions = `You are Gem, the personal AI inside the GemAir desktop app — warm, direct, and precise. It is ${nowStamp}; use that for "today/tomorrow" and distrust stale training data (search instead). Use tools silently when action or current facts are needed. Never paste raw tool JSON; synthesize results into a natural reply with sources. Default to 1-3 sentences; expand only when asked or when steps are genuinely needed. Never say "as an AI".`;
+  const nativeMessages = [{ role: 'system', content: baseInstructions }, ...messages];
   const adaptedMessages = [
-    { role: 'system', content: `You are Gem, the personal AI inside the GemAir desktop app — warm, direct, and precise. It is ${nowStamp}; use that for "today/tomorrow" and to distrust stale training data (search instead). ${toolPrompt}\nIf you need to act, use the TOOL_CALL format. Never narrate tool use ("I'll check..."); call tools silently, then answer. Never paste raw tool JSON; synthesize it into a natural reply with sources. Default to 1-3 sentences; expand only when asked or when steps are genuinely needed. Never say "as an AI".` },
+    { role: 'system', content: `${baseInstructions} ${toolPrompt}\nFor this legacy connection, use the TOOL_CALL format whenever you need to act.` },
     ...messages
   ];
-  const tokens = connections.getDecryptedTokens(provider);
+  let tokens = connections.getDecryptedTokens(provider);
   if (!tokens) throw new Error('NO_CONNECTED_SESSION');
   if (provider === 'chatgpt') {
     if (!tokens.accessToken) throw connectedError('NO_CHATGPT_TOKEN', false);
-    // Check expiry
-    if (connections.isTokenExpired('chatgpt')) throw connectedError('TOKEN_EXPIRED', true);
+
+    // OAuth access tokens are short lived. Refresh synchronously when due so a
+    // sleeping laptop does not fail the first request before the timer runs.
+    if (tokens.refreshToken && (!tokens.expiresAt || tokens.expiresAt - Date.now() <= 5 * 60 * 1000)) {
+      const { checkAndRefreshChatGPT } = require('./lib/oauth-bridge');
+      const refresh = await checkAndRefreshChatGPT();
+      if (refresh.refreshed) tokens = connections.getDecryptedTokens('chatgpt');
+      else if (connections.isTokenExpired('chatgpt')) throw connectedError(refresh.code || 'TOKEN_EXPIRED', true, refresh.message);
+    } else if (connections.isTokenExpired('chatgpt')) {
+      throw connectedError('TOKEN_EXPIRED', true);
+    }
+
+    // Device/CLI OAuth sessions use the maintained Codex Responses transport:
+    // dynamic account model, native function calls, encrypted reasoning
+    // continuity, and a bounded six-round tool loop.
+    if ((tokens.authMode === 'codex-oauth' || tokens.authMode === 'codex-import') && tokens.accountId) {
+      try {
+        const result = await chatgptCodex.runCodexAgent({
+          accessToken: tokens.accessToken,
+          idToken: tokens.idToken,
+          accountId: tokens.accountId,
+          model: tokens.selectedModel,
+          reasoningEffort: tokens.reasoningEffort,
+          serviceTier: tokens.serviceTier,
+          messages: nativeMessages,
+          tools: selectedTools,
+          executeTool,
+          onDelta,
+          onTool
+        });
+        connections.incUsage('chatgpt');
+        return result.text;
+      } catch (error) {
+        throw connectedError('CHATGPT_CODEX_FAILED: ' + error.message, connections.isSessionExpiredError('chatgpt', error.code || error.message), error.detail);
+      }
+    }
+
+    // Explicit legacy fallback for manually imported chatgpt.com session JSON.
+    // It stays separate because web-session tokens do not include the account
+    // id/header required by the Codex Responses endpoint.
     let full = '';
     try {
       full = await connections.callChatGPTWeb({ accessToken: tokens.accessToken, messages: adaptedMessages, onDelta });
-    } catch (e) {
-      // If web call fails (bot check etc), throw to trigger fallback.
-      // Only a dead session (401/403) expires the UI; anything else keeps it.
-      throw connectedError('CHATGPT_WEB_FAILED: ' + e.message, connections.isSessionExpiredError('chatgpt', e.message), e.detail);
+    } catch (error) {
+      throw connectedError('CHATGPT_WEB_FAILED: ' + error.message, connections.isSessionExpiredError('chatgpt', error.message), error.detail);
     }
-    // Parse tool calls
     const toolCalls = connections.parseToolCallsFromText(full);
     let remaining = connections.stripToolCalls(full);
-    if (toolCalls.length) {
-      // Execute tools
-      for (const tc of toolCalls) {
-        if (onTool) { try { onTool({ name: tc.name, state: 'start', args: tc.arguments }); } catch {} }
-        const result = await executeTool(tc.name, tc.arguments || {});
-        if (onTool) { try { onTool({ name: tc.name, state: result.error ? 'error' : 'done' }); } catch {} }
-        // Append to messages and continue loop
-        adaptedMessages.push({ role: 'assistant', content: full });
-        adaptedMessages.push({ role: 'user', content: `TOOL_RESULT for ${tc.name}: ${JSON.stringify(result)}` });
-        // Recursively call again for next turn (max 5 loops)
-        // For simplicity, if we have tool results, we call free core? Actually we should loop via same provider
-        // We'll loop once more via chatgpt web
-        try {
-          const next = await connections.callChatGPTWeb({ accessToken: tokens.accessToken, messages: adaptedMessages, onDelta: (d)=>{ if (onDelta) onDelta(d); } });
-          remaining = connections.stripToolCalls(next) || remaining;
-          full = next;
-        } catch {}
-      }
+    for (const tc of toolCalls.slice(0, 6)) {
+      if (onTool) { try { onTool({ name: tc.name, state: 'start', args: tc.arguments }); } catch {} }
+      const result = await executeTool(tc.name, tc.arguments || {});
+      if (onTool) { try { onTool({ name: tc.name, state: result && result.error ? 'error' : 'done' }); } catch {} }
+      adaptedMessages.push({ role: 'assistant', content: full });
+      adaptedMessages.push({ role: 'user', content: `TOOL_RESULT for ${tc.name}: ${JSON.stringify(result)}` });
+      try {
+        const next = await connections.callChatGPTWeb({ accessToken: tokens.accessToken, messages: adaptedMessages, onDelta });
+        remaining = connections.stripToolCalls(next) || remaining;
+        full = next;
+      } catch {}
     }
     connections.incUsage('chatgpt');
     return remaining || full;
@@ -4374,8 +4410,8 @@ ipcMain.handle('app:platform', () => process.platform);
 
 // Proactive ChatGPT token refresh: runs 5 minutes before the stored
 // access token expires so long sessions never hit a dead token mid-chat.
-// On 401/invalid_grant the session is truly dead — surface the exact
-// re-import message instead of retrying forever.
+// On 401/invalid_grant the session is truly dead — clear it, fall back, and
+// surface the exact sign-in message instead of retrying forever.
 let chatgptRefreshTimer = null;
 function scheduleChatGPTRefresh() {
   try { if (chatgptRefreshTimer) { clearTimeout(chatgptRefreshTimer); chatgptRefreshTimer = null; } } catch {}
@@ -4394,11 +4430,16 @@ async function runChatGPTRefresh() {
       scheduleChatGPTRefresh();
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
     } else if (result && (result.code === 'REFRESH_UNAUTHORIZED' || result.code === 'NO_REFRESH_TOKEN')) {
+      // A dead rotating token cannot recover. Remove it immediately so the
+      // active-brain selector really falls back instead of retrying a known
+      // bad credential on every turn.
+      const status = connections.clearConnection('chatgpt');
       if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('connections:updated', status);
         mainWindow.webContents.send('connections:expired', {
           provider: 'chatgpt',
           error: result.code,
-          message: 'ChatGPT session expired — re-import Codex login'
+          message: 'ChatGPT session expired — sign in with ChatGPT again'
         });
       }
     } else {
@@ -4410,18 +4451,42 @@ async function runChatGPTRefresh() {
   }
 }
 
-// 2.4 Connections
+// 2.7 Connections — ChatGPT device OAuth keeps passwords and tokens out of
+// the renderer. Only a short user code, verification URL, and public account
+// metadata cross this IPC boundary.
 ipcMain.handle('connections:oauthChatGPT', async () => {
   try {
-    const { shell } = require('electron');
-    const { loginChatGPTViaPkce } = require('./lib/oauth-bridge');
-    const result = await loginChatGPTViaPkce((url) => shell.openExternal(url));
-    if (mainWindow && result && !result.error) {
-      mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
+    const { startChatGPTDeviceLogin } = require('./lib/oauth-bridge');
+    const result = await startChatGPTDeviceLogin();
+    if (result && result.verificationUrl) openExternalSafely(result.verificationUrl);
+    return result;
+  } catch (error) { return { error: error.message || String(error) }; }
+});
+ipcMain.handle('connections:pollChatGPT', async (_event, loginId) => {
+  try {
+    const { pollChatGPTDeviceLogin } = require('./lib/oauth-bridge');
+    const result = await pollChatGPTDeviceLogin(String(loginId || ''));
+    if (result && result.status === 'authenticated') {
       scheduleChatGPTRefresh();
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
     }
     return result;
   } catch (error) { return { error: error.message || String(error) }; }
+});
+ipcMain.handle('connections:cancelChatGPT', (_event, loginId) => {
+  const { cancelChatGPTDeviceLogin } = require('./lib/oauth-bridge');
+  return cancelChatGPTDeviceLogin(String(loginId || ''));
+});
+ipcMain.handle('connections:refreshChatGPTModels', async () => {
+  const { refreshChatGPTModels } = require('./lib/oauth-bridge');
+  const result = await refreshChatGPTModels();
+  if (result && result.ok && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus());
+  return result;
+});
+ipcMain.handle('connections:setChatGPTPreferences', (_event, prefs) => {
+  const status = connections.setChatGPTPreferences(prefs && typeof prefs === 'object' ? prefs : {});
+  if (!status.error && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('connections:updated', status);
+  return status;
 });
 ipcMain.handle('connections:oauthGemini', async () => {
   try {
@@ -4515,6 +4580,9 @@ ipcMain.handle('connections:importSessionJson', async (_e, text) => {
       sessionToken: parsed.accessToken,
       accessToken: parsed.accessToken,
       refreshToken: parsed.refreshToken,
+      idToken: '',
+      accountId: '',
+      authMode: 'web-session',
       expiresAt: parsed.expiresAt
     });
     if (stored && stored.error) return stored;
@@ -4566,18 +4634,26 @@ ipcMain.handle('connections:chatStream', async (e, reqId, provider, messages) =>
     wc.send('ai:streamEnd', { reqId, reply });
     return { ok: true, reqId, reply };
   } catch (err) {
-    wc.send('ai:streamError', { reqId, error: err.message, detail: err.detail, provider });
+    const sessionExpired = !!(err && err.sessionExpired === true);
+    let status = null;
+    if (sessionExpired) {
+      // Delete a credential the provider has definitively rejected. Besides
+      // reducing secret retention, this makes the next turn choose the local/
+      // free fallback instead of looping on a dead account.
+      try { status = connections.clearConnection(provider); } catch {}
+    }
+    wc.send('ai:streamError', { reqId, error: err.message, detail: err.detail, provider, sessionExpired });
     // "Expired" (reconnect modal + fallback) ONLY for genuinely dead
-    // sessions. Config errors (missing key, retired model) refresh the hub
-    // dots instead, so a live session is never shown as disconnected.
+    // sessions. Config errors (missing key, retired model) keep the account.
     if (mainWindow && !mainWindow.isDestroyed()) {
-      if (err && err.sessionExpired === true) {
+      if (sessionExpired) {
+        if (status) mainWindow.webContents.send('connections:updated', status);
         mainWindow.webContents.send('connections:expired', { provider, error: err.message, message: err.detail ? err.message + ' — ' + String(err.detail).slice(0, 300) : undefined });
       } else {
         try { mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus()); } catch {}
       }
     }
-    return { ok: false, reqId, error: err.message, detail: err.detail };
+    return { ok: false, reqId, error: err.message, detail: err.detail, sessionExpired };
   }
 });
 
