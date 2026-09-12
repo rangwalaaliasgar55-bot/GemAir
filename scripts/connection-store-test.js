@@ -84,6 +84,14 @@ function testJwt(expSeconds) {
   assert.ok(/accessToken/.test(bad.message || ''), 'failure message must stay actionable');
   console.log('  ok   pasted whitespace is trimmed; failures name the field');
 
+  // 1b. Shape descriptors expose structure only — never secret content.
+  assert.equal(connections.tokenShape(''), 'empty');
+  assert.equal(connections.tokenShape(null), 'empty');
+  assert.equal(connections.tokenShape(42), 'non-string:number');
+  assert.equal(connections.tokenShape('ab cd'), 'len=5,has-whitespace');
+  assert.equal(connections.tokenShape('short'), 'len=5');
+  console.log('  ok   token shapes describe structure without leaking secrets');
+
   // 1b. Refreshable Codex metadata survives encrypted storage, while the
   // sanitized renderer status exposes only model/profile preferences.
   const idToken = testJwt(7200);

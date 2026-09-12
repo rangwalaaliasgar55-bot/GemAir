@@ -8534,7 +8534,7 @@ async function pollChatGPTDeviceLogin() {
       const model = res.selectedModel ? ' · ' + res.selectedModel : '';
       toast('CHATGPT', 'Connected as ' + label + model, '✅');
       speak('ChatGPT connected');
-      if (res.warning) toast('MODEL DISCOVERY', 'Connected, but the model list could not refresh yet. Use Refresh Models later.', '⚠️');
+      if (res.warning) toast('NOTICE', res.warning, '⚠️');
       return;
     }
     if (res && (res.status === 'expired' || res.error)) {

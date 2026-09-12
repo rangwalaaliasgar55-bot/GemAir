@@ -137,5 +137,21 @@ function fakeStore(tokens) {
     console.log('  ok   authorize URL carries originator + both Codex flags');
   }
 
+  // 6. A malformed refresh token alone must not kill a good sign-in: it is
+  // dropped (no auto-refresh) with a plain-spoken warning instead.
+  {
+    const good = 'eyJhbGciOiJIUzI1NiJ9.' + Buffer.from(JSON.stringify({ sub: 'u', exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url') + '.' + 's'.repeat(300);
+    let out = bridge.downgradeUnusableRefresh({ accessToken: good, refreshToken: '  ' + good + '\n', idToken: '' });
+    assert.equal(out.tokens.refreshToken, good, 'transport whitespace must be trimmed, not punished');
+    assert.equal(out.refreshWarning, '');
+    out = bridge.downgradeUnusableRefresh({ accessToken: good, refreshToken: 'garbage!!', idToken: '' });
+    assert.equal(out.tokens.refreshToken, '', 'unusable refresh token must be dropped');
+    assert.equal(out.tokens.accessToken, good, 'good access token must survive the downgrade');
+    assert.ok(/auto-refresh is off/.test(out.refreshWarning), 'downgrade must explain itself');
+    out = bridge.downgradeUnusableRefresh({ accessToken: good, refreshToken: '', idToken: '' });
+    assert.equal(out.refreshWarning, '', 'missing refresh token needs no warning');
+    console.log('  ok   malformed refresh tokens downgrade instead of failing sign-in');
+  }
+
   console.log('\n  All ChatGPT refresh tests passed.\n');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
