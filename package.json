@@ -3,7 +3,10 @@
   "version": "2.6.0",
   "description": "GemAir \u2014 a free, open-source personal assistant. Voice, memory, tools, automations, and a calm workspace for your PC.",
   "main": "main.js",
-  "author": "GemAir",
+  "author": {
+    "name": "GemAir",
+    "email": "259667906+rangwalaaliasgar55-bot@users.noreply.github.com"
+  },
   "license": "MIT",
   "homepage": "https://github.com/rangwalaaliasgar55-bot/GemAir",
   "scripts": {
