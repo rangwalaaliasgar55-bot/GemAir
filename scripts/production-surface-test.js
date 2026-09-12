@@ -74,6 +74,9 @@ assert(html.includes('id="refreshNewsMini"'), 'headlines refresh control is miss
 assert(app.includes("$('#refreshNewsMini')"), 'headlines refresh is unwired');
 assert(html.includes('id="townShareMini"'), 'town share control is missing');
 assert(app.includes("$('#townShareMini')"), 'town share is unwired');
+// Dead MCP URLs fail once with guidance, never raw transport text.
+assert(app.includes('No MCP server is listening'), 'MCP discovery has no dead-server guidance');
+assert(app.includes('turn off Local MCP'), 'MCP guidance must offer the off-ramp');
 // Landing page: Apple-minimal pill nav + real-feature tabs, GemAir brand only.
 assert(website.includes('id="pillnav"'), 'landing pill nav is missing');
 assert(website.includes('id="featnav"'), 'landing feature tabs are missing');

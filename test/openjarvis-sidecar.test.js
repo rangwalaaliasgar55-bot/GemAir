@@ -234,3 +234,15 @@ test('python probe skips a newer default and takes a compatible interpreter', as
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('clean bridge exits never surface log noise as the failure', () => {
+  const clean = controller.bridgeExitError(0, null, 'WARNING:openjarvis.mcp.loader:Failed to discover MCP tools...');
+  assert.equal(clean.code, 'OPENJARVIS_BRIDGE_CLOSED');
+  assert.ok(!clean.message.includes('Failed to discover'), 'stderr noise leaked into a clean-exit error');
+  const crashed = controller.bridgeExitError(1, null, 'boom');
+  assert.equal(crashed.code, 'OPENJARVIS_EXIT');
+  assert.ok(crashed.message.includes('boom'), 'abnormal exits must keep their detail');
+  const killed = controller.bridgeExitError(null, 'SIGKILL', '');
+  assert.equal(killed.code, 'OPENJARVIS_EXIT');
+  assert.ok(killed.message.includes('SIGKILL'));
+});

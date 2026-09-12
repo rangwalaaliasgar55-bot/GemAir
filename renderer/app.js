@@ -8901,7 +8901,16 @@ function setupConnectionsHub() {
     const result = await api.openJarvisMcpDiscover().catch((error) => ({ ok: false, message: error.message }));
     if (button) button.disabled = false;
     if (result && result.ok) toast('OPENJARVIS MCP', `${(result.tools || []).length} tool(s) discovered and permission-gated`, '🔌');
-    else toast('OPENJARVIS MCP', result.message || result.error || 'Discovery failed', '⚠️');
+    else {
+      // A dead URL is a setup problem, not a product failure: say exactly
+      // that, once, instead of echoing transport stack text.
+      const raw = result.message || result.error || 'Discovery failed';
+      const dead = /refused|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|Failed to fetch|Load failed|NetworkError/i.test(String(raw));
+      const url = ($('#setOpenJarvisMcpUrl')?.value || '').trim();
+      toast('OPENJARVIS MCP', dead
+        ? `No MCP server is listening${url ? ' at ' + url : ''}. Start your MCP server first, or turn off Local MCP.`
+        : raw, '⚠️');
+    }
   });
   api.onOpenJarvisInstallProgress((update) => {
     const progress = $('#openJarvisInstallProgress');
