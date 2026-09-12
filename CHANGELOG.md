@@ -1,5 +1,31 @@
 # Changelog
 
+## [2.7.0] — 2026-09-12
+
+ChatGPT account connection overhaul, based on a full source/license review of `opencoredev/login-with-chatgpt`, `missuo/FreeGPT35`, `isair/jarvis`, and `open-jarvis/OpenJarvis`.
+
+### Added — OpenAI device sign-in
+- `@opencoredev/loginwithchatgpt-core` 0.2.0 is now a pinned runtime dependency. **CONNECT CHATGPT** requests an OpenAI one-time device code, opens OpenAI's own verification page, and polls at the server-provided cadence.
+- OAuth device secrets and all access/refresh/ID tokens remain in the Electron main process. The renderer receives only the short user code plus public email, plan, and model metadata; credentials are encrypted at rest with `safeStorage`.
+- Added cancellation and 15-minute expiry handling, actionable errors, refresh-token rotation, and a single-flight refresh guard.
+
+### Added — ChatGPT Codex Responses transport
+- Refreshable account sessions now use `chatgpt.com/backend-api/codex/responses` with the required account header, current client-version model gate, stateless request normalization, SSE streaming, and encrypted reasoning continuity.
+- Settings now discovers models from the signed-in account and provides account-model, reasoning-effort, and service-tier selectors. Model/tier availability remains controlled by the user's ChatGPT plan.
+- Local `~/.codex/auth.json` import understands nested access/refresh/ID token fields, derives account metadata, refreshes a recoverable expired access token, and uses the same Responses path.
+
+### Added — Native tools and context routing
+- ChatGPT account models receive native Responses function definitions and return `function_call` items. Results feed the existing permission-gated `executeTool` path as `function_call_output`, for up to six bounded rounds.
+- New original `lib/tool-router.js` ranks the 98-tool catalog against the current turn, keeps a utility core, applies intent hints, and sends at most 24 relevant tools to reduce context rot.
+
+### Security and compatibility
+- Replaced the old import-time `lib/free-chatgpt.js` scraper/CLI with a side-effect-free compatibility facade. It no longer writes plaintext tokens, scrapes cookies, starts a Windows shell, or disables transport boundaries.
+- Legacy browser-session capture and pasted session JSON remain clearly labeled fallbacks; only those sessions use the old web conversation route.
+- Provider-rejected account credentials are deleted immediately and the interrupted turn finishes through the honest local fallback. On Linux, GemAir refuses Electron's insecure `basic_text` credential backend.
+- Added `THIRD_PARTY_NOTICES.md` and `docs/UPSTREAM-INTEGRATION.md`. No AGPL FreeGPT35 code or non-commercial `isair/jarvis` code was copied. OpenJarvis architecture was compared but not vendored.
+- Added network-free regression coverage for device login state, token privacy, account model preferences, refresh request shape/rotation, Codex request normalization, UTF-8 SSE, native tool rounds, encrypted reasoning carryover, and tool routing.
+- Updated the desktop runtime to Electron 44.3.0 and packaging to electron-builder 26.15.3; removed the unused `@vercel/node` development dependency. `npm audit` reports zero known vulnerabilities. Development now requires Node.js 22.12 or newer.
+
 ## [2.6.0] — 2026-09-11
 
 Concept-ported four features from [Mark-LIII](https://github.com/FatihMakes/Mark-LIII) into GemAir's own keyless, sandboxed architecture — no code copied, no new dependencies on Mark-LIII's Python/Gemini stack, no new frontend surface for the backend tools. Tool count: 91 → 98.

@@ -1365,6 +1365,17 @@ body.sys-degraded #sysChipText { color: var(--warn); }
 .conn-badge { padding: 3px 8px; border-radius: 12px; font: 700 9px var(--font-mono); background: var(--panel); border: 1px solid var(--panel-border); color: var(--text-dim); }
 .conn-badge.pro { background: var(--good); color: var(--bg); }
 .conn-usage { font: 600 10px var(--font-mono); color: var(--text-dim); }
+.device-code-card { display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap; margin:16px 0; padding:18px; border:1px solid var(--accent); border-radius:12px; background:var(--accent-dim); }
+.device-code-card > span { width:100%; text-align:center; font:700 9px var(--font-mono); letter-spacing:1.6px; }
+.device-code-card strong { font:800 clamp(25px,6vw,38px) var(--font-mono); letter-spacing:5px; color:var(--accent); text-shadow:0 0 18px var(--accent-glow); user-select:all; }
+.chatgpt-controls { margin-top:10px; padding:12px; border:1px solid var(--panel-border); border-radius:10px; background:var(--panel); }
+.chatgpt-control-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; font:700 10px var(--font-mono); letter-spacing:.8px; }
+.chatgpt-control-head span { display:flex; flex-direction:column; gap:3px; }
+.chatgpt-control-head small { color:var(--text-dim); font-weight:500; letter-spacing:0; }
+.chatgpt-control-grid { display:grid; grid-template-columns:minmax(180px,2fr) repeat(2,minmax(120px,1fr)); gap:10px; }
+.chatgpt-control-grid label { font:600 9px var(--font-mono); color:var(--text-dim); }
+.chatgpt-control-grid select { width:100%; margin-top:5px; }
+@media (max-width:720px) { .chatgpt-control-grid { grid-template-columns:1fr; } }
 .priority-row select { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px; padding: 6px 10px; color: var(--text); font-size: 11px; }
 
 /* A Plan-Act */

@@ -209,6 +209,8 @@ in `supportGuidance`. That's it.
 
 ## 🖥 Building the desktop installer
 
+Development and packaging require **Node.js 22.12 or newer**.
+
 ```bash
 npm install
 npm start              # run it

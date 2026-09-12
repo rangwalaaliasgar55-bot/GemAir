@@ -2,6 +2,8 @@
 
 > Research first: study of stonicai.com (home, /jarvis-ai-for-pc, /features/*, /about, /changelog v1.0.0→v1.0.55, /guide, product blog) and public product demos to extract the true account-connect UX.
 
+> **Current implementation (2.7.0):** this file preserves the original 2.4 research and inference trail. GemAir now ships OpenAI device authorization and the ChatGPT-backed Codex Responses transport through `@opencoredev/loginwithchatgpt-core`, with encrypted token custody, rotation, account model discovery, native function calls, and reasoning continuity. See [`docs/UPSTREAM-INTEGRATION.md`](docs/UPSTREAM-INTEGRATION.md) for the implemented design and exact upstream revisions.
+
 ---
 
 ## 1. Stonic's Surface: What We Can See (CONFIRMED)
