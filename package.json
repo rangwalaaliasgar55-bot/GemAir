@@ -22,10 +22,10 @@
     "test:workflows": "node scripts/workflow-test.js",
     "dev:web": "vercel dev",
     "build:web": "echo 'GemAir web = static renderer/ + serverless api/. Deploy with: vercel'",
-    "dist": "electron-builder",
-    "dist:win": "electron-builder --win",
-    "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
   },
   "engines": {
     "node": ">=18"
