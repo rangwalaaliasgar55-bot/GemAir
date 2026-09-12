@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Gem Air</title>
+<style>
+body{width:260px;margin:0;padding:16px;background:#0f1117;color:#eef2f8;
+font-family:"Segoe UI",system-ui,sans-serif;font-size:13px}
+.h{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.m{width:16px;height:16px;border-radius:6px;background:linear-gradient(140deg,#6f8cff,#3ad0c0)}
+.n{font-weight:700;font-size:12px}
+.s{font-size:12px;color:#97a2b3;margin-bottom:12px}
+.ok{color:#38d39f}
+input{width:100%;box-sizing:border-box;background:#080a0f;border:1px solid #222836;border-radius:8px;
+padding:8px;color:#eef2f8;font:inherit;margin-bottom:8px;letter-spacing:.2em;text-align:center}
+button{width:100%;background:#6f8cff;color:#fff;border:none;border-radius:8px;padding:8px;
+font:inherit;font-weight:600;cursor:pointer}
+button.ghost{background:#1a1f2b;color:#97a2b3;margin-top:8px}
+</style></head>
+<body>
+<div class="h"><span class="m"></span><span class="n">Gem Air Browser Link</span></div>
+<div class="s" id="status">Checking…</div>
+<div id="pair"><input id="code" maxlength="6" placeholder="000000"><button id="go">Pair with desktop app</button></div>
+<button class="ghost" id="unpair" hidden>Disconnect</button>
+<script src="popup.js"></script></body></html>

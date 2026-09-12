@@ -16,6 +16,7 @@
   <meta name="apple-mobile-web-app-title" content="GemAir" />
   <link rel="stylesheet" href="design-tokens.css" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="air/attention.css" />
   <link rel="stylesheet" href="light-mode.css" />
   <link rel="stylesheet" href="depth.css" />
   <link rel="stylesheet" href="apple.css" />
@@ -125,6 +126,10 @@
         <button class="nav-btn" data-view="town" aria-label="Automations" aria-current="false">
           <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4.5" y="4.5" width="6.5" height="6.5" rx="1.5"/><rect x="13" y="4.5" width="6.5" height="6.5" rx="1.5"/><rect x="4.5" y="13" width="6.5" height="6.5" rx="1.5"/><rect x="13" y="13" width="6.5" height="6.5" rx="1.5"/></svg></span>
           <span class="nav-label" data-i18n="nav.town">Automations</span>
+        </button>
+        <button class="nav-btn" data-view="attention" aria-label="Gem Air attention" aria-current="false">
+          <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="8.5" width="18" height="7" rx="3.5"/><circle cx="7.5" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg></span>
+          <span class="nav-label">Gem Air</span>
         </button>
         <button class="nav-btn" data-view="world" aria-label="Discover" aria-current="false">
           <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.3 3.9 5.2 3.9 8.5s-1.3 6.2-3.9 8.5c-2.6-2.3-3.9-5.2-3.9-8.5s1.3-6.2 3.9-8.5Z"/></svg></span>
@@ -789,6 +794,45 @@
                   <div class="empty">No actions logged yet.</div>
                 </div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-attention">
+          <div class="air-shell">
+            <header class="air-head">
+              <div class="air-title">
+                <span class="air-mark"></span>
+                <div>
+                  <h2>Gem Air</h2>
+                  <p id="airHeadline">Attention control for this machine.</p>
+                </div>
+              </div>
+              <div class="air-head-right">
+                <button class="air-ghost" id="airIslandToggle">Show island</button>
+                <a class="air-ghost" id="airFocusx" href="#">focusx.site</a>
+              </div>
+            </header>
+
+            <nav class="air-tabs" id="airTabs" role="tablist">
+              <span class="air-tab-indicator" id="airTabIndicator"></span>
+              <button class="air-tab active" data-air-tab="dashboard" role="tab">Dashboard</button>
+              <button class="air-tab" data-air-tab="activity" role="tab">Activity</button>
+              <button class="air-tab" data-air-tab="plans" role="tab">Plans</button>
+              <button class="air-tab" data-air-tab="blocking" role="tab">Blocking</button>
+              <button class="air-tab" data-air-tab="browser" role="tab">Browser</button>
+              <button class="air-tab" data-air-tab="sleep" role="tab">Sleep</button>
+              <button class="air-tab" data-air-tab="settings" role="tab">Settings</button>
+            </nav>
+
+            <div class="air-panels" id="airPanels">
+              <section class="air-panel active" data-air-panel="dashboard"></section>
+              <section class="air-panel" data-air-panel="activity"></section>
+              <section class="air-panel" data-air-panel="plans"></section>
+              <section class="air-panel" data-air-panel="blocking"></section>
+              <section class="air-panel" data-air-panel="browser"></section>
+              <section class="air-panel" data-air-panel="sleep"></section>
+              <section class="air-panel" data-air-panel="settings"></section>
             </div>
           </div>
         </section>
@@ -1720,5 +1764,6 @@
   <script src="apple.js"></script>
   <script src="wake-word.js"></script>
   <script src="app.js"></script>
+  <script src="air/attention-ui.js"></script>
 </body>
 </html>
