@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.8.1] — 2026-09-13
+
+Workspace interface redesign: clearer navigation, calmer panels, and a guided empty state. No behavior changes — all existing IDs, state classes, and actions are preserved.
+
+### Changed
+- Renamed nav: Voice Core → Assistant, Desktop Manager → Workspace, Life Companion → Tasks & Goals, Agent Town → Automations, Global Intel → Discover.
+- Added workspace header with command-palette search, new welcome cards (plan / explore / capture), and streamlined chat composer copy.
+- Reworked `renderer/reference.css` into a light/dark workspace theme; dropped `depth.css` from the page; added `renderer/interface.js` (search shortcut, welcome-prompt fill, welcome restore on clear).
+- Bumped PWA cache to `gemair-shell-v2.8.1-interface2` and precached `interface.js`.
+- Updated `download.html` footer to 2.8.1.
+
 ## [2.8.0] — 2026-09-12
 
 Anonymous chat and opt-in local reasoning sidecars, implemented after a source and license review of FreeGPT35 and OpenJarvis. GemAir's Electron host, existing JavaScript tool executor, and permission gates remain authoritative.

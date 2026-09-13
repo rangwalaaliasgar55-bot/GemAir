@@ -19,11 +19,11 @@
 
   const dictionaries = {
     en: {
-      'nav.assistant': 'Voice Core',
-      'nav.core': 'Desktop Manager',
-      'nav.companion': 'Life Companion',
-      'nav.town': 'Agent Town',
-      'nav.world': 'Global Intel',
+      'nav.assistant': 'Assistant',
+      'nav.core': 'Workspace',
+      'nav.companion': 'Tasks & Goals',
+      'nav.town': 'Automations',
+      'nav.world': 'Discover',
       'status.nominal': 'Ready',
       'status.degraded': 'DEGRADED',
       'status.offline': 'OFFLINE',

@@ -18,7 +18,6 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="air/attention.css" />
   <link rel="stylesheet" href="light-mode.css" />
-  <link rel="stylesheet" href="depth.css" />
   <link rel="stylesheet" href="apple.css" />
   <link rel="stylesheet" href="reference.css" />
   <link rel="stylesheet" href="reduced-motion.css" />
@@ -70,7 +69,7 @@
         </div>
         <div class="brand-text">
           <h1>GemAir</h1>
-          <p>Personal assistant <span class="ver" id="verTag">v2.8.0</span></p>
+          <p>Personal assistant <span class="ver" id="verTag">v2.8.1</span></p>
         </div>
       </div>
 
@@ -105,7 +104,7 @@
           <span class="dot" id="sysDot"></span>
           <span id="sysChipText" data-i18n="status.nominal">Ready</span>
         </div>
-        <button class="icon-btn" id="settingsBtn" title="Settings">⚙</button>
+        <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m9 3-.7 2.2-2 .9-2.2-.5-2 3.4 1.5 1.7v2.6L2.1 15l2 3.4 2.2-.5 2 .9L9 21h4l.7-2.2 2-.9 2.2.5 2-3.4-1.5-1.7v-2.6L19.9 9l-2-3.4-2.2.5-2-.9L13 3Z"/><circle cx="11" cy="12" r="3"/></svg></button>
       </div>
     </header>
 
@@ -139,11 +138,15 @@
 
       <main class="main">
         <section class="view active" id="view-assistant">
+          <header class="workspace-heading">
+            <div><p class="workspace-eyebrow">YOUR PERSONAL WORKSPACE</p><h2>A clearer day starts here.</h2><p>Think, create, and get things done with Gem.</p></div>
+            <button class="workspace-search" id="workspaceSearch" type="button" title="Open command palette"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><span>Find anything</span><kbd>Ctrl K</kbd></button>
+          </header>
           <div class="assistant-grid">
             <div class="stx-left">
               <!-- Media Link: live mic + screen capture, real actions only -->
               <div class="hud-panel media-link" id="mediaLinkPanel">
-                <h3 class="panel-title">MEDIA LINK
+                <h3 class="panel-title">Screen &amp; voice
                   <span class="dim" id="mediaLinkState">— STANDBY</span>
                 </h3>
                 <div class="media-screen" id="mediaScreen">
@@ -158,7 +161,7 @@
               </div>
               <!-- U2 Dashboard NOW card -->
               <div class="hud-panel now-card" id="nowCard">
-                <h3 class="panel-title">NOW <span class="dim">— DASHBOARD</span></h3>
+                <h3 class="panel-title">At a glance <span class="dim">TODAY</span></h3>
                 <div class="now-grid">
                   <div class="now-line"><span>MODE</span><b id="nowMode">NO MODE</b></div>
                   <div class="now-line"><span>BRAIN</span><b id="nowBrain">FREE CORE</b></div>
@@ -349,9 +352,16 @@
                       <button class="refresh-btn" id="clearChatBtn" style="padding:3px 10px;font-size:10px;">Clear</button>
                     </h3>
                     <div class="chat-log" id="chatLog" role="log" aria-label="Conversation" tabindex="0">
-                      <div class="msg system-msg">
-                        <p>Start a conversation with Gem.</p>
-                        <p class="sub">Speak naturally, or type below. Press <b>Ctrl+K</b> for instant command palette.</p>
+                      <div class="msg system-msg chat-welcome">
+                        <div class="welcome-mark" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><path d="M24 5c0 12-7 19-19 19 12 0 19 7 19 19 0-12 7-19 19-19-12 0-19-7-19-19Z" fill="currentColor"/><path d="M39 3v8M35 7h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+                        <p class="welcome-eyebrow">A LITTLE HELP. A LITTLE HEADSPACE.</p>
+                        <h2>What’s on your mind?</h2>
+                        <p class="sub">A big idea, a small task, or somewhere to start.<br />Make room for what matters. Gem can help.</p>
+                        <div class="welcome-prompts" aria-label="Conversation starters">
+                          <button class="qc welcome-prompt" type="button" data-cmd="Help me plan my day"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4m8-4v4M4 11h16m-12 5 2 2 5-4"/></svg><strong>Make a plan</strong><span>Give your day some direction</span><i aria-hidden="true">↗</i></button>
+                          <button class="qc welcome-prompt" type="button" data-cmd="Search the web for "><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><strong>Explore an idea</strong><span>Follow your curiosity</span><i aria-hidden="true">↗</i></button>
+                          <button class="qc welcome-prompt" type="button" data-cmd="Write a note: "><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M13 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7M16 3l5 5-9 9-5 1 1-5Z"/></svg><strong>Capture a thought</strong><span>Keep the good ideas close</span><i aria-hidden="true">↗</i></button>
+                        </div>
                       </div>
                     </div>
                     <div class="tool-activity">
@@ -361,17 +371,17 @@
                         <div class="operation-progress-track" id="operationProgressTrack" role="progressbar" aria-label="Operation progress" aria-valuemin="0" aria-valuemax="100"><i id="operationProgressBar"></i></div>
                       </div>
                       <div class="tool-feed" id="toolFeed">
-                        <div class="empty">No tool calls yet — when Gem acts (weather, search, files…), the calls show up here with their input &amp; output.</div>
+                        <div class="empty">Gem’s actions and results will appear here.</div>
                       </div>
                     </div>
                     <div class="chat-input-row">
                       <button class="mic-btn" id="micBtn" title="Talk to Gem (Speech Recognition)" aria-label="Talk to Gem">
                         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M19 11a7 7 0 01-14 0M12 18v3"/></svg>
                       </button>
-                      <textarea id="chatInput" aria-label="Message Gem" placeholder="Type instruction or / command for Gem…" rows="1" autocomplete="off"></textarea>
+                      <textarea id="chatInput" aria-label="Message Gem" placeholder="Ask Gem anything, or type / for commands…" rows="1" autocomplete="off"></textarea>
                       <button class="icon-btn" id="chatAttachBtn" type="button" title="Attach a text file (.txt/.md) into the message" aria-label="Attach a text file">📎</button>
                       <input type="file" id="chatAttachInput" accept=".txt,.md,.json,.csv,.log" hidden />
-                      <button class="send-btn" id="sendBtn" title="Send message" aria-label="Send message">➤</button>
+                      <button class="send-btn" id="sendBtn" title="Send message" aria-label="Send message"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
                     </div>
                     <button class="apple-btn chat-newpill" id="chatNewMsgPill" type="button" hidden>↓ New messages</button>
                     <div class="quick-commands" id="quickCommands" role="toolbar" aria-label="Quick assistant actions">
@@ -1851,5 +1861,6 @@
   <script src="wake-word.js"></script>
   <script src="app.js"></script>
   <script src="air/attention-ui.js"></script>
+  <script src="interface.js"></script>
 </body>
 </html>
