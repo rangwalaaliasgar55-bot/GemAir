@@ -4205,10 +4205,16 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
     // The model ID comes from the same field, so desktop chat uses an ID the
     // user's own key reports — never a remembered (possibly retired) one.
     let profileKey = '', profileModel = '';
-    try { const live = readProfile().geminiLive || {}; profileKey = live.apiKey || ''; profileModel = live.model || ''; } catch {}
+    try {
+      const live = readProfile().geminiLive || {};
+      // Legacy profiles are migrated on status load; this fallback is kept
+      // only for an in-flight old profile and is never exposed to renderer.
+      profileKey = live.apiKey || '';
+      profileModel = live.textModel || tokens.selectedModel || 'gemini-2.5-flash';
+    } catch { profileModel = tokens.selectedModel || 'gemini-2.5-flash'; }
     const auth = connections.resolveGeminiAuth({ profileKey, storedApiKey: tokens.apiKey, oauthToken: tokens.psid });
     if (auth.mode === 'none') {
-      throw connectedError('GEMINI_KEY_REQUIRED: connect Google, then paste an AI Studio API key in Settings → Voice → Gemini Live Dialog.', false);
+      throw connectedError('GEMINI_KEY_REQUIRED: save an AI Studio API key in Settings → Voice → Gemini Live Dialog. Google web-session cookies are not required for Gemini API chat.', false);
     }
     if (auth.mode === 'bearer' && connections.isWebSessionOnlyToken(auth.token)) {
       // A captured google.com PSID cookie is a browser session cookie, not an
@@ -4626,8 +4632,22 @@ ipcMain.handle('recovery:consume', () => consumeRecoveryStatus());
 ipcMain.handle('usage:get', () => readProfile().usageStats === true ? readUsageStats() : { ...freshUsageStats(), disabled: true });
 ipcMain.handle('usage:track', (_e, action, metadata) => trackUsage(action, metadata || {}));
 ipcMain.handle('usage:clear', () => clearUsageStats());
-ipcMain.handle('profile:get', () => readProfile());
-ipcMain.handle('profile:set', (_e, data) => writeProfile(data || {}));
+function rendererSafeProfile(value) {
+  let profile = {};
+  try { profile = JSON.parse(JSON.stringify(value || {})); } catch { profile = {}; }
+  if (profile.geminiLive && typeof profile.geminiLive === 'object') {
+    // API keys belong in the encrypted main-process connection store. Older
+    // profiles may still contain one; never send it back across IPC.
+    profile.geminiLive.apiKey = '';
+  }
+  return profile;
+}
+ipcMain.handle('profile:get', () => rendererSafeProfile(readProfile()));
+ipcMain.handle('profile:set', (_e, data) => {
+  const next = data && typeof data === 'object' ? JSON.parse(JSON.stringify(data)) : {};
+  if (next.geminiLive && typeof next.geminiLive === 'object') next.geminiLive.apiKey = '';
+  return writeProfile(next);
+});
 ipcMain.handle('ai:chat', async (_e, config, messages) => {
   try { return { ok: true, reply: await aiChat(config, messages) }; }
   catch (err) { return { ok: false, error: err.message }; }
@@ -4948,7 +4968,47 @@ ipcMain.handle('connections:launchCodexLogin', async () => {
     return { ok: true, launched: true };
   } catch (error) { return { error: error.message || String(error) }; }
 });
-ipcMain.handle('connections:getStatus', () => connections.getSanitizedStatus());
+function migrateGeminiApiKeyToSecureStore() {
+  try {
+    const profile = readProfile();
+    const legacyKey = profile.geminiLive && profile.geminiLive.apiKey;
+    if (!legacyKey) return;
+    const result = connections.setGeminiApiKey(legacyKey, { model: profile.geminiLive.textModel || 'gemini-2.5-flash' });
+    // A valid legacy key is cleared only after encrypted storage succeeds;
+    // malformed legacy values can be removed immediately without risking a
+    // credential loss or keeping junk in the profile.
+    if (result && result.error && connections.isValidApiKey(legacyKey)) return;
+    profile.geminiLive = { ...(profile.geminiLive || {}), apiKey: '' };
+    writeProfile(profile);
+  } catch {}
+}
+ipcMain.handle('connections:getStatus', () => {
+  migrateGeminiApiKeyToSecureStore();
+  return connections.getSanitizedStatus();
+});
+ipcMain.handle('connections:setGeminiApiKey', (_event, apiKey, model) => {
+  const status = connections.setGeminiApiKey(String(apiKey || '').trim(), { model: String(model || '').trim() });
+  if (!status.error && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('connections:updated', status);
+  return status;
+});
+ipcMain.handle('connections:testGeminiApiKey', async (_event, apiKey, model) => {
+  const key = String(apiKey || '').trim();
+  if (!connections.isValidApiKey(key)) return { ok: false, error: 'INVALID_API_KEY', message: 'Enter a valid Gemini API key.' };
+  try {
+    const selected = String(model || 'gemini-2.5-flash').trim() || 'gemini-2.5-flash';
+    const reply = await connections.callGeminiWeb({ apiKey: key, model: selected, messages: [{ role: 'user', content: 'Reply with exactly OK.' }] });
+    return { ok: true, model: selected, reply: String(reply || '').slice(0, 80) };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error).slice(0, 500), detail: String(error.detail || '').slice(0, 1200) };
+  }
+});
+ipcMain.handle('connections:listGeminiModels', async (_event, apiKey) => {
+  try {
+    return await connections.listGeminiModels({ apiKey: String(apiKey || '').trim() });
+  } catch (error) {
+    return { ok: false, error: String(error.message || error).slice(0, 600), detail: String(error.detail || '').slice(0, 1200) };
+  }
+});
 ipcMain.handle('connections:setPriority', (_e, p) => connections.setPriority(p));
 ipcMain.handle('connections:acknowledgeWarning', () => { connections.acknowledgeWarning(); return true; });
 ipcMain.handle('connections:openChatGPT', async () => {

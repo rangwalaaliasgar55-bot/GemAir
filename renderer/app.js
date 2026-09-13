@@ -266,6 +266,9 @@ const api = {
   async connectionsCodexStatus() { if (window.gemair && window.gemair.connectionsCodexStatus) return window.gemair.connectionsCodexStatus(); return { exists: false, valid: false }; },
   async connectionsLaunchCodexLogin() { if (window.gemair && window.gemair.connectionsLaunchCodexLogin) return window.gemair.connectionsLaunchCodexLogin(); return { ok: false, error: 'DESKTOP_ONLY' }; },
   async connectionsOauthGemini() { if (window.gemair && window.gemair.connectionsOauthGemini) return window.gemair.connectionsOauthGemini(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'Gemini OAuth requires GemAir Desktop or a configured web callback.' }; },
+  async connectionsSetGeminiApiKey(apiKey, model) { if (window.gemair && window.gemair.connectionsSetGeminiApiKey) return window.gemair.connectionsSetGeminiApiKey(apiKey, model); return { error: 'DESKTOP_ONLY', message: 'Encrypted Gemini key storage is available in GemAir Desktop.' }; },
+  async connectionsTestGeminiApiKey(apiKey, model) { if (window.gemair && window.gemair.connectionsTestGeminiApiKey) return window.gemair.connectionsTestGeminiApiKey(apiKey, model); return { ok: false, error: 'DESKTOP_ONLY', message: 'Gemini key testing is available in GemAir Desktop.' }; },
+  async connectionsListGeminiModels(apiKey) { if (window.gemair && window.gemair.connectionsListGeminiModels) return window.gemair.connectionsListGeminiModels(apiKey); return { ok: false, error: 'DESKTOP_ONLY', message: 'Gemini model discovery is available in GemAir Desktop.' }; },
   async connectionsGetStatus() {
     if (window.gemair && window.gemair.connectionsGetStatus) return window.gemair.connectionsGetStatus();
     const status = { chatgpt: { connected: false, dot: 'BROWSER_OAUTH_REQUIRED', browser: true }, gemini: { connected: false, dot: 'BROWSER_OAUTH_REQUIRED', browser: true }, freeCore: { connected: false, dot: 'CHECKING', browser: true }, meta: { priority: 'free' } };
@@ -627,6 +630,11 @@ let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
 let currentLang = 'en';
 let worldHeadlines = [];
 let worldCategory = 'tech';
+// Globe presentation state is derived from public feeds and the selected
+// marker. It never contains precise coordinates outside this renderer.
+let globeLayers = { signals: true, routes: true, weather: true };
+let globeSelectedContext = null;
+let globeWeatherContext = null;
 // Exact device coordinates stay in renderer memory only. The globe starts with
 // the profile city (coarse, useful for weather) and upgrades to a precise
 // browser location only after the user explicitly presses LOCATE ME.
@@ -2148,6 +2156,39 @@ async function locateUserOnGlobe() {
   return globeLocationRequest;
 }
 
+function renderGlobeContextCard(marker) {
+  const panel = $('#globeContext');
+  if (!panel) return;
+  if (!marker) {
+    panel.innerHTML = '<span class="dim">CONTEXT</span><b>Awaiting a marker selection</b><small>Public feed signals are shown without sharing your device location.</small>';
+    return;
+  }
+  const location = marker.location || {};
+  const headline = marker.headline;
+  const label = marker.label || location.label || 'UNKNOWN CONTACT';
+  const kind = marker.kind === 'user' ? (location.exact ? 'PRECISE SESSION MARKER' : 'PROFILE-CITY MARKER') : (marker.signalType || 'PUBLIC SIGNAL');
+  const weather = marker.kind === 'user' && globeWeatherContext && !globeWeatherContext.error
+    ? `${globeWeatherContext.temperature}°C · ${globeWeatherContext.condition || 'conditions unavailable'}` : '';
+  panel.innerHTML = `<span class="dim">${escapeHtml(kind)}</span><b>${escapeHtml(label)}${weather ? ` · ${escapeHtml(weather)}` : ''}</b><small>${escapeHtml(headline ? headline.title : (location.exact ? 'Coordinates are held in memory for this session only.' : 'Approximate profile context; no exact coordinates transmitted.'))}</small>`;
+}
+
+function updateGlobeSignalState(text, bad = false) {
+  const el = $('#globeSignalState');
+  if (el) { el.textContent = text; el.classList.toggle('bad', !!bad); }
+}
+
+async function loadGlobeWeatherContext() {
+  const city = profile.city || DEFAULTS.city;
+  try {
+    const weather = await webGet('weather', { city });
+    if (weather && !weather.error) {
+      globeWeatherContext = weather;
+      updateGlobeSignalState('LINKS LIVE · WEATHER SYNCED');
+      if (globeSelectedContext && globeSelectedContext.kind === 'user') renderGlobeContextCard(globeSelectedContext);
+    }
+  } catch { updateGlobeSignalState('LINKS LIVE · WEATHER OFFLINE', true); }
+}
+
 // ---------------------------------------------------------------------------
 // Globe
 // ---------------------------------------------------------------------------
@@ -2158,6 +2199,11 @@ function startGlobe() {
   if (!ctx) return;
   globeStarted = true;
   let w, h, dpr, visibleMarkers = [];
+  let rotationOffset = 0;
+  let dragging = false;
+  let dragMoved = false;
+  let dragStartX = 0;
+  let dragStartRotation = 0;
   const hotspots = [
     { lat: 40.7, lon: -74, label: 'NYC' }, { lat: 51.5, lon: -0.1, label: 'LON' },
     { lat: 35.7, lon: 139.7, label: 'TYO' }, { lat: -33.9, lon: 151.2, label: 'SYD' },
@@ -2190,6 +2236,7 @@ function startGlobe() {
   }
   function selectHotspot(marker) {
     if (!marker) return;
+    globeSelectedContext = marker;
     const panel = $('#hotspotHeadline');
     if (marker.kind === 'user') {
       if (panel) {
@@ -2197,32 +2244,65 @@ function startGlobe() {
         panel.classList.add('active');
         panel.onclick = null;
       }
+      renderGlobeContextCard(marker);
       return;
     }
-    if (!marker.headline) return;
-    panel.textContent = `${marker.label} · ${marker.headline.title}`;
+    panel.textContent = marker.headline
+      ? `${marker.label} · ${marker.headline.title}`
+      : `${marker.label} · ${marker.signalType || 'PUBLIC SIGNAL'} · awaiting headline feed`;
     panel.classList.add('active');
-    panel.onclick = () => api.openExternal(marker.headline.url);
-    $$('#newsList .news-item').forEach((item) => item.classList.toggle('selected', item.dataset.newsId === String(marker.headline.id)));
+    panel.onclick = marker.headline && marker.headline.url ? () => api.openExternal(marker.headline.url) : null;
+    if (marker.headline) $$('#newsList .news-item').forEach((item) => item.classList.toggle('selected', item.dataset.newsId === String(marker.headline.id)));
+    renderGlobeContextCard(marker);
   }
+  addLifecycleListener(canvas, 'pointerdown', (event) => {
+    dragging = true; dragMoved = false; dragStartX = event.clientX; dragStartRotation = rotationOffset;
+    try { canvas.setPointerCapture(event.pointerId); } catch {}
+    canvas.style.cursor = 'grabbing';
+  });
   addLifecycleListener(canvas, 'pointermove', (event) => {
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * (w / rect.width), y = (event.clientY - rect.top) * (h / rect.height);
-    canvas.style.cursor = visibleMarkers.some((marker) => Math.hypot(marker.x - x, marker.y - y) < 15) ? 'pointer' : 'crosshair';
+    if (dragging) {
+      const dx = event.clientX - dragStartX;
+      if (Math.abs(dx) > 3) dragMoved = true;
+      rotationOffset = dragStartRotation + dx * 0.45;
+      canvas.style.cursor = 'grabbing';
+    } else canvas.style.cursor = visibleMarkers.some((marker) => Math.hypot(marker.x - x, marker.y - y) < 15) ? 'pointer' : 'crosshair';
+  });
+  addLifecycleListener(canvas, 'pointerup', (event) => {
+    dragging = false;
+    try { canvas.releasePointerCapture(event.pointerId); } catch {}
+    canvas.style.cursor = 'crosshair';
   });
   addLifecycleListener(canvas, 'click', (event) => {
+    if (dragMoved) { dragMoved = false; return; }
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * (w / rect.width), y = (event.clientY - rect.top) * (h / rect.height);
-    const marker = visibleMarkers.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
-    if (marker && Math.hypot(marker.x - x, marker.y - y) < 18) selectHotspot(marker);
+    const marker = visibleMarkers.slice().sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+    if (marker && Math.hypot(marker.x - x, marker.y - y) < 22) selectHotspot(marker);
   });
   resize(); addLifecycleListener(window, 'resize', debounce(resize), { passive: true });
 
   function draw(time) {
     const accent = getAccent();
     ctx.clearRect(0, 0, w, h);
-    const cx = w / 2, cy = h / 2, radius = Math.min(w, h) * 0.36, rot = time * 0.012;
-    ctx.strokeStyle = accent; ctx.lineWidth = 0.8;
+    const cx = w / 2, cy = h / 2, radius = Math.min(w, h) * 0.36, rot = rotationOffset + time * 0.012;
+    // Deep-space field, orbital rings and a slow tactical sweep make the
+    // globe read as a live sensor display rather than a static map.
+    ctx.fillStyle = '#030711'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = hexToRgba(accent, 0.18); ctx.lineWidth = 1;
+    for (const scale of [1.12, 1.23, 1.34]) {
+      ctx.globalAlpha = 0.16;
+      ctx.beginPath(); ctx.ellipse(cx, cy, radius * scale, radius * scale * 0.28, -0.12, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.globalAlpha = 0.18;
+    ctx.beginPath(); ctx.moveTo(cx - radius * 1.35, cy); ctx.lineTo(cx + radius * 1.35, cy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy - radius * 1.35); ctx.lineTo(cx, cy + radius * 1.35); ctx.stroke();
+    ctx.globalAlpha = 0.10;
+    ctx.beginPath(); ctx.arc(cx, cy, radius * 1.08, -Math.PI * 0.15, Math.PI * 0.55); ctx.stroke();
+    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = accent;
     for (let lat = -75; lat <= 75; lat += 15) {
       ctx.globalAlpha = 0.1; ctx.beginPath();
       for (let lon = -180; lon <= 180; lon += 4) { const point = project(lat, lon, rot); if (lon === -180) ctx.moveTo(cx + point.x, cy + point.y); else ctx.lineTo(cx + point.x, cy + point.y); }
@@ -2242,6 +2322,20 @@ function startGlobe() {
       ctx.globalAlpha = 0.16 + 0.32 * (point.z / radius);
       ctx.beginPath(); ctx.arc(cx + point.x, cy + point.y, 1.15, 0, Math.PI * 2); ctx.fill();
     }
+    if (globeLayers.routes) {
+      const routes = [[0, 1], [1, 2], [2, 3], [4, 5], [5, 8], [6, 7], [7, 9]];
+      ctx.setLineDash([4, 9]); ctx.lineDashOffset = -time * 0.035;
+      for (const [a, b] of routes) {
+        const from = project(hotspots[a].lat, hotspots[a].lon, rot);
+        const to = project(hotspots[b].lat, hotspots[b].lon, rot);
+        if (from.z <= 0 || to.z <= 0) continue;
+        const x1 = cx + from.x, y1 = cy + from.y, x2 = cx + to.x, y2 = cy + to.y;
+        const lift = Math.min(55, radius * 0.32);
+        ctx.globalAlpha = 0.20; ctx.strokeStyle = accent; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo((x1 + x2) / 2, (y1 + y2) / 2 - lift, x2, y2); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
     visibleMarkers = [];
     if (globeUserLocation) {
       const point = project(globeUserLocation.lat, globeUserLocation.lon, rot);
@@ -2250,28 +2344,46 @@ function startGlobe() {
         const pulse = 0.5 + 0.5 * Math.sin(time * 0.006);
         ctx.beginPath(); ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.9;
         ctx.arc(x, y, 5 + pulse * 4, 0, Math.PI * 2); ctx.stroke();
+        if (globeLayers.weather && globeWeatherContext && !globeWeatherContext.error) {
+          ctx.beginPath(); ctx.strokeStyle = '#6fe7ff'; ctx.globalAlpha = 0.55; ctx.lineWidth = 1;
+          ctx.arc(x, y, 12 + pulse * 5, 0, Math.PI * 2); ctx.stroke();
+        }
         ctx.beginPath(); ctx.fillStyle = '#fff4c2'; ctx.globalAlpha = 1; ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 0.9; ctx.font = '700 9px monospace'; ctx.fillStyle = '#ffd166'; ctx.fillText('YOU', x + 8, y - 6);
         visibleMarkers.push({ x, y, kind: 'user', label: 'YOU', location: globeUserLocation });
       }
     }
-    hotspots.forEach((hotspot, index) => {
+    if (globeLayers.signals) hotspots.forEach((hotspot, index) => {
       const point = project(hotspot.lat, hotspot.lon, rot);
       if (point.z <= 0) return;
       const x = cx + point.x, y = cy + point.y, pulse = 0.5 + 0.5 * Math.sin(time * 0.005 + hotspot.lon);
       const headline = worldHeadlines[index % Math.max(1, worldHeadlines.length)];
+      const signalType = headline && headline.category ? String(headline.category).toUpperCase() : (index % 3 === 0 ? 'WATCH' : 'LIVE');
+      const signalColor = signalType === 'WORLD' ? '#ffbf69' : signalType === 'BUSINESS' ? '#9bf6ff' : accent;
       ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.95; ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.fillStyle = accent; ctx.globalAlpha = 0.34; ctx.arc(x, y, 5 + pulse * 7, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 0.85; ctx.font = '9px monospace'; ctx.fillText(hotspot.label, x + 7, y - 5);
-      visibleMarkers.push({ x, y, label: hotspot.label, headline });
+      ctx.beginPath(); ctx.fillStyle = signalColor; ctx.globalAlpha = 0.18; ctx.arc(x, y, 7 + pulse * 9, 0, Math.PI * 2); ctx.fill();
+      if (pulse > 0.82) { ctx.beginPath(); ctx.strokeStyle = signalColor; ctx.globalAlpha = 0.75; ctx.lineWidth = 1; ctx.arc(x, y, 10 + pulse * 8, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.globalAlpha = 0.85; ctx.font = '9px monospace'; ctx.fillStyle = signalColor; ctx.fillText(hotspot.label, x + 7, y - 5);
+      const marker = { x, y, label: hotspot.label, headline, signalType };
+      if (globeSelectedContext && marker.label === globeSelectedContext.label) { ctx.globalAlpha = 0.9; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.stroke(); }
+      visibleMarkers.push(marker);
     });
+    // rotating scan wedge over the sphere
+    const sweep = (time * 0.0012) % (Math.PI * 2);
+    ctx.globalAlpha = 0.10;
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, radius * 1.02, sweep - 0.22, sweep); ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
     scheduleViewFrame('world', draw);
   }
   scheduleViewFrame('world', draw);
   renderGlobeLocationUi();
-  // Show a coarse profile-city marker without requesting precise location.
+  renderGlobeContextCard(null);
+  updateGlobeSignalState('LINKS SYNCING…');
+  // Show a coarse profile-city marker without requesting precise location,
+  // then fetch only public weather context for the profile city.
   loadProfileCityOnGlobe().catch(() => renderGlobeLocationUi());
+  loadGlobeWeatherContext();
 }
 
 // ---------------------------------------------------------------------------
@@ -3613,7 +3725,10 @@ function ttsOptionsFor(clean, gen, mode) {
     neuralVoice: profile.voice?.neuralVoice || DEFAULTS.neuralVoice,
     edgeVoice: profile.voice?.edgeVoice || preset.edgeVoice || DEFAULTS.edgeVoice,
     edgeLang: profile.voice?.sttLang || DEFAULTS.sttLang,
-    geminiApiKey: (profile.geminiLive && profile.geminiLive.apiKey) || '',
+    // Stored Gemini credentials are intentionally unavailable in renderer
+    // memory. Gemini Live requires an explicit per-session key entry; normal
+    // text chat uses the encrypted main-process provider path.
+    geminiApiKey: '',
     geminiModel: (profile.geminiLive && profile.geminiLive.model) || '',
     geminiVoice: profile.voice?.geminiVoice || '',
     presetVoice: preset.edgeVoice,
@@ -6362,7 +6477,7 @@ function openSettings() {
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setAutoUpdateChecks').checked = profile.autoUpdateChecks !== false;
   { const channel = $('#setUpdateChannel'); if (channel) channel.value = profile.updateChannel === 'nightly' ? 'nightly' : 'stable'; }
-  { const live = profile.geminiLive || {}; const m = $('#setGeminiLiveModel'); if (m) m.value = live.model || ''; const k = $('#setGeminiLiveKey'); if (k && !k.value) k.value = live.apiKey || ''; }
+  { const live = profile.geminiLive || {}; const textModel = $('#setGeminiTextModel'); if (textModel) textModel.value = live.textModel || 'gemini-2.5-flash'; const m = $('#setGeminiLiveModel'); if (m) m.value = live.model || ''; const k = $('#setGeminiLiveKey'); if (k) k.value = ''; }
   $('#setUsageStats').checked = profile.usageStats === true;
   $('#setAmbientScore').checked = !!profile.ambientScore;
   // T5 — ambient track + volume
@@ -7328,7 +7443,7 @@ function bindEvents() {
   $('#refreshUsageBtn').addEventListener('click', renderUsageStats);
   $('#exportUsageBtn').addEventListener('click', exportUsageStats);
   $('#clearUsageBtn').addEventListener('click', clearLocalUsageStats);
-  $('#saveBtn').addEventListener('click', () => {
+  $('#saveBtn').addEventListener('click', async () => {
     profile.name = $('#setUserName').value.trim() || 'Commander';
     profile.ai = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
     profile.avatarGender = $('#setAvatarGender')?.value || 'female';
@@ -7370,9 +7485,15 @@ function bindEvents() {
     profile.ambientTrack = $('#setAmbientTrack')?.value || profile.ambientTrack || DEFAULTS.ambientTrack;
     profile.ambientVolume = Number($('#setAmbientVolume')?.value ?? ambientVolume());
     profile.screenAwareness = $('#setScreenAwareness').checked;
+    const geminiKeyInput = ($('#setGeminiLiveKey')?.value || '').trim();
+    const geminiTextModel = ($('#setGeminiTextModel')?.value || '').trim().slice(0, 160) || 'gemini-2.5-flash';
     profile.geminiLive = {
+      textModel: geminiTextModel,
       model: ($('#setGeminiLiveModel')?.value || '').trim().slice(0, 120),
-      apiKey: ($('#setGeminiLiveKey')?.value || '').trim()
+      // Never persist this field. The main process receives a newly entered
+      // key below and stores it with Electron safeStorage; opening Settings
+      // cannot read the stored secret back into renderer memory.
+      apiKey: ''
     };
     // 2.5 Desktop Agent (computer control)
     const setComputerUse = $('#setComputerUse');
@@ -7390,7 +7511,17 @@ function bindEvents() {
     if (setCodingAgentSteps) profile.codingAgentMaxSteps = Math.max(1, Math.min(20, Number(setCodingAgentSteps.value) || 10));
     profile.wakeWord = $('#setWakeWord').checked;
     profile.wakeWordText = ($('#setWakeWordText').value || 'Hey Gem').trim().replace(/\s+/g, ' ').slice(0, 40) || 'Hey Gem';
-    persistProfile().then(() => { updateLinkMode(); renderUsageStats(); closeSettings(); });
+    if (geminiKeyInput) {
+      const secure = await api.connectionsSetGeminiApiKey(geminiKeyInput, geminiTextModel);
+      if (secure && secure.error) {
+        toast('GEMINI KEY', secure.message || secure.error || 'Could not save the encrypted key.', '⚠️');
+        return;
+      }
+      toast('GEMINI', 'AI Studio key encrypted and connected in the desktop main process.', '✓');
+    }
+    await persistProfile();
+    updateLinkMode(); renderUsageStats(); closeSettings();
+    loadConnectionsStatus();
     setAmbientScore(profile.ambientScore);
     configureScreenAwareness(profile.screenAwareness);
     updateSttLanguageUi();
@@ -7657,6 +7788,23 @@ function bindEvents() {
     $('#previewVoice').disabled = false;
   });
 
+  // Gemini text-key self-test goes through the main process. The key is
+  // supplied only for this explicit action and is never returned or persisted
+  // by the renderer bridge.
+  $('#testGeminiKeyBtn')?.addEventListener('click', async () => {
+    const hint = $('#geminiLiveHint');
+    const say = (text, ok) => {
+      if (hint) { hint.textContent = text; hint.classList.toggle('ok', !!ok); hint.classList.toggle('bad', !ok); }
+    };
+    const apiKey = ($('#setGeminiLiveKey')?.value || '').trim();
+    const model = ($('#setGeminiTextModel')?.value || '').trim() || 'gemini-2.5-flash';
+    if (!apiKey) { say('Paste the AI Studio key first. It is only sent to the desktop main process for this test.', false); return; }
+    say('Testing key and text model through GemAir main process…');
+    const result = await api.connectionsTestGeminiApiKey(apiKey, model);
+    if (result && result.ok) say('✓ Text key works — ' + model, true);
+    else say('✗ ' + (result?.error || result?.message || 'Gemini text test failed'), false);
+  });
+
   // Gemini Live dialog self-test: opens a real socket, asks for one exact
   // word, and reports what the service actually returns.
   $('#testGeminiLiveBtn')?.addEventListener('click', async () => {
@@ -7774,7 +7922,9 @@ function bindEvents() {
     if (!apiKey) { say('Paste your AI Studio API key first, then refresh.', false); return; }
     say('Asking Google what this key can use…');
     try {
-      const models = await window.geminiLive.listModels(apiKey);
+      const listed = await api.connectionsListGeminiModels(apiKey);
+      if (!listed || listed.ok !== true) throw new Error(listed?.message || listed?.error || 'Model discovery failed');
+      const models = Array.isArray(listed.models) ? listed.models : [];
       const list = $('#geminiLiveModelList');
       if (list) {
         list.innerHTML = '';
@@ -7908,6 +8058,14 @@ function bindEvents() {
   $('#refreshNewsMini')?.addEventListener('click', () => refreshHeadlines(worldCategory));
   $$('.news-filter').forEach((button) => button.addEventListener('click', () => refreshHeadlines(button.dataset.newsCategory)));
   $('#worldLocateBtn')?.addEventListener('click', locateUserOnGlobe);
+  $$('.globe-layer').forEach((button) => button.addEventListener('click', () => {
+    const layer = button.dataset.globeLayer;
+    if (!layer || !(layer in globeLayers)) return;
+    globeLayers[layer] = !globeLayers[layer];
+    button.classList.toggle('active', globeLayers[layer]);
+    updateGlobeSignalState(globeLayers.signals ? 'LINKS LIVE' : 'LINKS FILTERED');
+    playSfx('click');
+  }));
   $$('.world-mode').forEach((button) => button.addEventListener('click', () => {
     $$('.world-mode').forEach((item) => item.classList.toggle('active', item === button));
     $('#worldGrid').dataset.mode = button.dataset.worldMode;
@@ -8803,7 +8961,9 @@ function renderConnectionHub() {
     const state = status.chatgpt.tokenState && status.chatgpt.tokenState !== 'ready' ? ` · token ${status.chatgpt.tokenState}` : '';
     chatgptEmail.textContent = status.chatgpt.connected ? (status.chatgpt.email || 'connected') + state : (status.chatgpt.tokenState === 'expired' ? 'Session expired — reconnect' : 'Not connected');
   }
-  if (geminiEmail) geminiEmail.textContent = status.gemini.connected ? (status.gemini.email || 'connected') : 'Not connected';
+  if (geminiEmail) geminiEmail.textContent = status.gemini.connected
+    ? (status.gemini.email || 'connected') + (status.gemini.authMode === 'api-key' ? ' · AI Studio key' : ' · web session')
+    : 'Not connected';
   if (chatgptBadge) {
     const plan = String(status.chatgpt.plan || 'free');
     chatgptBadge.textContent = status.chatgpt.connected ? plan.toUpperCase() : '—';

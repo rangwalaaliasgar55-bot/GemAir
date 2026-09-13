@@ -892,10 +892,19 @@
           </div>
           <div class="world-grid" id="worldGrid" data-mode="split">
             <div class="hud-panel globe-panel">
-              <h3 class="panel-title">WORLD MONITOR <span class="dim">— UTC <span id="utcTime">--:--:--</span></span></h3>
+              <div class="globe-panel-head">
+                <h3 class="panel-title">WORLD MONITOR <span class="dim">— UTC <span id="utcTime">--:--:--</span></span></h3>
+                <span class="globe-signal-state" id="globeSignalState">LINKS STANDBY</span>
+              </div>
+              <div class="globe-layer-bar" role="group" aria-label="Globe data layers">
+                <button class="globe-layer active" data-globe-layer="signals" type="button">SIGNALS</button>
+                <button class="globe-layer active" data-globe-layer="routes" type="button">ROUTES</button>
+                <button class="globe-layer active" data-globe-layer="weather" type="button">WEATHER</button>
+              </div>
               <canvas id="globeCanvas" width="640" height="640" aria-label="Interactive rotating news globe"></canvas>
               <div class="hotspot-headline" id="hotspotHeadline">Select a pulsing marker to inspect its headline.</div>
-              <div class="globe-caption">DOTTED WIREFRAME EARTH · CLICKABLE NEWS HOTSPOTS</div>
+              <div class="globe-context" id="globeContext"><span class="dim">CONTEXT</span><b>Awaiting a marker selection</b><small>Public feed signals are shown without sharing your device location.</small></div>
+              <div class="globe-caption">TACTICAL ORBIT · PUBLIC SIGNALS · CLICKABLE CONTACTS</div>
             </div>
 
             <div class="hud-panel map-panel">
@@ -1453,8 +1462,12 @@
             <legend>GEMINI LIVE DIALOG (WEBSOCKET)</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
               Real-time text dialog over Google's Live API socket. Needs an API key from AI Studio and a live model ID you verify in the AI Studio docs — GemAir ships no model names because availability changes.
-              The same key powers desktop Gemini chat: Google sign-in alone grants no API scope, so connect Google for identity, then paste the key here.
+              The same key powers desktop Gemini chat. Google sign-in alone grants no API scope. Paste the key, test it, and press Save Settings; GemAir encrypts it in the desktop main process and never puts the saved key in your profile or renderer.
             </p>
+            <label>Text chat model ID
+              <input type="text" id="setGeminiTextModel" list="geminiLiveModelList" placeholder="gemini-2.5-flash (choose one that supports generateContent)" autocomplete="off" />
+              <span class="hint" style="font-size:10px;color:var(--text-dim)">Used by normal Gem chat. Live/native-audio IDs are rejected here because they only work over the dialog socket.</span>
+            </label>
             <label>Live model ID
               <input type="text" id="setGeminiLiveModel" list="geminiLiveModelList" placeholder="Press Refresh, then pick a model your key can use" autocomplete="off" />
               <datalist id="geminiLiveModelList"></datalist>
@@ -1468,6 +1481,7 @@
               <input type="password" id="setGeminiLiveKey" placeholder="AIza…" autocomplete="off" />
             </label>
             <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">
+              <button class="test-btn" id="testGeminiKeyBtn" type="button">⚡ TEST TEXT KEY</button>
               <button class="test-btn" id="testGeminiLiveBtn" type="button">⚡ TEST LIVE SESSION</button>
               <button class="ghost-btn" id="startGeminiLiveVoiceBtn" type="button">🎙 START LIVE VOICE</button>
               <button class="ghost-btn" id="stopGeminiLiveVoiceBtn" type="button" hidden>⏹ STOP</button>
