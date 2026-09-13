@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('gemair', {
   onOpenJarvisInstallProgress: (cb) => subscribeIpc('openjarvis:installProgress', cb),
   listLocalModels: () => ipcRenderer.invoke('ai:listLocalModels'),
   getHeadlines: (limit, category) => ipcRenderer.invoke('news:get', limit, category),
+  webGet: (kind, params) => ipcRenderer.invoke('web:get', kind, params || {}),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   checkForUpdates: (force = false) => ipcRenderer.invoke('app:checkForUpdates', !!force),
   installUpdate: (releaseUrl) => ipcRenderer.invoke('app:installUpdate', releaseUrl),

@@ -218,6 +218,10 @@ const api = {
     if (window.gemair) return window.gemair.getHeadlines(limit, category);
     try { const r = await fetch('/api/headlines?limit=' + (limit || 14) + '&category=' + encodeURIComponent(category || 'tech')); const data = await r.json(); return Array.isArray(data) ? data : []; } catch { return []; }
   },
+  async webGet(kind, params) {
+    if (window.gemair && window.gemair.webGet) return window.gemair.webGet(kind, params || {});
+    return webGet(kind, params || {});
+  },
   openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
@@ -361,6 +365,7 @@ function downloadText(content, name) {
 // Free web tools (Vercel API — no key, no AI needed)
 // ---------------------------------------------------------------------------
 async function webGet(path, params) {
+  if (window.gemair && window.gemair.webGet) return window.gemair.webGet(path, params || {});
   try {
     const qs = new URLSearchParams(params || {}).toString();
     const r = await fetch('/api/' + path + (qs ? '?' + qs : ''));
@@ -622,6 +627,11 @@ let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
 let currentLang = 'en';
 let worldHeadlines = [];
 let worldCategory = 'tech';
+// Exact device coordinates stay in renderer memory only. The globe starts with
+// the profile city (coarse, useful for weather) and upgrades to a precise
+// browser location only after the user explicitly presses LOCATE ME.
+let globeUserLocation = null;
+let globeLocationRequest = null;
 let awaitingName = false;
 let connectionsStatus = { chatgpt: { connected: false }, gemini: { connected: false }, freeCore: { connected: true }, meta: { priority: 'chatgpt' } };
 let connectionIssue = null;
@@ -2056,6 +2066,89 @@ function startOrb() {
 }
 
 // ---------------------------------------------------------------------------
+// Globe + privacy-preserving user location
+// ---------------------------------------------------------------------------
+function renderGlobeLocationUi() {
+  const status = $('#worldLocationStatus');
+  const button = $('#worldLocateBtn');
+  if (!status) return;
+  const location = globeUserLocation;
+  if (!location) {
+    status.textContent = 'LOCATION NOT SET · profile city only';
+    status.title = 'Press LOCATE ME to request a precise device position. The coordinates stay in this renderer.';
+  } else if (location.exact) {
+    const accuracy = Number(location.accuracy);
+    status.textContent = `YOU · ${location.label || 'DEVICE LOCATION'}${Number.isFinite(accuracy) ? ` · ±${Math.round(accuracy)}m` : ''}`;
+    status.title = 'Precise location is held in memory for this session only.';
+  } else {
+    status.textContent = `PROFILE CITY · ${location.label || 'UNKNOWN'}`;
+    status.title = 'Approximate profile-city marker. No precise location has been shared.';
+  }
+  if (button) {
+    button.disabled = !!globeLocationRequest;
+    button.textContent = globeLocationRequest ? 'LOCATING…' : (location?.exact ? 'REFRESH LOCATION' : 'LOCATE ME');
+  }
+}
+
+function setGlobeUserLocation(location) {
+  const lat = Number(location && location.lat);
+  const lon = Number(location && location.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return false;
+  globeUserLocation = {
+    lat, lon,
+    label: String(location.label || 'Your location').slice(0, 80),
+    source: String(location.source || 'session').slice(0, 40),
+    exact: location.exact === true,
+    accuracy: Number.isFinite(Number(location.accuracy)) ? Number(location.accuracy) : null
+  };
+  renderGlobeLocationUi();
+  return true;
+}
+
+async function loadProfileCityOnGlobe() {
+  if (globeUserLocation?.exact) return globeUserLocation;
+  const city = profile.city || DEFAULTS.city;
+  const weather = await webGet('weather', { city });
+  if (weather && Number.isFinite(Number(weather.latitude)) && Number.isFinite(Number(weather.longitude))) {
+    setGlobeUserLocation({ lat: weather.latitude, lon: weather.longitude, label: String(weather.city || city).split(',')[0], source: 'profile-city', exact: false });
+    return globeUserLocation;
+  }
+  renderGlobeLocationUi();
+  return null;
+}
+
+async function locateUserOnGlobe() {
+  if (globeLocationRequest) return globeLocationRequest;
+  renderGlobeLocationUi();
+  if (!navigator.geolocation) {
+    globeLocationRequest = loadProfileCityOnGlobe();
+    try { await globeLocationRequest; } finally { globeLocationRequest = null; renderGlobeLocationUi(); }
+    return;
+  }
+  globeLocationRequest = new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: false,
+      maximumAge: 5 * 60 * 1000,
+      timeout: 10000
+    });
+  }).then((position) => {
+    const coords = position.coords || {};
+    if (!setGlobeUserLocation({ lat: coords.latitude, lon: coords.longitude, accuracy: coords.accuracy, label: 'YOUR DEVICE', source: 'device-geolocation', exact: true })) throw new Error('LOCATION_INVALID');
+    const card = $('#hotspotHeadline');
+    if (card) { card.textContent = 'YOU · precise device location loaded for this session. No coordinates were saved.'; card.classList.add('active'); card.onclick = null; }
+    return globeUserLocation;
+  }).catch(async () => {
+    // Permission denial, insecure context, and desktop policy all degrade to
+    // the coarse profile-city marker instead of leaving a dead globe.
+    return loadProfileCityOnGlobe();
+  }).finally(() => {
+    globeLocationRequest = null;
+    renderGlobeLocationUi();
+  });
+  return globeLocationRequest;
+}
+
+// ---------------------------------------------------------------------------
 // Globe
 // ---------------------------------------------------------------------------
 function startGlobe() {
@@ -2096,8 +2189,17 @@ function startGlobe() {
     return { x: radius * Math.cos(phi) * Math.sin(lambda), y: -radius * Math.sin(phi), z: radius * Math.cos(phi) * Math.cos(lambda) };
   }
   function selectHotspot(marker) {
-    if (!marker || !marker.headline) return;
+    if (!marker) return;
     const panel = $('#hotspotHeadline');
+    if (marker.kind === 'user') {
+      if (panel) {
+        panel.textContent = `YOU · ${marker.location.label || 'YOUR LOCATION'} · ${marker.location.exact ? 'precise session marker' : 'profile-city marker'}. Coordinates are not saved.`;
+        panel.classList.add('active');
+        panel.onclick = null;
+      }
+      return;
+    }
+    if (!marker.headline) return;
     panel.textContent = `${marker.label} · ${marker.headline.title}`;
     panel.classList.add('active');
     panel.onclick = () => api.openExternal(marker.headline.url);
@@ -2141,6 +2243,18 @@ function startGlobe() {
       ctx.beginPath(); ctx.arc(cx + point.x, cy + point.y, 1.15, 0, Math.PI * 2); ctx.fill();
     }
     visibleMarkers = [];
+    if (globeUserLocation) {
+      const point = project(globeUserLocation.lat, globeUserLocation.lon, rot);
+      if (point.z > 0) {
+        const x = cx + point.x, y = cy + point.y;
+        const pulse = 0.5 + 0.5 * Math.sin(time * 0.006);
+        ctx.beginPath(); ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.9;
+        ctx.arc(x, y, 5 + pulse * 4, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.fillStyle = '#fff4c2'; ctx.globalAlpha = 1; ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 0.9; ctx.font = '700 9px monospace'; ctx.fillStyle = '#ffd166'; ctx.fillText('YOU', x + 8, y - 6);
+        visibleMarkers.push({ x, y, kind: 'user', label: 'YOU', location: globeUserLocation });
+      }
+    }
     hotspots.forEach((hotspot, index) => {
       const point = project(hotspot.lat, hotspot.lon, rot);
       if (point.z <= 0) return;
@@ -2155,6 +2269,9 @@ function startGlobe() {
     scheduleViewFrame('world', draw);
   }
   scheduleViewFrame('world', draw);
+  renderGlobeLocationUi();
+  // Show a coarse profile-city marker without requesting precise location.
+  loadProfileCityOnGlobe().catch(() => renderGlobeLocationUi());
 }
 
 // ---------------------------------------------------------------------------
@@ -7790,6 +7907,7 @@ function bindEvents() {
   $('#refreshNews').addEventListener('click', () => refreshHeadlines(worldCategory));
   $('#refreshNewsMini')?.addEventListener('click', () => refreshHeadlines(worldCategory));
   $$('.news-filter').forEach((button) => button.addEventListener('click', () => refreshHeadlines(button.dataset.newsCategory)));
+  $('#worldLocateBtn')?.addEventListener('click', locateUserOnGlobe);
   $$('.world-mode').forEach((button) => button.addEventListener('click', () => {
     $$('.world-mode').forEach((item) => item.classList.toggle('active', item === button));
     $('#worldGrid').dataset.mode = button.dataset.worldMode;

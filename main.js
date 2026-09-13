@@ -246,10 +246,15 @@ function createWindow() {
   const mainSession = mainWindow.webContents.session;
   mainSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const requestingUrl = details && (details.requestingUrl || details.securityOrigin);
-    callback(webContents === mainWindow.webContents && permission === 'media' && isLocalFileOrigin(requestingUrl || mainWindow.webContents.getURL()));
+    const allowed = permission === 'media' || permission === 'geolocation';
+    // Geolocation is allowed only for the local app renderer and still shows
+    // the browser/OS permission prompt. The renderer requests it only after
+    // the user presses LOCATE ME; coordinates never cross IPC or get persisted.
+    callback(webContents === mainWindow.webContents && allowed && isLocalFileOrigin(requestingUrl || mainWindow.webContents.getURL()));
   });
   mainSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
-    return webContents === mainWindow.webContents && permission === 'media' && isLocalFileOrigin(requestingOrigin || mainWindow.webContents.getURL());
+    const allowed = permission === 'media' || permission === 'geolocation';
+    return webContents === mainWindow.webContents && allowed && isLocalFileOrigin(requestingOrigin || mainWindow.webContents.getURL());
   });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.on('close', (e) => {
@@ -861,13 +866,42 @@ const WEATHER_CODES = {
   61: 'Light rain', 63: 'Rain', 65: 'Heavy rain', 71: 'Light snow', 73: 'Snow', 75: 'Heavy snow',
   80: 'Showers', 81: 'Rain showers', 82: 'Heavy showers', 95: 'Thunderstorm', 96: 'Storm + hail', 99: 'Storm + hail'
 };
-async function getWeather(city) {
-  const geo = await fetchDeadline('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(city) + '&count=1&language=en&format=json').then(r => r.json());
+function deriveWeatherAlerts(daily) {
+  const alerts = [];
+  if (!daily || !Array.isArray(daily.time)) return alerts;
+  for (let i = 0; i < Math.min(3, daily.time.length); i++) {
+    const day = daily.time[i];
+    const code = Number((daily.weathercode || [])[i]);
+    const rain = Number((daily.precipitation_sum || [])[i]);
+    const wind = Number((daily.windspeed_10m_max || [])[i]);
+    const tmax = Number((daily.temperature_2m_max || [])[i]);
+    const tmin = Number((daily.temperature_2m_min || [])[i]);
+    if (code >= 95) alerts.push({ level: 'severe', day, title: 'Thunderstorm expected', detail: 'Lightning and squalls likely.' });
+    else if (rain >= 50) alerts.push({ level: 'severe', day, title: 'Very heavy rain', detail: `${Math.round(rain)} mm forecast.` });
+    else if (rain >= 20) alerts.push({ level: 'warn', day, title: 'Heavy rain', detail: `${Math.round(rain)} mm forecast.` });
+    if (wind >= 60) alerts.push({ level: 'severe', day, title: 'Damaging winds', detail: `Gusts to ${Math.round(wind)} km/h.` });
+    else if (wind >= 40) alerts.push({ level: 'warn', day, title: 'Strong winds', detail: `Gusts to ${Math.round(wind)} km/h.` });
+    if (tmax >= 40) alerts.push({ level: 'severe', day, title: 'Extreme heat', detail: `${Math.round(tmax)}°C expected.` });
+    else if (tmax >= 35) alerts.push({ level: 'warn', day, title: 'Heat advisory', detail: `${Math.round(tmax)}°C expected.` });
+    if (tmin <= 0) alerts.push({ level: 'warn', day, title: 'Freezing conditions', detail: `Low of ${Math.round(tmin)}°C.` });
+  }
+  return alerts;
+}
+async function getWeather(city, mode = 'current') {
+  const cleanCity = String(city || '').trim().slice(0, 120);
+  if (!cleanCity) return { error: 'city is required' };
+  const geo = await fetchDeadline('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(cleanCity) + '&count=1&language=en&format=json').then(r => r.json());
   const loc = geo.results && geo.results[0];
-  if (!loc) return { error: 'City not found: ' + city };
-  const w = await fetchDeadline(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current_weather=true`).then(r => r.json());
+  if (!loc) return { error: 'City not found: ' + cleanCity };
+  const label = loc.name + (loc.country ? ', ' + loc.country : '');
+  const base = `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}`;
+  if (mode === 'alerts') {
+    const forecast = await fetchDeadline(`${base}&daily=weathercode,precipitation_sum,windspeed_10m_max,temperature_2m_max,temperature_2m_min&forecast_days=3&timezone=auto`).then(r => r.json());
+    return { city: label, latitude: loc.latitude, longitude: loc.longitude, alerts: deriveWeatherAlerts(forecast.daily), source: 'Derived from the Open-Meteo forecast — not an official government warning.' };
+  }
+  const w = await fetchDeadline(`${base}&current_weather=true`).then(r => r.json());
   const cw = w.current_weather || {};
-  return { city: loc.name + (loc.country ? ', ' + loc.country : ''), temperature: cw.temperature, windspeed: cw.windspeed, condition: WEATHER_CODES[cw.weathercode] || 'Unknown', units: '°C / km/h' };
+  return { city: label, latitude: loc.latitude, longitude: loc.longitude, temperature: cw.temperature, windspeed: cw.windspeed, weathercode: cw.weathercode, condition: WEATHER_CODES[cw.weathercode] || 'Unknown', units: '°C / km/h' };
 }
 // Fetch with a hard deadline — a hung endpoint must never pin a tool call.
 async function fetchDeadline(url, options = {}, timeoutMs = 10000) {
@@ -4740,6 +4774,19 @@ ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
   catch (err) { return { ok: false, error: err.message }; }
 });
 ipcMain.handle('news:get', (_e, limit, category) => getHeadlines(limit || 12, category || 'tech'));
+ipcMain.handle('web:get', async (_e, kind, params) => {
+  const type = String(kind || '').trim().toLowerCase();
+  const input = params && typeof params === 'object' ? params : {};
+  try {
+    if (type === 'weather') return await getWeather(input.city, input.mode);
+    if (type === 'search') return await webSearch(input.q || input.query || '');
+    if (type === 'translate') return await translateText(String(input.text || '').slice(0, 2000), String(input.to || 'en').slice(0, 20), input.from ? String(input.from).slice(0, 20) : undefined);
+    if (type === 'dictionary') return await defineWord(String(input.word || '').slice(0, 120));
+    if (type === 'crypto') return await getCryptoPrice(String(input.coin || '').slice(0, 80));
+    if (type === 'currency') return await convertCurrency(Number(input.amount), String(input.from || '').slice(0, 8), String(input.to || '').slice(0, 8));
+    return { error: 'Unsupported desktop web tool.' };
+  } catch (error) { return { error: String(error.message || error).slice(0, 300) }; }
+});
 ipcMain.handle('app:openExternal', (_e, url) => openExternalSafely(url));
 ipcMain.handle('report:generate', () => generateReport());
 ipcMain.handle('digest:generate', async () => {

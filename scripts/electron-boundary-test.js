@@ -45,9 +45,10 @@ console.log('  ok   all Electron windows are sandboxed and navigation guarded');
 assert(main.includes('mainSession.setPermissionRequestHandler'), 'permission request handler is missing');
 assert(main.includes('mainSession.setPermissionCheckHandler'), 'permission check handler is missing');
 assert(main.includes("permission === 'media'"), 'microphone permission is not explicitly scoped');
+assert(main.includes("permission === 'geolocation'"), 'location permission is not explicitly scoped');
 assert(main.includes('webContents === mainWindow.webContents'), 'permissions are not restricted to the main renderer');
 assert(main.includes('isLocalFileOrigin(requestingOrigin || mainWindow.webContents.getURL())'), 'permissions are not restricted to the local app origin');
-console.log('  ok   Electron permissions use a media-only local-app policy');
+console.log('  ok   Electron permissions use media/geolocation only for the local app renderer');
 
 const csp = (html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
 assert(csp.includes("object-src 'none'"), 'CSP does not block plugins');

@@ -640,9 +640,11 @@ body.rgb-recording #micVuCanvas, body.wake-armed #micVuCanvas { opacity: 1; bord
 
 /* ============ GLOBAL INTEL VIEW ============ */
 .world-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 14px; padding: 9px 12px; border: 1px solid var(--panel-border); border-radius: 10px; background: rgba(0,0,0,.25); }
-.world-modes, .news-filters { display: flex; gap: 6px; }
-.world-mode, .news-filter { border: 1px solid var(--panel-border); background: rgba(0,0,0,.3); color: var(--text-dim); border-radius: 7px; padding: 6px 10px; cursor: pointer; font: 600 9px var(--font-mono); letter-spacing: .12em; }
-.world-mode.active, .news-filter.active { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-dim); box-shadow: 0 0 10px var(--accent-dim); }
+.world-modes, .news-filters, .world-location-tools { display: flex; gap: 6px; align-items: center; }
+.world-mode, .news-filter, .world-location-btn { border: 1px solid var(--panel-border); background: rgba(0,0,0,.3); color: var(--text-dim); border-radius: 7px; padding: 6px 10px; cursor: pointer; font: 600 9px var(--font-mono); letter-spacing: .12em; }
+.world-mode.active, .news-filter.active, .world-location-btn:hover { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-dim); box-shadow: 0 0 10px var(--accent-dim); }
+.world-location-btn:disabled { cursor: wait; opacity: .55; }
+.world-location-status { color: #ffd166; font: 600 9px var(--font-mono); letter-spacing: .08em; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .utc-strip { color: var(--accent); font: 600 10px var(--font-mono); letter-spacing: .12em; white-space: nowrap; }
 .world-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 .world-grid .news-panel { grid-column: span 2; }
