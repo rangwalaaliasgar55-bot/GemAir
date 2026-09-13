@@ -19,6 +19,7 @@ const modesLib = require('./lib/modes');
 const computerAgent = require('./lib/computer-agent');
 computerAgent.setWindowTools(windowTools);
 const backgroundMonitor = require('./lib/background-monitor');
+const { buildDailyDigest, dayKey } = require('./lib/daily-digest');
 const { AttentionService } = require('./lib/attention/service');
 const attentionIpc = require('./lib/attention/ipc');
 const islandWindow = require('./lib/attention/island-window');
@@ -32,6 +33,7 @@ const MEMORY_FILE = path.join(userDataDir, 'gemair-memory.json');
 const WINDOW_STATE_FILE = path.join(userDataDir, 'gemair-window-state.json');
 const RECOVERY_FILE = path.join(userDataDir, 'gemair-recovery.json');
 const USAGE_STATS_FILE = path.join(userDataDir, 'gemair-usage-stats.json');
+const DAILY_DIGEST_STATE_FILE = path.join(userDataDir, 'gemair-daily-digest.json');
 const OPENJARVIS_RUNTIME_DIR = path.join(userDataDir, 'openjarvis');
 openJarvisSidecar.configure({
   runtimeRoot: OPENJARVIS_RUNTIME_DIR,
@@ -373,6 +375,7 @@ app.whenReady().then(() => {
   try { setupSilentUpdater(); } catch (e) { console.error('[silent-updater] disabled:', e.message); }
   startReminderScheduler();
   try { startTopicMonitorScheduler(); } catch (e) { console.error('[topic-monitor] disabled:', e.message); }
+  try { startDailyDigestScheduler(); } catch (e) { console.error('[daily-digest] disabled:', e.message); }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     else mainWindow.show();
@@ -3676,6 +3679,61 @@ function startTopicMonitorScheduler() {
   setInterval(run, 60 * 60 * 1000);
   setTimeout(run, 30000);
 }
+async function generateDailyDigest() {
+  const profile = readProfile();
+  const memory = readMemory();
+  const [headlines, weather, monitorAlerts] = await Promise.all([
+    getHeadlines(6, 'tech').catch(() => []),
+    profile.city ? getWeather(profile.city).catch(() => null) : Promise.resolve(null),
+    Array.isArray(memory.monitors) && memory.monitors.length
+      ? backgroundMonitor.checkMonitors(memory, fetchTopicHeadline, { force: false }).catch(() => [])
+      : Promise.resolve([])
+  ]);
+  // Monitor checks update only redacted topic metadata and hashes. Persisting
+  // that state keeps the once-a-day throttle intact across restarts.
+  if (Array.isArray(memory.monitors) && memory.monitors.length) writeMemory(memory);
+  return buildDailyDigest(memory, {
+    name: profile.name,
+    weather,
+    headlines,
+    monitorAlerts,
+    now: Date.now()
+  });
+}
+
+function parseDigestTime(value) {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return { hour: 8, minute: 0 };
+  return { hour: Math.max(0, Math.min(23, Number(match[1]))), minute: Math.max(0, Math.min(59, Number(match[2]))) };
+}
+
+function startDailyDigestScheduler() {
+  let running = false;
+  const run = async () => {
+    if (running) return;
+    const settings = readProfile().dailyDigest || {};
+    if (settings.enabled !== true) return;
+    const now = new Date();
+    const scheduled = parseDigestTime(settings.time || '08:00');
+    if (now.getHours() < scheduled.hour || (now.getHours() === scheduled.hour && now.getMinutes() < scheduled.minute)) return;
+    const today = dayKey(now);
+    const state = readJSON(DAILY_DIGEST_STATE_FILE, {}, 'dailyDigest');
+    if (state.lastDay === today) return;
+    running = true;
+    try {
+      const digest = await generateDailyDigest();
+      if (!digest || digest.ok === false) return;
+      writeJSON(DAILY_DIGEST_STATE_FILE, { lastDay: today, generatedAt: digest.generatedAt });
+      sendToRenderer('digest:ready', digest);
+      if (Notification.isSupported()) new Notification({ title: 'GemAir Daily Digest', body: digest.summary }).show();
+    } catch (error) {
+      sendToRenderer('digest:error', { error: 'DAILY_DIGEST_FAILED', message: String(error.message || error).slice(0, 300) });
+    } finally { running = false; }
+  };
+  setTimeout(run, 45000);
+  setInterval(run, 60 * 1000);
+}
+
 function startFocusPolling() {
   if (focusPollTimer) clearInterval(focusPollTimer);
   focusPollTimer = setInterval(async () => {
@@ -4680,6 +4738,10 @@ ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
 ipcMain.handle('news:get', (_e, limit, category) => getHeadlines(limit || 12, category || 'tech'));
 ipcMain.handle('app:openExternal', (_e, url) => openExternalSafely(url));
 ipcMain.handle('report:generate', () => generateReport());
+ipcMain.handle('digest:generate', async () => {
+  try { return await generateDailyDigest(); }
+  catch (error) { return { ok: false, error: 'DAILY_DIGEST_FAILED', message: String(error.message || error).slice(0, 500) }; }
+});
 ipcMain.handle('report:needsCheckIn', () => moodNeedsCheckIn());
 ipcMain.handle('memory:export', () => ({ memory: readMemory(), profile: readProfile() }));
 ipcMain.handle('memory:import', (_e, data) => {

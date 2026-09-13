@@ -248,6 +248,7 @@
                   <span class="briefing-chip" id="briefWeather" title="Weather">🌤 Loading…</span>
                   <span class="briefing-chip" id="briefGoal" title="Top goal">🎯 —</span>
                   <button class="briefing-chip as-btn" id="breatheBtn" title="Guided breathing">🌬 Breathe</button>
+                  <button class="briefing-chip as-btn" id="dailyDigestBtn" title="Build a local-first morning digest">☀ Digest</button>
                 </div>
                 <div class="briefing-quote" id="briefQuote">“The best way to predict the future is to create it.”</div>
               </div>
@@ -1243,6 +1244,14 @@
             <label class="check-label" style="margin-bottom:6px">
               <input type="checkbox" id="setMemoryOn" checked /> Auto memory — remember facts across conversations
             </label>
+            <fieldset style="margin-top:12px;">
+              <legend>MORNING DIGEST</legend>
+              <label class="check-label">
+                <input type="checkbox" id="setDailyDigestEnabled" /> Prepare a daily digest at
+                <input type="time" id="setDailyDigestTime" value="08:00" style="width:auto;margin-left:4px;" />
+              </label>
+              <p class="hint" style="font-size:11px;color:var(--text-dim);">Uses local reminders, tasks, goals and mood, with optional headlines and weather. It runs in the main process and never sends your memory to a model.</p>
+            </fieldset>
             <label>Conversation context
               <select id="setContextStrategy" aria-describedby="contextStrategyHint">
                 <option value="full">Full — retain up to 100 messages</option>

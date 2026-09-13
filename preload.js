@@ -90,6 +90,9 @@ contextBridge.exposeInMainWorld('gemair', {
   saveCode: (content, suggestedName) => ipcRenderer.invoke('file:saveCode', content, suggestedName),
 
   generateReport: () => ipcRenderer.invoke('report:generate'),
+  generateDailyDigest: () => ipcRenderer.invoke('digest:generate'),
+  onDailyDigest: (cb) => subscribeIpc('digest:ready', cb),
+  onDailyDigestError: (cb) => subscribeIpc('digest:error', cb),
   needsCheckIn: () => ipcRenderer.invoke('report:needsCheckIn'),
   exportMemory: () => ipcRenderer.invoke('memory:export'),
   importMemory: (data) => ipcRenderer.invoke('memory:import', data),

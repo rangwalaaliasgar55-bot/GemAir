@@ -313,6 +313,17 @@ const api = {
     if (window.gemair) return window.gemair.generateReport();
     return buildReportOffline();
   },
+  onDailyDigest(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDailyDigest ? window.gemair.onDailyDigest(cb) : null); },
+  onDailyDigestError(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDailyDigestError ? window.gemair.onDailyDigestError(cb) : null); },
+  async generateDailyDigest() {
+    if (window.gemair && window.gemair.generateDailyDigest) return window.gemair.generateDailyDigest();
+    const now = Date.now();
+    const active = (items) => (Array.isArray(items) ? items : []).filter((item) => !item.done && !item.completed);
+    const reminders = active(memory.reminders).filter((item) => Number(item.at) >= now && Number(item.at) <= now + 86400000).slice(0, 8);
+    const todos = active(memory.todos).slice(0, 8);
+    const goals = active(memory.goals).slice(0, 6);
+    return { ok: true, kind: 'daily-digest', day: new Date(now).toISOString().slice(0, 10), generatedAt: new Date(now).toISOString(), title: 'Daily Digest', summary: `Good morning${profile.name ? `, ${profile.name}` : ''}. ${reminders.length} reminder${reminders.length === 1 ? '' : 's'} and ${todos.length} open task${todos.length === 1 ? '' : 's'} are in your local list.${goals.length ? ` Keep one small step moving on: ${goals[0].text || goals[0].title}.` : ''}`, sections: { reminders, todos, goals, headlines: [], monitored: [], weather: null, mood: memory.mood?.[memory.mood.length - 1] || null }, sources: { localMemory: true, headlines: false, weather: false, monitored: false } };
+  },
   async needsCheckIn() {
     if (window.gemair) return window.gemair.needsCheckIn();
     const mood = (memory.mood || []).slice(-7);
@@ -595,6 +606,7 @@ function makeDefaultProfile() {
       name: ''
     },
     memoryOn: true, allowShell: false, adaptivePersonality: true, autoUpdateChecks: DEFAULTS.autoUpdateChecks, updateChannel: DEFAULTS.updateChannel, usageStats: false, wakeWord: false, wakeWordText: 'Hey Gem',
+    dailyDigest: { enabled: false, time: '08:00' },
     ambientScore: false, ambientTrack: DEFAULTS.ambientTrack, ambientVolume: DEFAULTS.ambientVolume,
     screenAwareness: false,
     modes: {}
@@ -6221,6 +6233,8 @@ function openSettings() {
   if ($('#setGeminiVoice')) $('#setGeminiVoice').value = profile.voice?.geminiVoice || '';
   $('#setSttLang').value = profile.voice?.sttLang || DEFAULTS.sttLang;
   $('#setMemoryOn').checked = profile.memoryOn !== false;
+  if ($('#setDailyDigestEnabled')) $('#setDailyDigestEnabled').checked = profile.dailyDigest?.enabled === true;
+  if ($('#setDailyDigestTime')) $('#setDailyDigestTime').value = /^\d{2}:\d{2}$/.test(profile.dailyDigest?.time || '') ? profile.dailyDigest.time : '08:00';
   $('#setContextStrategy').value = CONTEXT_STRATEGIES[profile.contextStrategy] ? profile.contextStrategy : DEFAULTS.contextStrategy;
   if ($('#setAnonymousChat')) $('#setAnonymousChat').checked = profile.anonymousChat !== false;
   if ($('#setOpenJarvisEnabled')) $('#setOpenJarvisEnabled').checked = profile.openJarvis?.enabled === true;
@@ -7004,8 +7018,38 @@ function bindEvents() {
   });
   $('#focusReset').addEventListener('click', () => { clearInterval(focusInterval); focusRemaining = 25 * 60; focusRunning = false; $('#focusToggle').textContent = '▶'; $('#focusTime').textContent = '25:00'; });
 
+  function renderDigest(digest) {
+    const sections = digest && digest.sections ? digest.sections : {};
+    const list = (title, items, render) => items && items.length
+      ? `<h3>${escapeHtml(title)}</h3><ul>${items.map((item) => `<li>${render(item)}</li>`).join('')}</ul>`
+      : '';
+    const reminderText = (item) => `${escapeHtml(item.text || 'Reminder')} <span class="dim">(${escapeHtml(item.time || '')})</span>`;
+    const linkText = (item) => item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.title || '')}</a>` : escapeHtml(item.title || '');
+    const weather = sections.weather && sections.weather.city ? `<p><b>Weather:</b> ${escapeHtml(sections.weather.city)} · ${escapeHtml(sections.weather.condition || '—')} · ${escapeHtml(String(sections.weather.temperature ?? '—'))}°C</p>` : '';
+    const mood = sections.mood && (sections.mood.emotion || sections.mood.label) ? `<p><b>Last check-in:</b> ${escapeHtml(sections.mood.emotion || sections.mood.label)}</p>` : '';
+    $('#reportContent').innerHTML = `<p class="digest-summary">${escapeHtml(digest.summary || 'No digest summary available.')}</p>${weather}${mood}${list('UP NEXT', sections.reminders, reminderText)}${list('OPEN TASKS', sections.todos, (item) => escapeHtml(item.text || item.title || 'Task'))}${list('GOALS', sections.goals, (item) => `${escapeHtml(item.text || item.title || 'Goal')}${item.category ? ` <span class="dim">· ${escapeHtml(item.category)}</span>` : ''}`)}${list('MONITORED CHANGES', sections.monitored, (item) => `<b>${escapeHtml(item.topic || 'Topic')}</b>: ${linkText(item)}`)}${list('HEADLINES', sections.headlines, linkText)}${!sections.reminders?.length && !sections.todos?.length && !sections.goals?.length && !sections.headlines?.length ? '<p class="dim">Your local lists are clear. Enjoy the quiet start.</p>' : ''}`;
+  }
+  async function openDailyDigest() {
+    $('#reportModalTitle').textContent = 'DAILY DIGEST';
+    $('#reportSparklines').hidden = true;
+    $('#reportModal').classList.add('open');
+    $('#reportContent').textContent = 'Building a local-first digest…';
+    const res = await api.generateDailyDigest();
+    if (!res || res.ok === false) { $('#reportContent').textContent = `Digest unavailable: ${res?.message || res?.error || 'unknown error'}`; return; }
+    renderDigest(res);
+  }
+  $('#dailyDigestBtn').addEventListener('click', openDailyDigest);
+  api.onDailyDigest?.((digest) => {
+    toast('DAILY DIGEST READY', 'Your scheduled local-first morning digest is ready.', '☀');
+    const chip = $('#dailyDigestBtn');
+    if (chip) chip.dataset.ready = 'true';
+  });
+  api.onDailyDigestError?.((error) => toast('DAILY DIGEST', error?.message || 'Could not prepare the digest.', '⚠'));
+
   // Weekly report
   $('#weeklyReportBtn').addEventListener('click', async () => {
+    $('#reportModalTitle').textContent = 'WEEKLY REPORT';
+    $('#reportSparklines').hidden = false;
     $('#reportModal').classList.add('open');
     $('#reportContent').textContent = 'Generating…';
     const res = await api.generateReport();
@@ -7183,6 +7227,11 @@ function bindEvents() {
     profile.voice.name = $('#setVoice').value;
     profile.voice.sttLang = $('#setSttLang').value;
     profile.memoryOn = $('#setMemoryOn').checked;
+    profile.dailyDigest = {
+      ...(profile.dailyDigest || {}),
+      enabled: $('#setDailyDigestEnabled')?.checked === true,
+      time: /^\d{2}:\d{2}$/.test($('#setDailyDigestTime')?.value || '') ? $('#setDailyDigestTime').value : '08:00'
+    };
     profile.contextStrategy = CONTEXT_STRATEGIES[$('#setContextStrategy').value] ? $('#setContextStrategy').value : DEFAULTS.contextStrategy;
     profile.anonymousChat = $('#setAnonymousChat') ? $('#setAnonymousChat').checked : profile.anonymousChat !== false;
     profile.openJarvis = {
@@ -7336,6 +7385,7 @@ function bindEvents() {
       { id: 'toggle-appearance', name: `Switch to ${profile.appearance === 'light' ? 'Dark' : 'Light'} Mode`, detail: 'persistent interface appearance', icon: profile.appearance === 'light' ? '🌙' : '☀', type: 'TOGGLE', action: toggleAppearance },
       { id: 'breathing', name: 'Guided Breathing', detail: '4-7-8 calm session', icon: '◌', type: 'ACTION', action: () => $('#breatheModal').classList.add('open') },
       { id: 'weekly-report', name: 'Weekly Report', detail: 'mood, goals and task trends', icon: '▥', type: 'ACTION', action: () => $('#weeklyReportBtn').click() },
+      { id: 'daily-digest', name: 'Daily Digest', detail: 'local morning plan: reminders, tasks, goals and headlines', icon: '☀', type: 'ACTION', action: () => openDailyDigest() },
       { id: 'panel-weather', name: 'Weather Panel', detail: 'HUD panel', icon: '☁', type: 'PANEL', action: () => openHudDock('weather') },
       { id: 'panel-clock', name: 'World Clock Panel', detail: 'HUD panel', icon: '◷', type: 'PANEL', action: () => openHudDock('clock') },
       { id: 'panel-focus', name: 'Focus Timer Panel', detail: 'HUD panel', icon: '◫', type: 'PANEL', action: () => openHudDock('focus') },
@@ -8598,7 +8648,7 @@ function renderConnectionHub() {
   if (chatgptDot) {
     chatgptDot.className = 'conn-dot ' + (status.chatgpt.connected ? (status.chatgpt.experimental ? 'experimental' : 'connected') : 'disconnected');
     chatgptDot.textContent = status.chatgpt.connected ? '●' : '○';
-    chatgptDot.title = status.chatgpt.dot + (status.chatgpt.experimental ? ' (EXPERIMENTAL)' : '');
+    chatgptDot.title = status.chatgpt.dot + (status.chatgpt.tokenState ? ` · token ${status.chatgpt.tokenState}` : '') + (status.chatgpt.experimental ? ' (EXPERIMENTAL)' : '');
   }
   if (geminiDot) {
     geminiDot.className = 'conn-dot ' + (status.gemini.connected ? (status.gemini.experimental ? 'experimental' : 'connected') : 'disconnected');
@@ -8629,7 +8679,10 @@ function renderConnectionHub() {
   if (rustBadge) { rustBadge.textContent = jarvis.rustAvailable ? 'RUST + PYTHON' : 'PYTHON'; rustBadge.className = 'conn-badge' + (jarvis.rustAvailable ? ' pro' : ''); }
   const installButton = $('#installOpenJarvisBtn');
   if (installButton) installButton.textContent = jarvis.installed ? 'REPAIR / ENABLE RUST' : 'INSTALL RUNTIME';
-  if (chatgptEmail) chatgptEmail.textContent = status.chatgpt.connected ? (status.chatgpt.email || 'connected') : 'Not connected';
+  if (chatgptEmail) {
+    const state = status.chatgpt.tokenState && status.chatgpt.tokenState !== 'ready' ? ` · token ${status.chatgpt.tokenState}` : '';
+    chatgptEmail.textContent = status.chatgpt.connected ? (status.chatgpt.email || 'connected') + state : (status.chatgpt.tokenState === 'expired' ? 'Session expired — reconnect' : 'Not connected');
+  }
   if (geminiEmail) geminiEmail.textContent = status.gemini.connected ? (status.gemini.email || 'connected') : 'Not connected';
   if (chatgptBadge) {
     const plan = String(status.chatgpt.plan || 'free');
@@ -8657,7 +8710,7 @@ function renderConnectionHub() {
   if (chatgptTierPicker) chatgptTierPicker.value = status.chatgpt.serviceTier || 'auto';
   if (chatgptAuthMode) {
     const modes = { 'codex-oauth': 'OpenAI device OAuth · refreshable', 'codex-import': 'Imported local Codex session', 'web-session': 'Legacy browser session' };
-    chatgptAuthMode.textContent = modes[status.chatgpt.authMode] || 'OpenAI account connection';
+    chatgptAuthMode.textContent = (modes[status.chatgpt.authMode] || 'OpenAI account connection') + (status.chatgpt.tokenState === 'expiring' ? ' · refresh soon' : status.chatgpt.tokenState === 'expired' ? ' · reconnect required' : '');
   }
 
   if (connectChatGPTBtn) connectChatGPTBtn.hidden = !!status.chatgpt.connected;
@@ -8691,8 +8744,9 @@ function renderConnectionsStatusRow() {
     const cls = connected ? (prov.experimental ? 'experimental' : 'connected') : 'disconnected';
     const dot = connected ? '●' : '○';
     const identity = prov.email ? '(' + escapeHtml(String(prov.email).split('@')[0]) + ')' : '';
+    const health = prov.tokenState && prov.tokenState !== 'ready' ? ` · token ${escapeHtml(prov.tokenState)}` : '';
     const usage = Math.max(0, Number(prov.usage) || 0);
-    return `<span class="conn-status-chip ${cls}">${dot} ${name} ${identity} ${usage ? usage + ' today' : ''}</span>`;
+    return `<span class="conn-status-chip ${cls}">${dot} ${name} ${identity}${health} ${usage ? usage + ' today' : ''}</span>`;
   };
   row.innerHTML = mkChip('CHATGPT', s.chatgpt) + mkChip('GEMINI', s.gemini) + `<span class="conn-status-chip fallback">● FREE CORE</span>`;
 }
