@@ -69,6 +69,12 @@
     { name: 'en-US-ChristopherNeural', lang: 'en-US', gender: 'Male', label: 'Christopher (US) · deep male' },
     { name: 'en-US-EricNeural', lang: 'en-US', gender: 'Male', label: 'Eric (US) · male' },
     { name: 'en-US-AndrewNeural', lang: 'en-US', gender: 'Male', label: 'Andrew (US) · conversational male' },
+    { name: 'en-US-AvaNeural', lang: 'en-US', gender: 'Female', label: 'Ava (US) · expressive female' },
+    { name: 'en-US-BrianNeural', lang: 'en-US', gender: 'Male', label: 'Brian (US) · warm male' },
+    { name: 'en-AU-NatashaNeural', lang: 'en-AU', gender: 'Female', label: 'Natasha (AU) · female' },
+    { name: 'en-AU-WilliamNeural', lang: 'en-AU', gender: 'Male', label: 'William (AU) · male' },
+    { name: 'en-CA-ClaraNeural', lang: 'en-CA', gender: 'Female', label: 'Clara (CA) · female' },
+    { name: 'en-CA-LiamNeural', lang: 'en-CA', gender: 'Male', label: 'Liam (CA) · male' },
     { name: 'en-GB-SoniaNeural', lang: 'en-GB', gender: 'Female', label: 'Sonia (UK) · warm female' },
     { name: 'en-GB-LibbyNeural', lang: 'en-GB', gender: 'Female', label: 'Libby (UK) · female' },
     { name: 'en-GB-RyanNeural', lang: 'en-GB', gender: 'Male', label: 'Ryan (UK) · male' },
@@ -89,12 +95,26 @@
       'hi': 'hi-IN-SwaraNeural',
       'ur': 'ur-PK-UzmaNeural',
       'en-gb': 'en-GB-SoniaNeural',
-      'en-in': 'en-IN-NeerjaNeural'
+      'en-in': 'en-IN-NeerjaNeural',
+      'en-au': 'en-AU-NatashaNeural',
+      'en-ca': 'en-CA-ClaraNeural'
     };
     for (const [prefix, voice] of Object.entries(preferred)) {
       if (L === prefix || L.startsWith(prefix)) return voice;
     }
     return 'en-US-AriaNeural';
+  }
+
+  // Human label for a voice id (settings UI, voice picker). Falls back to
+  // the raw id so unknown/new voices never render blank.
+  function voiceLabel(name) {
+    const found = VOICES.find((v) => v.name === name);
+    return found ? found.label : String(name || 'Default voice');
+  }
+
+  function voicesForGender(gender) {
+    const g = String(gender || '').toLowerCase() === 'male' ? 'Male' : 'Female';
+    return VOICES.filter((v) => v.gender === g).map((v) => v.name);
   }
 
   function isAvailable() {
@@ -226,6 +246,6 @@
     return Math.max(min, Math.min(max, n));
   }
 
-  const edgeTts = { VOICES, isAvailable, synth, voiceForLang };
+  const edgeTts = { VOICES, isAvailable, synth, voiceForLang, voiceLabel, voicesForGender };
   window.edgeTts = edgeTts;
 })();

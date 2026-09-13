@@ -108,6 +108,28 @@
       panel: 'rgba(27, 38, 52, 0.86)', panelBorder: 'rgba(131, 174, 218, 0.16)',
       sweep: 'rgba(107, 158, 212, 0.18)'
     },
+    porcelain: {
+      label: 'Porcelain',
+      tagline: 'Apple-clean neutrals — calm and minimal',
+      accent: '#0a84ff', lightAccent: '#0071e3', hue: 211,
+      bg: '#f5f5f7', bg2: '#e8e8ed',
+      text: '#1d1d1f', dim: '#6e6e73',
+      good: '#1d8127', warn: '#9a6700',
+      error: '#c92a2a', info: '#0071e3',
+      panel: 'rgba(255, 255, 255, 0.72)', panelBorder: 'rgba(60, 60, 67, 0.14)',
+      sweep: 'rgba(10, 132, 255, 0.18)'
+    },
+    midnight: {
+      label: 'Midnight',
+      tagline: 'Apple-dark neutrals — quiet studio',
+      accent: '#0a84ff', lightAccent: '#0071e3', hue: 211,
+      bg: '#000000', bg2: '#161617',
+      text: '#f5f5f7', dim: '#98989d',
+      good: '#30d158', warn: '#ffd60a',
+      error: '#ff6961', info: '#64d2ff',
+      panel: 'rgba(28, 28, 30, 0.72)', panelBorder: 'rgba(255, 255, 255, 0.09)',
+      sweep: 'rgba(10, 132, 255, 0.22)'
+    },
     rgb: {
       label: 'RGB',
       tagline: 'Dynamic spectrum — playful accent',
@@ -122,7 +144,7 @@
     }
   };
 
-  const ORDER = ['crimson', 'emerald', 'cyan', 'violet', 'amber', 'graphite', 'ocean', 'rgb'];
+  const ORDER = ['porcelain', 'midnight', 'crimson', 'emerald', 'cyan', 'violet', 'amber', 'graphite', 'ocean', 'rgb'];
   const DEFAULT = 'cyan';
 
   // "#rrggbb" → "rgba(r, g, b, a)" (string in, string out)

@@ -221,7 +221,7 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.8.1'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.8.2'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
@@ -2368,8 +2368,26 @@ function typewrite(el, text, speed = 14) {
 // exactly how an answer was reached.
 // ---------------------------------------------------------------------------
 let activeTypingEl = null;
-function toolChipUpdate({ name, state }) {
+function toolChipUpdate({ name, state, reason }) {
+  // The OpenJarvis reasoning brief is an internal advisory step, not a
+  // user-facing tool: it never gets an inline chip (its old "✗" on every
+  // turn without Ollama running was pure noise). Status stays visible in
+  // the expert-panel feed and the Connections panel.
+  if (name === 'openjarvis_plan') return;
   if (!activeTypingEl || !activeTypingEl.isConnected) return;
+  const label = String(name || '').replace(/_/g, ' ');
+  // 'skipped' = optional enhancement unavailable (sidecar down, model
+  // missing). Remove any in-flight chip silently — no red ✗ for a step the
+  // turn never needed.
+  if (state === 'skipped') {
+    try {
+      const strip = activeTypingEl.querySelector('.tool-strip');
+      const chip = strip && strip.querySelector(`[data-tool="${CSS.escape(label)}"]`);
+      if (chip) chip.remove();
+      if (strip && !strip.children.length) strip.remove();
+    } catch {}
+    return;
+  }
   let strip = activeTypingEl.querySelector('.tool-strip');
   if (!strip) {
     strip = document.createElement('div');
@@ -2377,8 +2395,8 @@ function toolChipUpdate({ name, state }) {
     const p = activeTypingEl.querySelector('p');
     activeTypingEl.insertBefore(strip, p || activeTypingEl.firstChild);
   }
-  const label = String(name || '').replace(/_/g, ' ');
-  let chip = strip.querySelector(`[data-tool="${label}"]`);
+  let chip = null;
+  try { chip = strip.querySelector(`[data-tool="${CSS.escape(label)}"]`); } catch { chip = null; }
   if (!chip) {
     chip = document.createElement('span');
     chip.dataset.tool = label;
@@ -2393,6 +2411,25 @@ function toolChipUpdate({ name, state }) {
   if (state === 'done') tickPlannerStep();
   const orb = $('#orbStatus');
   if (orb && state === 'start') { orb.textContent = 'EXECUTING · ' + label.toUpperCase(); }
+}
+
+// One-tap retry for transient provider failures (empty turn, timeout, rate
+// limit, fallback cooldown). Re-sends the same text as a fresh turn.
+function appendChatRetry(typingEl, text) {
+  try {
+    if (!typingEl || typingEl.querySelector('.chat-retry-btn')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chat-retry-btn';
+    btn.textContent = '↻ Retry';
+    btn.setAttribute('aria-label', 'Retry last message');
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      btn.textContent = '↻ Retrying…';
+      sendMessage(text);
+    });
+    typingEl.appendChild(btn);
+  } catch {}
 }
 
 function renderReply(p, text) {
@@ -2881,6 +2918,7 @@ async function sendMessage(text) {
   $('#chatInput').value = '';
   setCaption('user', text, { autoHide: 3200 });
   avatar({ thinking: true }); // Gem visibly starts reasoning
+  try { if (window.gemAvatar && window.gemAvatar.pulse) window.gemAvatar.pulse(0.8); } catch {}
   setThinking(true);
   operationRequestActive = true;
   showOperationProgress('Understanding request…');
@@ -3211,10 +3249,15 @@ async function handleMessage(text) {
       renderConnectionStrip();
       replyFailed = true;
       resetStreamSpeech();
-      reply = (acc ? acc + '\n\n[Response interrupted]\n' : '') +
-        'Connection failed: ' + (res.message || humanError(res.error)) + '. Check Connections in Settings and retry.'
+      // Transient blips (empty turn, timeout, rate limit, cooldown) read as
+      // "temporary hiccup + Retry" instead of a scary connection failure —
+      // the session is untouched and the same turn usually succeeds on retry.
+      const lead = acc ? acc + '\n\n[Response interrupted]\n' : '';
+      const core = (res.message || humanError(res.error)) + (res.retryable ? ' — looks temporary, nothing was disconnected.' : '. Check Connections in Settings and retry.');
+      reply = lead + (res.retryable ? 'Temporary hiccup: ' : 'Connection failed: ') + core
         + (res.detail ? '\n\nProvider said: ' + String(res.detail).slice(0, 500) : '');
       replyEl.textContent = reply;
+      if (res.retryable) appendChatRetry(typing, text);
     }
   } else if (useAI) {
     // Report provider errors directly, never substitute a canned AI response.
@@ -5028,6 +5071,12 @@ function toolFeedUpdate({ name, state }) {
     }
     rec = { el: div, t0: now };
     toolFeedCards.set(name, rec);
+  }
+  if (state === 'skipped') {
+    rec.el.classList.remove('running'); rec.el.classList.add('skipped');
+    const io = rec.el.querySelector('.tool-io pre'); if (io) io.textContent = 'skipped — optional step unavailable';
+    const dur = rec.el.querySelector('.tool-dur'); if (dur) dur.textContent = '—';
+    return;
   }
   if (state === 'done') {
     const secs = ((now - rec.t0) / 1000).toFixed(1);

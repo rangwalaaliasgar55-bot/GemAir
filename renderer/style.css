@@ -44,6 +44,20 @@ body[data-theme='amber'] {
 body[data-theme='rgb'] {
   --accent: #ff3bff; --accent-soft: rgba(255,59,255,.55); --accent-glow: rgba(255,59,255,.32); --accent-dim: rgba(255,59,255,.14);
 }
+/* First-paint fallbacks (themes.js rewrites these on boot). graphite/ocean
+   were missing, so those themes flashed the wrong accent before JS ran. */
+body[data-theme='graphite'] {
+  --accent: #d9dee8; --accent-soft: rgba(217,222,232,.55); --accent-glow: rgba(217,222,232,.2); --accent-dim: rgba(217,222,232,.14);
+}
+body[data-theme='ocean'] {
+  --accent: #75b9ff; --accent-soft: rgba(117,185,255,.55); --accent-glow: rgba(117,185,255,.24); --accent-dim: rgba(117,185,255,.14);
+}
+body[data-theme='porcelain'] {
+  --accent: #0a84ff; --accent-soft: rgba(10,132,255,.55); --accent-glow: rgba(10,132,255,.18); --accent-dim: rgba(10,132,255,.14);
+}
+body[data-theme='midnight'] {
+  --accent: #0a84ff; --accent-soft: rgba(10,132,255,.55); --accent-glow: rgba(10,132,255,.22); --accent-dim: rgba(10,132,255,.14);
+}
 
 /* RGB / rainbow animation keyframes */
 @keyframes rgbHue {

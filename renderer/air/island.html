@@ -7,46 +7,63 @@
 <link rel="stylesheet" href="island.css" />
 </head>
 <body>
-  <div id="island" class="island compact" data-mode="working">
-    <!-- compact capsule -->
-    <div class="capsule" id="capsule">
-      <span class="grip" id="grip" title="Drag to move"></span>
-      <span class="dot" id="dot"></span>
-      <span class="subject" id="subject">Gem Air</span>
-      <span class="divider"></span>
-      <span class="meta" id="meta">Starting…</span>
-      <span class="timer" id="timer"></span>
+  <div id="island" class="island compact" data-mode="idle">
+    <!-- Compact pill: status at a glance, click or Enter to expand -->
+    <div class="capsule" id="capsule" role="button" tabindex="0" aria-expanded="false" aria-label="Gem Air status. Activate to expand details.">
+      <span class="orb" id="orb" aria-hidden="true"><span class="orb-core"></span></span>
+      <span class="capsule-text">
+        <span class="subject" id="subject">Gem Air</span>
+        <span class="meta" id="meta">Starting…</span>
+      </span>
+      <span class="timer" id="timer" aria-hidden="true"></span>
+      <span class="chevron" aria-hidden="true">
+        <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+      </span>
     </div>
 
-    <!-- expanded body -->
-    <div class="body" id="body">
+    <!-- Expanded sheet -->
+    <div class="body" id="body" role="region" aria-label="Gem Air details">
       <div class="row head">
         <div class="idc">
-          <span class="mark"></span>
+          <span class="orb orb-sm" id="orb-sm" aria-hidden="true"><span class="orb-core"></span></span>
           <span class="name">Gem Air</span>
+          <span class="status-pill" id="status-pill">Idle</span>
         </div>
         <div class="head-actions">
-          <button class="ghost" id="btn-dashboard" title="Open dashboard">Dashboard</button>
-          <button class="ghost" id="btn-collapse" title="Collapse">&#9662;</button>
+          <button class="icon-btn" id="btn-dashboard" title="Open dashboard" aria-label="Open dashboard">
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 3.5H3.5v9h9V9.5"/><path d="M9.5 3.5h3v3M12.2 3.8 8 8"/></svg>
+          </button>
+          <button class="icon-btn" id="btn-collapse" title="Collapse (Esc)" aria-label="Collapse">
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10 8 5.5 12.5 10"/></svg>
+          </button>
         </div>
       </div>
 
-      <div class="context" id="context">
-        <div class="ctx-main">
-          <span class="ctx-subject" id="ctx-subject">—</span>
-          <span class="chip" id="ctx-chip">—</span>
+      <div class="context card" id="context">
+        <div class="ctx-top">
+          <div class="ctx-main">
+            <span class="ctx-subject" id="ctx-subject">—</span>
+            <span class="chip" id="ctx-chip">—</span>
+          </div>
+          <span class="ctx-timer" id="ctx-timer">00:00</span>
         </div>
         <div class="ctx-sub" id="ctx-sub"></div>
-        <div class="ctx-timer" id="ctx-timer">00:00:00</div>
+        <div class="ctx-progress" id="ctx-progress" hidden>
+          <div class="ctx-progress-bar" id="ctx-progress-bar"></div>
+        </div>
       </div>
 
-      <div class="panel question" id="question" hidden>
+      <div class="panel question card" id="question" hidden>
+        <div class="q-head">
+          <span class="q-eyebrow">Teach Gem Air</span>
+          <button class="ghost sm" id="q-dismiss" title="Ask me later">Later</button>
+        </div>
         <div class="q-prompt" id="q-prompt">Is this what you're supposed to be doing?</div>
         <div class="q-subject" id="q-subject"></div>
         <div class="q-actions" id="q-actions"></div>
         <div class="q-new" id="q-new" hidden>
-          <input id="q-label" type="text" maxlength="24" placeholder="New label, e.g. Research" />
-          <div class="swatches" id="q-swatches"></div>
+          <input id="q-label" type="text" maxlength="24" placeholder="New label, e.g. Research" aria-label="New category label" />
+          <div class="swatches" id="q-swatches" role="group" aria-label="Category color"></div>
           <div class="q-new-actions">
             <button class="primary" id="q-create">Create &amp; file</button>
             <button class="ghost" id="q-cancel">Cancel</button>
@@ -54,21 +71,21 @@
         </div>
       </div>
 
-      <div class="panel state" id="state-panel">
-        <div class="state-row" id="row-plan"><span class="k">Plan</span><span class="v" id="v-plan">None active</span></div>
-        <div class="state-row" id="row-block"><span class="k">Blocking</span><span class="v" id="v-block">Idle</span></div>
-        <div class="state-row" id="row-sleep"><span class="k">Sleep</span><span class="v" id="v-sleep">Off</span></div>
-        <div class="state-row" id="row-next"><span class="k">Next</span><span class="v" id="v-next">—</span></div>
+      <div class="panel state card" id="state-panel" aria-live="polite">
+        <div class="state-row" id="row-plan"><span class="k"><span class="k-ico" aria-hidden="true">◷</span>Plan</span><span class="v" id="v-plan">None active</span></div>
+        <div class="state-row" id="row-block"><span class="k"><span class="k-ico" aria-hidden="true">⛔</span>Blocking</span><span class="v" id="v-block">Idle</span></div>
+        <div class="state-row" id="row-sleep"><span class="k"><span class="k-ico" aria-hidden="true">☾</span>Sleep</span><span class="v" id="v-sleep">Off</span></div>
+        <div class="state-row" id="row-next"><span class="k"><span class="k-ico" aria-hidden="true">→</span>Next</span><span class="v" id="v-next">—</span></div>
       </div>
 
-      <div class="controls">
-        <button class="pill" data-nav="plans">Plans</button>
-        <button class="pill" data-nav="blocking">Blocks</button>
-        <button class="pill" data-nav="activity">Activity</button>
-        <button class="pill" data-nav="sleep">Sleep</button>
+      <div class="controls" role="group" aria-label="Quick actions">
+        <button class="pill" data-nav="plans"><span class="p-ico" aria-hidden="true">◷</span>Plans</button>
+        <button class="pill" data-nav="blocking"><span class="p-ico" aria-hidden="true">⛔</span>Blocks</button>
+        <button class="pill" data-nav="activity"><span class="p-ico" aria-hidden="true">▦</span>Activity</button>
+        <button class="pill" data-nav="sleep"><span class="p-ico" aria-hidden="true">☾</span>Sleep</button>
       </div>
 
-      <div class="confirm" id="confirm" hidden></div>
+      <div class="confirm" id="confirm" role="status" hidden></div>
     </div>
   </div>
   <script src="island-boot.js"></script>
