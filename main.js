@@ -13,6 +13,7 @@ const chatgptCodex = require('./lib/chatgpt-codex');
 const freeGPT35Sidecar = require('./lib/freegpt35-sidecar');
 const openJarvisSidecar = require('./lib/openjarvis-sidecar');
 const { selectRelevantTools } = require('./lib/tool-router');
+const { normalizeRecurrence, nextOccurrence } = require('./lib/recurrence');
 const windowTools = require('./lib/window-tools');
 const modesLib = require('./lib/modes');
 const computerAgent = require('./lib/computer-agent');
@@ -744,7 +745,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'web_search', description: 'Search the web and return concise results.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
   { type: 'function', function: { name: 'open_application', description: 'Open an application or file location (calculator, notepad, browser, terminal, files, settings…).', parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } } },
   { type: 'function', function: { name: 'calculate', description: 'Evaluate a math expression.', parameters: { type: 'object', properties: { expression: { type: 'string' } }, required: ['expression'] } } },
-  { type: 'function', function: { name: 'set_reminder', description: 'Create a reminder that will notify the user later. `when` can be ISO datetime or like "in 10 minutes".', parameters: { type: 'object', properties: { text: { type: 'string' }, when: { type: 'string' } }, required: ['text', 'when'] } } },
+  { type: 'function', function: { name: 'set_reminder', description: 'Create a reminder that will notify the user later. `when` can be ISO datetime or like "in 10 minutes". Optional `repeat` supports daily, weekdays, weekly, monthly, hourly, or every N minutes/hours/days/weeks/months.', parameters: { type: 'object', properties: { text: { type: 'string' }, when: { type: 'string' }, repeat: { type: 'string', description: 'Optional recurrence, e.g. daily, weekdays, weekly, or every 2 hours.' } }, required: ['text', 'when'] } } },
   { type: 'function', function: { name: 'list_reminders', description: 'List the user\'s pending reminders.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'save_note', description: 'Save a note to the user\'s persistent notebook.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
   { type: 'function', function: { name: 'list_notes', description: 'List the user\'s saved notes.', parameters: { type: 'object', properties: {} } } },
@@ -2917,14 +2918,15 @@ async function executeToolNow(name, args) {
         return { result: safeEval(args.expression) };
       case 'set_reminder': {
         const at = parseWhen(args.when);
+        const recurrence = normalizeRecurrence(args.repeat);
         const m = readMemory();
-        m.reminders.push({ id: uid(), text: args.text, at, done: false, notified: false, created: Date.now() });
+        m.reminders.push({ id: uid(), text: String(args.text || '').slice(0, 2000), at, ...(recurrence ? { repeat: recurrence.label } : {}), done: false, notified: false, created: Date.now() });
         writeMemory(m);
-        return { ok: true, at: new Date(at).toLocaleString() };
+        return { ok: true, at: new Date(at).toLocaleString(), ...(recurrence ? { repeat: recurrence.label } : {}) };
       }
       case 'list_reminders': {
         const m = readMemory();
-        const list = m.reminders.filter(r => !r.done).map(r => ({ id: r.id, text: r.text, at: new Date(r.at).toLocaleString() }));
+        const list = m.reminders.filter(r => !r.done).map(r => ({ id: r.id, text: r.text, at: new Date(r.at).toLocaleString(), ...(r.repeat ? { repeat: r.repeat } : {}) }));
         return { reminders: list };
       }
       case 'save_note': {
@@ -3497,12 +3499,19 @@ async function offlineBrain(text) {
     if (m) { const t = getWorldTime(m[1].trim()); return t.error || `In ${t.city} it is ${t.time}.`; }
   }
   if (/remind|reminder/.test(q)) {
-    const m = q.match(/remind(?: me)?(?: to)? (.+?)(?: in (.+)| at (.+))$/);
+    // Keep recurring reminders useful even when no cloud/local model is
+    // available. The same recurrence grammar is used by the tool path and UI.
+    const repeatMatch = q.match(/\b(every\s+\d+\s+(?:minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|months?)|every\s+(?:day|weekday|week|month)|daily|weekdays|weekly|monthly|hourly)\b/i);
+    const repeat = repeatMatch ? normalizeRecurrence(repeatMatch[1]) : null;
+    const reminderQuery = repeatMatch ? q.replace(repeatMatch[0], ' ').replace(/\s+/g, ' ').trim() : q;
+    const m = reminderQuery.match(/remind(?: me)?(?: to)? (.+?)(?: in (.+)| at (.+))$/);
     if (m) {
       const text = m[1].trim(); const when = (m[2] || m[3] || '1 hour').trim();
       const at = parseWhen(when);
-      const mem = readMemory(); mem.reminders.push({ id: uid(), text, at, done: false, notified: false, created: Date.now() }); writeMemory(mem);
-      return `Reminder set: "${text}" for ${new Date(at).toLocaleString()}.`;
+      const mem = readMemory();
+      mem.reminders.push({ id: uid(), text, at, ...(repeat ? { repeat: repeat.label } : {}), done: false, notified: false, created: Date.now() });
+      writeMemory(mem);
+      return `Reminder set: "${text}" for ${new Date(at).toLocaleString()}${repeat ? `, repeating ${repeat.label}` : ''}.`;
     }
   }
   if (/note|remember to|write down|save this/.test(q)) {
@@ -3619,11 +3628,24 @@ function hideHudPanel() {
 function startReminderScheduler() {
   setInterval(() => {
     const m = readMemory();
+    const now = Date.now();
     let changed = false;
     for (const r of m.reminders) {
-      if (!r.done && !r.notified && r.at <= Date.now()) {
-        r.notified = true; changed = true;
-        if (mainWindow) mainWindow.webContents.send('reminder:due', r);
+      if (!r.done && !r.notified && r.at <= now) {
+        const dueAt = r.at;
+        const recurrence = normalizeRecurrence(r.repeat);
+        let due = { ...r, dueAt };
+        if (recurrence) {
+          // Move the persisted occurrence before notifying so a restart or a
+          // slow renderer cannot deliver the same recurring alert twice.
+          r.at = nextOccurrence(r.at, recurrence, now) || (now + 60 * 1000);
+          r.notified = false;
+          due = { ...r, at: dueAt, dueAt, nextAt: r.at, repeat: recurrence.label };
+        } else {
+          r.notified = true;
+        }
+        changed = true;
+        if (mainWindow) mainWindow.webContents.send('reminder:due', due);
         if (Notification.isSupported()) new Notification({ title: 'GemAir Reminder', body: r.text }).show();
       }
     }
@@ -4459,6 +4481,12 @@ ipcMain.handle('openjarvis:capabilities', async () => {
     return await openJarvisSidecar.request('capabilities', {}, { timeoutMs: 30_000 });
   } catch (error) { return { ok: false, error: error.code || 'OPENJARVIS_CAPABILITIES_FAILED', message: String(error.message || error).slice(0, 1000) }; }
 });
+ipcMain.handle('openjarvis:skillCatalog', async () => {
+  try {
+    openJarvisRequestConfig();
+    return await openJarvisSidecar.request('skill_catalog', {}, { timeoutMs: 30_000 });
+  } catch (error) { return { ok: false, error: error.code || 'OPENJARVIS_SKILLS_FAILED', message: String(error.message || error).slice(0, 1000) }; }
+});
 ipcMain.handle('openjarvis:mcpDiscover', async () => {
   try {
     openJarvisRequestConfig();
@@ -4587,7 +4615,13 @@ ipcMain.handle('memory:addFact', (_e, fact) => { upsertFact(fact); return true; 
 ipcMain.handle('memory:deleteFact', (_e, id) => { const m = readMemory(); m.facts = m.facts.filter(f => f.id !== id); writeMemory(m); return true; });
 ipcMain.handle('memory:addNote', (_e, text) => { const m = readMemory(); m.notes.unshift({ id: uid(), text, created: Date.now() }); writeMemory(m); return true; });
 ipcMain.handle('memory:deleteNote', (_e, id) => { const m = readMemory(); m.notes = m.notes.filter(n => n.id !== id); writeMemory(m); return true; });
-ipcMain.handle('memory:addReminder', (_e, text, at) => { const m = readMemory(); m.reminders.push({ id: uid(), text, at, done: false, notified: false, created: Date.now() }); writeMemory(m); return true; });
+ipcMain.handle('memory:addReminder', (_e, text, at, repeat) => {
+  const recurrence = normalizeRecurrence(repeat);
+  const m = readMemory();
+  m.reminders.push({ id: uid(), text: String(text || '').slice(0, 2000), at: Number(at) || (Date.now() + 3600000), ...(recurrence ? { repeat: recurrence.label } : {}), done: false, notified: false, created: Date.now() });
+  writeMemory(m);
+  return true;
+});
 ipcMain.handle('memory:deleteReminder', (_e, id) => { const m = readMemory(); m.reminders = m.reminders.filter(r => r.id !== id); writeMemory(m); return true; });
 ipcMain.handle('memory:markReminder', (_e, id, done) => { const m = readMemory(); const r = m.reminders.find(r => r.id === id); if (r) { r.done = !!done; r.notified = false; } writeMemory(m); return true; });
 ipcMain.handle('memory:extract', async (_e, config, userText, assistantText) => {

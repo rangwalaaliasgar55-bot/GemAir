@@ -139,6 +139,7 @@ def op_health(_: dict[str, Any]) -> dict[str, Any]:
             "memory_store",
             "scan",
             "capabilities",
+            "skill_catalog",
             "mcp_discover",
         ],
         "agents": sorted(ALLOWED_AGENTS),
@@ -254,6 +255,69 @@ def op_mcp_discover(_: dict[str, Any]) -> dict[str, Any]:
                 pass
 
 
+def _skill_catalog_paths() -> list[tuple[str, Path]]:
+    """Return only GemAir's bundled catalog and the user's OpenJarvis skills.
+
+    Imported skills are never fetched as part of discovery. They must already
+    exist in the local OpenJarvis directory, keeping this read-only operation
+    offline-first and avoiding an unreviewed skill supply chain.
+    """
+    home = Path(os.environ.get("OPENJARVIS_HOME", str(Path.home() / ".openjarvis"))).expanduser()
+    return [
+        ("bundled", ROOT / "src" / "openjarvis" / "skills" / "data"),
+        ("local", home / "skills"),
+    ]
+
+
+def op_skill_catalog(_: dict[str, Any]) -> dict[str, Any]:
+    """Expose discoverable skill metadata without executing any skill."""
+    from openjarvis.skills.loader import discover_skills
+
+    try:
+        from openjarvis.security.injection_scanner import InjectionScanner
+        scanner = InjectionScanner()
+    except Exception:
+        scanner = None
+
+    skills: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
+    for source, directory in _skill_catalog_paths():
+        try:
+            for manifest in discover_skills(directory):
+                name = str(manifest.name).strip()
+                if not name or name in skills:
+                    continue  # bundled defaults win; local duplicates are ignored
+                metadata = manifest.metadata if isinstance(manifest.metadata, dict) else {}
+                origin = metadata.get("openjarvis", {}) if isinstance(metadata.get("openjarvis", {}), dict) else {}
+                skill_text = "\n".join([
+                    str(manifest.description or ""),
+                    *[str(getattr(step, "arguments_template", ""))[:4000] for step in (manifest.steps or [])[:30]],
+                ])[:64_000]
+                findings = scanner.scan(skill_text).findings if scanner is not None else []
+                skills[name] = {
+                    "name": name,
+                    "description": str(manifest.description or name)[:1000],
+                    "author": str(manifest.author or "OpenJarvis")[:200],
+                    "tags": [str(tag)[:80] for tag in (manifest.tags or [])[:12]],
+                    "requiredCapabilities": [str(cap)[:120] for cap in (manifest.required_capabilities or [])[:20]],
+                    "steps": len(manifest.steps or []),
+                    "userInvocable": bool(manifest.user_invocable),
+                    "source": str(origin.get("source") or source)[:80],
+                    "safeForGuidedUse": scanner is not None and not findings,
+                    "securityFindings": [str(getattr(item, "pattern_name", "suspicious content"))[:120] for item in findings[:8]],
+                }
+        except Exception as exc:
+            errors.append(f"{source}: {str(exc)[:240]}")
+    return {
+        "ok": True,
+        "offline": True,
+        "securityScanAvailable": scanner is not None,
+        "skills": sorted(skills.values(), key=lambda item: item["name"]),
+        "errors": errors,
+        "note": "Catalog metadata only. A skill is not executed until GemAir sends a user request through its policy-gated agent.",
+    }
+
+
 def op_capabilities(_: dict[str, Any]) -> dict[str, Any]:
     """Report source modules separately from locally ready dependencies."""
     import shutil
@@ -364,6 +428,7 @@ OPERATIONS = {
     "memory_store": op_memory_store,
     "scan": op_scan,
     "capabilities": op_capabilities,
+    "skill_catalog": op_skill_catalog,
     "mcp_discover": op_mcp_discover,
 }
 

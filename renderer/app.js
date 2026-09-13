@@ -149,6 +149,7 @@ const api = {
   async openJarvisMemorySearch(query, topK) { if (window.gemair && window.gemair.openJarvisMemorySearch) return window.gemair.openJarvisMemorySearch(query, topK); return { ok: false, error: 'DESKTOP_ONLY' }; },
   async openJarvisScan(text, includePii) { if (window.gemair && window.gemair.openJarvisScan) return window.gemair.openJarvisScan(text, includePii); return { ok: false, error: 'DESKTOP_ONLY' }; },
   async openJarvisCapabilities() { if (window.gemair && window.gemair.openJarvisCapabilities) return window.gemair.openJarvisCapabilities(); return { ok: false, error: 'DESKTOP_ONLY' }; },
+  async openJarvisSkillCatalog() { if (window.gemair && window.gemair.openJarvisSkillCatalog) return window.gemair.openJarvisSkillCatalog(); return { ok: false, error: 'DESKTOP_ONLY' }; },
   async openJarvisMcpDiscover() { if (window.gemair && window.gemair.openJarvisMcpDiscover) return window.gemair.openJarvisMcpDiscover(); return { ok: false, error: 'DESKTOP_ONLY' }; },
   onOpenJarvisInstallProgress(cb) { return registerRendererDisposer(window.gemair && window.gemair.onOpenJarvisInstallProgress ? window.gemair.onOpenJarvisInstallProgress(cb) : null); },
   async listLocalModels() { if (window.gemair && window.gemair.listLocalModels) return window.gemair.listLocalModels(); return { models: [] }; },
@@ -161,7 +162,7 @@ const api = {
   async memoryDeleteFact(id) { if (window.gemair) return window.gemair.memoryDeleteFact(id); if (window.webStore) await window.webStore.deleteFact(id); },
   async memoryAddNote(text) { if (window.gemair) return window.gemair.memoryAddNote(text); if (window.webStore) await window.webStore.addNote(text); },
   async memoryDeleteNote(id) { if (window.gemair) return window.gemair.memoryDeleteNote(id); if (window.webStore) await window.webStore.deleteNote(id); },
-  async memoryAddReminder(text, at) { if (window.gemair) return window.gemair.memoryAddReminder(text, at); if (window.webStore) await window.webStore.addReminder(text, at); },
+  async memoryAddReminder(text, at, repeat) { if (window.gemair) return window.gemair.memoryAddReminder(text, at, repeat); if (window.webStore) await window.webStore.addReminder(text, at, repeat); },
   async memoryDeleteReminder(id) { if (window.gemair) return window.gemair.memoryDeleteReminder(id); if (window.webStore) await window.webStore.deleteReminder(id); },
   async memoryMarkReminder(id, done) { if (window.gemair) return window.gemair.memoryMarkReminder(id, done); if (window.webStore) await window.webStore.markReminder(id, done); },
   async memoryExtract(config, u, a) {
@@ -2838,6 +2839,35 @@ async function handleSlashCommand(text) {
     return true;
   }
 
+  if (cmd === '/skills' || cmd.startsWith('/skills ')) {
+    const filter = text.slice('/skills'.length).trim().toLowerCase();
+    const catalog = await api.openJarvisSkillCatalog().catch((error) => ({ ok: false, message: error.message }));
+    if (!catalog || !catalog.ok) {
+      replyLine('OpenJarvis skill catalog unavailable: ' + ((catalog && (catalog.message || catalog.error)) || 'install the isolated runtime in Settings.'));
+      return true;
+    }
+    const skills = (catalog.skills || []).filter((skill) => !filter || `${skill.name} ${skill.description} ${(skill.tags || []).join(' ')}`.toLowerCase().includes(filter));
+    const lines = skills.slice(0, 40).map((skill) => `• ${skill.name} — ${skill.description}${skill.requiredCapabilities?.length ? ` [${skill.requiredCapabilities.join(', ')}]` : ''}`);
+    replyLine(`[OPENJARVIS SKILLS] ${skills.length} available${filter ? ` for “${filter}”` : ''}\n${lines.length ? lines.join('\n') : 'No skills match that filter.'}\n\nUse /skill <name> <request> to run a guided, policy-gated request.`);
+    return true;
+  }
+
+  if (cmd.startsWith('/skill ')) {
+    const rest = text.slice('/skill '.length).trim();
+    const [name, ...requestParts] = rest.split(/\s+/);
+    if (!name) { replyLine('Usage: /skill <name> <request>. Start with /skills to browse the local catalog.'); return true; }
+    const catalog = await api.openJarvisSkillCatalog().catch((error) => ({ ok: false, message: error.message }));
+    const skill = (catalog && catalog.skills || []).find((item) => item.name.toLowerCase() === name.toLowerCase());
+    if (!catalog?.ok || !skill) { replyLine(`Skill “${name}” was not found. Type /skills to browse the locally installed catalog.`); return true; }
+    if (skill.safeForGuidedUse === false) { replyLine(`Skill “${name}” is blocked by the local security scan${skill.securityFindings?.length ? ` (${skill.securityFindings.join(', ')})` : ''}. Review or remove its local manifest before using it.`); return true; }
+    const request = requestParts.join(' ').trim() || `Explain how to apply the ${skill.name} workflow and ask for any missing inputs before acting.`;
+    showOperationProgress(`OpenJarvis skill · ${skill.name}…`);
+    const guided = `Use the discoverable OpenJarvis skill “${skill.name}”. Skill description: ${skill.description}. Required capabilities: ${(skill.requiredCapabilities || []).join(', ') || 'none listed'}. Treat this as a guided workflow: state the plan, keep actions within GemAir policy, and do not claim a tool action was performed unless it actually ran. User request: ${request}`;
+    const result = await api.openJarvisAsk('ask', guided, getContextMessages(24)).catch((error) => ({ ok: false, message: error.message }));
+    replyLine(result && result.ok && result.content ? `[OPENJARVIS SKILL · ${skill.name}]\n${result.content}` : `OpenJarvis skill failed: ${((result && (result.message || result.error)) || 'unavailable')}`);
+    return true;
+  }
+
   if (cmd.startsWith('/research ') || cmd.startsWith('/plan ')) {
     const mode = cmd.startsWith('/research ') ? 'research' : 'plan';
     const query = text.replace(/^\/(?:research|plan)\s+/i, '').trim();
@@ -5096,7 +5126,7 @@ function renderReminders() {
     div.className = 'reminder-item' + (r.done ? ' done' : '');
     div.innerHTML = `
       <button class="tick-btn" title="Toggle done">${r.done ? '✓' : ''}</button>
-      <span class="body">${escapeHtml(r.text)}<small>${r.done ? 'done' : new Date(r.at).toLocaleString()}</small></span>
+      <span class="body">${escapeHtml(r.text)}<small>${r.done ? 'done' : new Date(r.at).toLocaleString()}${r.repeat ? ` · ↻ ${escapeHtml(r.repeat)}` : ''}</small></span>
       <button class="del-btn" title="Delete">✕</button>`;
     div.querySelector('.tick-btn').addEventListener('click', async () => { await api.memoryMarkReminder(r.id, !r.done); await loadMemory(); renderReminders(); });
     div.querySelector('.del-btn').addEventListener('click', async () => { await api.memoryDeleteReminder(r.id); await loadMemory(); renderReminders(); });
@@ -5117,6 +5147,33 @@ function renderSkills() {
     list.appendChild(div);
   });
 }
+async function renderOpenJarvisSkills() {
+  const list = $('#openJarvisSkillsList');
+  if (!list) return;
+  list.innerHTML = '<div class="empty">Reading the local OpenJarvis skill catalog…</div>';
+  const result = await api.openJarvisSkillCatalog().catch((error) => ({ ok: false, message: error.message }));
+  if (!result || !result.ok) {
+    list.innerHTML = `<div class="empty">${escapeHtml((result && (result.message || result.error)) || 'OpenJarvis is not installed yet. Install it from Settings → AI & Connections.')}</div>`;
+    return;
+  }
+  const skills = Array.isArray(result.skills) ? result.skills : [];
+  if (!skills.length) { list.innerHTML = '<div class="empty">No local OpenJarvis skills found. Bundled skills appear after the isolated runtime is installed.</div>'; return; }
+  list.innerHTML = '';
+  skills.forEach((skill) => {
+    const row = document.createElement('div');
+    const safe = skill.safeForGuidedUse !== false;
+    row.className = 'memory-item';
+    row.innerHTML = `<span class="tag">${escapeHtml(String(skill.source || 'LOCAL').toUpperCase())}</span><span class="body"><b>${escapeHtml(skill.name)}</b><br><small>${escapeHtml(skill.description || '')}${skill.steps ? ` · ${skill.steps} steps` : ''}${safe ? '' : ' · blocked by security scan'}</small></span><button class="ghost-btn skill-use-btn" type="button" title="${safe ? 'Start a guided request with this skill' : 'This skill is blocked by the security scan'}"${safe ? '' : ' disabled'}>${safe ? 'USE' : 'BLOCKED'}</button>`;
+    if (safe) row.querySelector('.skill-use-btn').addEventListener('click', () => {
+      switchView('assistant');
+      const input = $('#chatInput');
+      if (input) { input.value = `/skill ${skill.name} `; input.focus(); }
+      toast('SKILL', `${skill.name} ready — add your request.`, '🧩');
+    });
+    list.appendChild(row);
+  });
+}
+
 function renderInstructions() {
   const list = $('#instructionsList');
   if (!list) return;
@@ -6686,7 +6743,9 @@ function bindEvents() {
     $$('.core-pane').forEach((p) => p.classList.toggle('active', p.dataset.pane === t.dataset.tab));
     if (t.dataset.tab === 'audit') renderAuditLog();
     if (t.dataset.tab === 'browser') renderMemoryBrowser();
+    if (t.dataset.tab === 'skills') renderOpenJarvisSkills();
   }));
+  $('#loadOpenJarvisSkillsBtn')?.addEventListener('click', () => renderOpenJarvisSkills());
 
   // memory / notes / reminders add
   // T5 — ambient controls preview instantly, while the panel is open
@@ -6802,8 +6861,9 @@ function bindEvents() {
     if (!text) return;
     const whenRaw = $('#remWhen').value.trim();
     const at = whenRaw ? parseLocalWhen(whenRaw) : Date.now() + 3600000;
-    await api.memoryAddReminder(text, at);
-    $('#remText').value = ''; $('#remWhen').value = '';
+    const repeat = $('#remRepeat')?.value || '';
+    await api.memoryAddReminder(text, at, repeat);
+    $('#remText').value = ''; $('#remWhen').value = ''; if ($('#remRepeat')) $('#remRepeat').value = '';
     await loadMemory(); renderReminders();
   });
   $('#remWhen').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#remAdd').click(); });

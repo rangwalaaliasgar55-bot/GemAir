@@ -572,6 +572,14 @@
                 <div class="inline-add">
                   <input type="text" id="remText" placeholder="Remind me to…" />
                   <input type="text" id="remWhen" placeholder="e.g. in 10 minutes" style="width:140px" />
+                  <select id="remRepeat" aria-label="Repeat reminder" style="max-width:140px">
+                    <option value="">Does not repeat</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekdays">Weekdays</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
                   <button class="mini-btn" id="remAdd">+</button>
                 </div>
                 <div class="memory-list" id="remindersList">
@@ -580,7 +588,7 @@
               </div>
 
               <div class="hud-panel core-pane" data-pane="skills">
-                <h3 class="panel-title">LEARNED SKILLS <span class="dim">— CUSTOM KNOWLEDGE</span></h3>
+                <h3 class="panel-title">SKILL LIBRARY <span class="dim">— LEARNED + OPENJARVIS WORKFLOWS</span></h3>
                 <div class="inline-add">
                   <input type="text" id="skillName" placeholder="Skill name (optional)" style="width:140px" />
                   <input type="text" id="skillInput" placeholder="e.g. how to structure my reports" />
@@ -588,6 +596,13 @@
                 </div>
                 <div class="memory-list" id="skillsList">
                   <div class="empty">No custom skills saved yet.</div>
+                </div>
+                <div class="inline-add" style="margin-top:14px;align-items:center;">
+                  <span class="dim" style="font-size:11px;flex:1;">Local catalog · metadata only · no skill is fetched or executed during discovery.</span>
+                  <button class="refresh-btn" id="loadOpenJarvisSkillsBtn" type="button">REFRESH LIBRARY</button>
+                </div>
+                <div class="memory-list" id="openJarvisSkillsList" aria-live="polite">
+                  <div class="empty">Install OpenJarvis to discover its bundled planning, research, coding and digest workflows.</div>
                 </div>
               </div>
 
