@@ -20,6 +20,7 @@ const computerAgent = require('./lib/computer-agent');
 computerAgent.setWindowTools(windowTools);
 const backgroundMonitor = require('./lib/background-monitor');
 const { buildDailyDigest, dayKey } = require('./lib/daily-digest');
+const { redactSensitiveText } = require('./lib/privacy-redaction');
 const { AttentionService } = require('./lib/attention/service');
 const attentionIpc = require('./lib/attention/ipc');
 const islandWindow = require('./lib/attention/island-window');
@@ -3294,11 +3295,14 @@ async function anonymousBrainChat(messages, onDelta) {
   }
 }
 async function rememberWithOpenJarvis(userText, assistantText) {
-  if (openJarvisPreferences().enabled !== true) return false;
-  const user = digestText(userText, 1200);
-  const assistant = digestText(assistantText, 1800);
-  if (!user || !assistant) return false;
-  const digest = `Conversation memory digest\nUser request: ${user}\nOutcome: ${assistant}`;
+  const preferences = openJarvisPreferences();
+  if (preferences.enabled !== true) return false;
+  const userRaw = digestText(userText, 1200);
+  const assistantRaw = digestText(assistantText, 1800);
+  const user = preferences.redactMemory === false ? { text: userRaw, redacted: false } : redactSensitiveText(userRaw);
+  const assistant = preferences.redactMemory === false ? { text: assistantRaw, redacted: false } : redactSensitiveText(assistantRaw);
+  if (!user.text || !assistant.text) return false;
+  const digest = `Conversation memory digest\nUser request: ${user.text}\nOutcome: ${assistant.text}`;
   try {
     await openJarvisSidecar.request('memory_store', { text: digest, source: 'gemair-conversation', ...openJarvisRequestConfig() }, { timeoutMs: 30_000 });
     return true;

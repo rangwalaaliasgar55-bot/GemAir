@@ -593,7 +593,7 @@ function makeDefaultProfile() {
     brainPriority: DEFAULTS.brainPriority,
     connectionsWarningAcknowledged: DEFAULTS.connectionsWarningAcknowledged,
     anonymousChat: true,
-    openJarvis: { enabled: false, planning: true, agent: 'orchestrator', engine: 'ollama', model: '', mcpEnabled: false, mcpUrl: '' },
+    openJarvis: { enabled: false, planning: true, redactMemory: true, agent: 'orchestrator', engine: 'ollama', model: '', mcpEnabled: false, mcpUrl: '' },
     ai: { baseURL: '', apiKey: '', model: DEFAULTS.model },
     voice: {
       preset: DEFAULTS.voicePreset,
@@ -6239,6 +6239,7 @@ function openSettings() {
   if ($('#setAnonymousChat')) $('#setAnonymousChat').checked = profile.anonymousChat !== false;
   if ($('#setOpenJarvisEnabled')) $('#setOpenJarvisEnabled').checked = profile.openJarvis?.enabled === true;
   if ($('#setOpenJarvisPlanning')) $('#setOpenJarvisPlanning').checked = profile.openJarvis?.planning !== false;
+  if ($('#setOpenJarvisRedactMemory')) $('#setOpenJarvisRedactMemory').checked = profile.openJarvis?.redactMemory !== false;
   if ($('#setOpenJarvisMcp')) $('#setOpenJarvisMcp').checked = profile.openJarvis?.mcpEnabled === true;
   if ($('#setOpenJarvisMcpUrl')) $('#setOpenJarvisMcpUrl').value = profile.openJarvis?.mcpUrl || '';
   $('#setAllowShell').checked = !!profile.allowShell;
@@ -7238,6 +7239,7 @@ function bindEvents() {
       ...(profile.openJarvis || {}),
       enabled: $('#setOpenJarvisEnabled') ? $('#setOpenJarvisEnabled').checked : false,
       planning: $('#setOpenJarvisPlanning') ? $('#setOpenJarvisPlanning').checked : true,
+      redactMemory: $('#setOpenJarvisRedactMemory') ? $('#setOpenJarvisRedactMemory').checked : true,
       mcpEnabled: $('#setOpenJarvisMcp') ? $('#setOpenJarvisMcp').checked : false,
       mcpUrl: ($('#setOpenJarvisMcpUrl')?.value || '').trim().slice(0, 2048),
       agent: 'orchestrator',
