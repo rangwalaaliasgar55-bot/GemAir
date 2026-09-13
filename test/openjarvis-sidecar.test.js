@@ -203,6 +203,10 @@ test('runtime installation can be cancelled and clears installer state', { skip:
   } finally {
     if (previousPython === undefined) delete process.env.PYTHON;
     else process.env.PYTHON = previousPython;
+    // configure() is global module state: restore the shared runtime root
+    // before the directory we pointed at is removed, or every later spawn in
+    // this file targets a deleted cwd and fails with ENOENT.
+    controller.configure({ runtimeRoot: runtime, resourceRoot: path.resolve(__dirname, '..') });
     fs.rmSync(cancelRoot, { recursive: true, force: true });
   }
 });
@@ -232,6 +236,28 @@ test('python probe skips a newer default and takes a compatible interpreter', as
     );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('python probe works before the runtime directory exists', async () => {
+  // Fresh machines have no ~/.gemair/openjarvis yet; a missing default cwd
+  // must not turn every probe into a silent ENOENT (regression: this made
+  // status() report "no compatible Python" on machines that had one).
+  const missing = path.join(runtime, 'never-created', 'openjarvis');
+  assert.equal(fs.existsSync(missing), false);
+  controller.configure({ runtimeRoot: missing, resourceRoot: path.resolve(__dirname, '..') });
+  try {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gemair-openjarvis-fresh-'));
+    try {
+      const fake = path.join(dir, 'fake-python.js');
+      fs.writeFileSync(fake, 'console.log("3.11.9");\n');
+      const picked = await controller.findPython({ candidates: [[process.execPath, [fake]]] });
+      assert.deepEqual(picked, { command: process.execPath, prefix: [fake] });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  } finally {
+    controller.configure({ runtimeRoot: runtime, resourceRoot: path.resolve(__dirname, '..') });
   }
 });
 

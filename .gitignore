@@ -12,3 +12,7 @@ out/
 
 # scratch / debug output (not part of the app)
 .debug/
+
+# Python bytecode from the bundled OpenJarvis sidecar sources
+__pycache__/
+*.pyc
