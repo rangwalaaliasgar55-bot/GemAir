@@ -71,7 +71,9 @@ jobs:
       - name: Collect assets
         run: |
           mkdir -p dist
-          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' \) -exec cp {} dist/ \;
+          # Include electron-updater metadata (latest*.yml) and blockmaps so the
+          # stable channel's in-app auto-update and differential downloads work.
+          find artifacts -type f \( -name '*.exe' -o -name '*.exe.blockmap' -o -name '*.dmg' -o -name '*.dmg.blockmap' -o -name '*.zip' -o -name '*.zip.blockmap' -o -name '*.AppImage' -o -name '*.AppImage.blockmap' -o -name '*.deb' -o -name 'latest*.yml' \) -exec cp {} dist/ \;
            ls -la dist || true
       - name: Generate checksums
         working-directory: dist
