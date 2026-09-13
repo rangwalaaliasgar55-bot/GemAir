@@ -118,7 +118,7 @@ contextBridge.exposeInMainWorld('gemair', {
     const reqId = 'r' + Math.random().toString(36).slice(2);
     return new Promise((resolve, reject) => {
       const onChunk = (_e, data) => { if (data.reqId === reqId) onDelta(data.delta); };
-      const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply, provider: data.provider, model: data.model, fallbackFrom: data.fallbackFrom }); } };
+      const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply, provider: data.provider, model: data.model, fallbackFrom: data.fallbackFrom, sourceError: data.sourceError }); } };
       const onErr = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: false, error: data.error, detail: data.detail, provider: data.provider, sessionExpired: data.sessionExpired === true }); } };
       const cleanup = () => { ipcRenderer.removeListener('ai:chunk', onChunk); ipcRenderer.removeListener('ai:streamEnd', onEnd); ipcRenderer.removeListener('ai:streamError', onErr); };
       ipcRenderer.on('ai:chunk', onChunk);

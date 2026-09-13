@@ -611,6 +611,7 @@ let worldHeadlines = [];
 let worldCategory = 'tech';
 let awaitingName = false;
 let connectionsStatus = { chatgpt: { connected: false }, gemini: { connected: false }, freeCore: { connected: true }, meta: { priority: 'chatgpt' } };
+let connectionIssue = null;
 let sidecarsStatus = { freeGPT35: { available: isElectron }, openJarvis: { installed: false, running: false } };
 let currentMode = '';
 let desktopFocused = { app: '', title: '', pid: 0 };
@@ -2605,7 +2606,9 @@ const humanError = (err) => {
   if (err.startsWith('GEMINI_HTTP_404')) return 'Gemini model retired or API disabled — refresh the model list in Settings → Voice.';
   if (err.startsWith('GEMINI_LIVE_MODEL')) return 'That model is Live-voice-only and cannot answer text chat — pick a text model (e.g. gemini-2.5-flash) in Settings → Voice, or use Live voice.';
   if (err.startsWith('GEMINI_WEB_FAILED')) return 'Gemini call failed — ' + String(err).slice(0, 120);
+  if (err.startsWith('CHATGPT_CODEX_FAILED')) return 'ChatGPT could not complete that turn. GemAir will retry the legacy transport, then use the local fallback — reconnect only if this keeps happening.';
   if (err.startsWith('CHATGPT_WEB_FAILED')) return 'ChatGPT web call failed (often a bot-check) — retry, or re-capture the session in Settings → AI & Connections.';
+  if (err.startsWith('CODEX_EMPTY_RESPONSE') || err.startsWith('CODEX_EMPTY_STREAM')) return 'ChatGPT returned an empty response. Retry once; if it repeats, reconnect in Settings → AI & Connections.';
   if (err === 'TOKEN_EXPIRED') return 'ChatGPT session expired — reconnect in Settings → AI & Connections.';
   if (err.startsWith('HTTP_')) return 'HTTP error ' + err.replace('HTTP_', '').split(' ')[0];
   return String(err).slice(0, 140);
@@ -3170,13 +3173,18 @@ async function handleMessage(text) {
       }
     });
     if (res.ok) {
+      connectionIssue = res.provider === 'Offline Brain'
+        ? { provider: res.fallbackFrom || 'free core', error: res.sourceError || 'upstream unavailable', offline: true }
+        : null;
+      renderConnectionStrip();
       reply = res.reply || acc;
       if (!streamed) { await renderReply(replyEl, reply); }
       else if (streamingVoice) { try { skipFinalSpeak = flushStreamSpeech(reply); } catch (e) {} }
-      if (res.provider === 'FreeGPT35') {
+      if (res.provider === 'FreeGPT35' || res.provider === 'Offline Brain') {
         const label = document.createElement('div');
         label.className = 'response-source';
-        label.textContent = `Source: FreeGPT35 / ${res.model || 'gpt-3.5-turbo'}${res.fallbackFrom ? ' · fallback from ' + String(res.fallbackFrom).toUpperCase() : ''}`;
+        const source = res.provider === 'Offline Brain' ? 'Offline Brain' : 'FreeGPT35';
+        label.textContent = `Source: ${source} / ${res.model || 'local-intent'}${res.fallbackFrom ? ' · fallback from ' + String(res.fallbackFrom).toUpperCase() : ''}`;
         typing.appendChild(label);
       }
       chatHistory.push({ role: 'assistant', content: reply });
@@ -3186,6 +3194,8 @@ async function handleMessage(text) {
         });
       }
     } else if (res.sessionExpired) {
+      connectionIssue = { provider: useConnected, error: res.error, detail: res.detail };
+      renderConnectionStrip();
       // The main process has deleted the provider-rejected credential. Finish
       // this same turn with the honest local fallback instead of making the
       // user resend while the reconnect dialog is open.
@@ -3197,6 +3207,8 @@ async function handleMessage(text) {
       replyEl.textContent = reply;
       chatHistory.push({ role: 'assistant', content: reply });
     } else {
+      connectionIssue = { provider: useConnected, error: res.error, detail: res.detail };
+      renderConnectionStrip();
       replyFailed = true;
       resetStreamSpeech();
       reply = (acc ? acc + '\n\n[Response interrupted]\n' : '') +
@@ -6480,11 +6492,89 @@ async function refreshOllamaModels() {
 }
 
 // ---------------------------------------------------------------------------
+// Navigation shell — a persistent, keyboard-accessible Finder-style sidebar.
+// Width and collapsed state are local UI preferences; no account data leaves
+// the renderer. Pointer capture keeps resize reliable even when the pointer
+// crosses the sidebar edge while dragging.
+// ---------------------------------------------------------------------------
+const SIDEBAR_WIDTH_KEY = 'gemair:sidebar-width';
+const SIDEBAR_COLLAPSED_KEY = 'gemair:sidebar-collapsed';
+function setupWorkspaceSidebar() {
+  const sidebar = $('#mainSidebar');
+  const toggle = $('#sidebarToggle');
+  const resizer = $('#sidebarResizer');
+  if (!sidebar || !toggle || !resizer) return;
+  const read = (key, fallback) => { try { const v = localStorage.getItem(key); return v == null ? fallback : v; } catch { return fallback; } };
+  const write = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
+  const setCollapsed = (collapsed, persist = true) => {
+    const value = !!collapsed;
+    document.body.classList.toggle('sidebar-collapsed', value);
+    toggle.setAttribute('aria-expanded', String(!value));
+    toggle.setAttribute('aria-label', value ? 'Expand sidebar' : 'Collapse sidebar');
+    toggle.title = value ? 'Expand sidebar' : 'Collapse sidebar';
+    if (persist) write(SIDEBAR_COLLAPSED_KEY, String(value));
+  };
+  const savedWidth = Number(read(SIDEBAR_WIDTH_KEY, '228'));
+  const width = Number.isFinite(savedWidth) ? Math.max(176, Math.min(320, savedWidth)) : 228;
+  document.documentElement.style.setProperty('--sidebar-width', `${width}px`);
+  setCollapsed(read(SIDEBAR_COLLAPSED_KEY, 'false') === 'true', false);
+  toggle.addEventListener('click', () => { playSfx('click'); setCollapsed(!document.body.classList.contains('sidebar-collapsed')); });
+  toggle.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle.click(); }
+  });
+
+  let resizing = false;
+  const stopResize = () => {
+    if (!resizing) return;
+    resizing = false;
+    document.body.classList.remove('is-sidebar-resizing');
+    try { resizer.releasePointerCapture?.(activePointer); } catch {}
+    write(SIDEBAR_WIDTH_KEY, getWidth());
+  };
+  let activePointer = null;
+  const getWidth = () => Math.round(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) || 228);
+  resizer.addEventListener('pointerdown', (event) => {
+    if (window.matchMedia?.('(max-width: 860px)').matches) return;
+    event.preventDefault();
+    activePointer = event.pointerId;
+    resizing = true;
+    document.body.classList.add('is-sidebar-resizing');
+    try { resizer.setPointerCapture(event.pointerId); } catch {}
+  });
+  resizer.addEventListener('pointermove', (event) => {
+    if (!resizing) return;
+    const next = Math.max(176, Math.min(320, event.clientX - sidebar.getBoundingClientRect().left));
+    document.documentElement.style.setProperty('--sidebar-width', `${Math.round(next)}px`);
+  });
+  resizer.addEventListener('pointerup', stopResize);
+  resizer.addEventListener('pointercancel', stopResize);
+  resizer.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    const delta = event.key === 'ArrowRight' ? 16 : -16;
+    const next = Math.max(176, Math.min(320, getWidth() + delta));
+    document.documentElement.style.setProperty('--sidebar-width', `${next}px`);
+    write(SIDEBAR_WIDTH_KEY, String(next));
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 function bindEvents() {
   if (_eventsBound) return;
   _eventsBound = true;
+  setupWorkspaceSidebar();
+  $('#connectionStripRetry')?.addEventListener('click', async () => {
+    connectionIssue = null;
+    renderConnectionStrip();
+    await loadConnectionsStatus();
+    toast('CONNECTIONS', 'Connection status refreshed.', '↻');
+  });
+  $('#connectionStripSettings')?.addEventListener('click', () => {
+    openSettings();
+    document.querySelector('.settings-nav-btn[data-ssection="connections"]')?.click();
+  });
   $$('.nav-btn').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.view)));
 /* theme-btn swatches removed — themes live in Settings */
 
@@ -8495,6 +8585,42 @@ function updateActiveBrain() {
   if (linkMode) linkMode.textContent = '— ' + active;
   const nowBrain = $('#nowBrain');
   if (nowBrain) nowBrain.textContent = active;
+  renderConnectionStrip();
+}
+
+function renderConnectionStrip() {
+  const strip = $('#connectionStrip');
+  if (!strip) return;
+  const title = $('#connectionStripTitle');
+  const detail = $('#connectionStripDetail');
+  const chatgpt = connectionsStatus.chatgpt || {};
+  const gemini = connectionsStatus.gemini || {};
+  strip.classList.remove('connected', 'problem');
+  if (connectionIssue) {
+    strip.dataset.state = 'problem';
+    if (title) title.textContent = connectionIssue.offline
+      ? 'FREE CORE UNAVAILABLE · OFFLINE BRAIN ACTIVE'
+      : `${String(connectionIssue.provider || 'AI').toUpperCase()} COULD NOT RESPOND`;
+    if (detail) detail.textContent = connectionIssue.offline
+      ? 'The upstream free endpoint is temporarily unavailable. This turn was answered locally; refresh or connect an account for full model responses.'
+      : 'The account is still saved. Refresh, reconnect in Settings, or continue with the offline brain.';
+    return;
+  }
+  strip.dataset.state = 'ready';
+  if (chatgpt.connected) {
+    strip.dataset.state = 'connected';
+    if (title) title.textContent = 'CHATGPT CONNECTED';
+    if (detail) detail.textContent = `${chatgpt.email || 'Account session'} · ${chatgpt.selectedModel || 'Codex model'} · encrypted on this device`;
+  } else if (gemini.connected) {
+    strip.dataset.state = 'connected';
+    if (title) title.textContent = 'GEMINI CONNECTED';
+    if (detail) detail.textContent = `${gemini.email || 'Google session'} · account transport ready`;
+  } else {
+    if (title) title.textContent = 'FREE CORE READY';
+    if (detail) detail.textContent = isElectron
+      ? 'No account is connected. Gem will try the free core, then the private offline brain if upstream access is unavailable.'
+      : 'Account connections are optional. Configure a provider in Settings or use the live web core.';
+  }
 }
 
 function showExperimentalWarning(provider, onContinue) {
@@ -8942,7 +9068,11 @@ function setupConnectionsHub() {
   $('#reconnectChatGPTBtn')?.addEventListener('click', () => { $('#reconnectModal').classList.remove('open'); handleConnectChatGPT(); });
   $('#reconnectGeminiBtn')?.addEventListener('click', () => { $('#reconnectModal').classList.remove('open'); handleConnectGemini(); });
 
-  if (api.onConnectionsUpdated) api.onConnectionsUpdated((s) => { connectionsStatus = s; renderConnectionHub(); renderConnectionsStatusRow(); updateActiveBrain(); });
+  if (api.onConnectionsUpdated) api.onConnectionsUpdated((s) => {
+    connectionsStatus = s;
+    if ((s.chatgpt && s.chatgpt.connected) || (s.gemini && s.gemini.connected)) connectionIssue = null;
+    renderConnectionHub(); renderConnectionsStatusRow(); updateActiveBrain();
+  });
   if (api.onConnectionsExpired) api.onConnectionsExpired((data) => {
     const detail = (data && data.message) || ('Your ' + (data.provider||'').toUpperCase() + ' session expired or hit a bot-check (' + (data.error||'') + '). Reconnect to restore.');
     const body = $('#reconnectBody');

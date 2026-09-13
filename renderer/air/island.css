@@ -204,3 +204,68 @@ button { font: inherit; cursor: pointer; border: none; border-radius: 9px; trans
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition-duration: 1ms !important; }
 }
+
+/* 2026 Gem Air island — compact, readable and deliberately quieter than a
+   monitoring HUD. The capsule is the glanceable state; the sheet is the
+   decision surface. */
+:root {
+  --bg: rgba(24, 27, 33, .94);
+  --bg-strong: rgba(18, 21, 26, .985);
+  --stroke: rgba(207, 216, 230, .16);
+  --text: #f4f6f9;
+  --muted: #9aa4b3;
+  --focus: #68c39a;
+  --distraction: #df878e;
+  --neutral: #8ca0ba;
+  --idle: #667284;
+  --accent: #78a6dc;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}
+html, body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif; }
+.island { padding: 7px 8px 11px; }
+.capsule {
+  height: 47px; gap: 10px; padding: 0 14px 0 12px; border-radius: 16px;
+  background: linear-gradient(180deg, rgba(39,44,53,.96), rgba(23,26,32,.96));
+  border-color: rgba(225,232,242,.17); box-shadow: 0 12px 32px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08);
+  transition: transform 220ms var(--ease), box-shadow 220ms var(--ease), border-color 220ms ease;
+}
+.capsule:hover { transform: translateY(-1px); border-color: rgba(225,232,242,.28); box-shadow: 0 15px 34px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.1); }
+.grip { width: 14px; height: 20px; opacity: .32; }
+.dot { width: 8px; height: 8px; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent); }
+.subject { font-size: 12px; font-weight: 650; }
+.meta { font-size: 11px; }
+.timer { font-size: 11px; color: #b7c0cd; }
+.divider { background: rgba(225,232,242,.16); }
+.body {
+  margin-top: 7px; border-radius: 18px; padding: 14px; gap: 11px;
+  background: linear-gradient(180deg, rgba(27,31,38,.985), rgba(17,20,25,.99));
+  border-color: rgba(225,232,242,.14); box-shadow: 0 24px 60px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.045);
+}
+.idc { gap: 9px; }
+.mark { width: 19px; height: 19px; border-radius: 7px; box-shadow: 0 3px 10px rgba(120,166,220,.32); }
+.name { font-size: 12px; letter-spacing: .01em; }
+.ghost { padding: 6px 9px; border-radius: 8px; background: rgba(255,255,255,.055); border-color: rgba(255,255,255,.07); }
+.ghost:hover { background: rgba(255,255,255,.11); }
+.context { padding: 13px; border-radius: 14px; background: rgba(255,255,255,.045); border-color: rgba(255,255,255,.08); box-shadow: inset 3px 0 var(--accent); }
+.ctx-subject { font-size: 16px; font-weight: 650; }
+.ctx-sub { font-size: 11px; line-height: 1.45; }
+.ctx-timer { font-size: 24px; font-weight: 350; margin-top: 7px; }
+.state { padding: 4px 0; }
+.state-row { padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+.state-row:last-child { border-bottom: 0; }
+.state-row .k { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.state-row .v { font-size: 11px; }
+.controls { gap: 7px; }
+.pill { padding: 8px 0; border: 1px solid rgba(255,255,255,.07); background: rgba(255,255,255,.055); }
+.pill:hover { background: rgba(255,255,255,.11); }
+.question { border-radius: 14px; padding: 13px; background: rgba(255,198,92,.1); border-color: rgba(255,198,92,.25); }
+.q-prompt { font-size: 13px; line-height: 1.4; }
+.q-actions button { border: 1px solid rgba(255,255,255,.08); border-radius: 8px; }
+.confirm { left: 14px; right: 14px; bottom: 14px; border-radius: 11px; box-shadow: 0 10px 22px rgba(0,0,0,.24); }
+@media (prefers-color-scheme: light) {
+  :root { --bg: rgba(255,255,255,.95); --bg-strong: rgba(249,250,252,.98); --stroke: rgba(50,64,84,.14); --text: #202936; --muted: #647083; }
+  .capsule { background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(241,244,248,.98)); border-color: rgba(50,64,84,.16); box-shadow: 0 12px 28px rgba(35,47,66,.18), inset 0 1px 0 #fff; }
+  .body { background: linear-gradient(180deg, rgba(255,255,255,.99), rgba(246,248,251,.99)); border-color: rgba(50,64,84,.13); box-shadow: 0 24px 55px rgba(35,47,66,.22); }
+  .context, .pill, .ghost { background: rgba(35,47,66,.045); border-color: rgba(50,64,84,.1); }
+  .state-row { border-bottom-color: rgba(50,64,84,.09); }
+}

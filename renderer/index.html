@@ -109,7 +109,13 @@
     </header>
 
     <div class="layout">
-      <nav class="sidenav" aria-label="Main navigation">
+      <nav class="sidenav" id="mainSidebar" aria-label="Main navigation">
+        <div class="sidenav-head">
+          <span class="sidenav-title">WORKSPACE</span>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
+          </button>
+        </div>
         <button class="nav-btn active" data-view="assistant" aria-label="Assistant" aria-current="page">
           <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg></span>
           <span class="nav-label" data-i18n="nav.assistant">Assistant</span>
@@ -135,6 +141,7 @@
           <span class="nav-label" data-i18n="nav.world">Discover</span>
         </button>
       </nav>
+      <div class="sidebar-resizer" id="sidebarResizer" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" tabindex="0" title="Drag to resize sidebar"></div>
 
       <main class="main">
         <section class="view active" id="view-assistant">
@@ -142,6 +149,12 @@
             <div><p class="workspace-eyebrow">YOUR PERSONAL WORKSPACE</p><h2>A clearer day starts here.</h2><p>Think, create, and get things done with Gem.</p></div>
             <button class="workspace-search" id="workspaceSearch" type="button" title="Open command palette"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><span>Find anything</span><kbd>Ctrl K</kbd></button>
           </header>
+          <div class="connection-strip" id="connectionStrip" role="status" aria-live="polite">
+            <span class="connection-strip-dot" id="connectionStripDot" aria-hidden="true"></span>
+            <div class="connection-strip-copy"><strong id="connectionStripTitle">FREE CORE READY</strong><span id="connectionStripDetail">Account connections are optional. Your local workspace is ready.</span></div>
+            <button class="connection-strip-action" id="connectionStripRetry" type="button">Refresh</button>
+            <button class="connection-strip-action secondary" id="connectionStripSettings" type="button">Connections</button>
+          </div>
           <div class="assistant-grid">
             <div class="stx-left">
               <!-- Media Link: live mic + screen capture, real actions only -->

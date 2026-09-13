@@ -3255,6 +3255,34 @@ function digestText(value, limit = 1800) {
   }
   return result || clean.slice(0, limit);
 }
+
+/**
+ * Anonymous fallback is deliberately a chain, not a promise that one
+ * upstream endpoint is immortal. FreeGPT35 can be rate-limited or bot
+ * checked (HTTP 403/502); when that happens, keep the turn alive with the
+ * local intent brain and return the real source so the UI can say what
+ * answered. This also prevents the old "anonymous fallback failed" dead end.
+ */
+async function anonymousBrainChat(messages, onDelta) {
+  try {
+    const result = await freeGPT35Sidecar.chat(messages, { onDelta });
+    return { ...result, sourceError: '' };
+  } catch (error) {
+    const latest = [...(Array.isArray(messages) ? messages : [])].reverse().find((m) => m && m.role === 'user');
+    const prompt = latest && typeof latest.content === 'string' ? latest.content : '';
+    const reply = await offlineBrain(prompt);
+    if (!reply || !String(reply).trim()) throw error;
+    const text = String(reply).trim();
+    if (onDelta) onDelta(text);
+    return {
+      reply: text,
+      provider: 'Offline Brain',
+      model: 'local-intent',
+      experimental: false,
+      sourceError: String(error.message || error).slice(0, 400)
+    };
+  }
+}
 async function rememberWithOpenJarvis(userText, assistantText) {
   if (openJarvisPreferences().enabled !== true) return false;
   const user = digestText(userText, 1200);
@@ -3274,7 +3302,7 @@ async function aiChat(config, messages) {
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   const plannedMessages = await withOpenJarvisReasoning(Array.isArray(messages) ? messages : []);
   if (!base || (!key && !isLocal)) {
-    if (readProfile().anonymousChat !== false) return (await freeGPT35Sidecar.chat(plannedMessages)).reply;
+    if (readProfile().anonymousChat !== false) return (await anonymousBrainChat(plannedMessages)).reply;
     throw new Error(!base ? 'NO_ENDPOINT' : 'NO_KEY');
   }
   const msgs = [...plannedMessages];
@@ -3358,7 +3386,7 @@ async function aiChatStream(config, messages, onDelta, onTool) {
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   const plannedMessages = await withOpenJarvisReasoning(Array.isArray(messages) ? messages : [], onTool);
   if (!base || (!key && !isLocal)) {
-    if (readProfile().anonymousChat !== false) return (await freeGPT35Sidecar.chat(plannedMessages, { onDelta })).reply;
+    if (readProfile().anonymousChat !== false) return (await anonymousBrainChat(plannedMessages, onDelta)).reply;
     throw new Error(!base ? 'NO_ENDPOINT' : 'NO_KEY');
   }
   let msgs = [...plannedMessages];
@@ -3975,6 +4003,25 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
         connections.incUsage('chatgpt');
         return result.text;
       } catch (error) {
+        // Keep account sessions useful when the Responses stream is temporarily
+        // empty or a compatible gateway returns an unexpected shape. The
+        // legacy conversation endpoint is an explicit transport fallback; it
+        // is never used for an authentication error and never marks the
+        // account disconnected on a transient provider failure.
+        const codexMessage = String(error && (error.code || error.message) || '');
+        const canRetryLegacy = !connections.isSessionExpiredError('chatgpt', codexMessage)
+          && /CODEX_(?:EMPTY|BAD|REQUEST_FAILED|STREAM|RESPONSE_FAILED)/.test(codexMessage);
+        if (canRetryLegacy && tokens.accessToken) {
+          try {
+            const legacy = await connections.callChatGPTWeb({ accessToken: tokens.accessToken, messages: adaptedMessages, onDelta });
+            if (legacy && legacy.trim()) {
+              if (onTool) { try { onTool({ name: 'chatgpt_legacy_transport', state: 'done' }); } catch {} }
+              return legacy.trim();
+            }
+          } catch (legacyError) {
+            error.detail = `${error.detail ? String(error.detail).slice(0, 260) + '; ' : ''}legacy transport: ${String(legacyError.message || legacyError).slice(0, 260)}`;
+          }
+        }
         throw connectedError('CHATGPT_CODEX_FAILED: ' + error.message, connections.isSessionExpiredError('chatgpt', error.code || error.message), error.detail);
       }
     }
@@ -4835,16 +4882,15 @@ ipcMain.handle('connections:chatStream', async (e, reqId, provider, messages) =>
     // partial provider stream.
     if (!emittedProviderText && readProfile().anonymousChat !== false) {
       try {
-        const fallbackReply = await aiChatStream({}, messages,
-          (delta) => wc.send('ai:chunk', { reqId, delta }),
-          (info) => { try { wc.send('ai:activity', { reqId, ...info }); } catch {} }
+        const fallback = await anonymousBrainChat(messages,
+          (delta) => wc.send('ai:chunk', { reqId, delta })
         );
-        wc.send('ai:streamEnd', { reqId, reply: fallbackReply, provider: 'FreeGPT35', model: 'gpt-3.5-turbo', fallbackFrom: provider });
+        wc.send('ai:streamEnd', { reqId, reply: fallback.reply, provider: fallback.provider, model: fallback.model, fallbackFrom: provider, sourceError: fallback.sourceError });
         if (mainWindow && !mainWindow.isDestroyed()) {
           if (status) mainWindow.webContents.send('connections:updated', status);
-          if (sessionExpired) mainWindow.webContents.send('connections:expired', { provider, error: err.message, fallback: 'FreeGPT35' });
+          if (sessionExpired) mainWindow.webContents.send('connections:expired', { provider, error: err.message, fallback: fallback.provider });
         }
-        return { ok: true, reqId, reply: fallbackReply, provider: 'FreeGPT35', fallbackFrom: provider };
+        return { ok: true, reqId, reply: fallback.reply, provider: fallback.provider, model: fallback.model, fallbackFrom: provider, sourceError: fallback.sourceError };
       } catch (fallbackError) {
         err.detail = `${err.detail ? String(err.detail).slice(0, 300) + '; ' : ''}anonymous fallback failed: ${String(fallbackError.message || fallbackError).slice(0, 300)}`;
       }
