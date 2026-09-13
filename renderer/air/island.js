@@ -140,7 +140,7 @@ function render(snap) {
   const focusLabel = el('focus-label');
   const quickFocus = plan && plan.planId === 'gem-air-quick-focus';
   if (focusButton) focusButton.classList.toggle('active', !!quickFocus);
-  if (focusLabel) focusLabel.textContent = quickFocus ? `Stop · ${plan.endsInMinutes || 0}m` : 'Focus 25';
+  if (focusLabel) focusLabel.textContent = quickFocus ? `Stop · ${remainingMinutes(plan)}m` : 'Focus 25';
   if (focusButton) focusButton.setAttribute('aria-label', quickFocus ? 'Stop quick focus' : 'Start a 25 minute focus session');
   setRow('row-plan', 'v-plan', plan ? `${plan.planName} · ${plan.label} until ${plan.end}` : 'None active', !!plan);
   setRow('row-block', 'v-block',
@@ -189,6 +189,11 @@ function humanMinutes(m) {
   if (m == null) return '—';
   if (m < 60) return `${m}m`;
   return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+function remainingMinutes(block) {
+  if (!block) return 0;
+  if (Number.isFinite(Number(block.endMs))) return Math.max(0, Math.ceil((Number(block.endMs) - Date.now()) / 60000));
+  return Math.max(0, Number(block.endsInMinutes) || 0);
 }
 
 function hexA(hex, a) {
@@ -316,7 +321,7 @@ setInterval(() => {
   el('ctx-timer').textContent = fmt(ms);
   renderProgress(snapshot.island.focusBlock);
   const quick = snapshot.island.focusBlock && snapshot.island.focusBlock.planId === 'gem-air-quick-focus';
-  if (quick && el('focus-label')) el('focus-label').textContent = `Stop · ${snapshot.island.focusBlock.endsInMinutes || 0}m`;
+  if (quick && el('focus-label')) el('focus-label').textContent = `Stop · ${remainingMinutes(snapshot.island.focusBlock)}m`;
 }, 1000);
 
 /* ---------- boot ---------- */
