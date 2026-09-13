@@ -133,7 +133,7 @@ development harness, not the product.
 
 ---
 
-## 8. focusx.site
+## 8. focusarx.site
 
 Integrated as a resource, not an advertisement: Settings → Focus ecosystem offers the
 account connection, attention resources and a link back to the web Focus experience. The

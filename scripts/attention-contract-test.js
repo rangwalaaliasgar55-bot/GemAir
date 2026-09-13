@@ -120,11 +120,11 @@ test('no community, leaderboard, beta, donate or build-in-public surfaces exist'
   }
 });
 
-test('focusx.site is integrated as a resource, not an advertisement', () => {
+test('focusarx.site is integrated as a resource, not an advertisement', () => {
   const ui = read('renderer/air/attention-ui.js');
   const hits = (ui.match(/focusx/gi) || []).length;
-  assert.ok(hits > 0, 'focusx.site should be reachable from the app');
-  assert.ok(hits < 20, 'focusx.site should not dominate the UI');
+  assert.ok(hits > 0, 'focusarx.site should be reachable from the app');
+  assert.ok(hits < 20, 'focusarx.site should not dominate the UI');
   assert.ok(ipc.includes('air:openFocusx'), 'focusx link should go through the guarded IPC');
 });
 

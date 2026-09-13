@@ -31,95 +31,120 @@
     crimson: {
       label: 'Crimson',
       tagline: 'JARVIS red — classic Iron Man',
-      accent: '#ff3b3b', lightAccent: '#c92a2a', hue: 0,
-      bg: '#04060c', bg2: '#070b15',
-      text: '#e7f0ff', dim: '#8a9bb2',
-      good: '#3dff9a', warn: '#ffc24b',
-      error: '#ff6b6b', info: '#3bc9ff',
-      panel: 'rgba(12, 18, 32, 0.76)', panelBorder: 'rgba(120, 140, 180, 0.18)',
-      sweep: 'rgba(255, 59, 59, 0.32)'
+      accent: '#d25c66', lightAccent: '#b94854', hue: 0,
+      bg: '#101114', bg2: '#17191e',
+      text: '#f3f4f6', dim: '#969ca7',
+      good: '#63c392', warn: '#d5a85a',
+      error: '#dc858b', info: '#6fa4df',
+      panel: 'rgba(30, 34, 42, 0.84)', panelBorder: 'rgba(160, 170, 188, 0.16)',
+      sweep: 'rgba(210, 92, 102, 0.2)'
     },
     emerald: {
       label: 'Emerald',
       tagline: 'Fresh green — focused work',
-      accent: '#35ffb0', lightAccent: '#087f5b', hue: 152,
-      bg: '#040a08', bg2: '#071310',
-      text: '#e9fff5', dim: '#7fae9c',
-      good: '#3dff9a', warn: '#ffc24b',
-      error: '#ff6b6b', info: '#3bc9ff',
-      panel: 'rgba(12, 22, 20, 0.76)', panelBorder: 'rgba(100, 180, 150, 0.18)',
-      sweep: 'rgba(53, 255, 176, 0.32)'
+      accent: '#58b88d', lightAccent: '#23805d', hue: 152,
+      bg: '#0f1412', bg2: '#171e1a',
+      text: '#edf6f0', dim: '#9aada1',
+      good: '#63c392', warn: '#d5a85a',
+      error: '#dc858b', info: '#6fa4df',
+      panel: 'rgba(27, 39, 33, 0.84)', panelBorder: 'rgba(126, 178, 149, 0.18)',
+      sweep: 'rgba(88, 184, 141, 0.2)'
     },
     cyan: {
       label: 'Cyan',
       tagline: 'Clear blue — calm focus',
+      // Keep the long-standing cyan tokens for saved profiles and migration
+      // compatibility. The workspace shell maps them to a softer UI accent
+      // in reference.css, so this does not bring the neon HUD back.
       accent: '#3bc9ff', lightAccent: '#066a9c', hue: 198,
       bg: '#04080d', bg2: '#071019',
       text: '#e6f6ff', dim: '#7fa3b8',
-      good: '#3dff9a', warn: '#ffc24b',
-      error: '#ff6b6b', info: '#3bc9ff',
-      panel: 'rgba(10, 18, 32, 0.76)', panelBorder: 'rgba(90, 160, 200, 0.18)',
-      sweep: 'rgba(59, 201, 255, 0.32)'
+      good: '#63ffb0', warn: '#d5a85a',
+      error: '#dc858b', info: '#6fa4df',
+      panel: 'rgba(27, 35, 47, 0.84)', panelBorder: 'rgba(126, 165, 208, 0.18)',
+      sweep: 'rgba(90, 149, 216, 0.2)'
     },
     violet: {
       label: 'Violet',
       tagline: 'Soft violet — evening mode',
-      accent: '#b05cff', lightAccent: '#7048a8', hue: 275,
-      bg: '#06040d', bg2: '#0b0716',
-      text: '#f0e9ff', dim: '#a08bb8',
-      good: '#3dff9a', warn: '#ffc24b',
-      error: '#ff6b6b', info: '#3bc9ff',
-      panel: 'rgba(16, 12, 32, 0.76)', panelBorder: 'rgba(140, 120, 200, 0.18)',
-      sweep: 'rgba(176, 92, 255, 0.32)'
+      accent: '#9585d0', lightAccent: '#675ba0', hue: 275,
+      bg: '#121119', bg2: '#1b1826',
+      text: '#f3effb', dim: '#aaa1bc',
+      good: '#63c392', warn: '#d5a85a',
+      error: '#dc858b', info: '#6fa4df',
+      panel: 'rgba(35, 31, 48, 0.84)', panelBorder: 'rgba(159, 145, 202, 0.18)',
+      sweep: 'rgba(149, 133, 208, 0.2)'
     },
     amber: {
       label: 'Amber',
       tagline: 'Warm amber — evening light',
-      accent: '#ffb73b', lightAccent: '#9a5b00', hue: 38,
-      bg: '#0a0604', bg2: '#120b06',
-      text: '#fff3e2', dim: '#b39a7c',
-      good: '#3dff9a', warn: '#ffc24b',
-      error: '#ff6b6b', info: '#3bc9ff',
-      panel: 'rgba(24, 18, 12, 0.76)', panelBorder: 'rgba(200, 160, 100, 0.18)',
-      sweep: 'rgba(255, 183, 59, 0.32)'
+      accent: '#c99858', lightAccent: '#946a32', hue: 38,
+      bg: '#15120e', bg2: '#211b14',
+      text: '#f8f1e7', dim: '#b7a58e',
+      good: '#63c392', warn: '#d5a85a',
+      error: '#dc858b', info: '#6fa4df',
+      panel: 'rgba(40, 33, 24, 0.84)', panelBorder: 'rgba(196, 160, 106, 0.18)',
+      sweep: 'rgba(201, 152, 88, 0.2)'
     },
     graphite: {
       label: 'Graphite',
       tagline: 'Quiet studio — focused and minimal',
-      accent: '#d9dee8', lightAccent: '#596579', hue: 218,
-      bg: '#08090c', bg2: '#11141a',
-      text: '#f1f3f6', dim: '#8d96a5',
-      good: '#73d9a4', warn: '#e4b86a',
-      error: '#ef8888', info: '#8db7e8',
-      panel: 'rgba(23, 26, 32, 0.86)', panelBorder: 'rgba(220, 228, 240, 0.14)',
-      sweep: 'rgba(220, 228, 240, 0.2)'
+      accent: '#b8c0cb', lightAccent: '#667486', hue: 218,
+      bg: '#101216', bg2: '#191c22',
+      text: '#f1f3f6', dim: '#9da5b2',
+      good: '#77c69e', warn: '#d5b274',
+      error: '#dc9292', info: '#8eb3df',
+      panel: 'rgba(31, 35, 43, 0.88)', panelBorder: 'rgba(220, 228, 240, 0.14)',
+      sweep: 'rgba(184, 192, 203, 0.16)'
     },
     ocean: {
       label: 'Ocean',
       tagline: 'Deep blue — calm focus',
-      accent: '#75b9ff', lightAccent: '#24649b', hue: 210,
-      bg: '#060a11', bg2: '#0a1523',
-      text: '#edf6ff', dim: '#88a2bd',
-      good: '#7de0bb', warn: '#efc879',
-      error: '#ef8e9a', info: '#75b9ff',
-      panel: 'rgba(12, 24, 40, 0.82)', panelBorder: 'rgba(120, 180, 230, 0.16)',
-      sweep: 'rgba(117, 185, 255, 0.24)'
+      accent: '#6b9ed4', lightAccent: '#3d6f9f', hue: 210,
+      bg: '#0e141d', bg2: '#172231',
+      text: '#edf3fa', dim: '#9aaec3',
+      good: '#79c9aa', warn: '#d6b675',
+      error: '#db929b', info: '#76a6d7',
+      panel: 'rgba(27, 38, 52, 0.86)', panelBorder: 'rgba(131, 174, 218, 0.16)',
+      sweep: 'rgba(107, 158, 212, 0.18)'
+    },
+    porcelain: {
+      label: 'Porcelain',
+      tagline: 'Apple-clean neutrals — calm and minimal',
+      accent: '#0a84ff', lightAccent: '#0071e3', hue: 211,
+      bg: '#f5f5f7', bg2: '#e8e8ed',
+      text: '#1d1d1f', dim: '#6e6e73',
+      good: '#1d8127', warn: '#9a6700',
+      error: '#c92a2a', info: '#0071e3',
+      panel: 'rgba(255, 255, 255, 0.72)', panelBorder: 'rgba(60, 60, 67, 0.14)',
+      sweep: 'rgba(10, 132, 255, 0.18)'
+    },
+    midnight: {
+      label: 'Midnight',
+      tagline: 'Apple-dark neutrals — quiet studio',
+      accent: '#0a84ff', lightAccent: '#0071e3', hue: 211,
+      bg: '#000000', bg2: '#161617',
+      text: '#f5f5f7', dim: '#98989d',
+      good: '#30d158', warn: '#ffd60a',
+      error: '#ff6961', info: '#64d2ff',
+      panel: 'rgba(28, 28, 30, 0.72)', panelBorder: 'rgba(255, 255, 255, 0.09)',
+      sweep: 'rgba(10, 132, 255, 0.22)'
     },
     rgb: {
       label: 'RGB',
       tagline: 'Dynamic spectrum — playful accent',
-      accent: '#ff3bff', lightAccent: '#9c2c9c', hue: 300,
+      accent: '#b68bd2', lightAccent: '#7e5e9b', hue: 300,
       dynamic: true,
-      bg: '#04060c', bg2: '#070b15',
-      text: '#e7f0ff', dim: '#8a9bb2',
-      good: '#3dff9a', warn: '#ffc24b',
-      error: '#ff6b6b', info: '#3bc9ff',
-      panel: 'rgba(12, 18, 32, 0.76)', panelBorder: 'rgba(120, 140, 180, 0.18)',
-      sweep: 'rgba(255, 59, 255, 0.32)'
+      bg: '#101114', bg2: '#17191e',
+      text: '#f3f4f6', dim: '#969ca7',
+      good: '#63c392', warn: '#d5a85a',
+      error: '#dc858b', info: '#6fa4df',
+      panel: 'rgba(30, 34, 42, 0.84)', panelBorder: 'rgba(160, 170, 188, 0.16)',
+      sweep: 'rgba(182, 139, 210, 0.2)'
     }
   };
 
-  const ORDER = ['crimson', 'emerald', 'cyan', 'violet', 'amber', 'graphite', 'ocean', 'rgb'];
+  const ORDER = ['porcelain', 'midnight', 'crimson', 'emerald', 'cyan', 'violet', 'amber', 'graphite', 'ocean', 'rgb'];
   const DEFAULT = 'cyan';
 
   // "#rrggbb" → "rgba(r, g, b, a)" (string in, string out)

@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="apple.css" />
   <link rel="stylesheet" href="reference.css" />
   <link rel="stylesheet" href="reduced-motion.css" />
+  <link rel="stylesheet" href="apple-refresh.css" />
 </head>
 <body>
   <a class="chat-skip" href="#chatInput">Skip to chat</a>
@@ -69,7 +70,7 @@
         </div>
         <div class="brand-text">
           <h1>GemAir</h1>
-          <p>Personal assistant <span class="ver" id="verTag">v2.8.1</span></p>
+          <p>Personal assistant <span class="ver" id="verTag">v2.8.2</span></p>
         </div>
       </div>
 
@@ -109,7 +110,13 @@
     </header>
 
     <div class="layout">
-      <nav class="sidenav" aria-label="Main navigation">
+      <nav class="sidenav" id="mainSidebar" aria-label="Main navigation">
+        <div class="sidenav-head">
+          <span class="sidenav-title">WORKSPACE</span>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
+          </button>
+        </div>
         <button class="nav-btn active" data-view="assistant" aria-label="Assistant" aria-current="page">
           <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg></span>
           <span class="nav-label" data-i18n="nav.assistant">Assistant</span>
@@ -135,6 +142,7 @@
           <span class="nav-label" data-i18n="nav.world">Discover</span>
         </button>
       </nav>
+      <div class="sidebar-resizer" id="sidebarResizer" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" tabindex="0" title="Drag to resize sidebar"></div>
 
       <main class="main">
         <section class="view active" id="view-assistant">
@@ -142,6 +150,12 @@
             <div><p class="workspace-eyebrow">YOUR PERSONAL WORKSPACE</p><h2>A clearer day starts here.</h2><p>Think, create, and get things done with Gem.</p></div>
             <button class="workspace-search" id="workspaceSearch" type="button" title="Open command palette"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><span>Find anything</span><kbd>Ctrl K</kbd></button>
           </header>
+          <div class="connection-strip" id="connectionStrip" role="status" aria-live="polite">
+            <span class="connection-strip-dot" id="connectionStripDot" aria-hidden="true"></span>
+            <div class="connection-strip-copy"><strong id="connectionStripTitle">FREE CORE READY</strong><span id="connectionStripDetail">Account connections are optional. Your local workspace is ready.</span></div>
+            <button class="connection-strip-action" id="connectionStripRetry" type="button">Refresh</button>
+            <button class="connection-strip-action secondary" id="connectionStripSettings" type="button">Connections</button>
+          </div>
           <div class="assistant-grid">
             <div class="stx-left">
               <!-- Media Link: live mic + screen capture, real actions only -->
@@ -234,6 +248,7 @@
                   <span class="briefing-chip" id="briefWeather" title="Weather">🌤 Loading…</span>
                   <span class="briefing-chip" id="briefGoal" title="Top goal">🎯 —</span>
                   <button class="briefing-chip as-btn" id="breatheBtn" title="Guided breathing">🌬 Breathe</button>
+                  <button class="briefing-chip as-btn" id="dailyDigestBtn" title="Build a local-first morning digest">☀ Digest</button>
                 </div>
                 <div class="briefing-quote" id="briefQuote">“The best way to predict the future is to create it.”</div>
               </div>
@@ -559,6 +574,14 @@
                 <div class="inline-add">
                   <input type="text" id="remText" placeholder="Remind me to…" />
                   <input type="text" id="remWhen" placeholder="e.g. in 10 minutes" style="width:140px" />
+                  <select id="remRepeat" aria-label="Repeat reminder" style="max-width:140px">
+                    <option value="">Does not repeat</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekdays">Weekdays</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
                   <button class="mini-btn" id="remAdd">+</button>
                 </div>
                 <div class="memory-list" id="remindersList">
@@ -567,7 +590,7 @@
               </div>
 
               <div class="hud-panel core-pane" data-pane="skills">
-                <h3 class="panel-title">LEARNED SKILLS <span class="dim">— CUSTOM KNOWLEDGE</span></h3>
+                <h3 class="panel-title">SKILL LIBRARY <span class="dim">— LEARNED + OPENJARVIS WORKFLOWS</span></h3>
                 <div class="inline-add">
                   <input type="text" id="skillName" placeholder="Skill name (optional)" style="width:140px" />
                   <input type="text" id="skillInput" placeholder="e.g. how to structure my reports" />
@@ -575,6 +598,13 @@
                 </div>
                 <div class="memory-list" id="skillsList">
                   <div class="empty">No custom skills saved yet.</div>
+                </div>
+                <div class="inline-add" style="margin-top:14px;align-items:center;">
+                  <span class="dim" style="font-size:11px;flex:1;">Local catalog · metadata only · no skill is fetched or executed during discovery.</span>
+                  <button class="refresh-btn" id="loadOpenJarvisSkillsBtn" type="button">REFRESH LIBRARY</button>
+                </div>
+                <div class="memory-list" id="openJarvisSkillsList" aria-live="polite">
+                  <div class="empty">Install OpenJarvis to discover its bundled planning, research, coding and digest workflows.</div>
                 </div>
               </div>
 
@@ -820,7 +850,7 @@
               </div>
               <div class="air-head-right">
                 <button class="air-ghost" id="airIslandToggle">Show island</button>
-                <a class="air-ghost" id="airFocusx" href="#">focusx.site</a>
+                <a class="air-ghost" id="airFocusx" href="#">focusarx.site</a>
               </div>
             </header>
 
@@ -854,14 +884,27 @@
               <button class="world-mode" data-world-mode="globe">GLOBE</button>
               <button class="world-mode" data-world-mode="map">2D COMMAND MAP</button>
             </div>
+            <div class="world-location-tools">
+              <button class="world-location-btn" id="worldLocateBtn" type="button" title="Request precise device location for this session">⌖ LOCATE ME</button>
+              <span class="world-location-status" id="worldLocationStatus" role="status" aria-live="polite">LOCATION NOT SET · profile city only</span>
+            </div>
             <div class="utc-strip" id="worldUtcStrip">UTC --:-- · LON --:-- · NYC --:-- · TYO --:--</div>
           </div>
           <div class="world-grid" id="worldGrid" data-mode="split">
             <div class="hud-panel globe-panel">
-              <h3 class="panel-title">WORLD MONITOR <span class="dim">— UTC <span id="utcTime">--:--:--</span></span></h3>
+              <div class="globe-panel-head">
+                <h3 class="panel-title">WORLD MONITOR <span class="dim">— UTC <span id="utcTime">--:--:--</span></span></h3>
+                <span class="globe-signal-state" id="globeSignalState">LINKS STANDBY</span>
+              </div>
+              <div class="globe-layer-bar" role="group" aria-label="Globe data layers">
+                <button class="globe-layer active" data-globe-layer="signals" type="button">SIGNALS</button>
+                <button class="globe-layer active" data-globe-layer="routes" type="button">ROUTES</button>
+                <button class="globe-layer active" data-globe-layer="weather" type="button">WEATHER</button>
+              </div>
               <canvas id="globeCanvas" width="640" height="640" aria-label="Interactive rotating news globe"></canvas>
               <div class="hotspot-headline" id="hotspotHeadline">Select a pulsing marker to inspect its headline.</div>
-              <div class="globe-caption">DOTTED WIREFRAME EARTH · CLICKABLE NEWS HOTSPOTS</div>
+              <div class="globe-context" id="globeContext"><span class="dim">CONTEXT</span><b>Awaiting a marker selection</b><small>Public feed signals are shown without sharing your device location.</small></div>
+              <div class="globe-caption">TACTICAL ORBIT · PUBLIC SIGNALS · CLICKABLE CONTACTS</div>
             </div>
 
             <div class="hud-panel map-panel">
@@ -1139,6 +1182,9 @@
                 <label class="check-label" style="margin:0;font-size:10px;">
                   <input type="checkbox" id="setOpenJarvisPlanning" checked /> Pre-plan replies
                 </label>
+                <label class="check-label" style="margin:0;font-size:10px;" title="Redact obvious emails, phone numbers, tokens and card-like numbers before durable sidecar memory storage.">
+                  <input type="checkbox" id="setOpenJarvisRedactMemory" checked /> Redact sidecar memory
+                </label>
                 <label class="check-label" style="margin:0;font-size:10px;">
                   <input type="checkbox" id="setOpenJarvisMcp" /> Local MCP
                 </label>
@@ -1214,6 +1260,14 @@
             <label class="check-label" style="margin-bottom:6px">
               <input type="checkbox" id="setMemoryOn" checked /> Auto memory — remember facts across conversations
             </label>
+            <fieldset style="margin-top:12px;">
+              <legend>MORNING DIGEST</legend>
+              <label class="check-label">
+                <input type="checkbox" id="setDailyDigestEnabled" /> Prepare a daily digest at
+                <input type="time" id="setDailyDigestTime" value="08:00" style="width:auto;margin-left:4px;" />
+              </label>
+              <p class="hint" style="font-size:11px;color:var(--text-dim);">Uses local reminders, tasks, goals and mood, with optional headlines and weather. It runs in the main process and never sends your memory to a model.</p>
+            </fieldset>
             <label>Conversation context
               <select id="setContextStrategy" aria-describedby="contextStrategyHint">
                 <option value="full">Full — retain up to 100 messages</option>
@@ -1408,8 +1462,12 @@
             <legend>GEMINI LIVE DIALOG (WEBSOCKET)</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
               Real-time text dialog over Google's Live API socket. Needs an API key from AI Studio and a live model ID you verify in the AI Studio docs — GemAir ships no model names because availability changes.
-              The same key powers desktop Gemini chat: Google sign-in alone grants no API scope, so connect Google for identity, then paste the key here.
+              The same key powers desktop Gemini chat. Google sign-in alone grants no API scope. Paste the key, test it, and press Save Settings; GemAir encrypts it in the desktop main process and never puts the saved key in your profile or renderer.
             </p>
+            <label>Text chat model ID
+              <input type="text" id="setGeminiTextModel" list="geminiLiveModelList" placeholder="gemini-2.5-flash (choose one that supports generateContent)" autocomplete="off" />
+              <span class="hint" style="font-size:10px;color:var(--text-dim)">Used by normal Gem chat. Live/native-audio IDs are rejected here because they only work over the dialog socket.</span>
+            </label>
             <label>Live model ID
               <input type="text" id="setGeminiLiveModel" list="geminiLiveModelList" placeholder="Press Refresh, then pick a model your key can use" autocomplete="off" />
               <datalist id="geminiLiveModelList"></datalist>
@@ -1423,6 +1481,7 @@
               <input type="password" id="setGeminiLiveKey" placeholder="AIza…" autocomplete="off" />
             </label>
             <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">
+              <button class="test-btn" id="testGeminiKeyBtn" type="button">⚡ TEST TEXT KEY</button>
               <button class="test-btn" id="testGeminiLiveBtn" type="button">⚡ TEST LIVE SESSION</button>
               <button class="ghost-btn" id="startGeminiLiveVoiceBtn" type="button">🎙 START LIVE VOICE</button>
               <button class="ghost-btn" id="stopGeminiLiveVoiceBtn" type="button" hidden>⏹ STOP</button>
@@ -1562,9 +1621,28 @@
                 <input type="text" id="modeAppsInput" placeholder="e.g. spotify, chrome, vscode" />
               </label>
               <div class="mode-sites-designer">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
                   <span class="dim" style="font:600 10px var(--font-mono);">WEBSITES (+browser per site)</span>
-                  <button class="mini-btn" id="addModeSiteBtn" style="padding:4px 10px;font-size:10px;">+ Add Site</button>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <select id="modeSitePreset" aria-label="Choose a website preset" style="max-width:150px;">
+                      <option value="">Choose platform…</option>
+                      <option value="youtube">YouTube</option>
+                      <option value="spotify">Spotify</option>
+                      <option value="github">GitHub</option>
+                      <option value="chatgpt">ChatGPT</option>
+                      <option value="google">Google</option>
+                      <option value="calendar">Google Calendar</option>
+                      <option value="notion">Notion</option>
+                      <option value="slack">Slack</option>
+                      <option value="discord">Discord</option>
+                      <option value="figma">Figma</option>
+                      <option value="reddit">Reddit</option>
+                      <option value="netflix">Netflix</option>
+                      <option value="twitch">Twitch</option>
+                      <option value="focusarx">focusarx.site</option>
+                    </select>
+                    <button class="mini-btn" id="addModeSiteBtn" style="padding:4px 10px;font-size:10px;">+ Add Site</button>
+                  </div>
                 </div>
                 <div id="modeSitesList" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
                   <div class="empty">No sites — add one</div>
@@ -1583,8 +1661,18 @@
                   </select>
                 </label>
               </div>
-              <label>Playlist URL (optional)
-                <input type="text" id="modePlaylistInput" placeholder="https://youtube.com/watch?v=... lofi" />
+              <label>Playlist / media source (optional)
+                <div style="display:flex;gap:6px;">
+                  <select id="modePlaylistPreset" aria-label="Choose a media preset" style="max-width:170px;">
+                    <option value="">Choose media preset…</option>
+                    <option value="https://www.youtube.com/watch?v=jfKfPfyJRdk">YouTube · Lofi Girl</option>
+                    <option value="https://music.youtube.com">YouTube Music</option>
+                    <option value="https://open.spotify.com">Spotify</option>
+                    <option value="https://soundcloud.com">SoundCloud</option>
+                    <option value="https://twitch.tv">Twitch</option>
+                  </select>
+                  <input type="text" id="modePlaylistInput" placeholder="Pick a preset — no URL needed" />
+                </div>
               </label>
               <label class="check-label"><input type="checkbox" id="modeDndInput" /> Do Not Disturb</label>
               <label class="check-label"><input type="checkbox" id="modeGamingOptInput" /> Optimize for gaming</label>

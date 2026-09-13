@@ -13,7 +13,7 @@
    ============================================================ */
 'use strict';
 
-const CACHE_VERSION = 'gemair-shell-v2.8.1-interface2';
+const CACHE_VERSION = 'gemair-shell-v2.8.2-refresh';
 const SHELL = [
   'index.html',
   'design-tokens.css',
@@ -21,6 +21,7 @@ const SHELL = [
   'light-mode.css',
   'depth.css',
   'apple.css',
+  'apple-refresh.css',
   'reference.css',
   'interface.js',
   'reduced-motion.css',

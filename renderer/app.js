@@ -149,6 +149,7 @@ const api = {
   async openJarvisMemorySearch(query, topK) { if (window.gemair && window.gemair.openJarvisMemorySearch) return window.gemair.openJarvisMemorySearch(query, topK); return { ok: false, error: 'DESKTOP_ONLY' }; },
   async openJarvisScan(text, includePii) { if (window.gemair && window.gemair.openJarvisScan) return window.gemair.openJarvisScan(text, includePii); return { ok: false, error: 'DESKTOP_ONLY' }; },
   async openJarvisCapabilities() { if (window.gemair && window.gemair.openJarvisCapabilities) return window.gemair.openJarvisCapabilities(); return { ok: false, error: 'DESKTOP_ONLY' }; },
+  async openJarvisSkillCatalog() { if (window.gemair && window.gemair.openJarvisSkillCatalog) return window.gemair.openJarvisSkillCatalog(); return { ok: false, error: 'DESKTOP_ONLY' }; },
   async openJarvisMcpDiscover() { if (window.gemair && window.gemair.openJarvisMcpDiscover) return window.gemair.openJarvisMcpDiscover(); return { ok: false, error: 'DESKTOP_ONLY' }; },
   onOpenJarvisInstallProgress(cb) { return registerRendererDisposer(window.gemair && window.gemair.onOpenJarvisInstallProgress ? window.gemair.onOpenJarvisInstallProgress(cb) : null); },
   async listLocalModels() { if (window.gemair && window.gemair.listLocalModels) return window.gemair.listLocalModels(); return { models: [] }; },
@@ -161,7 +162,7 @@ const api = {
   async memoryDeleteFact(id) { if (window.gemair) return window.gemair.memoryDeleteFact(id); if (window.webStore) await window.webStore.deleteFact(id); },
   async memoryAddNote(text) { if (window.gemair) return window.gemair.memoryAddNote(text); if (window.webStore) await window.webStore.addNote(text); },
   async memoryDeleteNote(id) { if (window.gemair) return window.gemair.memoryDeleteNote(id); if (window.webStore) await window.webStore.deleteNote(id); },
-  async memoryAddReminder(text, at) { if (window.gemair) return window.gemair.memoryAddReminder(text, at); if (window.webStore) await window.webStore.addReminder(text, at); },
+  async memoryAddReminder(text, at, repeat) { if (window.gemair) return window.gemair.memoryAddReminder(text, at, repeat); if (window.webStore) await window.webStore.addReminder(text, at, repeat); },
   async memoryDeleteReminder(id) { if (window.gemair) return window.gemair.memoryDeleteReminder(id); if (window.webStore) await window.webStore.deleteReminder(id); },
   async memoryMarkReminder(id, done) { if (window.gemair) return window.gemair.memoryMarkReminder(id, done); if (window.webStore) await window.webStore.markReminder(id, done); },
   async memoryExtract(config, u, a) {
@@ -217,11 +218,15 @@ const api = {
     if (window.gemair) return window.gemair.getHeadlines(limit, category);
     try { const r = await fetch('/api/headlines?limit=' + (limit || 14) + '&category=' + encodeURIComponent(category || 'tech')); const data = await r.json(); return Array.isArray(data) ? data : []; } catch { return []; }
   },
+  async webGet(kind, params) {
+    if (window.gemair && window.gemair.webGet) return window.gemair.webGet(kind, params || {});
+    return webGet(kind, params || {});
+  },
   openExternal(url) { if (window.gemair) window.gemair.openExternal(url); else window.open(url, '_blank'); },
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.8.1'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.8.2'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
@@ -261,6 +266,9 @@ const api = {
   async connectionsCodexStatus() { if (window.gemair && window.gemair.connectionsCodexStatus) return window.gemair.connectionsCodexStatus(); return { exists: false, valid: false }; },
   async connectionsLaunchCodexLogin() { if (window.gemair && window.gemair.connectionsLaunchCodexLogin) return window.gemair.connectionsLaunchCodexLogin(); return { ok: false, error: 'DESKTOP_ONLY' }; },
   async connectionsOauthGemini() { if (window.gemair && window.gemair.connectionsOauthGemini) return window.gemair.connectionsOauthGemini(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'Gemini OAuth requires GemAir Desktop or a configured web callback.' }; },
+  async connectionsSetGeminiApiKey(apiKey, model) { if (window.gemair && window.gemair.connectionsSetGeminiApiKey) return window.gemair.connectionsSetGeminiApiKey(apiKey, model); return { error: 'DESKTOP_ONLY', message: 'Encrypted Gemini key storage is available in GemAir Desktop.' }; },
+  async connectionsTestGeminiApiKey(apiKey, model) { if (window.gemair && window.gemair.connectionsTestGeminiApiKey) return window.gemair.connectionsTestGeminiApiKey(apiKey, model); return { ok: false, error: 'DESKTOP_ONLY', message: 'Gemini key testing is available in GemAir Desktop.' }; },
+  async connectionsListGeminiModels(apiKey) { if (window.gemair && window.gemair.connectionsListGeminiModels) return window.gemair.connectionsListGeminiModels(apiKey); return { ok: false, error: 'DESKTOP_ONLY', message: 'Gemini model discovery is available in GemAir Desktop.' }; },
   async connectionsGetStatus() {
     if (window.gemair && window.gemair.connectionsGetStatus) return window.gemair.connectionsGetStatus();
     const status = { chatgpt: { connected: false, dot: 'BROWSER_OAUTH_REQUIRED', browser: true }, gemini: { connected: false, dot: 'BROWSER_OAUTH_REQUIRED', browser: true }, freeCore: { connected: false, dot: 'CHECKING', browser: true }, meta: { priority: 'free' } };
@@ -312,6 +320,17 @@ const api = {
     if (window.gemair) return window.gemair.generateReport();
     return buildReportOffline();
   },
+  onDailyDigest(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDailyDigest ? window.gemair.onDailyDigest(cb) : null); },
+  onDailyDigestError(cb) { return registerRendererDisposer(window.gemair && window.gemair.onDailyDigestError ? window.gemair.onDailyDigestError(cb) : null); },
+  async generateDailyDigest() {
+    if (window.gemair && window.gemair.generateDailyDigest) return window.gemair.generateDailyDigest();
+    const now = Date.now();
+    const active = (items) => (Array.isArray(items) ? items : []).filter((item) => !item.done && !item.completed);
+    const reminders = active(memory.reminders).filter((item) => Number(item.at) >= now && Number(item.at) <= now + 86400000).slice(0, 8);
+    const todos = active(memory.todos).slice(0, 8);
+    const goals = active(memory.goals).slice(0, 6);
+    return { ok: true, kind: 'daily-digest', day: new Date(now).toISOString().slice(0, 10), generatedAt: new Date(now).toISOString(), title: 'Daily Digest', summary: `Good morning${profile.name ? `, ${profile.name}` : ''}. ${reminders.length} reminder${reminders.length === 1 ? '' : 's'} and ${todos.length} open task${todos.length === 1 ? '' : 's'} are in your local list.${goals.length ? ` Keep one small step moving on: ${goals[0].text || goals[0].title}.` : ''}`, sections: { reminders, todos, goals, headlines: [], monitored: [], weather: null, mood: memory.mood?.[memory.mood.length - 1] || null }, sources: { localMemory: true, headlines: false, weather: false, monitored: false } };
+  },
   async needsCheckIn() {
     if (window.gemair) return window.gemair.needsCheckIn();
     const mood = (memory.mood || []).slice(-7);
@@ -349,6 +368,7 @@ function downloadText(content, name) {
 // Free web tools (Vercel API — no key, no AI needed)
 // ---------------------------------------------------------------------------
 async function webGet(path, params) {
+  if (window.gemair && window.gemair.webGet) return window.gemair.webGet(path, params || {});
   try {
     const qs = new URLSearchParams(params || {}).toString();
     const r = await fetch('/api/' + path + (qs ? '?' + qs : ''));
@@ -581,7 +601,7 @@ function makeDefaultProfile() {
     brainPriority: DEFAULTS.brainPriority,
     connectionsWarningAcknowledged: DEFAULTS.connectionsWarningAcknowledged,
     anonymousChat: true,
-    openJarvis: { enabled: false, planning: true, agent: 'orchestrator', engine: 'ollama', model: '', mcpEnabled: false, mcpUrl: '' },
+    openJarvis: { enabled: false, planning: true, redactMemory: true, agent: 'orchestrator', engine: 'ollama', model: '', mcpEnabled: false, mcpUrl: '' },
     ai: { baseURL: '', apiKey: '', model: DEFAULTS.model },
     voice: {
       preset: DEFAULTS.voicePreset,
@@ -594,6 +614,7 @@ function makeDefaultProfile() {
       name: ''
     },
     memoryOn: true, allowShell: false, adaptivePersonality: true, autoUpdateChecks: DEFAULTS.autoUpdateChecks, updateChannel: DEFAULTS.updateChannel, usageStats: false, wakeWord: false, wakeWordText: 'Hey Gem',
+    dailyDigest: { enabled: false, time: '08:00' },
     ambientScore: false, ambientTrack: DEFAULTS.ambientTrack, ambientVolume: DEFAULTS.ambientVolume,
     screenAwareness: false,
     modes: {}
@@ -609,8 +630,19 @@ let currentEmotion = { emotion: 'neutral', valence: 0, arousal: 0.3 };
 let currentLang = 'en';
 let worldHeadlines = [];
 let worldCategory = 'tech';
+// Globe presentation state is derived from public feeds and the selected
+// marker. It never contains precise coordinates outside this renderer.
+let globeLayers = { signals: true, routes: true, weather: true };
+let globeSelectedContext = null;
+let globeWeatherContext = null;
+// Exact device coordinates stay in renderer memory only. The globe starts with
+// the profile city (coarse, useful for weather) and upgrades to a precise
+// browser location only after the user explicitly presses LOCATE ME.
+let globeUserLocation = null;
+let globeLocationRequest = null;
 let awaitingName = false;
 let connectionsStatus = { chatgpt: { connected: false }, gemini: { connected: false }, freeCore: { connected: true }, meta: { priority: 'chatgpt' } };
+let connectionIssue = null;
 let sidecarsStatus = { freeGPT35: { available: isElectron }, openJarvis: { installed: false, running: false } };
 let currentMode = '';
 let desktopFocused = { app: '', title: '', pid: 0 };
@@ -2042,6 +2074,122 @@ function startOrb() {
 }
 
 // ---------------------------------------------------------------------------
+// Globe + privacy-preserving user location
+// ---------------------------------------------------------------------------
+function renderGlobeLocationUi() {
+  const status = $('#worldLocationStatus');
+  const button = $('#worldLocateBtn');
+  if (!status) return;
+  const location = globeUserLocation;
+  if (!location) {
+    status.textContent = 'LOCATION NOT SET · profile city only';
+    status.title = 'Press LOCATE ME to request a precise device position. The coordinates stay in this renderer.';
+  } else if (location.exact) {
+    const accuracy = Number(location.accuracy);
+    status.textContent = `YOU · ${location.label || 'DEVICE LOCATION'}${Number.isFinite(accuracy) ? ` · ±${Math.round(accuracy)}m` : ''}`;
+    status.title = 'Precise location is held in memory for this session only.';
+  } else {
+    status.textContent = `PROFILE CITY · ${location.label || 'UNKNOWN'}`;
+    status.title = 'Approximate profile-city marker. No precise location has been shared.';
+  }
+  if (button) {
+    button.disabled = !!globeLocationRequest;
+    button.textContent = globeLocationRequest ? 'LOCATING…' : (location?.exact ? 'REFRESH LOCATION' : 'LOCATE ME');
+  }
+}
+
+function setGlobeUserLocation(location) {
+  const lat = Number(location && location.lat);
+  const lon = Number(location && location.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return false;
+  globeUserLocation = {
+    lat, lon,
+    label: String(location.label || 'Your location').slice(0, 80),
+    source: String(location.source || 'session').slice(0, 40),
+    exact: location.exact === true,
+    accuracy: Number.isFinite(Number(location.accuracy)) ? Number(location.accuracy) : null
+  };
+  renderGlobeLocationUi();
+  return true;
+}
+
+async function loadProfileCityOnGlobe() {
+  if (globeUserLocation?.exact) return globeUserLocation;
+  const city = profile.city || DEFAULTS.city;
+  const weather = await webGet('weather', { city });
+  if (weather && Number.isFinite(Number(weather.latitude)) && Number.isFinite(Number(weather.longitude))) {
+    setGlobeUserLocation({ lat: weather.latitude, lon: weather.longitude, label: String(weather.city || city).split(',')[0], source: 'profile-city', exact: false });
+    return globeUserLocation;
+  }
+  renderGlobeLocationUi();
+  return null;
+}
+
+async function locateUserOnGlobe() {
+  if (globeLocationRequest) return globeLocationRequest;
+  renderGlobeLocationUi();
+  if (!navigator.geolocation) {
+    globeLocationRequest = loadProfileCityOnGlobe();
+    try { await globeLocationRequest; } finally { globeLocationRequest = null; renderGlobeLocationUi(); }
+    return;
+  }
+  globeLocationRequest = new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: false,
+      maximumAge: 5 * 60 * 1000,
+      timeout: 10000
+    });
+  }).then((position) => {
+    const coords = position.coords || {};
+    if (!setGlobeUserLocation({ lat: coords.latitude, lon: coords.longitude, accuracy: coords.accuracy, label: 'YOUR DEVICE', source: 'device-geolocation', exact: true })) throw new Error('LOCATION_INVALID');
+    const card = $('#hotspotHeadline');
+    if (card) { card.textContent = 'YOU · precise device location loaded for this session. No coordinates were saved.'; card.classList.add('active'); card.onclick = null; }
+    return globeUserLocation;
+  }).catch(async () => {
+    // Permission denial, insecure context, and desktop policy all degrade to
+    // the coarse profile-city marker instead of leaving a dead globe.
+    return loadProfileCityOnGlobe();
+  }).finally(() => {
+    globeLocationRequest = null;
+    renderGlobeLocationUi();
+  });
+  return globeLocationRequest;
+}
+
+function renderGlobeContextCard(marker) {
+  const panel = $('#globeContext');
+  if (!panel) return;
+  if (!marker) {
+    panel.innerHTML = '<span class="dim">CONTEXT</span><b>Awaiting a marker selection</b><small>Public feed signals are shown without sharing your device location.</small>';
+    return;
+  }
+  const location = marker.location || {};
+  const headline = marker.headline;
+  const label = marker.label || location.label || 'UNKNOWN CONTACT';
+  const kind = marker.kind === 'user' ? (location.exact ? 'PRECISE SESSION MARKER' : 'PROFILE-CITY MARKER') : (marker.signalType || 'PUBLIC SIGNAL');
+  const weather = marker.kind === 'user' && globeWeatherContext && !globeWeatherContext.error
+    ? `${globeWeatherContext.temperature}°C · ${globeWeatherContext.condition || 'conditions unavailable'}` : '';
+  panel.innerHTML = `<span class="dim">${escapeHtml(kind)}</span><b>${escapeHtml(label)}${weather ? ` · ${escapeHtml(weather)}` : ''}</b><small>${escapeHtml(headline ? headline.title : (location.exact ? 'Coordinates are held in memory for this session only.' : 'Approximate profile context; no exact coordinates transmitted.'))}</small>`;
+}
+
+function updateGlobeSignalState(text, bad = false) {
+  const el = $('#globeSignalState');
+  if (el) { el.textContent = text; el.classList.toggle('bad', !!bad); }
+}
+
+async function loadGlobeWeatherContext() {
+  const city = profile.city || DEFAULTS.city;
+  try {
+    const weather = await webGet('weather', { city });
+    if (weather && !weather.error) {
+      globeWeatherContext = weather;
+      updateGlobeSignalState('LINKS LIVE · WEATHER SYNCED');
+      if (globeSelectedContext && globeSelectedContext.kind === 'user') renderGlobeContextCard(globeSelectedContext);
+    }
+  } catch { updateGlobeSignalState('LINKS LIVE · WEATHER OFFLINE', true); }
+}
+
+// ---------------------------------------------------------------------------
 // Globe
 // ---------------------------------------------------------------------------
 function startGlobe() {
@@ -2051,6 +2199,11 @@ function startGlobe() {
   if (!ctx) return;
   globeStarted = true;
   let w, h, dpr, visibleMarkers = [];
+  let rotationOffset = 0;
+  let dragging = false;
+  let dragMoved = false;
+  let dragStartX = 0;
+  let dragStartRotation = 0;
   const hotspots = [
     { lat: 40.7, lon: -74, label: 'NYC' }, { lat: 51.5, lon: -0.1, label: 'LON' },
     { lat: 35.7, lon: 139.7, label: 'TYO' }, { lat: -33.9, lon: 151.2, label: 'SYD' },
@@ -2082,31 +2235,74 @@ function startGlobe() {
     return { x: radius * Math.cos(phi) * Math.sin(lambda), y: -radius * Math.sin(phi), z: radius * Math.cos(phi) * Math.cos(lambda) };
   }
   function selectHotspot(marker) {
-    if (!marker || !marker.headline) return;
+    if (!marker) return;
+    globeSelectedContext = marker;
     const panel = $('#hotspotHeadline');
-    panel.textContent = `${marker.label} · ${marker.headline.title}`;
+    if (marker.kind === 'user') {
+      if (panel) {
+        panel.textContent = `YOU · ${marker.location.label || 'YOUR LOCATION'} · ${marker.location.exact ? 'precise session marker' : 'profile-city marker'}. Coordinates are not saved.`;
+        panel.classList.add('active');
+        panel.onclick = null;
+      }
+      renderGlobeContextCard(marker);
+      return;
+    }
+    panel.textContent = marker.headline
+      ? `${marker.label} · ${marker.headline.title}`
+      : `${marker.label} · ${marker.signalType || 'PUBLIC SIGNAL'} · awaiting headline feed`;
     panel.classList.add('active');
-    panel.onclick = () => api.openExternal(marker.headline.url);
-    $$('#newsList .news-item').forEach((item) => item.classList.toggle('selected', item.dataset.newsId === String(marker.headline.id)));
+    panel.onclick = marker.headline && marker.headline.url ? () => api.openExternal(marker.headline.url) : null;
+    if (marker.headline) $$('#newsList .news-item').forEach((item) => item.classList.toggle('selected', item.dataset.newsId === String(marker.headline.id)));
+    renderGlobeContextCard(marker);
   }
+  addLifecycleListener(canvas, 'pointerdown', (event) => {
+    dragging = true; dragMoved = false; dragStartX = event.clientX; dragStartRotation = rotationOffset;
+    try { canvas.setPointerCapture(event.pointerId); } catch {}
+    canvas.style.cursor = 'grabbing';
+  });
   addLifecycleListener(canvas, 'pointermove', (event) => {
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * (w / rect.width), y = (event.clientY - rect.top) * (h / rect.height);
-    canvas.style.cursor = visibleMarkers.some((marker) => Math.hypot(marker.x - x, marker.y - y) < 15) ? 'pointer' : 'crosshair';
+    if (dragging) {
+      const dx = event.clientX - dragStartX;
+      if (Math.abs(dx) > 3) dragMoved = true;
+      rotationOffset = dragStartRotation + dx * 0.45;
+      canvas.style.cursor = 'grabbing';
+    } else canvas.style.cursor = visibleMarkers.some((marker) => Math.hypot(marker.x - x, marker.y - y) < 15) ? 'pointer' : 'crosshair';
+  });
+  addLifecycleListener(canvas, 'pointerup', (event) => {
+    dragging = false;
+    try { canvas.releasePointerCapture(event.pointerId); } catch {}
+    canvas.style.cursor = 'crosshair';
   });
   addLifecycleListener(canvas, 'click', (event) => {
+    if (dragMoved) { dragMoved = false; return; }
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * (w / rect.width), y = (event.clientY - rect.top) * (h / rect.height);
-    const marker = visibleMarkers.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
-    if (marker && Math.hypot(marker.x - x, marker.y - y) < 18) selectHotspot(marker);
+    const marker = visibleMarkers.slice().sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+    if (marker && Math.hypot(marker.x - x, marker.y - y) < 22) selectHotspot(marker);
   });
   resize(); addLifecycleListener(window, 'resize', debounce(resize), { passive: true });
 
   function draw(time) {
     const accent = getAccent();
     ctx.clearRect(0, 0, w, h);
-    const cx = w / 2, cy = h / 2, radius = Math.min(w, h) * 0.36, rot = time * 0.012;
-    ctx.strokeStyle = accent; ctx.lineWidth = 0.8;
+    const cx = w / 2, cy = h / 2, radius = Math.min(w, h) * 0.36, rot = rotationOffset + time * 0.012;
+    // Deep-space field, orbital rings and a slow tactical sweep make the
+    // globe read as a live sensor display rather than a static map.
+    ctx.fillStyle = '#030711'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = hexToRgba(accent, 0.18); ctx.lineWidth = 1;
+    for (const scale of [1.12, 1.23, 1.34]) {
+      ctx.globalAlpha = 0.16;
+      ctx.beginPath(); ctx.ellipse(cx, cy, radius * scale, radius * scale * 0.28, -0.12, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.globalAlpha = 0.18;
+    ctx.beginPath(); ctx.moveTo(cx - radius * 1.35, cy); ctx.lineTo(cx + radius * 1.35, cy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy - radius * 1.35); ctx.lineTo(cx, cy + radius * 1.35); ctx.stroke();
+    ctx.globalAlpha = 0.10;
+    ctx.beginPath(); ctx.arc(cx, cy, radius * 1.08, -Math.PI * 0.15, Math.PI * 0.55); ctx.stroke();
+    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = accent;
     for (let lat = -75; lat <= 75; lat += 15) {
       ctx.globalAlpha = 0.1; ctx.beginPath();
       for (let lon = -180; lon <= 180; lon += 4) { const point = project(lat, lon, rot); if (lon === -180) ctx.moveTo(cx + point.x, cy + point.y); else ctx.lineTo(cx + point.x, cy + point.y); }
@@ -2126,21 +2322,68 @@ function startGlobe() {
       ctx.globalAlpha = 0.16 + 0.32 * (point.z / radius);
       ctx.beginPath(); ctx.arc(cx + point.x, cy + point.y, 1.15, 0, Math.PI * 2); ctx.fill();
     }
+    if (globeLayers.routes) {
+      const routes = [[0, 1], [1, 2], [2, 3], [4, 5], [5, 8], [6, 7], [7, 9]];
+      ctx.setLineDash([4, 9]); ctx.lineDashOffset = -time * 0.035;
+      for (const [a, b] of routes) {
+        const from = project(hotspots[a].lat, hotspots[a].lon, rot);
+        const to = project(hotspots[b].lat, hotspots[b].lon, rot);
+        if (from.z <= 0 || to.z <= 0) continue;
+        const x1 = cx + from.x, y1 = cy + from.y, x2 = cx + to.x, y2 = cy + to.y;
+        const lift = Math.min(55, radius * 0.32);
+        ctx.globalAlpha = 0.20; ctx.strokeStyle = accent; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo((x1 + x2) / 2, (y1 + y2) / 2 - lift, x2, y2); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
     visibleMarkers = [];
-    hotspots.forEach((hotspot, index) => {
+    if (globeUserLocation) {
+      const point = project(globeUserLocation.lat, globeUserLocation.lon, rot);
+      if (point.z > 0) {
+        const x = cx + point.x, y = cy + point.y;
+        const pulse = 0.5 + 0.5 * Math.sin(time * 0.006);
+        ctx.beginPath(); ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.9;
+        ctx.arc(x, y, 5 + pulse * 4, 0, Math.PI * 2); ctx.stroke();
+        if (globeLayers.weather && globeWeatherContext && !globeWeatherContext.error) {
+          ctx.beginPath(); ctx.strokeStyle = '#6fe7ff'; ctx.globalAlpha = 0.55; ctx.lineWidth = 1;
+          ctx.arc(x, y, 12 + pulse * 5, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.beginPath(); ctx.fillStyle = '#fff4c2'; ctx.globalAlpha = 1; ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 0.9; ctx.font = '700 9px monospace'; ctx.fillStyle = '#ffd166'; ctx.fillText('YOU', x + 8, y - 6);
+        visibleMarkers.push({ x, y, kind: 'user', label: 'YOU', location: globeUserLocation });
+      }
+    }
+    if (globeLayers.signals) hotspots.forEach((hotspot, index) => {
       const point = project(hotspot.lat, hotspot.lon, rot);
       if (point.z <= 0) return;
       const x = cx + point.x, y = cy + point.y, pulse = 0.5 + 0.5 * Math.sin(time * 0.005 + hotspot.lon);
       const headline = worldHeadlines[index % Math.max(1, worldHeadlines.length)];
+      const signalType = headline && headline.category ? String(headline.category).toUpperCase() : (index % 3 === 0 ? 'WATCH' : 'LIVE');
+      const signalColor = signalType === 'WORLD' ? '#ffbf69' : signalType === 'BUSINESS' ? '#9bf6ff' : accent;
       ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.95; ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.fillStyle = accent; ctx.globalAlpha = 0.34; ctx.arc(x, y, 5 + pulse * 7, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 0.85; ctx.font = '9px monospace'; ctx.fillText(hotspot.label, x + 7, y - 5);
-      visibleMarkers.push({ x, y, label: hotspot.label, headline });
+      ctx.beginPath(); ctx.fillStyle = signalColor; ctx.globalAlpha = 0.18; ctx.arc(x, y, 7 + pulse * 9, 0, Math.PI * 2); ctx.fill();
+      if (pulse > 0.82) { ctx.beginPath(); ctx.strokeStyle = signalColor; ctx.globalAlpha = 0.75; ctx.lineWidth = 1; ctx.arc(x, y, 10 + pulse * 8, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.globalAlpha = 0.85; ctx.font = '9px monospace'; ctx.fillStyle = signalColor; ctx.fillText(hotspot.label, x + 7, y - 5);
+      const marker = { x, y, label: hotspot.label, headline, signalType };
+      if (globeSelectedContext && marker.label === globeSelectedContext.label) { ctx.globalAlpha = 0.9; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.stroke(); }
+      visibleMarkers.push(marker);
     });
+    // rotating scan wedge over the sphere
+    const sweep = (time * 0.0012) % (Math.PI * 2);
+    ctx.globalAlpha = 0.10;
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, radius * 1.02, sweep - 0.22, sweep); ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
     scheduleViewFrame('world', draw);
   }
   scheduleViewFrame('world', draw);
+  renderGlobeLocationUi();
+  renderGlobeContextCard(null);
+  updateGlobeSignalState('LINKS SYNCING…');
+  // Show a coarse profile-city marker without requesting precise location,
+  // then fetch only public weather context for the profile city.
+  loadProfileCityOnGlobe().catch(() => renderGlobeLocationUi());
+  loadGlobeWeatherContext();
 }
 
 // ---------------------------------------------------------------------------
@@ -2367,8 +2610,26 @@ function typewrite(el, text, speed = 14) {
 // exactly how an answer was reached.
 // ---------------------------------------------------------------------------
 let activeTypingEl = null;
-function toolChipUpdate({ name, state }) {
+function toolChipUpdate({ name, state, reason }) {
+  // The OpenJarvis reasoning brief is an internal advisory step, not a
+  // user-facing tool: it never gets an inline chip (its old "✗" on every
+  // turn without Ollama running was pure noise). Status stays visible in
+  // the expert-panel feed and the Connections panel.
+  if (name === 'openjarvis_plan') return;
   if (!activeTypingEl || !activeTypingEl.isConnected) return;
+  const label = String(name || '').replace(/_/g, ' ');
+  // 'skipped' = optional enhancement unavailable (sidecar down, model
+  // missing). Remove any in-flight chip silently — no red ✗ for a step the
+  // turn never needed.
+  if (state === 'skipped') {
+    try {
+      const strip = activeTypingEl.querySelector('.tool-strip');
+      const chip = strip && strip.querySelector(`[data-tool="${CSS.escape(label)}"]`);
+      if (chip) chip.remove();
+      if (strip && !strip.children.length) strip.remove();
+    } catch {}
+    return;
+  }
   let strip = activeTypingEl.querySelector('.tool-strip');
   if (!strip) {
     strip = document.createElement('div');
@@ -2376,8 +2637,8 @@ function toolChipUpdate({ name, state }) {
     const p = activeTypingEl.querySelector('p');
     activeTypingEl.insertBefore(strip, p || activeTypingEl.firstChild);
   }
-  const label = String(name || '').replace(/_/g, ' ');
-  let chip = strip.querySelector(`[data-tool="${label}"]`);
+  let chip = null;
+  try { chip = strip.querySelector(`[data-tool="${CSS.escape(label)}"]`); } catch { chip = null; }
   if (!chip) {
     chip = document.createElement('span');
     chip.dataset.tool = label;
@@ -2392,6 +2653,25 @@ function toolChipUpdate({ name, state }) {
   if (state === 'done') tickPlannerStep();
   const orb = $('#orbStatus');
   if (orb && state === 'start') { orb.textContent = 'EXECUTING · ' + label.toUpperCase(); }
+}
+
+// One-tap retry for transient provider failures (empty turn, timeout, rate
+// limit, fallback cooldown). Re-sends the same text as a fresh turn.
+function appendChatRetry(typingEl, text) {
+  try {
+    if (!typingEl || typingEl.querySelector('.chat-retry-btn')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chat-retry-btn';
+    btn.textContent = '↻ Retry';
+    btn.setAttribute('aria-label', 'Retry last message');
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      btn.textContent = '↻ Retrying…';
+      sendMessage(text);
+    });
+    typingEl.appendChild(btn);
+  } catch {}
 }
 
 function renderReply(p, text) {
@@ -2543,7 +2823,7 @@ function buildSystemPrompt() {
       `Always respond with empathy: acknowledge their feelings first when they're struggling, celebrate with them when they're doing well. If they're sad, anxious, angry or guilty, be gentle, validating and supportive — never dismissive or preachy. Adapt your tone and length to their state (more warmth and fewer words when intensity is high). ` +
       `SEARCH-FIRST: For anything factual, current, or time-sensitive (news, prices, weather, people, "who is", "what is", "latest"), you MUST call web_search / fetch_webpage to get real, up-to-date answers rather than relying on memory. The user wants genuine results, not guesses. ` +
       `LIFE & CAREER: You help with everything — career decisions, study plans, relationships, health, finances, self-improvement and emotional support. Offer thoughtful, practical, encouraging guidance. When appropriate, help them set goals (add_goal), log their mood (log_mood), or offer an affirmation (get_affirmation) or wellness tip (get_wellness_tip). ` +
-      `CAPABILITIES via tools: time/date, weather, web search, fetch pages, Wikipedia, YouTube, translate, dictionary, crypto, currency, image generation, open URLs/apps, math, reminders, notes, files, clipboard, volume, screenshots, system control, to-dos, mood, goals, affirmations, wellness, PLUS NEW: launch_app(name,args), focus_app(name), snap_window(left|right|quarter|max), minimize_all(), next_virtual_desktop(), open_site(url,browser), list_windows() returns titles+apps so you see desktop state, apply_mode(name), list_modes(), create_mode(). ` +
+      `CAPABILITIES via tools: time/date, weather, web search, fetch pages, Wikipedia, YouTube, translate, dictionary, crypto, currency, image generation, open URLs/apps, math, reminders, notes, files, clipboard, volume, screenshots, system control, to-dos, mood, goals, affirmations, wellness, PLUS NEW: launch_app(name,args), focus_app(name), snap_window(left|right|quarter|max), minimize_all(), next_virtual_desktop(), open_site(url,browser) (named presets work too: youtube, spotify, github, chatgpt, google, gmail, calendar, notion, slack, discord, figma, reddit, netflix, twitch, focusarx), list_windows() returns titles+apps so you see desktop state, apply_mode(name), list_modes(), create_mode(). ` +
       `DESKTOP CONTEXT: focused app/window is "${focused}". Current mode is "${curMode}". Active brain is "${activeBrain}". Use this for follow-ups: "open it there too", "move this to the right". ` +
       `MODES: Mode = named bundle of apps to launch, websites (+which browser), volume level, HUD theme, do-not-disturb, optional playlist URL. Built-ins: WORK (chrome+vscode+slack, gmail+calendar+github, vol 30, cyan, DND), GAMING (steam+discord, vol 70, crimson, DND, optimize_gaming), CHILL (spotify, lofi playlist, vol 40, violet), STUDY (notepad, lofi, vol 20, emerald, DND). When user says "chill mode", "play soft music" (open lofi playlist + set volume), "gaming setup" -> optimize_gaming + mode. Chain correctly: launch apps -> open sites -> set volume -> apply theme -> confirm spoken. ` +
       `FEW-SHOT MODE EXAMPLES:
@@ -2605,7 +2885,9 @@ const humanError = (err) => {
   if (err.startsWith('GEMINI_HTTP_404')) return 'Gemini model retired or API disabled — refresh the model list in Settings → Voice.';
   if (err.startsWith('GEMINI_LIVE_MODEL')) return 'That model is Live-voice-only and cannot answer text chat — pick a text model (e.g. gemini-2.5-flash) in Settings → Voice, or use Live voice.';
   if (err.startsWith('GEMINI_WEB_FAILED')) return 'Gemini call failed — ' + String(err).slice(0, 120);
+  if (err.startsWith('CHATGPT_CODEX_FAILED')) return 'ChatGPT could not complete that turn. GemAir will retry the legacy transport, then use the local fallback — reconnect only if this keeps happening.';
   if (err.startsWith('CHATGPT_WEB_FAILED')) return 'ChatGPT web call failed (often a bot-check) — retry, or re-capture the session in Settings → AI & Connections.';
+  if (err.startsWith('CODEX_EMPTY_RESPONSE') || err.startsWith('CODEX_EMPTY_STREAM')) return 'ChatGPT returned an empty response. Retry once; if it repeats, reconnect in Settings → AI & Connections.';
   if (err === 'TOKEN_EXPIRED') return 'ChatGPT session expired — reconnect in Settings → AI & Connections.';
   if (err.startsWith('HTTP_')) return 'HTTP error ' + err.replace('HTTP_', '').split(' ')[0];
   return String(err).slice(0, 140);
@@ -2835,6 +3117,35 @@ async function handleSlashCommand(text) {
     return true;
   }
 
+  if (cmd === '/skills' || cmd.startsWith('/skills ')) {
+    const filter = text.slice('/skills'.length).trim().toLowerCase();
+    const catalog = await api.openJarvisSkillCatalog().catch((error) => ({ ok: false, message: error.message }));
+    if (!catalog || !catalog.ok) {
+      replyLine('OpenJarvis skill catalog unavailable: ' + ((catalog && (catalog.message || catalog.error)) || 'install the isolated runtime in Settings.'));
+      return true;
+    }
+    const skills = (catalog.skills || []).filter((skill) => !filter || `${skill.name} ${skill.description} ${(skill.tags || []).join(' ')}`.toLowerCase().includes(filter));
+    const lines = skills.slice(0, 40).map((skill) => `• ${skill.name} — ${skill.description}${skill.requiredCapabilities?.length ? ` [${skill.requiredCapabilities.join(', ')}]` : ''}`);
+    replyLine(`[OPENJARVIS SKILLS] ${skills.length} available${filter ? ` for “${filter}”` : ''}\n${lines.length ? lines.join('\n') : 'No skills match that filter.'}\n\nUse /skill <name> <request> to run a guided, policy-gated request.`);
+    return true;
+  }
+
+  if (cmd.startsWith('/skill ')) {
+    const rest = text.slice('/skill '.length).trim();
+    const [name, ...requestParts] = rest.split(/\s+/);
+    if (!name) { replyLine('Usage: /skill <name> <request>. Start with /skills to browse the local catalog.'); return true; }
+    const catalog = await api.openJarvisSkillCatalog().catch((error) => ({ ok: false, message: error.message }));
+    const skill = (catalog && catalog.skills || []).find((item) => item.name.toLowerCase() === name.toLowerCase());
+    if (!catalog?.ok || !skill) { replyLine(`Skill “${name}” was not found. Type /skills to browse the locally installed catalog.`); return true; }
+    if (skill.safeForGuidedUse === false) { replyLine(`Skill “${name}” is blocked by the local security scan${skill.securityFindings?.length ? ` (${skill.securityFindings.join(', ')})` : ''}. Review or remove its local manifest before using it.`); return true; }
+    const request = requestParts.join(' ').trim() || `Explain how to apply the ${skill.name} workflow and ask for any missing inputs before acting.`;
+    showOperationProgress(`OpenJarvis skill · ${skill.name}…`);
+    const guided = `Use the discoverable OpenJarvis skill “${skill.name}”. Skill description: ${skill.description}. Required capabilities: ${(skill.requiredCapabilities || []).join(', ') || 'none listed'}. Treat this as a guided workflow: state the plan, keep actions within GemAir policy, and do not claim a tool action was performed unless it actually ran. User request: ${request}`;
+    const result = await api.openJarvisAsk('ask', guided, getContextMessages(24)).catch((error) => ({ ok: false, message: error.message }));
+    replyLine(result && result.ok && result.content ? `[OPENJARVIS SKILL · ${skill.name}]\n${result.content}` : `OpenJarvis skill failed: ${((result && (result.message || result.error)) || 'unavailable')}`);
+    return true;
+  }
+
   if (cmd.startsWith('/research ') || cmd.startsWith('/plan ')) {
     const mode = cmd.startsWith('/research ') ? 'research' : 'plan';
     const query = text.replace(/^\/(?:research|plan)\s+/i, '').trim();
@@ -2878,6 +3189,7 @@ async function sendMessage(text) {
   $('#chatInput').value = '';
   setCaption('user', text, { autoHide: 3200 });
   avatar({ thinking: true }); // Gem visibly starts reasoning
+  try { if (window.gemAvatar && window.gemAvatar.pulse) window.gemAvatar.pulse(0.8); } catch {}
   setThinking(true);
   operationRequestActive = true;
   showOperationProgress('Understanding request…');
@@ -3170,13 +3482,18 @@ async function handleMessage(text) {
       }
     });
     if (res.ok) {
+      connectionIssue = res.provider === 'Offline Brain'
+        ? { provider: res.fallbackFrom || 'free core', error: res.sourceError || 'upstream unavailable', offline: true }
+        : null;
+      renderConnectionStrip();
       reply = res.reply || acc;
       if (!streamed) { await renderReply(replyEl, reply); }
       else if (streamingVoice) { try { skipFinalSpeak = flushStreamSpeech(reply); } catch (e) {} }
-      if (res.provider === 'FreeGPT35') {
+      if (res.provider === 'FreeGPT35' || res.provider === 'Offline Brain') {
         const label = document.createElement('div');
         label.className = 'response-source';
-        label.textContent = `Source: FreeGPT35 / ${res.model || 'gpt-3.5-turbo'}${res.fallbackFrom ? ' · fallback from ' + String(res.fallbackFrom).toUpperCase() : ''}`;
+        const source = res.provider === 'Offline Brain' ? 'Offline Brain' : 'FreeGPT35';
+        label.textContent = `Source: ${source} / ${res.model || 'local-intent'}${res.fallbackFrom ? ' · fallback from ' + String(res.fallbackFrom).toUpperCase() : ''}`;
         typing.appendChild(label);
       }
       chatHistory.push({ role: 'assistant', content: reply });
@@ -3186,6 +3503,8 @@ async function handleMessage(text) {
         });
       }
     } else if (res.sessionExpired) {
+      connectionIssue = { provider: useConnected, error: res.error, detail: res.detail };
+      renderConnectionStrip();
       // The main process has deleted the provider-rejected credential. Finish
       // this same turn with the honest local fallback instead of making the
       // user resend while the reconnect dialog is open.
@@ -3197,12 +3516,19 @@ async function handleMessage(text) {
       replyEl.textContent = reply;
       chatHistory.push({ role: 'assistant', content: reply });
     } else {
+      connectionIssue = { provider: useConnected, error: res.error, detail: res.detail };
+      renderConnectionStrip();
       replyFailed = true;
       resetStreamSpeech();
-      reply = (acc ? acc + '\n\n[Response interrupted]\n' : '') +
-        'Connection failed: ' + (res.message || humanError(res.error)) + '. Check Connections in Settings and retry.'
+      // Transient blips (empty turn, timeout, rate limit, cooldown) read as
+      // "temporary hiccup + Retry" instead of a scary connection failure —
+      // the session is untouched and the same turn usually succeeds on retry.
+      const lead = acc ? acc + '\n\n[Response interrupted]\n' : '';
+      const core = (res.message || humanError(res.error)) + (res.retryable ? ' — looks temporary, nothing was disconnected.' : '. Check Connections in Settings and retry.');
+      reply = lead + (res.retryable ? 'Temporary hiccup: ' : 'Connection failed: ') + core
         + (res.detail ? '\n\nProvider said: ' + String(res.detail).slice(0, 500) : '');
       replyEl.textContent = reply;
+      if (res.retryable) appendChatRetry(typing, text);
     }
   } else if (useAI) {
     // Report provider errors directly, never substitute a canned AI response.
@@ -3399,7 +3725,10 @@ function ttsOptionsFor(clean, gen, mode) {
     neuralVoice: profile.voice?.neuralVoice || DEFAULTS.neuralVoice,
     edgeVoice: profile.voice?.edgeVoice || preset.edgeVoice || DEFAULTS.edgeVoice,
     edgeLang: profile.voice?.sttLang || DEFAULTS.sttLang,
-    geminiApiKey: (profile.geminiLive && profile.geminiLive.apiKey) || '',
+    // Stored Gemini credentials are intentionally unavailable in renderer
+    // memory. Gemini Live requires an explicit per-session key entry; normal
+    // text chat uses the encrypted main-process provider path.
+    geminiApiKey: '',
     geminiModel: (profile.geminiLive && profile.geminiLive.model) || '',
     geminiVoice: profile.voice?.geminiVoice || '',
     presetVoice: preset.edgeVoice,
@@ -5017,6 +5346,12 @@ function toolFeedUpdate({ name, state }) {
     rec = { el: div, t0: now };
     toolFeedCards.set(name, rec);
   }
+  if (state === 'skipped') {
+    rec.el.classList.remove('running'); rec.el.classList.add('skipped');
+    const io = rec.el.querySelector('.tool-io pre'); if (io) io.textContent = 'skipped — optional step unavailable';
+    const dur = rec.el.querySelector('.tool-dur'); if (dur) dur.textContent = '—';
+    return;
+  }
   if (state === 'done') {
     const secs = ((now - rec.t0) / 1000).toFixed(1);
     rec.el.classList.remove('running'); rec.el.classList.add('done');
@@ -5084,7 +5419,7 @@ function renderReminders() {
     div.className = 'reminder-item' + (r.done ? ' done' : '');
     div.innerHTML = `
       <button class="tick-btn" title="Toggle done">${r.done ? '✓' : ''}</button>
-      <span class="body">${escapeHtml(r.text)}<small>${r.done ? 'done' : new Date(r.at).toLocaleString()}</small></span>
+      <span class="body">${escapeHtml(r.text)}<small>${r.done ? 'done' : new Date(r.at).toLocaleString()}${r.repeat ? ` · ↻ ${escapeHtml(r.repeat)}` : ''}</small></span>
       <button class="del-btn" title="Delete">✕</button>`;
     div.querySelector('.tick-btn').addEventListener('click', async () => { await api.memoryMarkReminder(r.id, !r.done); await loadMemory(); renderReminders(); });
     div.querySelector('.del-btn').addEventListener('click', async () => { await api.memoryDeleteReminder(r.id); await loadMemory(); renderReminders(); });
@@ -5105,6 +5440,33 @@ function renderSkills() {
     list.appendChild(div);
   });
 }
+async function renderOpenJarvisSkills() {
+  const list = $('#openJarvisSkillsList');
+  if (!list) return;
+  list.innerHTML = '<div class="empty">Reading the local OpenJarvis skill catalog…</div>';
+  const result = await api.openJarvisSkillCatalog().catch((error) => ({ ok: false, message: error.message }));
+  if (!result || !result.ok) {
+    list.innerHTML = `<div class="empty">${escapeHtml((result && (result.message || result.error)) || 'OpenJarvis is not installed yet. Install it from Settings → AI & Connections.')}</div>`;
+    return;
+  }
+  const skills = Array.isArray(result.skills) ? result.skills : [];
+  if (!skills.length) { list.innerHTML = '<div class="empty">No local OpenJarvis skills found. Bundled skills appear after the isolated runtime is installed.</div>'; return; }
+  list.innerHTML = '';
+  skills.forEach((skill) => {
+    const row = document.createElement('div');
+    const safe = skill.safeForGuidedUse !== false;
+    row.className = 'memory-item';
+    row.innerHTML = `<span class="tag">${escapeHtml(String(skill.source || 'LOCAL').toUpperCase())}</span><span class="body"><b>${escapeHtml(skill.name)}</b><br><small>${escapeHtml(skill.description || '')}${skill.steps ? ` · ${skill.steps} steps` : ''}${safe ? '' : ' · blocked by security scan'}</small></span><button class="ghost-btn skill-use-btn" type="button" title="${safe ? 'Start a guided request with this skill' : 'This skill is blocked by the security scan'}"${safe ? '' : ' disabled'}>${safe ? 'USE' : 'BLOCKED'}</button>`;
+    if (safe) row.querySelector('.skill-use-btn').addEventListener('click', () => {
+      switchView('assistant');
+      const input = $('#chatInput');
+      if (input) { input.value = `/skill ${skill.name} `; input.focus(); }
+      toast('SKILL', `${skill.name} ready — add your request.`, '🧩');
+    });
+    list.appendChild(row);
+  });
+}
+
 function renderInstructions() {
   const list = $('#instructionsList');
   if (!list) return;
@@ -5792,14 +6154,31 @@ const APP_ALIASES = {
   telegram: 'telegram', slack: 'slack', zoom: 'zoom', paint: 'mspaint'
 };
 const SITE_MAP = {
-  youtube: 'https://youtube.com', google: 'https://google.com', github: 'https://github.com',
-  gmail: 'https://mail.google.com', reddit: 'https://reddit.com', netflix: 'https://netflix.com',
-  chatgpt: 'https://chatgpt.com', twitter: 'https://x.com', x: 'https://x.com',
-  whatsapp: 'https://web.whatsapp.com', maps: 'https://maps.google.com',
-  drive: 'https://drive.google.com', instagram: 'https://instagram.com',
-  linkedin: 'https://linkedin.com', stackoverflow: 'https://stackoverflow.com'
+  youtube: 'https://youtube.com', 'youtube music': 'https://music.youtube.com',
+  google: 'https://google.com', github: 'https://github.com',
+  gmail: 'https://mail.google.com', calendar: 'https://calendar.google.com', docs: 'https://docs.google.com',
+  drive: 'https://drive.google.com', maps: 'https://maps.google.com', keep: 'https://keep.google.com',
+  reddit: 'https://reddit.com', netflix: 'https://netflix.com', twitch: 'https://twitch.tv',
+  spotify: 'https://open.spotify.com', chatgpt: 'https://chatgpt.com',
+  twitter: 'https://x.com', x: 'https://x.com',
+  whatsapp: 'https://web.whatsapp.com', instagram: 'https://instagram.com',
+  linkedin: 'https://linkedin.com', stackoverflow: 'https://stackoverflow.com',
+  notion: 'https://notion.so', slack: 'https://app.slack.com', discord: 'https://discord.com/app',
+  figma: 'https://figma.com', canva: 'https://canva.com', medium: 'https://medium.com',
+  coursera: 'https://coursera.org', udemy: 'https://udemy.com',
+  focusx: 'https://focusarx.site', focusarx: 'https://focusarx.site'
 };
-const NAV_SITE_RE = new RegExp('\\b(open|go to|visit)\\s+((?:' + Object.keys(SITE_MAP).join('|') + ')\\s*(?:\\.com)?\\b)', 'i');
+const SITE_PRESETS = [
+  ['youtube', 'YouTube'], ['youtube music', 'YouTube Music'], ['spotify', 'Spotify'],
+  ['github', 'GitHub'], ['chatgpt', 'ChatGPT'], ['google', 'Google'], ['gmail', 'Gmail'],
+  ['calendar', 'Google Calendar'], ['docs', 'Google Docs'], ['notion', 'Notion'],
+  ['slack', 'Slack'], ['discord', 'Discord'], ['figma', 'Figma'], ['canva', 'Canva'],
+  ['reddit', 'Reddit'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'],
+  ['netflix', 'Netflix'], ['twitch', 'Twitch'], ['coursera', 'Coursera'], ['udemy', 'Udemy'],
+  ['focusarx', 'focusarx.site']
+];
+const SITE_RE_KEYS = Object.keys(SITE_MAP).sort((a, b) => b.length - a.length).map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+const NAV_SITE_RE = new RegExp('\\b(open|go to|visit)\\s+((?:' + SITE_RE_KEYS.join('|') + ')\\s*(?:\\.com)?\\b)', 'i');
 const SEARCH_SITE_RE = /\b(search|look up|find)\s+(.+?)\s+(?:on|in)\s+(youtube|google)\b|\b(youtube|google)\s+(?:search(?: for)?)?\s*(.+)/i;
 const LAUNCH_RE = /^\s*(?:open|launch|start|run)\s+(?:the\s+)?([a-z0-9 .+#-]{2,24})\s*$/i;
 const FOCUS_RE = /\b(?:switch to|bring(?: up)?|focus|jump to)\s+(?:the\s+)?([a-z0-9 .+#-]{2,24})\b/i;
@@ -6086,16 +6465,19 @@ function openSettings() {
   if ($('#setGeminiVoice')) $('#setGeminiVoice').value = profile.voice?.geminiVoice || '';
   $('#setSttLang').value = profile.voice?.sttLang || DEFAULTS.sttLang;
   $('#setMemoryOn').checked = profile.memoryOn !== false;
+  if ($('#setDailyDigestEnabled')) $('#setDailyDigestEnabled').checked = profile.dailyDigest?.enabled === true;
+  if ($('#setDailyDigestTime')) $('#setDailyDigestTime').value = /^\d{2}:\d{2}$/.test(profile.dailyDigest?.time || '') ? profile.dailyDigest.time : '08:00';
   $('#setContextStrategy').value = CONTEXT_STRATEGIES[profile.contextStrategy] ? profile.contextStrategy : DEFAULTS.contextStrategy;
   if ($('#setAnonymousChat')) $('#setAnonymousChat').checked = profile.anonymousChat !== false;
   if ($('#setOpenJarvisEnabled')) $('#setOpenJarvisEnabled').checked = profile.openJarvis?.enabled === true;
   if ($('#setOpenJarvisPlanning')) $('#setOpenJarvisPlanning').checked = profile.openJarvis?.planning !== false;
+  if ($('#setOpenJarvisRedactMemory')) $('#setOpenJarvisRedactMemory').checked = profile.openJarvis?.redactMemory !== false;
   if ($('#setOpenJarvisMcp')) $('#setOpenJarvisMcp').checked = profile.openJarvis?.mcpEnabled === true;
   if ($('#setOpenJarvisMcpUrl')) $('#setOpenJarvisMcpUrl').value = profile.openJarvis?.mcpUrl || '';
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setAutoUpdateChecks').checked = profile.autoUpdateChecks !== false;
   { const channel = $('#setUpdateChannel'); if (channel) channel.value = profile.updateChannel === 'nightly' ? 'nightly' : 'stable'; }
-  { const live = profile.geminiLive || {}; const m = $('#setGeminiLiveModel'); if (m) m.value = live.model || ''; const k = $('#setGeminiLiveKey'); if (k && !k.value) k.value = live.apiKey || ''; }
+  { const live = profile.geminiLive || {}; const textModel = $('#setGeminiTextModel'); if (textModel) textModel.value = live.textModel || 'gemini-2.5-flash'; const m = $('#setGeminiLiveModel'); if (m) m.value = live.model || ''; const k = $('#setGeminiLiveKey'); if (k) k.value = ''; }
   $('#setUsageStats').checked = profile.usageStats === true;
   $('#setAmbientScore').checked = !!profile.ambientScore;
   // T5 — ambient track + volume
@@ -6480,11 +6862,89 @@ async function refreshOllamaModels() {
 }
 
 // ---------------------------------------------------------------------------
+// Navigation shell — a persistent, keyboard-accessible Finder-style sidebar.
+// Width and collapsed state are local UI preferences; no account data leaves
+// the renderer. Pointer capture keeps resize reliable even when the pointer
+// crosses the sidebar edge while dragging.
+// ---------------------------------------------------------------------------
+const SIDEBAR_WIDTH_KEY = 'gemair:sidebar-width';
+const SIDEBAR_COLLAPSED_KEY = 'gemair:sidebar-collapsed';
+function setupWorkspaceSidebar() {
+  const sidebar = $('#mainSidebar');
+  const toggle = $('#sidebarToggle');
+  const resizer = $('#sidebarResizer');
+  if (!sidebar || !toggle || !resizer) return;
+  const read = (key, fallback) => { try { const v = localStorage.getItem(key); return v == null ? fallback : v; } catch { return fallback; } };
+  const write = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
+  const setCollapsed = (collapsed, persist = true) => {
+    const value = !!collapsed;
+    document.body.classList.toggle('sidebar-collapsed', value);
+    toggle.setAttribute('aria-expanded', String(!value));
+    toggle.setAttribute('aria-label', value ? 'Expand sidebar' : 'Collapse sidebar');
+    toggle.title = value ? 'Expand sidebar' : 'Collapse sidebar';
+    if (persist) write(SIDEBAR_COLLAPSED_KEY, String(value));
+  };
+  const savedWidth = Number(read(SIDEBAR_WIDTH_KEY, '228'));
+  const width = Number.isFinite(savedWidth) ? Math.max(176, Math.min(320, savedWidth)) : 228;
+  document.documentElement.style.setProperty('--sidebar-width', `${width}px`);
+  setCollapsed(read(SIDEBAR_COLLAPSED_KEY, 'false') === 'true', false);
+  toggle.addEventListener('click', () => { playSfx('click'); setCollapsed(!document.body.classList.contains('sidebar-collapsed')); });
+  toggle.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle.click(); }
+  });
+
+  let resizing = false;
+  const stopResize = () => {
+    if (!resizing) return;
+    resizing = false;
+    document.body.classList.remove('is-sidebar-resizing');
+    try { resizer.releasePointerCapture?.(activePointer); } catch {}
+    write(SIDEBAR_WIDTH_KEY, getWidth());
+  };
+  let activePointer = null;
+  const getWidth = () => Math.round(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) || 228);
+  resizer.addEventListener('pointerdown', (event) => {
+    if (window.matchMedia?.('(max-width: 860px)').matches) return;
+    event.preventDefault();
+    activePointer = event.pointerId;
+    resizing = true;
+    document.body.classList.add('is-sidebar-resizing');
+    try { resizer.setPointerCapture(event.pointerId); } catch {}
+  });
+  resizer.addEventListener('pointermove', (event) => {
+    if (!resizing) return;
+    const next = Math.max(176, Math.min(320, event.clientX - sidebar.getBoundingClientRect().left));
+    document.documentElement.style.setProperty('--sidebar-width', `${Math.round(next)}px`);
+  });
+  resizer.addEventListener('pointerup', stopResize);
+  resizer.addEventListener('pointercancel', stopResize);
+  resizer.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    const delta = event.key === 'ArrowRight' ? 16 : -16;
+    const next = Math.max(176, Math.min(320, getWidth() + delta));
+    document.documentElement.style.setProperty('--sidebar-width', `${next}px`);
+    write(SIDEBAR_WIDTH_KEY, String(next));
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 function bindEvents() {
   if (_eventsBound) return;
   _eventsBound = true;
+  setupWorkspaceSidebar();
+  $('#connectionStripRetry')?.addEventListener('click', async () => {
+    connectionIssue = null;
+    renderConnectionStrip();
+    await loadConnectionsStatus();
+    toast('CONNECTIONS', 'Connection status refreshed.', '↻');
+  });
+  $('#connectionStripSettings')?.addEventListener('click', () => {
+    openSettings();
+    document.querySelector('.settings-nav-btn[data-ssection="connections"]')?.click();
+  });
   $$('.nav-btn').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.view)));
 /* theme-btn swatches removed — themes live in Settings */
 
@@ -6596,7 +7056,9 @@ function bindEvents() {
     $$('.core-pane').forEach((p) => p.classList.toggle('active', p.dataset.pane === t.dataset.tab));
     if (t.dataset.tab === 'audit') renderAuditLog();
     if (t.dataset.tab === 'browser') renderMemoryBrowser();
+    if (t.dataset.tab === 'skills') renderOpenJarvisSkills();
   }));
+  $('#loadOpenJarvisSkillsBtn')?.addEventListener('click', () => renderOpenJarvisSkills());
 
   // memory / notes / reminders add
   // T5 — ambient controls preview instantly, while the panel is open
@@ -6712,8 +7174,9 @@ function bindEvents() {
     if (!text) return;
     const whenRaw = $('#remWhen').value.trim();
     const at = whenRaw ? parseLocalWhen(whenRaw) : Date.now() + 3600000;
-    await api.memoryAddReminder(text, at);
-    $('#remText').value = ''; $('#remWhen').value = '';
+    const repeat = $('#remRepeat')?.value || '';
+    await api.memoryAddReminder(text, at, repeat);
+    $('#remText').value = ''; $('#remWhen').value = ''; if ($('#remRepeat')) $('#remRepeat').value = '';
     await loadMemory(); renderReminders();
   });
   $('#remWhen').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#remAdd').click(); });
@@ -6788,8 +7251,38 @@ function bindEvents() {
   });
   $('#focusReset').addEventListener('click', () => { clearInterval(focusInterval); focusRemaining = 25 * 60; focusRunning = false; $('#focusToggle').textContent = '▶'; $('#focusTime').textContent = '25:00'; });
 
+  function renderDigest(digest) {
+    const sections = digest && digest.sections ? digest.sections : {};
+    const list = (title, items, render) => items && items.length
+      ? `<h3>${escapeHtml(title)}</h3><ul>${items.map((item) => `<li>${render(item)}</li>`).join('')}</ul>`
+      : '';
+    const reminderText = (item) => `${escapeHtml(item.text || 'Reminder')} <span class="dim">(${escapeHtml(item.time || '')})</span>`;
+    const linkText = (item) => item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.title || '')}</a>` : escapeHtml(item.title || '');
+    const weather = sections.weather && sections.weather.city ? `<p><b>Weather:</b> ${escapeHtml(sections.weather.city)} · ${escapeHtml(sections.weather.condition || '—')} · ${escapeHtml(String(sections.weather.temperature ?? '—'))}°C</p>` : '';
+    const mood = sections.mood && (sections.mood.emotion || sections.mood.label) ? `<p><b>Last check-in:</b> ${escapeHtml(sections.mood.emotion || sections.mood.label)}</p>` : '';
+    $('#reportContent').innerHTML = `<p class="digest-summary">${escapeHtml(digest.summary || 'No digest summary available.')}</p>${weather}${mood}${list('UP NEXT', sections.reminders, reminderText)}${list('OPEN TASKS', sections.todos, (item) => escapeHtml(item.text || item.title || 'Task'))}${list('GOALS', sections.goals, (item) => `${escapeHtml(item.text || item.title || 'Goal')}${item.category ? ` <span class="dim">· ${escapeHtml(item.category)}</span>` : ''}`)}${list('MONITORED CHANGES', sections.monitored, (item) => `<b>${escapeHtml(item.topic || 'Topic')}</b>: ${linkText(item)}`)}${list('HEADLINES', sections.headlines, linkText)}${!sections.reminders?.length && !sections.todos?.length && !sections.goals?.length && !sections.headlines?.length ? '<p class="dim">Your local lists are clear. Enjoy the quiet start.</p>' : ''}`;
+  }
+  async function openDailyDigest() {
+    $('#reportModalTitle').textContent = 'DAILY DIGEST';
+    $('#reportSparklines').hidden = true;
+    $('#reportModal').classList.add('open');
+    $('#reportContent').textContent = 'Building a local-first digest…';
+    const res = await api.generateDailyDigest();
+    if (!res || res.ok === false) { $('#reportContent').textContent = `Digest unavailable: ${res?.message || res?.error || 'unknown error'}`; return; }
+    renderDigest(res);
+  }
+  $('#dailyDigestBtn').addEventListener('click', openDailyDigest);
+  api.onDailyDigest?.((digest) => {
+    toast('DAILY DIGEST READY', 'Your scheduled local-first morning digest is ready.', '☀');
+    const chip = $('#dailyDigestBtn');
+    if (chip) chip.dataset.ready = 'true';
+  });
+  api.onDailyDigestError?.((error) => toast('DAILY DIGEST', error?.message || 'Could not prepare the digest.', '⚠'));
+
   // Weekly report
   $('#weeklyReportBtn').addEventListener('click', async () => {
+    $('#reportModalTitle').textContent = 'WEEKLY REPORT';
+    $('#reportSparklines').hidden = false;
     $('#reportModal').classList.add('open');
     $('#reportContent').textContent = 'Generating…';
     const res = await api.generateReport();
@@ -6950,7 +7443,7 @@ function bindEvents() {
   $('#refreshUsageBtn').addEventListener('click', renderUsageStats);
   $('#exportUsageBtn').addEventListener('click', exportUsageStats);
   $('#clearUsageBtn').addEventListener('click', clearLocalUsageStats);
-  $('#saveBtn').addEventListener('click', () => {
+  $('#saveBtn').addEventListener('click', async () => {
     profile.name = $('#setUserName').value.trim() || 'Commander';
     profile.ai = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
     profile.avatarGender = $('#setAvatarGender')?.value || 'female';
@@ -6967,12 +7460,18 @@ function bindEvents() {
     profile.voice.name = $('#setVoice').value;
     profile.voice.sttLang = $('#setSttLang').value;
     profile.memoryOn = $('#setMemoryOn').checked;
+    profile.dailyDigest = {
+      ...(profile.dailyDigest || {}),
+      enabled: $('#setDailyDigestEnabled')?.checked === true,
+      time: /^\d{2}:\d{2}$/.test($('#setDailyDigestTime')?.value || '') ? $('#setDailyDigestTime').value : '08:00'
+    };
     profile.contextStrategy = CONTEXT_STRATEGIES[$('#setContextStrategy').value] ? $('#setContextStrategy').value : DEFAULTS.contextStrategy;
     profile.anonymousChat = $('#setAnonymousChat') ? $('#setAnonymousChat').checked : profile.anonymousChat !== false;
     profile.openJarvis = {
       ...(profile.openJarvis || {}),
       enabled: $('#setOpenJarvisEnabled') ? $('#setOpenJarvisEnabled').checked : false,
       planning: $('#setOpenJarvisPlanning') ? $('#setOpenJarvisPlanning').checked : true,
+      redactMemory: $('#setOpenJarvisRedactMemory') ? $('#setOpenJarvisRedactMemory').checked : true,
       mcpEnabled: $('#setOpenJarvisMcp') ? $('#setOpenJarvisMcp').checked : false,
       mcpUrl: ($('#setOpenJarvisMcpUrl')?.value || '').trim().slice(0, 2048),
       agent: 'orchestrator',
@@ -6986,9 +7485,15 @@ function bindEvents() {
     profile.ambientTrack = $('#setAmbientTrack')?.value || profile.ambientTrack || DEFAULTS.ambientTrack;
     profile.ambientVolume = Number($('#setAmbientVolume')?.value ?? ambientVolume());
     profile.screenAwareness = $('#setScreenAwareness').checked;
+    const geminiKeyInput = ($('#setGeminiLiveKey')?.value || '').trim();
+    const geminiTextModel = ($('#setGeminiTextModel')?.value || '').trim().slice(0, 160) || 'gemini-2.5-flash';
     profile.geminiLive = {
+      textModel: geminiTextModel,
       model: ($('#setGeminiLiveModel')?.value || '').trim().slice(0, 120),
-      apiKey: ($('#setGeminiLiveKey')?.value || '').trim()
+      // Never persist this field. The main process receives a newly entered
+      // key below and stores it with Electron safeStorage; opening Settings
+      // cannot read the stored secret back into renderer memory.
+      apiKey: ''
     };
     // 2.5 Desktop Agent (computer control)
     const setComputerUse = $('#setComputerUse');
@@ -7006,7 +7511,17 @@ function bindEvents() {
     if (setCodingAgentSteps) profile.codingAgentMaxSteps = Math.max(1, Math.min(20, Number(setCodingAgentSteps.value) || 10));
     profile.wakeWord = $('#setWakeWord').checked;
     profile.wakeWordText = ($('#setWakeWordText').value || 'Hey Gem').trim().replace(/\s+/g, ' ').slice(0, 40) || 'Hey Gem';
-    persistProfile().then(() => { updateLinkMode(); renderUsageStats(); closeSettings(); });
+    if (geminiKeyInput) {
+      const secure = await api.connectionsSetGeminiApiKey(geminiKeyInput, geminiTextModel);
+      if (secure && secure.error) {
+        toast('GEMINI KEY', secure.message || secure.error || 'Could not save the encrypted key.', '⚠️');
+        return;
+      }
+      toast('GEMINI', 'AI Studio key encrypted and connected in the desktop main process.', '✓');
+    }
+    await persistProfile();
+    updateLinkMode(); renderUsageStats(); closeSettings();
+    loadConnectionsStatus();
     setAmbientScore(profile.ambientScore);
     configureScreenAwareness(profile.screenAwareness);
     updateSttLanguageUi();
@@ -7120,6 +7635,7 @@ function bindEvents() {
       { id: 'toggle-appearance', name: `Switch to ${profile.appearance === 'light' ? 'Dark' : 'Light'} Mode`, detail: 'persistent interface appearance', icon: profile.appearance === 'light' ? '🌙' : '☀', type: 'TOGGLE', action: toggleAppearance },
       { id: 'breathing', name: 'Guided Breathing', detail: '4-7-8 calm session', icon: '◌', type: 'ACTION', action: () => $('#breatheModal').classList.add('open') },
       { id: 'weekly-report', name: 'Weekly Report', detail: 'mood, goals and task trends', icon: '▥', type: 'ACTION', action: () => $('#weeklyReportBtn').click() },
+      { id: 'daily-digest', name: 'Daily Digest', detail: 'local morning plan: reminders, tasks, goals and headlines', icon: '☀', type: 'ACTION', action: () => openDailyDigest() },
       { id: 'panel-weather', name: 'Weather Panel', detail: 'HUD panel', icon: '☁', type: 'PANEL', action: () => openHudDock('weather') },
       { id: 'panel-clock', name: 'World Clock Panel', detail: 'HUD panel', icon: '◷', type: 'PANEL', action: () => openHudDock('clock') },
       { id: 'panel-focus', name: 'Focus Timer Panel', detail: 'HUD panel', icon: '◫', type: 'PANEL', action: () => openHudDock('focus') },
@@ -7272,6 +7788,23 @@ function bindEvents() {
     $('#previewVoice').disabled = false;
   });
 
+  // Gemini text-key self-test goes through the main process. The key is
+  // supplied only for this explicit action and is never returned or persisted
+  // by the renderer bridge.
+  $('#testGeminiKeyBtn')?.addEventListener('click', async () => {
+    const hint = $('#geminiLiveHint');
+    const say = (text, ok) => {
+      if (hint) { hint.textContent = text; hint.classList.toggle('ok', !!ok); hint.classList.toggle('bad', !ok); }
+    };
+    const apiKey = ($('#setGeminiLiveKey')?.value || '').trim();
+    const model = ($('#setGeminiTextModel')?.value || '').trim() || 'gemini-2.5-flash';
+    if (!apiKey) { say('Paste the AI Studio key first. It is only sent to the desktop main process for this test.', false); return; }
+    say('Testing key and text model through GemAir main process…');
+    const result = await api.connectionsTestGeminiApiKey(apiKey, model);
+    if (result && result.ok) say('✓ Text key works — ' + model, true);
+    else say('✗ ' + (result?.error || result?.message || 'Gemini text test failed'), false);
+  });
+
   // Gemini Live dialog self-test: opens a real socket, asks for one exact
   // word, and reports what the service actually returns.
   $('#testGeminiLiveBtn')?.addEventListener('click', async () => {
@@ -7389,7 +7922,9 @@ function bindEvents() {
     if (!apiKey) { say('Paste your AI Studio API key first, then refresh.', false); return; }
     say('Asking Google what this key can use…');
     try {
-      const models = await window.geminiLive.listModels(apiKey);
+      const listed = await api.connectionsListGeminiModels(apiKey);
+      if (!listed || listed.ok !== true) throw new Error(listed?.message || listed?.error || 'Model discovery failed');
+      const models = Array.isArray(listed.models) ? listed.models : [];
       const list = $('#geminiLiveModelList');
       if (list) {
         list.innerHTML = '';
@@ -7522,6 +8057,15 @@ function bindEvents() {
   $('#refreshNews').addEventListener('click', () => refreshHeadlines(worldCategory));
   $('#refreshNewsMini')?.addEventListener('click', () => refreshHeadlines(worldCategory));
   $$('.news-filter').forEach((button) => button.addEventListener('click', () => refreshHeadlines(button.dataset.newsCategory)));
+  $('#worldLocateBtn')?.addEventListener('click', locateUserOnGlobe);
+  $$('.globe-layer').forEach((button) => button.addEventListener('click', () => {
+    const layer = button.dataset.globeLayer;
+    if (!layer || !(layer in globeLayers)) return;
+    globeLayers[layer] = !globeLayers[layer];
+    button.classList.toggle('active', globeLayers[layer]);
+    updateGlobeSignalState(globeLayers.signals ? 'LINKS LIVE' : 'LINKS FILTERED');
+    playSfx('click');
+  }));
   $$('.world-mode').forEach((button) => button.addEventListener('click', () => {
     $$('.world-mode').forEach((item) => item.classList.toggle('active', item === button));
     $('#worldGrid').dataset.mode = button.dataset.worldMode;
@@ -8382,7 +8926,7 @@ function renderConnectionHub() {
   if (chatgptDot) {
     chatgptDot.className = 'conn-dot ' + (status.chatgpt.connected ? (status.chatgpt.experimental ? 'experimental' : 'connected') : 'disconnected');
     chatgptDot.textContent = status.chatgpt.connected ? '●' : '○';
-    chatgptDot.title = status.chatgpt.dot + (status.chatgpt.experimental ? ' (EXPERIMENTAL)' : '');
+    chatgptDot.title = status.chatgpt.dot + (status.chatgpt.tokenState ? ` · token ${status.chatgpt.tokenState}` : '') + (status.chatgpt.experimental ? ' (EXPERIMENTAL)' : '');
   }
   if (geminiDot) {
     geminiDot.className = 'conn-dot ' + (status.gemini.connected ? (status.gemini.experimental ? 'experimental' : 'connected') : 'disconnected');
@@ -8413,8 +8957,13 @@ function renderConnectionHub() {
   if (rustBadge) { rustBadge.textContent = jarvis.rustAvailable ? 'RUST + PYTHON' : 'PYTHON'; rustBadge.className = 'conn-badge' + (jarvis.rustAvailable ? ' pro' : ''); }
   const installButton = $('#installOpenJarvisBtn');
   if (installButton) installButton.textContent = jarvis.installed ? 'REPAIR / ENABLE RUST' : 'INSTALL RUNTIME';
-  if (chatgptEmail) chatgptEmail.textContent = status.chatgpt.connected ? (status.chatgpt.email || 'connected') : 'Not connected';
-  if (geminiEmail) geminiEmail.textContent = status.gemini.connected ? (status.gemini.email || 'connected') : 'Not connected';
+  if (chatgptEmail) {
+    const state = status.chatgpt.tokenState && status.chatgpt.tokenState !== 'ready' ? ` · token ${status.chatgpt.tokenState}` : '';
+    chatgptEmail.textContent = status.chatgpt.connected ? (status.chatgpt.email || 'connected') + state : (status.chatgpt.tokenState === 'expired' ? 'Session expired — reconnect' : 'Not connected');
+  }
+  if (geminiEmail) geminiEmail.textContent = status.gemini.connected
+    ? (status.gemini.email || 'connected') + (status.gemini.authMode === 'api-key' ? ' · AI Studio key' : ' · web session')
+    : 'Not connected';
   if (chatgptBadge) {
     const plan = String(status.chatgpt.plan || 'free');
     chatgptBadge.textContent = status.chatgpt.connected ? plan.toUpperCase() : '—';
@@ -8441,7 +8990,7 @@ function renderConnectionHub() {
   if (chatgptTierPicker) chatgptTierPicker.value = status.chatgpt.serviceTier || 'auto';
   if (chatgptAuthMode) {
     const modes = { 'codex-oauth': 'OpenAI device OAuth · refreshable', 'codex-import': 'Imported local Codex session', 'web-session': 'Legacy browser session' };
-    chatgptAuthMode.textContent = modes[status.chatgpt.authMode] || 'OpenAI account connection';
+    chatgptAuthMode.textContent = (modes[status.chatgpt.authMode] || 'OpenAI account connection') + (status.chatgpt.tokenState === 'expiring' ? ' · refresh soon' : status.chatgpt.tokenState === 'expired' ? ' · reconnect required' : '');
   }
 
   if (connectChatGPTBtn) connectChatGPTBtn.hidden = !!status.chatgpt.connected;
@@ -8475,8 +9024,9 @@ function renderConnectionsStatusRow() {
     const cls = connected ? (prov.experimental ? 'experimental' : 'connected') : 'disconnected';
     const dot = connected ? '●' : '○';
     const identity = prov.email ? '(' + escapeHtml(String(prov.email).split('@')[0]) + ')' : '';
+    const health = prov.tokenState && prov.tokenState !== 'ready' ? ` · token ${escapeHtml(prov.tokenState)}` : '';
     const usage = Math.max(0, Number(prov.usage) || 0);
-    return `<span class="conn-status-chip ${cls}">${dot} ${name} ${identity} ${usage ? usage + ' today' : ''}</span>`;
+    return `<span class="conn-status-chip ${cls}">${dot} ${name} ${identity}${health} ${usage ? usage + ' today' : ''}</span>`;
   };
   row.innerHTML = mkChip('CHATGPT', s.chatgpt) + mkChip('GEMINI', s.gemini) + `<span class="conn-status-chip fallback">● FREE CORE</span>`;
 }
@@ -8495,6 +9045,42 @@ function updateActiveBrain() {
   if (linkMode) linkMode.textContent = '— ' + active;
   const nowBrain = $('#nowBrain');
   if (nowBrain) nowBrain.textContent = active;
+  renderConnectionStrip();
+}
+
+function renderConnectionStrip() {
+  const strip = $('#connectionStrip');
+  if (!strip) return;
+  const title = $('#connectionStripTitle');
+  const detail = $('#connectionStripDetail');
+  const chatgpt = connectionsStatus.chatgpt || {};
+  const gemini = connectionsStatus.gemini || {};
+  strip.classList.remove('connected', 'problem');
+  if (connectionIssue) {
+    strip.dataset.state = 'problem';
+    if (title) title.textContent = connectionIssue.offline
+      ? 'FREE CORE UNAVAILABLE · OFFLINE BRAIN ACTIVE'
+      : `${String(connectionIssue.provider || 'AI').toUpperCase()} COULD NOT RESPOND`;
+    if (detail) detail.textContent = connectionIssue.offline
+      ? 'The upstream free endpoint is temporarily unavailable. This turn was answered locally; refresh or connect an account for full model responses.'
+      : 'The account is still saved. Refresh, reconnect in Settings, or continue with the offline brain.';
+    return;
+  }
+  strip.dataset.state = 'ready';
+  if (chatgpt.connected) {
+    strip.dataset.state = 'connected';
+    if (title) title.textContent = 'CHATGPT CONNECTED';
+    if (detail) detail.textContent = `${chatgpt.email || 'Account session'} · ${chatgpt.selectedModel || 'Codex model'} · encrypted on this device`;
+  } else if (gemini.connected) {
+    strip.dataset.state = 'connected';
+    if (title) title.textContent = 'GEMINI CONNECTED';
+    if (detail) detail.textContent = `${gemini.email || 'Google session'} · account transport ready`;
+  } else {
+    if (title) title.textContent = 'FREE CORE READY';
+    if (detail) detail.textContent = isElectron
+      ? 'No account is connected. Gem will try the free core, then the private offline brain if upstream access is unavailable.'
+      : 'Account connections are optional. Configure a provider in Settings or use the live web core.';
+  }
 }
 
 function showExperimentalWarning(provider, onContinue) {
@@ -8942,7 +9528,11 @@ function setupConnectionsHub() {
   $('#reconnectChatGPTBtn')?.addEventListener('click', () => { $('#reconnectModal').classList.remove('open'); handleConnectChatGPT(); });
   $('#reconnectGeminiBtn')?.addEventListener('click', () => { $('#reconnectModal').classList.remove('open'); handleConnectGemini(); });
 
-  if (api.onConnectionsUpdated) api.onConnectionsUpdated((s) => { connectionsStatus = s; renderConnectionHub(); renderConnectionsStatusRow(); updateActiveBrain(); });
+  if (api.onConnectionsUpdated) api.onConnectionsUpdated((s) => {
+    connectionsStatus = s;
+    if ((s.chatgpt && s.chatgpt.connected) || (s.gemini && s.gemini.connected)) connectionIssue = null;
+    renderConnectionHub(); renderConnectionsStatusRow(); updateActiveBrain();
+  });
   if (api.onConnectionsExpired) api.onConnectionsExpired((data) => {
     const detail = (data && data.message) || ('Your ' + (data.provider||'').toUpperCase() + ' session expired or hit a bot-check (' + (data.error||'') + '). Reconnect to restore.');
     const body = $('#reconnectBody');
@@ -9037,6 +9627,7 @@ function renderSettingsModesList() {
       $('#modeVolumeVal').textContent = m.volume||50;
       $('#modeThemeInput').value = m.theme||'crimson';
       $('#modePlaylistInput').value = m.playlist||'';
+      if ($('#modePlaylistPreset')) $('#modePlaylistPreset').value = m.playlist || '';
       $('#modeDndInput').checked = !!m.dnd;
       $('#modeGamingOptInput').checked = !!m.optimizeGaming;
       // sites
@@ -9165,7 +9756,25 @@ function renderPaletteModes() {
 }
 
 function setupModes() {
-  $('#addModeSiteBtn')?.addEventListener('click', ()=>addModeSiteRow('', 'chrome'));
+  const sitePreset = $('#modeSitePreset');
+  if (sitePreset) {
+    const options = [ ['', 'Choose platform…'], ...SITE_PRESETS ].map(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      return option;
+    });
+    sitePreset.innerHTML = '';
+    options.forEach((option) => sitePreset.appendChild(option));
+  }
+  $('#addModeSiteBtn')?.addEventListener('click', () => {
+    const preset = $('#modeSitePreset')?.value || '';
+    addModeSiteRow(preset ? SITE_MAP[preset] || '' : '', 'chrome');
+    if ($('#modeSitePreset')) $('#modeSitePreset').value = '';
+  });
+  $('#modePlaylistPreset')?.addEventListener('change', (event) => {
+    if (event.target.value && $('#modePlaylistInput')) $('#modePlaylistInput').value = event.target.value;
+  });
   $('#saveModeBtn')?.addEventListener('click', saveModeFromDesigner);
   $('#applyModeBtn')?.addEventListener('click', async ()=>{
     const name = ($('#modeNameInput')?.value||'').trim().toUpperCase();

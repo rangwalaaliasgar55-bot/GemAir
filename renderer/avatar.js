@@ -232,32 +232,36 @@
 
     // ---- Drawing ----------------------------------------------------------
     function drawAura(colour) {
-      const cx = w / 2, cy = L.y + L.h * 0.34, r = Math.max(w, h) * 0.44;
-      const volBoost = S.speaking ? audioVolume * 0.8 : S.listening ? micVolume * 0.8 : 0;
-      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * (1 + volBoost * 0.3));
-      g.addColorStop(0, rgba(colour, (0.22 + volBoost * 0.2) * S.glow));
-      g.addColorStop(0.45, rgba(colour, (0.08 + volBoost * 0.1) * S.glow));
+      const cx = w / 2, cy = L.y + L.h * 0.36, r = Math.max(w, h) * 0.42;
+      const volBoost = S.speaking ? audioVolume * 0.65 : S.listening ? micVolume * 0.65 : 0;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * (1 + volBoost * 0.22));
+      g.addColorStop(0, rgba(colour, (0.13 + volBoost * 0.14) * S.glow));
+      g.addColorStop(0.42, rgba(colour, (0.045 + volBoost * 0.06) * S.glow));
       g.addColorStop(1, rgba(colour, 0));
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
 
-      // HUD rings behind the figure
-      const rings = [
-        { r: L.h * 0.30, a: 0.22, spd: 0.22 },
-        { r: L.h * 0.345, a: 0.13, spd: -0.15 }
-      ];
-      for (const ring of rings) {
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(time * ring.spd);
-        ctx.scale(1, 0.32);
+      // Quiet glass-orb frame: movement is reserved for a small status arc so
+      // the portrait stays integrated with the workspace instead of reading as
+      // a command-center HUD.
+      const orbR = Math.min(w, h) * 0.34;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.beginPath();
+      ctx.arc(0, 0, orbR, 0, TAU);
+      ctx.strokeStyle = rgba(colour, 0.08 + S.glow * 0.05);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      if (S.speaking || S.listening || S.thinking) {
+        const energy = S.speaking ? 0.7 + audioVolume : S.listening ? 0.45 + micVolume : 0.35;
         ctx.beginPath();
-        ctx.arc(0, 0, ring.r * (1 + volBoost * 0.15), 0, TAU);
-        ctx.strokeStyle = rgba(colour, ring.a * (0.5 + S.glow * 0.6 + volBoost * 0.5));
-        ctx.lineWidth = 1.6 + volBoost * 2;
+        ctx.arc(0, 0, orbR + 5, -Math.PI * 0.74, -Math.PI * 0.74 + Math.PI * (0.55 + energy * 0.5));
+        ctx.strokeStyle = rgba(colour, 0.32 + energy * 0.2);
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
         ctx.stroke();
-        ctx.restore();
       }
+      ctx.restore();
     }
 
     /** Radial Audio Frequency Visualizer Ring around Gem */
@@ -267,7 +271,7 @@
 
       const cx = w / 2, cy = L.y + L.h * 0.38;
       const baseR = L.h * 0.36;
-      const bars = 48;
+      const bars = 24;
       const step = TAU / bars;
 
       ctx.save();
@@ -297,8 +301,8 @@
     }
 
     function drawParticles(colour) {
-      const n = 36;
-      const energy = S.thinking ? 2.3 : S.speaking ? 1.6 + audioVolume * 2 : S.listening ? 1.3 + micVolume * 2 : 1;
+      const n = 14;
+      const energy = S.thinking ? 1.5 : S.speaking ? 1.15 + audioVolume * 1.4 : S.listening ? 1.05 + micVolume * 1.4 : 0.8;
       const cx = w / 2, cy = L.y + L.h * 0.4;
       for (let i = 0; i < n; i++) {
         const seed = i * 12.9898;
@@ -564,6 +568,14 @@
       setEmotion(e) {
         if (e && typeof e === 'object') emotion = e;
         else if (typeof e === 'string') emotion = { emotion: e, valence: 0 };
+      },
+      pulse(strength = 1) {
+        // Micro-interaction: a brief glow swell + micro-nod (message sent,
+        // reply done, wake-word heard). Decays naturally via the glow
+        // approach each frame, so it never sticks.
+        const k = clamp(Number(strength) || 1, 0.2, 2);
+        S.glow = clamp(S.glow + 0.6 * k, 0, 1.6);
+        S.nod = 0.035 * k;
       },
       setGender(g) {
         if (g !== 'female' && g !== 'male') return;

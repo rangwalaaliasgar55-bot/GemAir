@@ -49,6 +49,7 @@
     attempts: (n) => invoke('air:attempts', n),
     requestSystemBlock: (h) => invoke('air:systemBlockRequest', h),
     savePlan: (p) => invoke('air:savePlan', p),
+    startFocus: (n) => invoke('air:startFocus', n),
     deletePlan: (id) => invoke('air:deletePlan', id),
     togglePlan: (id, e) => invoke('air:togglePlan', id, e),
     activeBlocks: () => invoke('air:activeBlocks'),

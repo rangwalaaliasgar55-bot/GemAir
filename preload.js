@@ -44,10 +44,12 @@ contextBridge.exposeInMainWorld('gemair', {
   openJarvisMemorySearch: (query, topK) => ipcRenderer.invoke('openjarvis:memorySearch', query, topK),
   openJarvisScan: (text, includePii) => ipcRenderer.invoke('openjarvis:scan', text, !!includePii),
   openJarvisCapabilities: () => ipcRenderer.invoke('openjarvis:capabilities'),
+  openJarvisSkillCatalog: () => ipcRenderer.invoke('openjarvis:skillCatalog'),
   openJarvisMcpDiscover: () => ipcRenderer.invoke('openjarvis:mcpDiscover'),
   onOpenJarvisInstallProgress: (cb) => subscribeIpc('openjarvis:installProgress', cb),
   listLocalModels: () => ipcRenderer.invoke('ai:listLocalModels'),
   getHeadlines: (limit, category) => ipcRenderer.invoke('news:get', limit, category),
+  webGet: (kind, params) => ipcRenderer.invoke('web:get', kind, params || {}),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   checkForUpdates: (force = false) => ipcRenderer.invoke('app:checkForUpdates', !!force),
   installUpdate: (releaseUrl) => ipcRenderer.invoke('app:installUpdate', releaseUrl),
@@ -63,7 +65,7 @@ contextBridge.exposeInMainWorld('gemair', {
   memoryDeleteFact: (id) => ipcRenderer.invoke('memory:deleteFact', id),
   memoryAddNote: (text) => ipcRenderer.invoke('memory:addNote', text),
   memoryDeleteNote: (id) => ipcRenderer.invoke('memory:deleteNote', id),
-  memoryAddReminder: (text, at) => ipcRenderer.invoke('memory:addReminder', text, at),
+  memoryAddReminder: (text, at, repeat) => ipcRenderer.invoke('memory:addReminder', text, at, repeat),
   memoryDeleteReminder: (id) => ipcRenderer.invoke('memory:deleteReminder', id),
   memoryMarkReminder: (id, done) => ipcRenderer.invoke('memory:markReminder', id, done),
   memoryExtract: (config, userText, assistantText) => ipcRenderer.invoke('memory:extract', config, userText, assistantText),
@@ -89,6 +91,9 @@ contextBridge.exposeInMainWorld('gemair', {
   saveCode: (content, suggestedName) => ipcRenderer.invoke('file:saveCode', content, suggestedName),
 
   generateReport: () => ipcRenderer.invoke('report:generate'),
+  generateDailyDigest: () => ipcRenderer.invoke('digest:generate'),
+  onDailyDigest: (cb) => subscribeIpc('digest:ready', cb),
+  onDailyDigestError: (cb) => subscribeIpc('digest:error', cb),
   needsCheckIn: () => ipcRenderer.invoke('report:needsCheckIn'),
   exportMemory: () => ipcRenderer.invoke('memory:export'),
   importMemory: (data) => ipcRenderer.invoke('memory:import', data),
@@ -103,6 +108,10 @@ contextBridge.exposeInMainWorld('gemair', {
   connectionsLaunchCodexLogin: () => ipcRenderer.invoke('connections:launchCodexLogin'),
   connectionsOauthGemini: () => ipcRenderer.invoke('connections:oauthGemini'),
   connectionsGetStatus: () => ipcRenderer.invoke('connections:getStatus'),
+  connectionsSetGeminiApiKey: (apiKey, model) => ipcRenderer.invoke('connections:setGeminiApiKey', apiKey, model),
+  connectionsTestGeminiApiKey: (apiKey, model) => ipcRenderer.invoke('connections:testGeminiApiKey', apiKey, model),
+  connectionsListGeminiModels: (apiKey) => ipcRenderer.invoke('connections:listGeminiModels', apiKey),
+  onConnectionsUpdated: (cb) => subscribeIpc('connections:updated', cb),
   connectionsSetPriority: (p) => ipcRenderer.invoke('connections:setPriority', p),
   connectionsAcknowledgeWarning: () => ipcRenderer.invoke('connections:acknowledgeWarning'),
   connectionsOpenChatGPT: () => ipcRenderer.invoke('connections:openChatGPT'),
@@ -118,8 +127,8 @@ contextBridge.exposeInMainWorld('gemair', {
     const reqId = 'r' + Math.random().toString(36).slice(2);
     return new Promise((resolve, reject) => {
       const onChunk = (_e, data) => { if (data.reqId === reqId) onDelta(data.delta); };
-      const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply, provider: data.provider, model: data.model, fallbackFrom: data.fallbackFrom }); } };
-      const onErr = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: false, error: data.error, detail: data.detail, provider: data.provider, sessionExpired: data.sessionExpired === true }); } };
+      const onEnd = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: true, reply: data.reply, provider: data.provider, model: data.model, fallbackFrom: data.fallbackFrom, sourceError: data.sourceError }); } };
+      const onErr = (_e, data) => { if (data.reqId === reqId) { cleanup(); resolve({ ok: false, error: data.error, detail: data.detail, provider: data.provider, sessionExpired: data.sessionExpired === true, retryable: data.retryable === true }); } };
       const cleanup = () => { ipcRenderer.removeListener('ai:chunk', onChunk); ipcRenderer.removeListener('ai:streamEnd', onEnd); ipcRenderer.removeListener('ai:streamError', onErr); };
       ipcRenderer.on('ai:chunk', onChunk);
       ipcRenderer.on('ai:streamEnd', onEnd);
@@ -200,6 +209,7 @@ contextBridge.exposeInMainWorld('air', {
   requestSystemBlock: (hosts) => ipcRenderer.invoke('air:systemBlockRequest', hosts),
 
   savePlan: (plan) => ipcRenderer.invoke('air:savePlan', plan),
+  startFocus: (minutes) => ipcRenderer.invoke('air:startFocus', minutes),
   deletePlan: (id) => ipcRenderer.invoke('air:deletePlan', id),
   togglePlan: (id, enabled) => ipcRenderer.invoke('air:togglePlan', id, enabled),
   activeBlocks: () => ipcRenderer.invoke('air:activeBlocks'),

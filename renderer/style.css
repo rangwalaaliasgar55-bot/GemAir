@@ -7,21 +7,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap');
 
 :root {
-  --accent: #ff3b3b;
-  --accent-soft: rgba(255, 59, 59, 0.55);
-  --accent-glow: rgba(255, 59, 59, 0.35);
-  --accent-dim: rgba(255, 59, 59, 0.14);
-  --bg: #04060c;
-  --bg-2: #070b15;
-  --panel: rgba(12, 18, 32, 0.76);
-  --panel-border: rgba(120, 140, 180, 0.18);
-  --text: #e7f0ff;
-  --text-dim: #8a9bb2;
-  --good: #3dff9a;
-  --warn: #ffc24b;
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
-  --font-heading: 'Space Grotesk', 'Inter', sans-serif;
+  /* Calm workspace defaults. Theme tokens below are still applied at runtime
+     by themes.js, but the first paint is no longer a neon HUD. */
+  --accent: #5a95d8;
+  --accent-soft: rgba(90, 149, 216, 0.48);
+  --accent-glow: rgba(90, 149, 216, 0.2);
+  --accent-dim: rgba(90, 149, 216, 0.1);
+  --bg: #101216;
+  --bg-2: #171a20;
+  --panel: rgba(30, 34, 42, 0.82);
+  --panel-border: rgba(160, 170, 188, 0.16);
+  --text: #f2f4f7;
+  --text-dim: #969eac;
+  --good: #63c392;
+  --warn: #d5a85a;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Consolas, monospace;
+  --font-heading: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Inter, system-ui, sans-serif;
 }
 
 body[data-theme='crimson'] {
@@ -41,6 +43,20 @@ body[data-theme='amber'] {
 }
 body[data-theme='rgb'] {
   --accent: #ff3bff; --accent-soft: rgba(255,59,255,.55); --accent-glow: rgba(255,59,255,.32); --accent-dim: rgba(255,59,255,.14);
+}
+/* First-paint fallbacks (themes.js rewrites these on boot). graphite/ocean
+   were missing, so those themes flashed the wrong accent before JS ran. */
+body[data-theme='graphite'] {
+  --accent: #d9dee8; --accent-soft: rgba(217,222,232,.55); --accent-glow: rgba(217,222,232,.2); --accent-dim: rgba(217,222,232,.14);
+}
+body[data-theme='ocean'] {
+  --accent: #75b9ff; --accent-soft: rgba(117,185,255,.55); --accent-glow: rgba(117,185,255,.24); --accent-dim: rgba(117,185,255,.14);
+}
+body[data-theme='porcelain'] {
+  --accent: #0a84ff; --accent-soft: rgba(10,132,255,.55); --accent-glow: rgba(10,132,255,.18); --accent-dim: rgba(10,132,255,.14);
+}
+body[data-theme='midnight'] {
+  --accent: #0a84ff; --accent-soft: rgba(10,132,255,.55); --accent-glow: rgba(10,132,255,.22); --accent-dim: rgba(10,132,255,.14);
 }
 
 /* RGB / rainbow animation keyframes */
@@ -624,12 +640,25 @@ body.rgb-recording #micVuCanvas, body.wake-armed #micVuCanvas { opacity: 1; bord
 
 /* ============ GLOBAL INTEL VIEW ============ */
 .world-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 14px; padding: 9px 12px; border: 1px solid var(--panel-border); border-radius: 10px; background: rgba(0,0,0,.25); }
-.world-modes, .news-filters { display: flex; gap: 6px; }
-.world-mode, .news-filter { border: 1px solid var(--panel-border); background: rgba(0,0,0,.3); color: var(--text-dim); border-radius: 7px; padding: 6px 10px; cursor: pointer; font: 600 9px var(--font-mono); letter-spacing: .12em; }
-.world-mode.active, .news-filter.active { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-dim); box-shadow: 0 0 10px var(--accent-dim); }
+.world-modes, .news-filters, .world-location-tools { display: flex; gap: 6px; align-items: center; }
+.world-mode, .news-filter, .world-location-btn { border: 1px solid var(--panel-border); background: rgba(0,0,0,.3); color: var(--text-dim); border-radius: 7px; padding: 6px 10px; cursor: pointer; font: 600 9px var(--font-mono); letter-spacing: .12em; }
+.world-mode.active, .news-filter.active, .world-location-btn:hover { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-dim); box-shadow: 0 0 10px var(--accent-dim); }
+.world-location-btn:disabled { cursor: wait; opacity: .55; }
+.world-location-status { color: #ffd166; font: 600 9px var(--font-mono); letter-spacing: .08em; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .utc-strip { color: var(--accent); font: 600 10px var(--font-mono); letter-spacing: .12em; white-space: nowrap; }
 .world-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 .world-grid .news-panel { grid-column: span 2; }
+.globe-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.globe-signal-state { color: var(--accent); font: 700 9px var(--font-mono); letter-spacing: .12em; white-space: nowrap; }
+.globe-signal-state.bad { color: #ffbf69; }
+.globe-layer-bar { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; }
+.globe-layer { border: 1px solid var(--panel-border); border-radius: 999px; background: rgba(0,0,0,.22); color: var(--text-dim); padding: 4px 8px; cursor: pointer; font: 700 8px var(--font-mono); letter-spacing: .1em; }
+.globe-layer.active { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-dim); }
+.globe-context { display: grid; gap: 3px; min-height: 55px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--panel-border); background: rgba(0,0,0,.18); border-radius: 8px; }
+.globe-context span { font: 700 8px var(--font-mono); letter-spacing: .12em; }
+.globe-context b { font: 700 11px var(--font-mono); color: var(--text); }
+.globe-context small { color: var(--text-dim); font-size: 10px; line-height: 1.35; }
+#globeCanvas { background: radial-gradient(circle at 50% 45%, rgba(22,48,74,.28), rgba(0,0,0,.55) 65%); }
 .world-grid[data-mode='globe'] { grid-template-columns: 1fr; }
 .world-grid[data-mode='globe'] .map-panel { display: none; }
 .world-grid[data-mode='globe'] .news-panel { grid-column: 1; }

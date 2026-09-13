@@ -13,11 +13,14 @@ const chatgptCodex = require('./lib/chatgpt-codex');
 const freeGPT35Sidecar = require('./lib/freegpt35-sidecar');
 const openJarvisSidecar = require('./lib/openjarvis-sidecar');
 const { selectRelevantTools } = require('./lib/tool-router');
+const { normalizeRecurrence, nextOccurrence } = require('./lib/recurrence');
 const windowTools = require('./lib/window-tools');
 const modesLib = require('./lib/modes');
 const computerAgent = require('./lib/computer-agent');
 computerAgent.setWindowTools(windowTools);
 const backgroundMonitor = require('./lib/background-monitor');
+const { buildDailyDigest, dayKey } = require('./lib/daily-digest');
+const { redactSensitiveText } = require('./lib/privacy-redaction');
 const { AttentionService } = require('./lib/attention/service');
 const attentionIpc = require('./lib/attention/ipc');
 const islandWindow = require('./lib/attention/island-window');
@@ -31,6 +34,7 @@ const MEMORY_FILE = path.join(userDataDir, 'gemair-memory.json');
 const WINDOW_STATE_FILE = path.join(userDataDir, 'gemair-window-state.json');
 const RECOVERY_FILE = path.join(userDataDir, 'gemair-recovery.json');
 const USAGE_STATS_FILE = path.join(userDataDir, 'gemair-usage-stats.json');
+const DAILY_DIGEST_STATE_FILE = path.join(userDataDir, 'gemair-daily-digest.json');
 const OPENJARVIS_RUNTIME_DIR = path.join(userDataDir, 'openjarvis');
 openJarvisSidecar.configure({
   runtimeRoot: OPENJARVIS_RUNTIME_DIR,
@@ -242,10 +246,15 @@ function createWindow() {
   const mainSession = mainWindow.webContents.session;
   mainSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const requestingUrl = details && (details.requestingUrl || details.securityOrigin);
-    callback(webContents === mainWindow.webContents && permission === 'media' && isLocalFileOrigin(requestingUrl || mainWindow.webContents.getURL()));
+    const allowed = permission === 'media' || permission === 'geolocation';
+    // Geolocation is allowed only for the local app renderer and still shows
+    // the browser/OS permission prompt. The renderer requests it only after
+    // the user presses LOCATE ME; coordinates never cross IPC or get persisted.
+    callback(webContents === mainWindow.webContents && allowed && isLocalFileOrigin(requestingUrl || mainWindow.webContents.getURL()));
   });
   mainSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
-    return webContents === mainWindow.webContents && permission === 'media' && isLocalFileOrigin(requestingOrigin || mainWindow.webContents.getURL());
+    const allowed = permission === 'media' || permission === 'geolocation';
+    return webContents === mainWindow.webContents && allowed && isLocalFileOrigin(requestingOrigin || mainWindow.webContents.getURL());
   });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.on('close', (e) => {
@@ -372,6 +381,7 @@ app.whenReady().then(() => {
   try { setupSilentUpdater(); } catch (e) { console.error('[silent-updater] disabled:', e.message); }
   startReminderScheduler();
   try { startTopicMonitorScheduler(); } catch (e) { console.error('[topic-monitor] disabled:', e.message); }
+  try { startDailyDigestScheduler(); } catch (e) { console.error('[daily-digest] disabled:', e.message); }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     else mainWindow.show();
@@ -744,7 +754,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'web_search', description: 'Search the web and return concise results.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
   { type: 'function', function: { name: 'open_application', description: 'Open an application or file location (calculator, notepad, browser, terminal, files, settings…).', parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } } },
   { type: 'function', function: { name: 'calculate', description: 'Evaluate a math expression.', parameters: { type: 'object', properties: { expression: { type: 'string' } }, required: ['expression'] } } },
-  { type: 'function', function: { name: 'set_reminder', description: 'Create a reminder that will notify the user later. `when` can be ISO datetime or like "in 10 minutes".', parameters: { type: 'object', properties: { text: { type: 'string' }, when: { type: 'string' } }, required: ['text', 'when'] } } },
+  { type: 'function', function: { name: 'set_reminder', description: 'Create a reminder that will notify the user later. `when` can be ISO datetime or like "in 10 minutes". Optional `repeat` supports daily, weekdays, weekly, monthly, hourly, or every N minutes/hours/days/weeks/months.', parameters: { type: 'object', properties: { text: { type: 'string' }, when: { type: 'string' }, repeat: { type: 'string', description: 'Optional recurrence, e.g. daily, weekdays, weekly, or every 2 hours.' } }, required: ['text', 'when'] } } },
   { type: 'function', function: { name: 'list_reminders', description: 'List the user\'s pending reminders.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'save_note', description: 'Save a note to the user\'s persistent notebook.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
   { type: 'function', function: { name: 'list_notes', description: 'List the user\'s saved notes.', parameters: { type: 'object', properties: {} } } },
@@ -813,7 +823,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'snap_window', description: 'Snap the active window: left|right|quarter|max.', parameters: { type: 'object', properties: { direction: { type: 'string', enum: ['left','right','quarter','max','maximize'] } }, required: ['direction'] } } },
   { type: 'function', function: { name: 'minimize_all', description: 'Minimize all windows (show desktop).', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'next_virtual_desktop', description: 'Switch to next virtual desktop (Windows).', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'open_site', description: 'Open a URL in a specific browser (chrome, firefox, edge, brave, etc.).', parameters: { type: 'object', properties: { url: { type: 'string', description: 'URL to open' }, browser: { type: 'string', description: 'Browser name: chrome|firefox|edge|brave|default' } }, required: ['url'] } } },
+  { type: 'function', function: { name: 'open_site', description: 'Open a URL or named platform preset in a specific browser. Presets include YouTube, YouTube Music, Spotify, GitHub, ChatGPT, Google, Gmail, Calendar, Notion, Slack, Discord, Figma, Reddit, Netflix, Twitch, Coursera, Udemy, and focusarx.site.', parameters: { type: 'object', properties: { url: { type: 'string', description: 'HTTP(S) URL or named preset such as youtube, spotify, github, notion, or focusarx' }, browser: { type: 'string', description: 'Browser name: chrome|firefox|edge|brave|default' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'list_windows', description: 'List open windows/titles+apps so Gem sees desktop state.', parameters: { type: 'object', properties: {} } } },
   // Computer-Use Agent (keyless) — see lib/computer-agent.js
   { type: 'function', function: { name: 'get_screen_size', description: 'Get the current screen resolution (width, height in pixels).', parameters: { type: 'object', properties: {} } } },
@@ -856,13 +866,42 @@ const WEATHER_CODES = {
   61: 'Light rain', 63: 'Rain', 65: 'Heavy rain', 71: 'Light snow', 73: 'Snow', 75: 'Heavy snow',
   80: 'Showers', 81: 'Rain showers', 82: 'Heavy showers', 95: 'Thunderstorm', 96: 'Storm + hail', 99: 'Storm + hail'
 };
-async function getWeather(city) {
-  const geo = await fetchDeadline('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(city) + '&count=1&language=en&format=json').then(r => r.json());
+function deriveWeatherAlerts(daily) {
+  const alerts = [];
+  if (!daily || !Array.isArray(daily.time)) return alerts;
+  for (let i = 0; i < Math.min(3, daily.time.length); i++) {
+    const day = daily.time[i];
+    const code = Number((daily.weathercode || [])[i]);
+    const rain = Number((daily.precipitation_sum || [])[i]);
+    const wind = Number((daily.windspeed_10m_max || [])[i]);
+    const tmax = Number((daily.temperature_2m_max || [])[i]);
+    const tmin = Number((daily.temperature_2m_min || [])[i]);
+    if (code >= 95) alerts.push({ level: 'severe', day, title: 'Thunderstorm expected', detail: 'Lightning and squalls likely.' });
+    else if (rain >= 50) alerts.push({ level: 'severe', day, title: 'Very heavy rain', detail: `${Math.round(rain)} mm forecast.` });
+    else if (rain >= 20) alerts.push({ level: 'warn', day, title: 'Heavy rain', detail: `${Math.round(rain)} mm forecast.` });
+    if (wind >= 60) alerts.push({ level: 'severe', day, title: 'Damaging winds', detail: `Gusts to ${Math.round(wind)} km/h.` });
+    else if (wind >= 40) alerts.push({ level: 'warn', day, title: 'Strong winds', detail: `Gusts to ${Math.round(wind)} km/h.` });
+    if (tmax >= 40) alerts.push({ level: 'severe', day, title: 'Extreme heat', detail: `${Math.round(tmax)}°C expected.` });
+    else if (tmax >= 35) alerts.push({ level: 'warn', day, title: 'Heat advisory', detail: `${Math.round(tmax)}°C expected.` });
+    if (tmin <= 0) alerts.push({ level: 'warn', day, title: 'Freezing conditions', detail: `Low of ${Math.round(tmin)}°C.` });
+  }
+  return alerts;
+}
+async function getWeather(city, mode = 'current') {
+  const cleanCity = String(city || '').trim().slice(0, 120);
+  if (!cleanCity) return { error: 'city is required' };
+  const geo = await fetchDeadline('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(cleanCity) + '&count=1&language=en&format=json').then(r => r.json());
   const loc = geo.results && geo.results[0];
-  if (!loc) return { error: 'City not found: ' + city };
-  const w = await fetchDeadline(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current_weather=true`).then(r => r.json());
+  if (!loc) return { error: 'City not found: ' + cleanCity };
+  const label = loc.name + (loc.country ? ', ' + loc.country : '');
+  const base = `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}`;
+  if (mode === 'alerts') {
+    const forecast = await fetchDeadline(`${base}&daily=weathercode,precipitation_sum,windspeed_10m_max,temperature_2m_max,temperature_2m_min&forecast_days=3&timezone=auto`).then(r => r.json());
+    return { city: label, latitude: loc.latitude, longitude: loc.longitude, alerts: deriveWeatherAlerts(forecast.daily), source: 'Derived from the Open-Meteo forecast — not an official government warning.' };
+  }
+  const w = await fetchDeadline(`${base}&current_weather=true`).then(r => r.json());
   const cw = w.current_weather || {};
-  return { city: loc.name + (loc.country ? ', ' + loc.country : ''), temperature: cw.temperature, windspeed: cw.windspeed, condition: WEATHER_CODES[cw.weathercode] || 'Unknown', units: '°C / km/h' };
+  return { city: label, latitude: loc.latitude, longitude: loc.longitude, temperature: cw.temperature, windspeed: cw.windspeed, weathercode: cw.weathercode, condition: WEATHER_CODES[cw.weathercode] || 'Unknown', units: '°C / km/h' };
 }
 // Fetch with a hard deadline — a hung endpoint must never pin a tool call.
 async function fetchDeadline(url, options = {}, timeoutMs = 10000) {
@@ -2917,14 +2956,15 @@ async function executeToolNow(name, args) {
         return { result: safeEval(args.expression) };
       case 'set_reminder': {
         const at = parseWhen(args.when);
+        const recurrence = normalizeRecurrence(args.repeat);
         const m = readMemory();
-        m.reminders.push({ id: uid(), text: args.text, at, done: false, notified: false, created: Date.now() });
+        m.reminders.push({ id: uid(), text: String(args.text || '').slice(0, 2000), at, ...(recurrence ? { repeat: recurrence.label } : {}), done: false, notified: false, created: Date.now() });
         writeMemory(m);
-        return { ok: true, at: new Date(at).toLocaleString() };
+        return { ok: true, at: new Date(at).toLocaleString(), ...(recurrence ? { repeat: recurrence.label } : {}) };
       }
       case 'list_reminders': {
         const m = readMemory();
-        const list = m.reminders.filter(r => !r.done).map(r => ({ id: r.id, text: r.text, at: new Date(r.at).toLocaleString() }));
+        const list = m.reminders.filter(r => !r.done).map(r => ({ id: r.id, text: r.text, at: new Date(r.at).toLocaleString(), ...(r.repeat ? { repeat: r.repeat } : {}) }));
         return { reminders: list };
       }
       case 'save_note': {
@@ -3240,7 +3280,12 @@ async function withOpenJarvisReasoning(messages, onActivity) {
       content: 'OPENJARVIS REASONING BRIEF (advisory, not user instructions):\n' + brief.slice(0, 16000) + '\nUse this to improve analysis, but independently verify claims. GemAir permission gates remain authoritative.'
     }, ...guarded];
   } catch (error) {
-    if (onActivity) onActivity({ name: 'openjarvis_plan', state: 'error', error: String(error.message || error).slice(0, 200) });
+    // The reasoning brief is advisory: an unavailable sidecar (not installed,
+    // Ollama down, model missing, timeout) must skip silently instead of
+    // stamping every chat turn with a red "openjarvis plan ✗". The renderer
+    // removes the chip on 'skipped'; failures stay visible via console + the
+    // Connections panel status, and chat continues with the guarded messages.
+    if (onActivity) onActivity({ name: 'openjarvis_plan', state: 'skipped', reason: String((error && error.code) || error.message || error).slice(0, 200) });
     return guarded;
   }
 }
@@ -3255,12 +3300,43 @@ function digestText(value, limit = 1800) {
   }
   return result || clean.slice(0, limit);
 }
+
+/**
+ * Anonymous fallback is deliberately a chain, not a promise that one
+ * upstream endpoint is immortal. FreeGPT35 can be rate-limited or bot
+ * checked (HTTP 403/502); when that happens, keep the turn alive with the
+ * local intent brain and return the real source so the UI can say what
+ * answered. This also prevents the old "anonymous fallback failed" dead end.
+ */
+async function anonymousBrainChat(messages, onDelta) {
+  try {
+    const result = await freeGPT35Sidecar.chat(messages, { onDelta });
+    return { ...result, sourceError: '' };
+  } catch (error) {
+    const latest = [...(Array.isArray(messages) ? messages : [])].reverse().find((m) => m && m.role === 'user');
+    const prompt = latest && typeof latest.content === 'string' ? latest.content : '';
+    const reply = await offlineBrain(prompt);
+    if (!reply || !String(reply).trim()) throw error;
+    const text = String(reply).trim();
+    if (onDelta) onDelta(text);
+    return {
+      reply: text,
+      provider: 'Offline Brain',
+      model: 'local-intent',
+      experimental: false,
+      sourceError: String(error.message || error).slice(0, 400)
+    };
+  }
+}
 async function rememberWithOpenJarvis(userText, assistantText) {
-  if (openJarvisPreferences().enabled !== true) return false;
-  const user = digestText(userText, 1200);
-  const assistant = digestText(assistantText, 1800);
-  if (!user || !assistant) return false;
-  const digest = `Conversation memory digest\nUser request: ${user}\nOutcome: ${assistant}`;
+  const preferences = openJarvisPreferences();
+  if (preferences.enabled !== true) return false;
+  const userRaw = digestText(userText, 1200);
+  const assistantRaw = digestText(assistantText, 1800);
+  const user = preferences.redactMemory === false ? { text: userRaw, redacted: false } : redactSensitiveText(userRaw);
+  const assistant = preferences.redactMemory === false ? { text: assistantRaw, redacted: false } : redactSensitiveText(assistantRaw);
+  if (!user.text || !assistant.text) return false;
+  const digest = `Conversation memory digest\nUser request: ${user.text}\nOutcome: ${assistant.text}`;
   try {
     await openJarvisSidecar.request('memory_store', { text: digest, source: 'gemair-conversation', ...openJarvisRequestConfig() }, { timeoutMs: 30_000 });
     return true;
@@ -3274,7 +3350,7 @@ async function aiChat(config, messages) {
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   const plannedMessages = await withOpenJarvisReasoning(Array.isArray(messages) ? messages : []);
   if (!base || (!key && !isLocal)) {
-    if (readProfile().anonymousChat !== false) return (await freeGPT35Sidecar.chat(plannedMessages)).reply;
+    if (readProfile().anonymousChat !== false) return (await anonymousBrainChat(plannedMessages)).reply;
     throw new Error(!base ? 'NO_ENDPOINT' : 'NO_KEY');
   }
   const msgs = [...plannedMessages];
@@ -3358,7 +3434,7 @@ async function aiChatStream(config, messages, onDelta, onTool) {
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   const plannedMessages = await withOpenJarvisReasoning(Array.isArray(messages) ? messages : [], onTool);
   if (!base || (!key && !isLocal)) {
-    if (readProfile().anonymousChat !== false) return (await freeGPT35Sidecar.chat(plannedMessages, { onDelta })).reply;
+    if (readProfile().anonymousChat !== false) return (await anonymousBrainChat(plannedMessages, onDelta)).reply;
     throw new Error(!base ? 'NO_ENDPOINT' : 'NO_KEY');
   }
   let msgs = [...plannedMessages];
@@ -3469,12 +3545,19 @@ async function offlineBrain(text) {
     if (m) { const t = getWorldTime(m[1].trim()); return t.error || `In ${t.city} it is ${t.time}.`; }
   }
   if (/remind|reminder/.test(q)) {
-    const m = q.match(/remind(?: me)?(?: to)? (.+?)(?: in (.+)| at (.+))$/);
+    // Keep recurring reminders useful even when no cloud/local model is
+    // available. The same recurrence grammar is used by the tool path and UI.
+    const repeatMatch = q.match(/\b(every\s+\d+\s+(?:minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|months?)|every\s+(?:day|weekday|week|month)|daily|weekdays|weekly|monthly|hourly)\b/i);
+    const repeat = repeatMatch ? normalizeRecurrence(repeatMatch[1]) : null;
+    const reminderQuery = repeatMatch ? q.replace(repeatMatch[0], ' ').replace(/\s+/g, ' ').trim() : q;
+    const m = reminderQuery.match(/remind(?: me)?(?: to)? (.+?)(?: in (.+)| at (.+))$/);
     if (m) {
       const text = m[1].trim(); const when = (m[2] || m[3] || '1 hour').trim();
       const at = parseWhen(when);
-      const mem = readMemory(); mem.reminders.push({ id: uid(), text, at, done: false, notified: false, created: Date.now() }); writeMemory(mem);
-      return `Reminder set: "${text}" for ${new Date(at).toLocaleString()}.`;
+      const mem = readMemory();
+      mem.reminders.push({ id: uid(), text, at, ...(repeat ? { repeat: repeat.label } : {}), done: false, notified: false, created: Date.now() });
+      writeMemory(mem);
+      return `Reminder set: "${text}" for ${new Date(at).toLocaleString()}${repeat ? `, repeating ${repeat.label}` : ''}.`;
     }
   }
   if (/note|remember to|write down|save this/.test(q)) {
@@ -3591,11 +3674,24 @@ function hideHudPanel() {
 function startReminderScheduler() {
   setInterval(() => {
     const m = readMemory();
+    const now = Date.now();
     let changed = false;
     for (const r of m.reminders) {
-      if (!r.done && !r.notified && r.at <= Date.now()) {
-        r.notified = true; changed = true;
-        if (mainWindow) mainWindow.webContents.send('reminder:due', r);
+      if (!r.done && !r.notified && r.at <= now) {
+        const dueAt = r.at;
+        const recurrence = normalizeRecurrence(r.repeat);
+        let due = { ...r, dueAt };
+        if (recurrence) {
+          // Move the persisted occurrence before notifying so a restart or a
+          // slow renderer cannot deliver the same recurring alert twice.
+          r.at = nextOccurrence(r.at, recurrence, now) || (now + 60 * 1000);
+          r.notified = false;
+          due = { ...r, at: dueAt, dueAt, nextAt: r.at, repeat: recurrence.label };
+        } else {
+          r.notified = true;
+        }
+        changed = true;
+        if (mainWindow) mainWindow.webContents.send('reminder:due', due);
         if (Notification.isSupported()) new Notification({ title: 'GemAir Reminder', body: r.text }).show();
       }
     }
@@ -3621,6 +3717,61 @@ function startTopicMonitorScheduler() {
   setInterval(run, 60 * 60 * 1000);
   setTimeout(run, 30000);
 }
+async function generateDailyDigest() {
+  const profile = readProfile();
+  const memory = readMemory();
+  const [headlines, weather, monitorAlerts] = await Promise.all([
+    getHeadlines(6, 'tech').catch(() => []),
+    profile.city ? getWeather(profile.city).catch(() => null) : Promise.resolve(null),
+    Array.isArray(memory.monitors) && memory.monitors.length
+      ? backgroundMonitor.checkMonitors(memory, fetchTopicHeadline, { force: false }).catch(() => [])
+      : Promise.resolve([])
+  ]);
+  // Monitor checks update only redacted topic metadata and hashes. Persisting
+  // that state keeps the once-a-day throttle intact across restarts.
+  if (Array.isArray(memory.monitors) && memory.monitors.length) writeMemory(memory);
+  return buildDailyDigest(memory, {
+    name: profile.name,
+    weather,
+    headlines,
+    monitorAlerts,
+    now: Date.now()
+  });
+}
+
+function parseDigestTime(value) {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return { hour: 8, minute: 0 };
+  return { hour: Math.max(0, Math.min(23, Number(match[1]))), minute: Math.max(0, Math.min(59, Number(match[2]))) };
+}
+
+function startDailyDigestScheduler() {
+  let running = false;
+  const run = async () => {
+    if (running) return;
+    const settings = readProfile().dailyDigest || {};
+    if (settings.enabled !== true) return;
+    const now = new Date();
+    const scheduled = parseDigestTime(settings.time || '08:00');
+    if (now.getHours() < scheduled.hour || (now.getHours() === scheduled.hour && now.getMinutes() < scheduled.minute)) return;
+    const today = dayKey(now);
+    const state = readJSON(DAILY_DIGEST_STATE_FILE, {}, 'dailyDigest');
+    if (state.lastDay === today) return;
+    running = true;
+    try {
+      const digest = await generateDailyDigest();
+      if (!digest || digest.ok === false) return;
+      writeJSON(DAILY_DIGEST_STATE_FILE, { lastDay: today, generatedAt: digest.generatedAt });
+      sendToRenderer('digest:ready', digest);
+      if (Notification.isSupported()) new Notification({ title: 'GemAir Daily Digest', body: digest.summary }).show();
+    } catch (error) {
+      sendToRenderer('digest:error', { error: 'DAILY_DIGEST_FAILED', message: String(error.message || error).slice(0, 300) });
+    } finally { running = false; }
+  };
+  setTimeout(run, 45000);
+  setInterval(run, 60 * 1000);
+}
+
 function startFocusPolling() {
   if (focusPollTimer) clearInterval(focusPollTimer);
   focusPollTimer = setInterval(async () => {
@@ -3958,25 +4109,69 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
     // dynamic account model, native function calls, encrypted reasoning
     // continuity, and a bounded six-round tool loop.
     if ((tokens.authMode === 'codex-oauth' || tokens.authMode === 'codex-import') && tokens.accountId) {
-      try {
-        const result = await chatgptCodex.runCodexAgent({
-          accessToken: tokens.accessToken,
-          idToken: tokens.idToken,
-          accountId: tokens.accountId,
-          model: tokens.selectedModel,
-          reasoningEffort: tokens.reasoningEffort,
-          serviceTier: tokens.serviceTier,
-          messages: nativeMessages,
-          tools: selectedTools,
-          executeTool,
-          onDelta,
-          onTool
-        });
-        connections.incUsage('chatgpt');
-        return result.text;
-      } catch (error) {
-        throw connectedError('CHATGPT_CODEX_FAILED: ' + error.message, connections.isSessionExpiredError('chatgpt', error.code || error.message), error.detail);
+      // Layered recovery for a failed Codex turn:
+      // 1. Retry the native transport once (most empty/timeout/5xx blips
+      //    succeed on the immediate second attempt; auth failures never retry).
+      // 2. Fall back to the legacy conversation endpoint for shape/stream
+      //    failures — never for authentication errors, and never marking the
+      //    account disconnected on a transient provider failure.
+      // 3. Throw an enriched, retryable-flagged error for the renderer.
+      let attempt = 0;
+      let lastError = null;
+      while (attempt < 2) {
+        attempt += 1;
+        try {
+          const result = await chatgptCodex.runCodexAgent({
+            accessToken: tokens.accessToken,
+            idToken: tokens.idToken,
+            accountId: tokens.accountId,
+            model: tokens.selectedModel,
+            reasoningEffort: tokens.reasoningEffort,
+            serviceTier: tokens.serviceTier,
+            messages: nativeMessages,
+            tools: selectedTools,
+            executeTool,
+            onDelta,
+            onTool
+          });
+          connections.incUsage('chatgpt');
+          return result.text;
+        } catch (error) {
+          lastError = error;
+          const sig = String((error && (error.code || error.message)) || '');
+          const transient = typeof chatgptCodex.isTransientCodexError === 'function'
+            ? chatgptCodex.isTransientCodexError(sig)
+            : /CODEX_EMPTY_RESPONSE|TIMEOUT|429|502|503/i.test(sig);
+          if (!transient || attempt >= 2) break;
+          await new Promise((resolve) => setTimeout(resolve, 1200 * attempt));
+        }
       }
+      if (lastError && tokens.accessToken) {
+        const codexMessage = String(lastError.code || lastError.message || '');
+        const canRetryLegacy = !connections.isSessionExpiredError('chatgpt', codexMessage)
+          && /CODEX_(?:EMPTY|BAD|INCOMPLETE|REQUEST_FAILED|STREAM|RESPONSE_FAILED)/.test(codexMessage);
+        if (canRetryLegacy) {
+          try {
+            const legacy = await connections.callChatGPTWeb({ accessToken: tokens.accessToken, messages: adaptedMessages, onDelta });
+            if (legacy && legacy.trim()) {
+              if (onTool) { try { onTool({ name: 'chatgpt_legacy_transport', state: 'done' }); } catch {} }
+              connections.incUsage('chatgpt');
+              return legacy.trim();
+            }
+          } catch (legacyError) {
+            lastError.detail = `${lastError.detail ? String(lastError.detail).slice(0, 260) + '; ' : ''}legacy transport: ${String(legacyError.message || legacyError).slice(0, 260)}`;
+          }
+        }
+      }
+      const error = lastError || new Error('CODEX_EMPTY_RESPONSE');
+      const sig = String(error.code || error.message);
+      const hint = typeof chatgptCodex.describeCodexError === 'function' ? chatgptCodex.describeCodexError(error) : '';
+      const detail = [error.detail, hint].filter(Boolean).join(' — ');
+      const failed = connectedError('CHATGPT_CODEX_FAILED: ' + error.message, connections.isSessionExpiredError('chatgpt', sig), detail || undefined);
+      failed.retryable = !failed.sessionExpired && (typeof chatgptCodex.isTransientCodexError === 'function'
+        ? chatgptCodex.isTransientCodexError(sig)
+        : /CODEX_EMPTY_RESPONSE|TIMEOUT|429|502|503/i.test(sig));
+      throw failed;
     }
 
     // Explicit legacy fallback for manually imported chatgpt.com session JSON.
@@ -4010,10 +4205,16 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
     // The model ID comes from the same field, so desktop chat uses an ID the
     // user's own key reports — never a remembered (possibly retired) one.
     let profileKey = '', profileModel = '';
-    try { const live = readProfile().geminiLive || {}; profileKey = live.apiKey || ''; profileModel = live.model || ''; } catch {}
+    try {
+      const live = readProfile().geminiLive || {};
+      // Legacy profiles are migrated on status load; this fallback is kept
+      // only for an in-flight old profile and is never exposed to renderer.
+      profileKey = live.apiKey || '';
+      profileModel = live.textModel || tokens.selectedModel || 'gemini-2.5-flash';
+    } catch { profileModel = tokens.selectedModel || 'gemini-2.5-flash'; }
     const auth = connections.resolveGeminiAuth({ profileKey, storedApiKey: tokens.apiKey, oauthToken: tokens.psid });
     if (auth.mode === 'none') {
-      throw connectedError('GEMINI_KEY_REQUIRED: connect Google, then paste an AI Studio API key in Settings → Voice → Gemini Live Dialog.', false);
+      throw connectedError('GEMINI_KEY_REQUIRED: save an AI Studio API key in Settings → Voice → Gemini Live Dialog. Google web-session cookies are not required for Gemini API chat.', false);
     }
     if (auth.mode === 'bearer' && connections.isWebSessionOnlyToken(auth.token)) {
       // A captured google.com PSID cookie is a browser session cookie, not an
@@ -4412,6 +4613,12 @@ ipcMain.handle('openjarvis:capabilities', async () => {
     return await openJarvisSidecar.request('capabilities', {}, { timeoutMs: 30_000 });
   } catch (error) { return { ok: false, error: error.code || 'OPENJARVIS_CAPABILITIES_FAILED', message: String(error.message || error).slice(0, 1000) }; }
 });
+ipcMain.handle('openjarvis:skillCatalog', async () => {
+  try {
+    openJarvisRequestConfig();
+    return await openJarvisSidecar.request('skill_catalog', {}, { timeoutMs: 30_000 });
+  } catch (error) { return { ok: false, error: error.code || 'OPENJARVIS_SKILLS_FAILED', message: String(error.message || error).slice(0, 1000) }; }
+});
 ipcMain.handle('openjarvis:mcpDiscover', async () => {
   try {
     openJarvisRequestConfig();
@@ -4425,8 +4632,22 @@ ipcMain.handle('recovery:consume', () => consumeRecoveryStatus());
 ipcMain.handle('usage:get', () => readProfile().usageStats === true ? readUsageStats() : { ...freshUsageStats(), disabled: true });
 ipcMain.handle('usage:track', (_e, action, metadata) => trackUsage(action, metadata || {}));
 ipcMain.handle('usage:clear', () => clearUsageStats());
-ipcMain.handle('profile:get', () => readProfile());
-ipcMain.handle('profile:set', (_e, data) => writeProfile(data || {}));
+function rendererSafeProfile(value) {
+  let profile = {};
+  try { profile = JSON.parse(JSON.stringify(value || {})); } catch { profile = {}; }
+  if (profile.geminiLive && typeof profile.geminiLive === 'object') {
+    // API keys belong in the encrypted main-process connection store. Older
+    // profiles may still contain one; never send it back across IPC.
+    profile.geminiLive.apiKey = '';
+  }
+  return profile;
+}
+ipcMain.handle('profile:get', () => rendererSafeProfile(readProfile()));
+ipcMain.handle('profile:set', (_e, data) => {
+  const next = data && typeof data === 'object' ? JSON.parse(JSON.stringify(data)) : {};
+  if (next.geminiLive && typeof next.geminiLive === 'object') next.geminiLive.apiKey = '';
+  return writeProfile(next);
+});
 ipcMain.handle('ai:chat', async (_e, config, messages) => {
   try { return { ok: true, reply: await aiChat(config, messages) }; }
   catch (err) { return { ok: false, error: err.message }; }
@@ -4540,7 +4761,13 @@ ipcMain.handle('memory:addFact', (_e, fact) => { upsertFact(fact); return true; 
 ipcMain.handle('memory:deleteFact', (_e, id) => { const m = readMemory(); m.facts = m.facts.filter(f => f.id !== id); writeMemory(m); return true; });
 ipcMain.handle('memory:addNote', (_e, text) => { const m = readMemory(); m.notes.unshift({ id: uid(), text, created: Date.now() }); writeMemory(m); return true; });
 ipcMain.handle('memory:deleteNote', (_e, id) => { const m = readMemory(); m.notes = m.notes.filter(n => n.id !== id); writeMemory(m); return true; });
-ipcMain.handle('memory:addReminder', (_e, text, at) => { const m = readMemory(); m.reminders.push({ id: uid(), text, at, done: false, notified: false, created: Date.now() }); writeMemory(m); return true; });
+ipcMain.handle('memory:addReminder', (_e, text, at, repeat) => {
+  const recurrence = normalizeRecurrence(repeat);
+  const m = readMemory();
+  m.reminders.push({ id: uid(), text: String(text || '').slice(0, 2000), at: Number(at) || (Date.now() + 3600000), ...(recurrence ? { repeat: recurrence.label } : {}), done: false, notified: false, created: Date.now() });
+  writeMemory(m);
+  return true;
+});
 ipcMain.handle('memory:deleteReminder', (_e, id) => { const m = readMemory(); m.reminders = m.reminders.filter(r => r.id !== id); writeMemory(m); return true; });
 ipcMain.handle('memory:markReminder', (_e, id, done) => { const m = readMemory(); const r = m.reminders.find(r => r.id === id); if (r) { r.done = !!done; r.notified = false; } writeMemory(m); return true; });
 ipcMain.handle('memory:extract', async (_e, config, userText, assistantText) => {
@@ -4567,8 +4794,25 @@ ipcMain.handle('file:saveCode', async (_e, content, suggestedName) => {
   catch (err) { return { ok: false, error: err.message }; }
 });
 ipcMain.handle('news:get', (_e, limit, category) => getHeadlines(limit || 12, category || 'tech'));
+ipcMain.handle('web:get', async (_e, kind, params) => {
+  const type = String(kind || '').trim().toLowerCase();
+  const input = params && typeof params === 'object' ? params : {};
+  try {
+    if (type === 'weather') return await getWeather(input.city, input.mode);
+    if (type === 'search') return await webSearch(input.q || input.query || '');
+    if (type === 'translate') return await translateText(String(input.text || '').slice(0, 2000), String(input.to || 'en').slice(0, 20), input.from ? String(input.from).slice(0, 20) : undefined);
+    if (type === 'dictionary') return await defineWord(String(input.word || '').slice(0, 120));
+    if (type === 'crypto') return await getCryptoPrice(String(input.coin || '').slice(0, 80));
+    if (type === 'currency') return await convertCurrency(Number(input.amount), String(input.from || '').slice(0, 8), String(input.to || '').slice(0, 8));
+    return { error: 'Unsupported desktop web tool.' };
+  } catch (error) { return { error: String(error.message || error).slice(0, 300) }; }
+});
 ipcMain.handle('app:openExternal', (_e, url) => openExternalSafely(url));
 ipcMain.handle('report:generate', () => generateReport());
+ipcMain.handle('digest:generate', async () => {
+  try { return await generateDailyDigest(); }
+  catch (error) { return { ok: false, error: 'DAILY_DIGEST_FAILED', message: String(error.message || error).slice(0, 500) }; }
+});
 ipcMain.handle('report:needsCheckIn', () => moodNeedsCheckIn());
 ipcMain.handle('memory:export', () => ({ memory: readMemory(), profile: readProfile() }));
 ipcMain.handle('memory:import', (_e, data) => {
@@ -4724,7 +4968,47 @@ ipcMain.handle('connections:launchCodexLogin', async () => {
     return { ok: true, launched: true };
   } catch (error) { return { error: error.message || String(error) }; }
 });
-ipcMain.handle('connections:getStatus', () => connections.getSanitizedStatus());
+function migrateGeminiApiKeyToSecureStore() {
+  try {
+    const profile = readProfile();
+    const legacyKey = profile.geminiLive && profile.geminiLive.apiKey;
+    if (!legacyKey) return;
+    const result = connections.setGeminiApiKey(legacyKey, { model: profile.geminiLive.textModel || 'gemini-2.5-flash' });
+    // A valid legacy key is cleared only after encrypted storage succeeds;
+    // malformed legacy values can be removed immediately without risking a
+    // credential loss or keeping junk in the profile.
+    if (result && result.error && connections.isValidApiKey(legacyKey)) return;
+    profile.geminiLive = { ...(profile.geminiLive || {}), apiKey: '' };
+    writeProfile(profile);
+  } catch {}
+}
+ipcMain.handle('connections:getStatus', () => {
+  migrateGeminiApiKeyToSecureStore();
+  return connections.getSanitizedStatus();
+});
+ipcMain.handle('connections:setGeminiApiKey', (_event, apiKey, model) => {
+  const status = connections.setGeminiApiKey(String(apiKey || '').trim(), { model: String(model || '').trim() });
+  if (!status.error && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('connections:updated', status);
+  return status;
+});
+ipcMain.handle('connections:testGeminiApiKey', async (_event, apiKey, model) => {
+  const key = String(apiKey || '').trim();
+  if (!connections.isValidApiKey(key)) return { ok: false, error: 'INVALID_API_KEY', message: 'Enter a valid Gemini API key.' };
+  try {
+    const selected = String(model || 'gemini-2.5-flash').trim() || 'gemini-2.5-flash';
+    const reply = await connections.callGeminiWeb({ apiKey: key, model: selected, messages: [{ role: 'user', content: 'Reply with exactly OK.' }] });
+    return { ok: true, model: selected, reply: String(reply || '').slice(0, 80) };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error).slice(0, 500), detail: String(error.detail || '').slice(0, 1200) };
+  }
+});
+ipcMain.handle('connections:listGeminiModels', async (_event, apiKey) => {
+  try {
+    return await connections.listGeminiModels({ apiKey: String(apiKey || '').trim() });
+  } catch (error) {
+    return { ok: false, error: String(error.message || error).slice(0, 600), detail: String(error.detail || '').slice(0, 1200) };
+  }
+});
 ipcMain.handle('connections:setPriority', (_e, p) => connections.setPriority(p));
 ipcMain.handle('connections:acknowledgeWarning', () => { connections.acknowledgeWarning(); return true; });
 ipcMain.handle('connections:openChatGPT', async () => {
@@ -4835,21 +5119,25 @@ ipcMain.handle('connections:chatStream', async (e, reqId, provider, messages) =>
     // partial provider stream.
     if (!emittedProviderText && readProfile().anonymousChat !== false) {
       try {
-        const fallbackReply = await aiChatStream({}, messages,
-          (delta) => wc.send('ai:chunk', { reqId, delta }),
-          (info) => { try { wc.send('ai:activity', { reqId, ...info }); } catch {} }
+        const fallback = await anonymousBrainChat(messages,
+          (delta) => wc.send('ai:chunk', { reqId, delta })
         );
-        wc.send('ai:streamEnd', { reqId, reply: fallbackReply, provider: 'FreeGPT35', model: 'gpt-3.5-turbo', fallbackFrom: provider });
+        wc.send('ai:streamEnd', { reqId, reply: fallback.reply, provider: fallback.provider, model: fallback.model, fallbackFrom: provider, sourceError: fallback.sourceError });
         if (mainWindow && !mainWindow.isDestroyed()) {
           if (status) mainWindow.webContents.send('connections:updated', status);
-          if (sessionExpired) mainWindow.webContents.send('connections:expired', { provider, error: err.message, fallback: 'FreeGPT35' });
+          if (sessionExpired) mainWindow.webContents.send('connections:expired', { provider, error: err.message, fallback: fallback.provider });
         }
-        return { ok: true, reqId, reply: fallbackReply, provider: 'FreeGPT35', fallbackFrom: provider };
+        return { ok: true, reqId, reply: fallback.reply, provider: fallback.provider, model: fallback.model, fallbackFrom: provider, sourceError: fallback.sourceError };
       } catch (fallbackError) {
         err.detail = `${err.detail ? String(err.detail).slice(0, 300) + '; ' : ''}anonymous fallback failed: ${String(fallbackError.message || fallbackError).slice(0, 300)}`;
       }
     }
-    wc.send('ai:streamError', { reqId, error: err.message, detail: err.detail, provider, sessionExpired });
+    // Retryable (transient blip, rate limit, cooldown) vs fatal (bad session,
+    // bad config): the renderer offers a one-tap Retry only for the former.
+    const retryable = !sessionExpired && (err.retryable === true
+      || /CODEX_EMPTY_RESPONSE|CODEX_EMPTY_STREAM|CODEX_INCOMPLETE|TIMEOUT|429|408|409|425|500|502|503|504|529|FREEGPT35_COOLDOWN|FREEGPT35_RATE_LIMITED|FREEGPT35_UPSTREAM_DOWN|FREEGPT35_BLOCKED|ECONN|ENOTFOUND|EAI_AGAIN|fetch failed|network/i
+        .test(String(err.message || '') + ' ' + String(err.detail || '')));
+    wc.send('ai:streamError', { reqId, error: err.message, detail: err.detail, provider, sessionExpired, retryable });
     // "Expired" (reconnect modal + fallback) ONLY for genuinely dead
     // sessions. Config errors (missing key, retired model) keep the account.
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -4860,7 +5148,7 @@ ipcMain.handle('connections:chatStream', async (e, reqId, provider, messages) =>
         try { mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus()); } catch {}
       }
     }
-    return { ok: false, reqId, error: err.message, detail: err.detail, sessionExpired };
+    return { ok: false, reqId, error: err.message, detail: err.detail, sessionExpired, retryable };
   }
 });
 
