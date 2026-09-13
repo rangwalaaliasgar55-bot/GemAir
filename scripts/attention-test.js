@@ -96,10 +96,18 @@ test('minutes until a window ends is correct across midnight', () => {
 
 test('active plan blocks respect weekday selection', () => {
   const plans = [{ id: 'p1', name: 'Study', enabled: true, days: [1, 2, 3, 4, 5], blocks: [{ start: '09:00', end: '10:00', kind: 'focus', label: 'Focus' }], rules: {} }];
-  assert.strictEqual(schedule.activePlanBlocks(plans, at(9, 30)).length, 1);
+  const active = schedule.activePlanBlocks(plans, at(9, 30));
+  assert.strictEqual(active.length, 1);
+  assert.ok(active[0].startMs < at(9, 30).getTime() && active[0].endMs > at(9, 30).getTime(), 'active block exposes real progress bounds');
   assert.strictEqual(schedule.activePlanBlocks(plans, at(11, 0)).length, 0);
   const sunday = new Date(2026, 0, 4, 9, 30);
   assert.strictEqual(schedule.activePlanBlocks(plans, sunday).length, 0);
+});
+
+test('one-shot focus plans expire instead of becoming daily schedules', () => {
+  const now = at(9, 30);
+  const plans = [{ id: 'quick', enabled: true, expiresAt: now.getTime() - 1, days: [3], blocks: [{ start: '09:00', end: '10:00', kind: 'focus' }] }];
+  assert.strictEqual(schedule.activePlanBlocks(plans, now).length, 0);
 });
 
 test('sleep status reports when the restriction lifts', () => {

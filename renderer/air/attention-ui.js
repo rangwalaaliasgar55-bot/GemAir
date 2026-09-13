@@ -545,9 +545,9 @@
       }))));
 
     panel.appendChild(section('Focus ecosystem', h('div', { class: 'air-card' },
-      h('p', { class: 'air-sub', text: 'Gem Air is the desktop half of your attention setup. focusx.site holds the account, attention resources and the web Focus experience — your activity data stays on this machine either way.' }),
+      h('p', { class: 'air-sub', text: 'Gem Air is the desktop half of your attention setup. focusarx.site holds the account, attention resources and the web Focus experience — your activity data stays on this machine either way.' }),
       h('div', { class: 'air-form', style: 'margin-top:12px' },
-        h('button', { class: 'air-btn subtle', onclick: () => air.openFocusx('') }, 'Open focusx.site'),
+        h('button', { class: 'air-btn subtle', onclick: () => air.openFocusx('') }, 'Open focusarx.site'),
         h('button', { class: 'air-btn subtle', onclick: () => air.openFocusx('resources') }, 'Attention resources'),
         h('button', { class: 'air-btn subtle', onclick: () => air.openFocusx('account') }, 'Connect account')))));
   }

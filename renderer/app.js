@@ -2582,7 +2582,7 @@ function buildSystemPrompt() {
       `Always respond with empathy: acknowledge their feelings first when they're struggling, celebrate with them when they're doing well. If they're sad, anxious, angry or guilty, be gentle, validating and supportive — never dismissive or preachy. Adapt your tone and length to their state (more warmth and fewer words when intensity is high). ` +
       `SEARCH-FIRST: For anything factual, current, or time-sensitive (news, prices, weather, people, "who is", "what is", "latest"), you MUST call web_search / fetch_webpage to get real, up-to-date answers rather than relying on memory. The user wants genuine results, not guesses. ` +
       `LIFE & CAREER: You help with everything — career decisions, study plans, relationships, health, finances, self-improvement and emotional support. Offer thoughtful, practical, encouraging guidance. When appropriate, help them set goals (add_goal), log their mood (log_mood), or offer an affirmation (get_affirmation) or wellness tip (get_wellness_tip). ` +
-      `CAPABILITIES via tools: time/date, weather, web search, fetch pages, Wikipedia, YouTube, translate, dictionary, crypto, currency, image generation, open URLs/apps, math, reminders, notes, files, clipboard, volume, screenshots, system control, to-dos, mood, goals, affirmations, wellness, PLUS NEW: launch_app(name,args), focus_app(name), snap_window(left|right|quarter|max), minimize_all(), next_virtual_desktop(), open_site(url,browser), list_windows() returns titles+apps so you see desktop state, apply_mode(name), list_modes(), create_mode(). ` +
+      `CAPABILITIES via tools: time/date, weather, web search, fetch pages, Wikipedia, YouTube, translate, dictionary, crypto, currency, image generation, open URLs/apps, math, reminders, notes, files, clipboard, volume, screenshots, system control, to-dos, mood, goals, affirmations, wellness, PLUS NEW: launch_app(name,args), focus_app(name), snap_window(left|right|quarter|max), minimize_all(), next_virtual_desktop(), open_site(url,browser) (named presets work too: youtube, spotify, github, chatgpt, google, gmail, calendar, notion, slack, discord, figma, reddit, netflix, twitch, focusarx), list_windows() returns titles+apps so you see desktop state, apply_mode(name), list_modes(), create_mode(). ` +
       `DESKTOP CONTEXT: focused app/window is "${focused}". Current mode is "${curMode}". Active brain is "${activeBrain}". Use this for follow-ups: "open it there too", "move this to the right". ` +
       `MODES: Mode = named bundle of apps to launch, websites (+which browser), volume level, HUD theme, do-not-disturb, optional playlist URL. Built-ins: WORK (chrome+vscode+slack, gmail+calendar+github, vol 30, cyan, DND), GAMING (steam+discord, vol 70, crimson, DND, optimize_gaming), CHILL (spotify, lofi playlist, vol 40, violet), STUDY (notepad, lofi, vol 20, emerald, DND). When user says "chill mode", "play soft music" (open lofi playlist + set volume), "gaming setup" -> optimize_gaming + mode. Chain correctly: launch apps -> open sites -> set volume -> apply theme -> confirm spoken. ` +
       `FEW-SHOT MODE EXAMPLES:
@@ -5910,14 +5910,31 @@ const APP_ALIASES = {
   telegram: 'telegram', slack: 'slack', zoom: 'zoom', paint: 'mspaint'
 };
 const SITE_MAP = {
-  youtube: 'https://youtube.com', google: 'https://google.com', github: 'https://github.com',
-  gmail: 'https://mail.google.com', reddit: 'https://reddit.com', netflix: 'https://netflix.com',
-  chatgpt: 'https://chatgpt.com', twitter: 'https://x.com', x: 'https://x.com',
-  whatsapp: 'https://web.whatsapp.com', maps: 'https://maps.google.com',
-  drive: 'https://drive.google.com', instagram: 'https://instagram.com',
-  linkedin: 'https://linkedin.com', stackoverflow: 'https://stackoverflow.com'
+  youtube: 'https://youtube.com', 'youtube music': 'https://music.youtube.com',
+  google: 'https://google.com', github: 'https://github.com',
+  gmail: 'https://mail.google.com', calendar: 'https://calendar.google.com', docs: 'https://docs.google.com',
+  drive: 'https://drive.google.com', maps: 'https://maps.google.com', keep: 'https://keep.google.com',
+  reddit: 'https://reddit.com', netflix: 'https://netflix.com', twitch: 'https://twitch.tv',
+  spotify: 'https://open.spotify.com', chatgpt: 'https://chatgpt.com',
+  twitter: 'https://x.com', x: 'https://x.com',
+  whatsapp: 'https://web.whatsapp.com', instagram: 'https://instagram.com',
+  linkedin: 'https://linkedin.com', stackoverflow: 'https://stackoverflow.com',
+  notion: 'https://notion.so', slack: 'https://app.slack.com', discord: 'https://discord.com/app',
+  figma: 'https://figma.com', canva: 'https://canva.com', medium: 'https://medium.com',
+  coursera: 'https://coursera.org', udemy: 'https://udemy.com',
+  focusx: 'https://focusarx.site', focusarx: 'https://focusarx.site'
 };
-const NAV_SITE_RE = new RegExp('\\b(open|go to|visit)\\s+((?:' + Object.keys(SITE_MAP).join('|') + ')\\s*(?:\\.com)?\\b)', 'i');
+const SITE_PRESETS = [
+  ['youtube', 'YouTube'], ['youtube music', 'YouTube Music'], ['spotify', 'Spotify'],
+  ['github', 'GitHub'], ['chatgpt', 'ChatGPT'], ['google', 'Google'], ['gmail', 'Gmail'],
+  ['calendar', 'Google Calendar'], ['docs', 'Google Docs'], ['notion', 'Notion'],
+  ['slack', 'Slack'], ['discord', 'Discord'], ['figma', 'Figma'], ['canva', 'Canva'],
+  ['reddit', 'Reddit'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'],
+  ['netflix', 'Netflix'], ['twitch', 'Twitch'], ['coursera', 'Coursera'], ['udemy', 'Udemy'],
+  ['focusarx', 'focusarx.site']
+];
+const SITE_RE_KEYS = Object.keys(SITE_MAP).sort((a, b) => b.length - a.length).map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+const NAV_SITE_RE = new RegExp('\\b(open|go to|visit)\\s+((?:' + SITE_RE_KEYS.join('|') + ')\\s*(?:\\.com)?\\b)', 'i');
 const SEARCH_SITE_RE = /\b(search|look up|find)\s+(.+?)\s+(?:on|in)\s+(youtube|google)\b|\b(youtube|google)\s+(?:search(?: for)?)?\s*(.+)/i;
 const LAUNCH_RE = /^\s*(?:open|launch|start|run)\s+(?:the\s+)?([a-z0-9 .+#-]{2,24})\s*$/i;
 const FOCUS_RE = /\b(?:switch to|bring(?: up)?|focus|jump to)\s+(?:the\s+)?([a-z0-9 .+#-]{2,24})\b/i;
@@ -9276,6 +9293,7 @@ function renderSettingsModesList() {
       $('#modeVolumeVal').textContent = m.volume||50;
       $('#modeThemeInput').value = m.theme||'crimson';
       $('#modePlaylistInput').value = m.playlist||'';
+      if ($('#modePlaylistPreset')) $('#modePlaylistPreset').value = m.playlist || '';
       $('#modeDndInput').checked = !!m.dnd;
       $('#modeGamingOptInput').checked = !!m.optimizeGaming;
       // sites
@@ -9404,7 +9422,25 @@ function renderPaletteModes() {
 }
 
 function setupModes() {
-  $('#addModeSiteBtn')?.addEventListener('click', ()=>addModeSiteRow('', 'chrome'));
+  const sitePreset = $('#modeSitePreset');
+  if (sitePreset) {
+    const options = [ ['', 'Choose platform…'], ...SITE_PRESETS ].map(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      return option;
+    });
+    sitePreset.innerHTML = '';
+    options.forEach((option) => sitePreset.appendChild(option));
+  }
+  $('#addModeSiteBtn')?.addEventListener('click', () => {
+    const preset = $('#modeSitePreset')?.value || '';
+    addModeSiteRow(preset ? SITE_MAP[preset] || '' : '', 'chrome');
+    if ($('#modeSitePreset')) $('#modeSitePreset').value = '';
+  });
+  $('#modePlaylistPreset')?.addEventListener('change', (event) => {
+    if (event.target.value && $('#modePlaylistInput')) $('#modePlaylistInput').value = event.target.value;
+  });
   $('#saveModeBtn')?.addEventListener('click', saveModeFromDesigner);
   $('#applyModeBtn')?.addEventListener('click', async ()=>{
     const name = ($('#modeNameInput')?.value||'').trim().toUpperCase();

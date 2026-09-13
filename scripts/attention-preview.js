@@ -100,6 +100,16 @@ const handlers = {
     service.emitState();
     return { ok: true, plan: p };
   },
+  'air:startFocus': (minutes) => {
+    const duration = Math.min(Math.max(Number(minutes) || 25, 5), 180);
+    const start = new Date();
+    const end = new Date(start.getTime() + duration * 60000);
+    const hhmm = (date) => `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    const p = { id: 'gem-air-quick-focus', name: 'Quick Focus', enabled: true, expiresAt: end.getTime(), days: [...new Set([start.getDay(), end.getDay()])], blocks: [{ start: hhmm(start), end: hhmm(end), kind: 'focus', label: `Quick focus · ${duration} min` }], rules: {} };
+    service.store.update((s) => { s.plans = s.plans.filter((x) => x.id !== p.id); s.plans.push(p); return s; });
+    service.emitState();
+    return { ok: true, plan: p, endsAt: end.toISOString() };
+  },
   'air:deletePlan': (id) => { service.store.update((s) => { s.plans = s.plans.filter((p) => p.id !== id); return s; }); service.emitState(); return { ok: true }; },
   'air:togglePlan': (id, en) => { service.store.update((s) => { const p = s.plans.find((x) => x.id === id); if (p) p.enabled = !!en; return s; }); return service.emitState(); },
   'air:activeBlocks': () => schedule.activePlanBlocks(service.state.plans, new Date()),
@@ -113,7 +123,7 @@ const handlers = {
   'air:island': () => ({ ok: true }),
   'air:islandResize': () => ({ ok: true }),
   'air:openMain': () => ({ ok: true }),
-  'air:openFocusx': (p) => ({ ok: true, url: 'https://focusx.site/' + (p || '') }),
+  'air:openFocusx': (p) => ({ ok: true, url: 'https://focusarx.site/' + (p || '') }),
   // preview-only: drive the foreground feed
   'preview:feed': (sample) => {
     if (sample.url) service.onBrowserTab({ url: sample.url, title: sample.title || '' });

@@ -201,6 +201,7 @@ contextBridge.exposeInMainWorld('air', {
   requestSystemBlock: (hosts) => ipcRenderer.invoke('air:systemBlockRequest', hosts),
 
   savePlan: (plan) => ipcRenderer.invoke('air:savePlan', plan),
+  startFocus: (minutes) => ipcRenderer.invoke('air:startFocus', minutes),
   deletePlan: (id) => ipcRenderer.invoke('air:deletePlan', id),
   togglePlan: (id, enabled) => ipcRenderer.invoke('air:togglePlan', id, enabled),
   activeBlocks: () => ipcRenderer.invoke('air:activeBlocks'),

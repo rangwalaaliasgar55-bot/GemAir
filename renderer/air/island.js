@@ -64,6 +64,22 @@ document.addEventListener('keydown', (e) => {
 });
 el('btn-collapse').addEventListener('click', () => setExpanded(false, { keepFocus: true }));
 el('btn-dashboard').addEventListener('click', () => api.openMain('dashboard'));
+el('btn-focus').addEventListener('click', async () => {
+  const active = snapshot && snapshot.island && snapshot.island.focusBlock;
+  try {
+    if (active && active.planId === 'gem-air-quick-focus') {
+      await api.deletePlan('gem-air-quick-focus');
+      confirm('Quick focus stopped.');
+    } else {
+      const result = await api.startFocus(25);
+      if (!result || result.ok === false) throw new Error((result && result.error) || 'Could not start focus');
+      confirm('25-minute focus started · distractions are being tracked.');
+    }
+    render(await api.snapshot());
+  } catch (error) {
+    confirm(error.message || 'Focus action unavailable.');
+  }
+});
 document.querySelectorAll('[data-nav]').forEach((b) => {
   b.addEventListener('click', () => api.openMain(b.dataset.nav));
 });
@@ -120,6 +136,12 @@ function render(snap) {
   renderProgress(is.focusBlock);
 
   const plan = is.focusBlock;
+  const focusButton = el('btn-focus');
+  const focusLabel = el('focus-label');
+  const quickFocus = plan && plan.planId === 'gem-air-quick-focus';
+  if (focusButton) focusButton.classList.toggle('active', !!quickFocus);
+  if (focusLabel) focusLabel.textContent = quickFocus ? `Stop · ${plan.endsInMinutes || 0}m` : 'Focus 25';
+  if (focusButton) focusButton.setAttribute('aria-label', quickFocus ? 'Stop quick focus' : 'Start a 25 minute focus session');
   setRow('row-plan', 'v-plan', plan ? `${plan.planName} · ${plan.label} until ${plan.end}` : 'None active', !!plan);
   setRow('row-block', 'v-block',
     is.blocked ? `${is.protectedBlock ? 'Protected · ' : ''}${is.blockReason}` : 'Nothing blocked right now',
@@ -292,6 +314,9 @@ setInterval(() => {
   const ms = localTimerBase.ms + (Date.now() - localTimerBase.at);
   el('timer').textContent = fmtCompact(ms);
   el('ctx-timer').textContent = fmt(ms);
+  renderProgress(snapshot.island.focusBlock);
+  const quick = snapshot.island.focusBlock && snapshot.island.focusBlock.planId === 'gem-air-quick-focus';
+  if (quick && el('focus-label')) el('focus-label').textContent = `Stop · ${snapshot.island.focusBlock.endsInMinutes || 0}m`;
 }, 1000);
 
 /* ---------- boot ---------- */
