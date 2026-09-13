@@ -1,5 +1,31 @@
 # Changelog
 
+## [2.8.2] — 2026-09-13
+
+Reliability release: ChatGPT turns survive transient provider blips instead of failing with `CODEX_EMPTY_RESPONSE`, the anonymous fallback backs off honestly when OpenAI rate-limits it, the optional OpenJarvis brief skips silently when its runtime is down, and the Gem Air island + app shell get an Apple-grade visual refresh.
+
+### Fixed — ChatGPT connection
+- Codex transport now accepts completion-shaped SSE events (`output_text.done`, `content_part.done`), records `incomplete` reasons and refusals as distinct retryable errors, and attaches actionable guidance to empty turns instead of a bare code.
+- Request timeouts scale with reasoning effort (30s–180s) so high/xhigh turns no longer die mid-reasoning and read as empty responses.
+- `callConnectedBrain` retries transient failures once in-process with backoff; empty turns, timeouts, rate limits, and 5xx never wipe the stored session or pop the reconnect modal.
+- `isSessionExpiredError` explicitly excludes transient signatures (`CODEX_EMPTY_RESPONSE`, `CODEX_INCOMPLETE`, timeouts, 408/409/425/429/5xx, `FREEGPT35_*`).
+
+### Fixed — anonymous fallback
+- FreeGPT35 403 "unusual activity" and 429 responses now enter a 10-minute cooldown with a clear message (instead of hammering a blocked endpoint every turn); 502/503/504 retry once automatically.
+- Failed turns report `retryable`, and the chat UI shows "Temporary hiccup" copy with a one-tap ↻ Retry button for transient failures.
+
+### Fixed — OpenJarvis noise
+- The advisory `openjarvis_plan` step reports `skipped` (not `error`) when the sidecar is unavailable, and no longer stamps an inline ✗ chip on every turn. Status stays visible in the expert-panel feed and Connections panel.
+
+### Changed — Gem Air island redesign
+- Rebuilt the island as a Dynamic-Island-grade pill: pure-black capsule with a glowing status orb, two-line status + live timer, spring expand/collapse, frosted detail sheet with staggered card entrances, focus-block progress bar, dismissible teach-me card, icon quick actions, and toast confirmations.
+- Full keyboard support (Enter/Space toggle, Esc collapse), ARIA roles/labels, loading shimmer, and reduced-motion support. Window sizes updated to 372×68 compact / 440×520 expanded.
+
+### Changed — Apple refinement layer
+- New `renderer/apple-refresh.css` (loaded last, cached by the PWA shell): SF system type, softer frosted cards, macOS-style sidebar pills, springy buttons/inputs, focus-visible rings, overlay scrollbars, view transitions, toast/chip animations, small-window responsive fixes, and high-contrast + reduced-motion support.
+- New `porcelain` (Apple-clean light) and `midnight` (Apple-dark) HUD themes; added missing first-paint theme fallbacks for graphite/ocean.
+- Voice: engine-level emotion presets (`ttsEngine.EMOTIONS`), six new Edge neural voices (Ava, Brian, Natasha/William AU, Clara/Liam CA) with `voiceLabel`/`voicesForGender` helpers; avatar gains a `pulse()` micro-interaction fired on message send.
+
 ## [2.8.1] — 2026-09-13
 
 Workspace interface redesign: clearer navigation, calmer panels, and a guided empty state. No behavior changes — all existing IDs, state classes, and actions are preserved.

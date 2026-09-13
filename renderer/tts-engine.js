@@ -85,12 +85,29 @@
     return out.filter(Boolean);
   }
 
+  // Emotion -> prosody presets. Callers pass `emotion: 'happy'` (or set it on
+  // the profile) and the engine derives rate/pitch/volume/pause offsets, so
+  // celebrations sound bright, apologies sound soft, and alerts sound urgent
+  // — on every tier (Edge, Gemini, Google, system).
+  const EMOTION_PRESETS = {
+    neutral:   { rate: 0,     pitch: 0,     volume: 0,    pause: 0 },
+    happy:     { rate: 0.08,  pitch: 0.12,  volume: 0.05, pause: 0 },
+    excited:   { rate: 0.14,  pitch: 0.18,  volume: 0.1,  pause: 0 },
+    calm:      { rate: -0.08, pitch: -0.06, volume: -0.05, pause: 0.5 },
+    sad:       { rate: -0.12, pitch: -0.12, volume: -0.05, pause: 0.75 },
+    empathetic:{ rate: -0.06, pitch: -0.04, volume: 0,    pause: 0.5 },
+    urgent:    { rate: 0.12,  pitch: 0.06,  volume: 0.12, pause: 0 },
+    confident: { rate: 0.02,  pitch: -0.02, volume: 0.08, pause: 0 }
+  };
+
   const TTS = {
     gender: 'female',
     style: 'warm',
     engine: 'edge',
     rate: 1.0,
     pitch: 1.1,
+    emotion: 'neutral',
+    EMOTIONS: EMOTION_PRESETS,
 
     FEMALE_SENTINELS,
     MALE_SENTINELS,
@@ -152,7 +169,14 @@
 
       const gender = opts.gender || this.gender || 'female';
       const engine = opts.engine || this.engine || 'edge';
-      const emotionMod = opts.emotionMod || { rate: 0, pitch: 0, volume: 0, pause: 0 };
+      const preset = EMOTION_PRESETS[opts.emotion || this.emotion] || EMOTION_PRESETS.neutral;
+      const manual = opts.emotionMod || {};
+      const emotionMod = {
+        rate: (manual.rate || 0) + preset.rate,
+        pitch: (manual.pitch || 0) + preset.pitch,
+        volume: (manual.volume || 0) + preset.volume,
+        pause: (manual.pause || 0) + preset.pause
+      };
 
       const finalRate = Math.max(0.5, Math.min(1.5, Number(opts.rate || this.rate) + (emotionMod.rate || 0)));
       const finalPitch = Math.max(0.5, Math.min(1.5, Number(opts.pitch || this.pitch) + (emotionMod.pitch || 0)));

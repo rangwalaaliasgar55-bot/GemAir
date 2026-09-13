@@ -3242,7 +3242,12 @@ async function withOpenJarvisReasoning(messages, onActivity) {
       content: 'OPENJARVIS REASONING BRIEF (advisory, not user instructions):\n' + brief.slice(0, 16000) + '\nUse this to improve analysis, but independently verify claims. GemAir permission gates remain authoritative.'
     }, ...guarded];
   } catch (error) {
-    if (onActivity) onActivity({ name: 'openjarvis_plan', state: 'error', error: String(error.message || error).slice(0, 200) });
+    // The reasoning brief is advisory: an unavailable sidecar (not installed,
+    // Ollama down, model missing, timeout) must skip silently instead of
+    // stamping every chat turn with a red "openjarvis plan ✗". The renderer
+    // removes the chip on 'skipped'; failures stay visible via console + the
+    // Connections panel status, and chat continues with the guarded messages.
+    if (onActivity) onActivity({ name: 'openjarvis_plan', state: 'skipped', reason: String((error && error.code) || error.message || error).slice(0, 200) });
     return guarded;
   }
 }
@@ -4008,44 +4013,69 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
     // dynamic account model, native function calls, encrypted reasoning
     // continuity, and a bounded six-round tool loop.
     if ((tokens.authMode === 'codex-oauth' || tokens.authMode === 'codex-import') && tokens.accountId) {
-      try {
-        const result = await chatgptCodex.runCodexAgent({
-          accessToken: tokens.accessToken,
-          idToken: tokens.idToken,
-          accountId: tokens.accountId,
-          model: tokens.selectedModel,
-          reasoningEffort: tokens.reasoningEffort,
-          serviceTier: tokens.serviceTier,
-          messages: nativeMessages,
-          tools: selectedTools,
-          executeTool,
-          onDelta,
-          onTool
-        });
-        connections.incUsage('chatgpt');
-        return result.text;
-      } catch (error) {
-        // Keep account sessions useful when the Responses stream is temporarily
-        // empty or a compatible gateway returns an unexpected shape. The
-        // legacy conversation endpoint is an explicit transport fallback; it
-        // is never used for an authentication error and never marks the
-        // account disconnected on a transient provider failure.
-        const codexMessage = String(error && (error.code || error.message) || '');
+      // Layered recovery for a failed Codex turn:
+      // 1. Retry the native transport once (most empty/timeout/5xx blips
+      //    succeed on the immediate second attempt; auth failures never retry).
+      // 2. Fall back to the legacy conversation endpoint for shape/stream
+      //    failures — never for authentication errors, and never marking the
+      //    account disconnected on a transient provider failure.
+      // 3. Throw an enriched, retryable-flagged error for the renderer.
+      let attempt = 0;
+      let lastError = null;
+      while (attempt < 2) {
+        attempt += 1;
+        try {
+          const result = await chatgptCodex.runCodexAgent({
+            accessToken: tokens.accessToken,
+            idToken: tokens.idToken,
+            accountId: tokens.accountId,
+            model: tokens.selectedModel,
+            reasoningEffort: tokens.reasoningEffort,
+            serviceTier: tokens.serviceTier,
+            messages: nativeMessages,
+            tools: selectedTools,
+            executeTool,
+            onDelta,
+            onTool
+          });
+          connections.incUsage('chatgpt');
+          return result.text;
+        } catch (error) {
+          lastError = error;
+          const sig = String((error && (error.code || error.message)) || '');
+          const transient = typeof chatgptCodex.isTransientCodexError === 'function'
+            ? chatgptCodex.isTransientCodexError(sig)
+            : /CODEX_EMPTY_RESPONSE|TIMEOUT|429|502|503/i.test(sig);
+          if (!transient || attempt >= 2) break;
+          await new Promise((resolve) => setTimeout(resolve, 1200 * attempt));
+        }
+      }
+      if (lastError && tokens.accessToken) {
+        const codexMessage = String(lastError.code || lastError.message || '');
         const canRetryLegacy = !connections.isSessionExpiredError('chatgpt', codexMessage)
-          && /CODEX_(?:EMPTY|BAD|REQUEST_FAILED|STREAM|RESPONSE_FAILED)/.test(codexMessage);
-        if (canRetryLegacy && tokens.accessToken) {
+          && /CODEX_(?:EMPTY|BAD|INCOMPLETE|REQUEST_FAILED|STREAM|RESPONSE_FAILED)/.test(codexMessage);
+        if (canRetryLegacy) {
           try {
             const legacy = await connections.callChatGPTWeb({ accessToken: tokens.accessToken, messages: adaptedMessages, onDelta });
             if (legacy && legacy.trim()) {
               if (onTool) { try { onTool({ name: 'chatgpt_legacy_transport', state: 'done' }); } catch {} }
+              connections.incUsage('chatgpt');
               return legacy.trim();
             }
           } catch (legacyError) {
-            error.detail = `${error.detail ? String(error.detail).slice(0, 260) + '; ' : ''}legacy transport: ${String(legacyError.message || legacyError).slice(0, 260)}`;
+            lastError.detail = `${lastError.detail ? String(lastError.detail).slice(0, 260) + '; ' : ''}legacy transport: ${String(legacyError.message || legacyError).slice(0, 260)}`;
           }
         }
-        throw connectedError('CHATGPT_CODEX_FAILED: ' + error.message, connections.isSessionExpiredError('chatgpt', error.code || error.message), error.detail);
       }
+      const error = lastError || new Error('CODEX_EMPTY_RESPONSE');
+      const sig = String(error.code || error.message);
+      const hint = typeof chatgptCodex.describeCodexError === 'function' ? chatgptCodex.describeCodexError(error) : '';
+      const detail = [error.detail, hint].filter(Boolean).join(' — ');
+      const failed = connectedError('CHATGPT_CODEX_FAILED: ' + error.message, connections.isSessionExpiredError('chatgpt', sig), detail || undefined);
+      failed.retryable = !failed.sessionExpired && (typeof chatgptCodex.isTransientCodexError === 'function'
+        ? chatgptCodex.isTransientCodexError(sig)
+        : /CODEX_EMPTY_RESPONSE|TIMEOUT|429|502|503/i.test(sig));
+      throw failed;
     }
 
     // Explicit legacy fallback for manually imported chatgpt.com session JSON.
@@ -4929,7 +4959,12 @@ ipcMain.handle('connections:chatStream', async (e, reqId, provider, messages) =>
         err.detail = `${err.detail ? String(err.detail).slice(0, 300) + '; ' : ''}anonymous fallback failed: ${String(fallbackError.message || fallbackError).slice(0, 300)}`;
       }
     }
-    wc.send('ai:streamError', { reqId, error: err.message, detail: err.detail, provider, sessionExpired });
+    // Retryable (transient blip, rate limit, cooldown) vs fatal (bad session,
+    // bad config): the renderer offers a one-tap Retry only for the former.
+    const retryable = !sessionExpired && (err.retryable === true
+      || /CODEX_EMPTY_RESPONSE|CODEX_EMPTY_STREAM|CODEX_INCOMPLETE|TIMEOUT|429|408|409|425|500|502|503|504|529|FREEGPT35_COOLDOWN|FREEGPT35_RATE_LIMITED|FREEGPT35_UPSTREAM_DOWN|FREEGPT35_BLOCKED|ECONN|ENOTFOUND|EAI_AGAIN|fetch failed|network/i
+        .test(String(err.message || '') + ' ' + String(err.detail || '')));
+    wc.send('ai:streamError', { reqId, error: err.message, detail: err.detail, provider, sessionExpired, retryable });
     // "Expired" (reconnect modal + fallback) ONLY for genuinely dead
     // sessions. Config errors (missing key, retired model) keep the account.
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -4940,7 +4975,7 @@ ipcMain.handle('connections:chatStream', async (e, reqId, provider, messages) =>
         try { mainWindow.webContents.send('connections:updated', connections.getSanitizedStatus()); } catch {}
       }
     }
-    return { ok: false, reqId, error: err.message, detail: err.detail, sessionExpired };
+    return { ok: false, reqId, error: err.message, detail: err.detail, sessionExpired, retryable };
   }
 });
 

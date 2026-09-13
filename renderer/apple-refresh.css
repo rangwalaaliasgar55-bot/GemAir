@@ -1,0 +1,213 @@
+/* ============================================================
+   GemAir — Apple refinement layer (additive, loaded last).
+   SF system type, softer cards, macOS-style sidebar pills, spring
+   micro-interactions, overlay scrollbars, focus rings, responsive
+   fixes, and reduced-motion / high-contrast support.
+   Never restructures the DOM — pure progressive enhancement.
+   ============================================================ */
+
+:root {
+  --spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --font-sf: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --card-radius: 16px;
+  --card-shadow: 0 8px 28px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.22);
+  --card-shadow-light: 0 8px 24px rgba(20, 30, 60, 0.1), 0 2px 6px rgba(20, 30, 60, 0.08);
+}
+
+/* ---------- type: SF first, instant + offline-safe ---------- */
+body {
+  font-family: var(--font-sf);
+  letter-spacing: -0.011em;
+  transition: background-color 400ms ease, color 400ms ease;
+}
+.view-title, h1, h2, h3 {
+  letter-spacing: -0.02em;
+}
+
+/* smooth appearance switching (no hard flash) */
+body, .panel, .card, .view, .sidenav, .topbar, .modal, .toast {
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: 300ms;
+  transition-timing-function: ease;
+}
+
+/* ---------- cards & panels: softer, frosted, lifted ---------- */
+.panel, .card, .msg, .tool-card, .settings-card, .conn-card, .mem-card {
+  border-radius: var(--card-radius);
+}
+.panel, .card, .settings-card, .conn-card {
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+body[data-appearance="light"] .panel,
+body[data-appearance="light"] .card,
+body[data-appearance="light"] .settings-card,
+body[data-appearance="light"] .conn-card {
+  box-shadow: var(--card-shadow-light);
+}
+
+/* ---------- macOS-style sidebar ---------- */
+.sidenav {
+  gap: 4px;
+  padding: 10px 8px;
+  border-radius: 18px;
+}
+.nav-btn {
+  border-radius: 12px;
+  border: 1px solid transparent;
+  transition: background 200ms var(--ease-out), color 200ms ease,
+    transform 220ms var(--spring), box-shadow 220ms ease;
+}
+.nav-btn:hover {
+  transform: translateX(2px);
+}
+.nav-btn:active { transform: scale(0.96); }
+.nav-btn.active {
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+.nav-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- buttons & inputs: springy micro-interactions ---------- */
+button:not(.swatch):not(.nav-btn):not(.icon-btn) {
+  transition: background 180ms ease, color 180ms ease, border-color 180ms ease,
+    box-shadow 220ms ease, transform 220ms var(--spring), filter 180ms ease;
+}
+button:not(.swatch):not(:disabled):active { transform: scale(0.96); }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+button:focus-visible, a:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+input[type="text"], input[type="search"], input:not([type]), textarea, select {
+  border-radius: 12px;
+  transition: border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
+}
+input:focus, textarea:focus, select:focus {
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* ---------- view transitions ---------- */
+.view.active { animation: view-in 320ms var(--ease-out); }
+.view-enter { animation: view-in 340ms var(--spring) !important; }
+@keyframes view-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.995); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- tool chips, feed cards, retry ---------- */
+.tool-chip {
+  border-radius: 20px;
+  transition: background 200ms ease, color 200ms ease, transform 200ms var(--spring);
+  animation: chip-in 240ms var(--spring);
+}
+@keyframes chip-in {
+  from { opacity: 0; transform: scale(0.85) translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.tool-card {
+  transition: border-color 240ms ease, transform 240ms var(--spring), opacity 240ms ease;
+  animation: chip-in 260ms var(--spring);
+}
+.tool-card.skipped {
+  opacity: 0.75;
+  border-style: dashed;
+}
+.chat-retry-btn {
+  margin-top: 10px;
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 13px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px var(--accent-glow);
+  animation: chip-in 260ms var(--spring);
+}
+.chat-retry-btn:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
+.chat-retry-btn:disabled { opacity: 0.6; }
+
+/* ---------- toasts ---------- */
+.toast {
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  animation: toast-in 300ms var(--spring);
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- overlay scrollbars (all scroll containers) ---------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(140, 150, 170, 0.45) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(140, 150, 170, 0.45);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(140, 150, 170, 0.7); background-clip: content-box; }
+body[data-appearance="light"] * { scrollbar-color: rgba(90, 100, 120, 0.4) transparent; }
+
+/* ---------- orb / avatar dock polish ---------- */
+.orb-wrap, .avatar-dock, #orbCanvas, .orb-status {
+  transition: box-shadow 400ms ease, filter 400ms ease;
+}
+body.avatar-pulse .orb-status,
+body.avatar-pulse #orbCanvas {
+  filter: drop-shadow(0 0 18px var(--accent-glow));
+}
+
+/* ---------- responsive: no overlaps on small windows ---------- */
+@media (max-width: 1100px) {
+  .sidenav { width: 72px; }
+  .nav-btn .nav-label { display: none; }
+  .nav-btn { justify-content: center; padding-left: 0; padding-right: 0; }
+}
+@media (max-width: 760px) {
+  .sidenav {
+    flex-direction: row;
+    width: auto;
+    order: 2;
+  }
+  .main, .content { min-width: 0; }
+  .msg { max-width: 100%; }
+  .settings-nav { flex-wrap: wrap; }
+}
+
+/* ---------- high contrast ---------- */
+@media (prefers-contrast: more) {
+  .panel, .card, .msg, .tool-card {
+    border-width: 2px;
+  }
+  .nav-btn.active, .settings-nav-btn.active {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+  }
+}
+
+/* ---------- reduced motion: kill springs, keep state changes instant ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

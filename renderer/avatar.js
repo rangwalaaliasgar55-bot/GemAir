@@ -569,6 +569,14 @@
         if (e && typeof e === 'object') emotion = e;
         else if (typeof e === 'string') emotion = { emotion: e, valence: 0 };
       },
+      pulse(strength = 1) {
+        // Micro-interaction: a brief glow swell + micro-nod (message sent,
+        // reply done, wake-word heard). Decays naturally via the glow
+        // approach each frame, so it never sticks.
+        const k = clamp(Number(strength) || 1, 0.2, 2);
+        S.glow = clamp(S.glow + 0.6 * k, 0, 1.6);
+        S.nod = 0.035 * k;
+      },
       setGender(g) {
         if (g !== 'female' && g !== 'male') return;
         activeGender = g;
