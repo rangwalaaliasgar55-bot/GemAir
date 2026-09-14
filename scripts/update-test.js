@@ -85,7 +85,9 @@ console.log('  ok   automatic checks are daily; installs require a click or app 
 
 for (const id of ['setAutoUpdateChecks', 'checkUpdatesBtn', 'viewUpdateBtn', 'updateStatus']) assert(html.includes(`id="${id}"`), `missing update control ${id}`);
 assert(/id="updateStatus"[^>]*role="status"[^>]*aria-live="polite"/.test(html), 'update result is not announced accessibly');
-assert(/no manual reinstall needed/i.test(html), 'one-click update promise is not disclosed');
+assert(/no manual reinstall needed|installs? (?:themselves|itself|automatically) the next time you quit|install on quit/i.test(html), 'update promise (one-click or silent-on-quit) is not disclosed');
+assert(html.includes('id="setSilentUpdates"'), 'silent-updates toggle is missing from the settings DOM');
+assert(html.includes('id="updateCurrentVersion"'), 'installed version is not shown in the updates card');
 assert(app.includes('RESTART TO UPDATE'), 'downloaded-update apply path is missing');
 console.log('  ok   update settings are explicit, accessible, and transparent');
 

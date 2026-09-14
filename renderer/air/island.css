@@ -105,6 +105,24 @@ html, body {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(0.72); opacity: 0.75; }
 }
+/* site chip — the exact host (youtube.com) next to the pill, tinted by mode */
+.site-chip {
+  flex: none; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 600 9px/1 var(--mono, ui-monospace, monospace); letter-spacing: 0.04em;
+  padding: 4px 7px; border-radius: 99px;
+  background: var(--chip-bg, rgba(255,255,255,0.08)); color: var(--chip-fg, var(--muted));
+  border: 1px solid var(--chip-line, rgba(255,255,255,0.10));
+}
+/* focus progress ring — a conic arc around the orb; --ring is set from JS */
+.orb { position: relative; }
+.orb-ring {
+  position: absolute; inset: -4px; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(var(--orb, var(--muted)) calc(var(--ring, 0%) * 1%), transparent 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  opacity: 0; transition: opacity 0.4s ease;
+}
+.island.focus-active .orb-ring { opacity: 0.95; }
 .orb-sm { width: 16px; height: 16px; }
 .orb-sm .orb-core { width: 6px; height: 6px; }
 

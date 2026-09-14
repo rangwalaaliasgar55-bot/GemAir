@@ -147,6 +147,25 @@ function render(snap) {
   el('capsule').setAttribute('aria-label',
     `Gem Air status: ${is.primary}. ${is.secondary || MODE_LABEL[is.mode] || ''}. Activate to ${expanded ? 'collapse' : 'expand'} details.`);
 
+  // Site chip: the real host (e.g. youtube.com) in the compact pill. Only
+  // shown when we actually know a site — with the extension paired it is the
+  // exact tab; without it we fall back to the window-title guess.
+  const siteChip = el('site-chip');
+  if (siteChip) {
+    const site = is.tab && is.tab.site ? String(is.tab.site).replace(/^www\./, '') : '';
+    const live = !!(is.tab && is.tab.source === 'extension');
+    if (site) {
+      siteChip.hidden = false;
+      siteChip.textContent = site;
+      siteChip.title = live ? 'Exact tab from the browser extension' : 'Inferred from the window title — pair the extension for the exact tab';
+      siteChip.style.setProperty('--chip-fg', is.color || '');
+      siteChip.style.setProperty('--chip-bg', hexA(is.color || '#ffffff', 0.14));
+      siteChip.style.setProperty('--chip-line', hexA(is.color || '#ffffff', 0.35));
+    } else {
+      siteChip.hidden = true;
+    }
+  }
+
   el('status-pill').textContent = is.blocked ? 'Blocked' : (MODE_LABEL[is.mode] || 'Idle');
   el('ctx-subject').textContent = is.primary;
   const chip = el('ctx-chip');
@@ -175,6 +194,17 @@ function render(snap) {
     sleeping ? `Active until ${is.sleep.end}` : (is.sleep && is.sleep.start ? `Off · ${is.sleep.start}–${is.sleep.end}` : 'Off'),
     sleeping);
   setRow('row-next', 'v-next', is.next ? `${is.next.label} in ${humanMinutes(is.next.in)}` : '—', false);
+  {
+    const live = !!(is.tab && is.tab.source === 'extension');
+    const browserFocused = !!(is.tab && (is.tab.kind === 'site' || is.tab.site));
+    setRow('row-ext', 'v-ext',
+      live ? 'Live · extension paired' : (browserFocused ? 'Not paired · titles only' : 'No browser in focus'),
+      live, !live && browserFocused);
+    const extRow = el('row-ext');
+    if (extRow) extRow.title = live
+      ? 'The browser extension reports the exact active tab.'
+      : 'Pair the Chrome/Edge extension (Gem Air tab → Browser link) so the island knows the exact website instead of guessing from window titles.';
+  }
 
   renderQuestion(is.question);
 }
@@ -258,12 +288,22 @@ function renderProgress(focusBlock) {
   const bar = el('ctx-progress-bar');
   if (!focusBlock || !focusBlock.startMs || !focusBlock.endMs || focusBlock.endMs <= focusBlock.startMs) {
     wrap.hidden = true;
+    clearFocusRing();
     return;
   }
   const now = Date.now();
   const pct = Math.max(0, Math.min(100, ((now - focusBlock.startMs) / (focusBlock.endMs - focusBlock.startMs)) * 100));
   wrap.hidden = false;
   bar.style.width = pct.toFixed(1) + '%';
+  // Same progress as an arc around the orb so the compact pill shows how far
+  // through the focus block you are without expanding.
+  island.classList.add('focus-active');
+  island.style.setProperty('--ring', (pct / 100).toFixed(4));
+}
+
+function clearFocusRing() {
+  island.classList.remove('focus-active');
+  island.style.removeProperty('--ring');
 }
 
 function subline(snap) {

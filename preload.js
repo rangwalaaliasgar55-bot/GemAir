@@ -57,6 +57,11 @@ contextBridge.exposeInMainWorld('gemair', {
   onUpdateAvailable: (cb) => subscribeIpc('app:update-available', cb),
   onUpdaterEvent: (cb) => subscribeIpc('app:updater-event', cb),
   version: () => ipcRenderer.invoke('app:version'),
+  updaterStatus: () => ipcRenderer.invoke('app:updaterStatus'),
+  borrowGeminiKey: () => ipcRenderer.invoke('connections:borrowGeminiKey'),
+  openExtensionFolder: () => ipcRenderer.invoke('app:openExtensionFolder'),
+  extensionFolderPath: () => ipcRenderer.invoke('app:extensionFolderPath'),
+  copyText: (text) => ipcRenderer.invoke('app:copyText', text),
 
   memoryGet: () => ipcRenderer.invoke('memory:get'),
   memoryAppend: (role, content) => ipcRenderer.invoke('memory:append', role, content),
@@ -179,6 +184,91 @@ contextBridge.exposeInMainWorld('gemair', {
 
 /* ---------- Gem Air — attention layer API ----------
    Exposed separately so the island window and the main UI share one contract. */
+/* ============================================================
+   GemCore bridge — ALTREX provider engine + AERA systems
+   ============================================================ */
+contextBridge.exposeInMainWorld('gemcore', {
+  // Provider lifecycle
+  providers: () => ipcRenderer.invoke('gemcore:providers'),
+  providerConnect: (payload) => ipcRenderer.invoke('gemcore:providerConnect', payload || {}),
+  providerUpdate: (providerId, patch) => ipcRenderer.invoke('gemcore:providerUpdate', providerId, patch || {}),
+  providerTest: (providerId) => ipcRenderer.invoke('gemcore:providerTest', providerId),
+  providerDisconnect: (providerId) => ipcRenderer.invoke('gemcore:providerDisconnect', providerId),
+  providerRemove: (providerId) => ipcRenderer.invoke('gemcore:providerRemove', providerId),
+  openProviderUrl: (providerId, kind) => ipcRenderer.invoke('gemcore:openProviderUrl', providerId, kind),
+  status: () => ipcRenderer.invoke('gemcore:status'),
+  diagnostics: () => ipcRenderer.invoke('gemcore:diagnostics'),
+
+  // Model registry
+  modelDefault: (providerId, modelId) => ipcRenderer.invoke('gemcore:modelDefault', providerId, modelId),
+  modelToggle: (providerId, modelId, disabled) => ipcRenderer.invoke('gemcore:modelToggle', providerId, modelId, disabled),
+  modelRemove: (providerId, modelId) => ipcRenderer.invoke('gemcore:modelRemove', providerId, modelId),
+  modelRestore: (providerId, modelId) => ipcRenderer.invoke('gemcore:modelRestore', providerId, modelId),
+
+  // Scoped memory (AERA)
+  memoryList: (scope) => ipcRenderer.invoke('gemcore:memoryList', scope),
+  memoryRemember: (content, options) => ipcRenderer.invoke('gemcore:memoryRemember', content, options || {}),
+  memoryRecall: (query, scope) => ipcRenderer.invoke('gemcore:memoryRecall', query, scope),
+  memoryForget: (memoryId) => ipcRenderer.invoke('gemcore:memoryForget', memoryId),
+  memoryClear: (scope) => ipcRenderer.invoke('gemcore:memoryClear', scope),
+  memoryStats: () => ipcRenderer.invoke('gemcore:memoryStats'),
+
+  // Audit log (AERA)
+  auditRecent: (limit, kind) => ipcRenderer.invoke('gemcore:auditRecent', limit, kind),
+  auditStats: () => ipcRenderer.invoke('gemcore:auditStats'),
+  auditVerify: () => ipcRenderer.invoke('gemcore:auditVerify'),
+  auditClear: () => ipcRenderer.invoke('gemcore:auditClear'),
+
+  // Reasoning trace (AERA)
+  reasoning: (limit) => ipcRenderer.invoke('gemcore:reasoning', limit),
+
+  // Emotion profiles (AERA)
+  emotion: (payload) => ipcRenderer.invoke('gemcore:emotion', payload || {}),
+  emotionProfiles: () => ipcRenderer.invoke('gemcore:emotionProfiles'),
+
+  // Impact tiers (AERA tool broker)
+  approveTier: (tier) => ipcRenderer.invoke('gemcore:approveTier', tier),
+  toolTiers: () => ipcRenderer.invoke('gemcore:toolTiers'),
+
+  // Hardened chat with tools, budgets, compaction, recovery
+  chatStream: (payload, handlers) => {
+    const reqId = 'gc' + Math.random().toString(36).slice(2);
+    const onChunk = (data) => { if (data.requestId === reqId && handlers.onDelta) handlers.onDelta(data.text); };
+    const onTool = (data) => { if (data.requestId === reqId && handlers.onTool) handlers.onTool(data); };
+    const onToolResult = (data) => { if (data.requestId === reqId && handlers.onToolResult) handlers.onToolResult(data); };
+    const onSystem = (data) => { if (data.requestId === reqId && handlers.onSystem) handlers.onSystem(data); };
+    const onError = (data) => { if (data.requestId === reqId && handlers.onError) handlers.onError(data); };
+    const onDone = (data) => {
+      if (data.requestId !== reqId) return;
+      cleanup();
+      if (handlers.onDone) handlers.onDone(data);
+    };
+    const cleanup = () => {
+      ipcRenderer.removeListener('gemcore:chunk', onChunk);
+      ipcRenderer.removeListener('gemcore:tool', onTool);
+      ipcRenderer.removeListener('gemcore:toolResult', onToolResult);
+      ipcRenderer.removeListener('gemcore:system', onSystem);
+      ipcRenderer.removeListener('gemcore:error', onError);
+      ipcRenderer.removeListener('gemcore:done', onDone);
+    };
+    ipcRenderer.on('gemcore:chunk', onChunk);
+    ipcRenderer.on('gemcore:tool', onTool);
+    ipcRenderer.on('gemcore:toolResult', onToolResult);
+    ipcRenderer.on('gemcore:system', onSystem);
+    ipcRenderer.on('gemcore:error', onError);
+    ipcRenderer.on('gemcore:done', onDone);
+    return ipcRenderer.invoke('gemcore:chatStream', { ...(payload || {}), requestId: reqId }).then((start) => ({ ...start, requestId: reqId })).catch((error) => { cleanup(); throw error; });
+  },
+  abort: (requestId) => ipcRenderer.invoke('gemcore:abort', requestId),
+
+  // Multi-AI director (ALTREX)
+  multiaiRun: (payload) => ipcRenderer.invoke('gemcore:multiaiRun', payload || {}),
+  multiaiStatus: () => ipcRenderer.invoke('gemcore:multiaiStatus'),
+  multiaiStop: () => ipcRenderer.invoke('gemcore:multiaiStop'),
+  onMultiai: (cb) => subscribeIpc('gemcore:multiai', cb)
+});
+
+
 contextBridge.exposeInMainWorld('air', {
   platform: process.platform,
   snapshot: () => ipcRenderer.invoke('air:snapshot'),

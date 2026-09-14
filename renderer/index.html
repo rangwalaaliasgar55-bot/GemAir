@@ -396,6 +396,7 @@
                       <textarea id="chatInput" aria-label="Message Gem" placeholder="Ask Gem anything, or type / for commands…" rows="1" autocomplete="off"></textarea>
                       <button class="icon-btn" id="chatAttachBtn" type="button" title="Attach a text file (.txt/.md) into the message" aria-label="Attach a text file">📎</button>
                       <input type="file" id="chatAttachInput" accept=".txt,.md,.json,.csv,.log" hidden />
+                      <button class="icon-btn" id="gemcoreTeamBtn" type="button" title="Multi-AI team: a director assembles specialist agents that work the request as a DAG" aria-label="Run a Multi-AI team on your next message">⚡</button>
                       <button class="send-btn" id="sendBtn" title="Send message" aria-label="Send message"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
                     </div>
                     <button class="apple-btn chat-newpill" id="chatNewMsgPill" type="button" hidden>↓ New messages</button>
@@ -1039,6 +1040,35 @@
     </div>
   </div>
 
+  <!-- Multi-AI team run (GemCore / ALTREX director): specialists work the request as a DAG -->
+  <div class="modal-backdrop" id="gemcoreTeamModal" role="dialog" aria-modal="true" aria-labelledby="gemcoreTeamTitle">
+    <div class="modal" style="width:min(760px,94vw);max-height:88vh;display:flex;flex-direction:column;">
+      <div class="modal-head">
+        <h2 id="gemcoreTeamTitle">⚡ MULTI-AI TEAM</h2>
+        <button class="icon-btn" id="gemcoreTeamClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" style="overflow:auto;">
+        <p class="hint" style="font-size:11px;color:var(--text-dim);margin:0 0 12px;">
+          A director drafts a plan, then specialist agents (architect, developer, reviewer…) work it as a dependency graph.
+          Each agent builds on the previous agents' outputs. Requires a connected GemCore provider.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+          <textarea id="gemcoreTeamInput" rows="3" style="flex:1;min-width:280px;font-size:13px;padding:8px;" placeholder="Describe the job for the team, e.g. 'Design and write a README + quick-start guide for my Python CLI project'"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+          <button class="primary-btn" id="gemcoreTeamRun" type="button" style="padding:8px 18px;font-size:12px;">ASSEMBLE &amp; RUN TEAM</button>
+          <button class="ghost-btn" id="gemcoreTeamStop" type="button" style="padding:8px 14px;font-size:11px;" hidden>■ STOP</button>
+          <span class="hint" id="gemcoreTeamStatus" style="font-size:11px;color:var(--text-dim);"></span>
+        </div>
+        <div id="gemcoreTeamAgents" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <div id="gemcoreTeamOutput" style="margin-top:12px;"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="ghost-btn" id="gemcoreTeamDone">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Paste-session import: log in with your own browser, paste the session JSON -->
   <div class="modal-backdrop" id="sessionJsonModal" role="dialog" aria-modal="true" aria-labelledby="sessionJsonTitle">
     <div class="modal" style="width:min(620px,94vw);">
@@ -1114,6 +1144,7 @@
           </div>
           <div class="settings-nav" role="tablist" aria-label="Settings sections">
             <button class="settings-nav-btn active" data-ssection="connections"><span class="sico">🧠</span>AI &amp; Connections</button>
+            <button class="settings-nav-btn" data-ssection="gemcore"><span class="sico">⚡</span>GemCore Engine</button>
             <button class="settings-nav-btn" data-ssection="brain"><span class="sico">⚙️</span>General &amp; Memory</button>
             <button class="settings-nav-btn" data-ssection="voice"><span class="sico">🎙</span>Siri &amp; Voice</button>
             <button class="settings-nav-btn" data-ssection="desktop"><span class="sico">🖥</span>Desktop &amp; Focus</button>
@@ -1379,6 +1410,101 @@
             <label><span data-i18n="settings.language">Interface language</span>
               <select id="setLanguage" aria-label="Interface language"></select>
             </label>
+          </fieldset>
+        </div>
+
+        <!-- GEMCORE ENGINE SECTION (ALTREX provider engine + AERA systems) -->
+        <div class="settings-section" data-section="gemcore">
+          <fieldset id="gemcoreProvidersCard">
+            <legend>GEMCORE PROVIDER ENGINE — ANY OPENAI-COMPATIBLE PROVIDER</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
+              Connect any OpenAI-compatible provider (Gemini, Groq, Cerebras, OpenRouter, NVIDIA, OpenAI, local Ollama, or a custom endpoint).
+              Every request runs through the hardened engine: timeouts, honest retries, circuit breakers, context compaction, and layered recovery across your connected providers.
+              Keys are stored locally on this device only.
+            </p>
+            <div id="gemcoreProviderGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;"></div>
+            <div id="gemcoreProviderConnect" hidden style="margin-top:12px;padding:12px;border:1px solid var(--border,#333);border-radius:10px;">
+              <div style="font:600 11px var(--font-mono);margin-bottom:8px;" id="gemcoreConnectTitle">CONNECT PROVIDER</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <label style="flex:1;min-width:160px;font-size:11px;">Label
+                  <input type="text" id="gemcoreConnectLabel" style="width:100%;font-size:12px;padding:6px;" />
+                </label>
+                <label style="flex:2;min-width:220px;font-size:11px;">Base URL (HTTPS, or local HTTP)
+                  <input type="text" id="gemcoreConnectUrl" style="width:100%;font-size:12px;padding:6px;" />
+                </label>
+                <label style="flex:2;min-width:220px;font-size:11px;">API key
+                  <input type="password" id="gemcoreConnectKey" placeholder="paste key — stays on this device" style="width:100%;font-size:12px;padding:6px;" autocomplete="off" />
+                </label>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+                <button class="primary-btn" id="gemcoreConnectSave" type="button" style="padding:7px 16px;font-size:11px;">CONNECT &amp; TEST</button>
+                <button class="ghost-btn" id="gemcoreConnectCancel" type="button" style="padding:7px 12px;font-size:11px;">Cancel</button>
+                <span class="hint" id="gemcoreConnectHint" style="font-size:10px;color:var(--text-dim);"></span>
+              </div>
+            </div>
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="ghost-btn" id="gemcoreDiagnosticsBtn" type="button" style="padding:6px 12px;font-size:10px;">⚡ RUN DIAGNOSTICS</button>
+              <span class="hint" id="gemcoreDiagnosticsSummary" style="font-size:10px;color:var(--text-dim);"></span>
+            </div>
+            <div id="gemcoreDiagnosticsDetail" class="hint" style="margin-top:8px;font-size:10px;white-space:pre-wrap;display:none;"></div>
+          </fieldset>
+
+          <fieldset id="gemcoreMemoryCard">
+            <legend>SCOPED MEMORY — WHAT GEM REMEMBERS</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
+              Memories carry a scope. <b>User</b> preferences persist across sessions. <b>Task</b> memory belongs to the current task.
+              <b>Long-term</b> knowledge is only stored when you ask. Everything is redacted for obvious secrets before it touches disk.
+            </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+              <button class="ghost-btn gc-mem-tab" data-memscope="user" type="button" style="padding:5px 12px;font-size:10px;">USER</button>
+              <button class="ghost-btn gc-mem-tab" data-memscope="task" type="button" style="padding:5px 12px;font-size:10px;">TASK</button>
+              <button class="ghost-btn gc-mem-tab" data-memscope="long-term" type="button" style="padding:5px 12px;font-size:10px;">LONG-TERM</button>
+              <span class="hint" id="gemcoreMemoryStats" style="font-size:10px;color:var(--text-dim);"></span>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+              <input type="text" id="gemcoreMemoryInput" placeholder="Remember: e.g. I prefer dark mode and concise answers" style="flex:1;min-width:260px;font-size:12px;padding:7px;" />
+              <button class="primary-btn" id="gemcoreMemoryAdd" type="button" style="padding:7px 14px;font-size:11px;">REMEMBER</button>
+              <button class="ghost-btn" id="gemcoreMemoryClear" type="button" style="padding:7px 12px;font-size:11px;">CLEAR SCOPE</button>
+            </div>
+            <div id="gemcoreMemoryList" style="max-height:240px;overflow:auto;font-size:12px;"></div>
+          </fieldset>
+
+          <fieldset id="gemcoreAuditCard">
+            <legend>AUDIT TRAIL — HASH-CHAINED ACTION LOG</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
+              Every gated tool call, memory change, and permission grant is appended to a tamper-evident, hash-chained log stored on this device.
+            </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+              <button class="ghost-btn" id="gemcoreAuditVerify" type="button" style="padding:6px 12px;font-size:10px;">🔐 VERIFY CHAIN</button>
+              <button class="ghost-btn" id="gemcoreAuditClear" type="button" style="padding:6px 12px;font-size:10px;">CLEAR LOG</button>
+              <span class="hint" id="gemcoreAuditStats" style="font-size:10px;color:var(--text-dim);"></span>
+            </div>
+            <div id="gemcoreAuditList" style="max-height:220px;overflow:auto;font-family:var(--font-mono,monospace);font-size:10px;white-space:pre-wrap;"></div>
+          </fieldset>
+
+          <fieldset id="gemcoreTiersCard">
+            <legend>IMPACT TIERS — TOOL PERMISSIONS</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
+              Tools are gated by impact: LOW acts freely, MODERATE touches local reads, HIGH writes files and sends messages,
+              CRITICAL runs commands and controls the system. HIGH/CRITICAL actions ask first — approve a tier for the whole session here if you want fewer prompts.
+            </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+              <button class="ghost-btn" id="gemcoreApproveHigh" type="button" style="padding:6px 14px;font-size:10px;">APPROVE HIGH FOR THIS SESSION</button>
+              <button class="ghost-btn" id="gemcoreApproveCritical" type="button" style="padding:6px 14px;font-size:10px;color:#e05d5d;">APPROVE CRITICAL FOR THIS SESSION</button>
+            </div>
+            <div id="gemcoreTierTable" style="font-size:11px;"></div>
+          </fieldset>
+
+          <fieldset id="gemcoreReasoningCard">
+            <legend>REASONING TRACE — HOW GEM THOUGHT</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">
+              GemCore classifies every request into a reasoning level (reflex / heuristic / deliberate / deep) and records a trace.
+            </p>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+              <button class="ghost-btn" id="gemcoreReasoningRefresh" type="button" style="padding:6px 12px;font-size:10px;">↻ REFRESH</button>
+              <span class="hint" id="gemcoreReasoningSummary" style="font-size:10px;color:var(--text-dim);"></span>
+            </div>
+            <div id="gemcoreReasoningList" style="max-height:200px;overflow:auto;font-family:var(--font-mono,monospace);font-size:10px;white-space:pre-wrap;"></div>
           </fieldset>
         </div>
 
@@ -1692,8 +1818,16 @@
           </fieldset>
           <fieldset>
             <legend>APP UPDATES</legend>
+            <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px;">
+              <span style="font:600 12px var(--font-mono);">GemAir <span id="updateCurrentVersion">—</span></span>
+              <span class="dim" id="updateChannelLabel" style="font:600 10px var(--font-mono);">stable channel</span>
+              <span class="dim" id="updateEngineLabel" style="font:600 10px var(--font-mono);"></span>
+            </div>
             <label class="check-label">
-              <input type="checkbox" id="setAutoUpdateChecks" checked /> Check GitHub automatically for app updates
+              <input type="checkbox" id="setAutoUpdateChecks" checked /> Check automatically for app updates
+            </label>
+            <label class="check-label" title="New versions download in the background and install themselves the next time you quit GemAir — no prompts, no reinstall clicks.">
+              <input type="checkbox" id="setSilentUpdates" checked /> Update silently in the background (install on quit)
             </label>
             <label>Update channel
               <select id="setUpdateChannel" aria-label="Update channel">
@@ -1701,7 +1835,7 @@
                 <option value="nightly">Nightly builds (every repo change)</option>
               </select>
             </label>
-              <p class="hint" style="font-size:11px;color:var(--text-dim);">GemAir checks for new releases automatically and downloads the installer in the background. Click INSTALL UPDATE once — no manual reinstall needed. Nothing installs without your click.</p>
+              <p class="hint" style="font-size:11px;color:var(--text-dim);">With silent updates on, GemAir downloads new versions in the background and applies them when you quit — you never see an update prompt. Turn it off to be asked before anything installs.</p>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
               <button class="ghost-btn" id="checkUpdatesBtn" type="button">⟳ CHECK NOW</button>
               <button class="primary-btn" id="viewUpdateBtn" type="button" hidden>VIEW RELEASE</button>
@@ -1936,6 +2070,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0"></script>
+  <script src="web-gate.js"></script>
   <script src="themes.js"></script>
   <script src="i18n.js"></script>
   <script src="store.js"></script>
@@ -1948,6 +2083,7 @@
   <script src="providers.js"></script>
   <script src="apple.js"></script>
   <script src="wake-word.js"></script>
+  <script src="gemcore-ui.js"></script>
   <script src="app.js"></script>
   <script src="air/attention-ui.js"></script>
   <script src="interface.js"></script>

@@ -121,8 +121,23 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (tab) reportActive(tab);
 });
 
+// Heartbeat: the service worker is suspended after ~30s idle, which used to
+// stop tab reports — the app then "forgot" the current website. Two fixes:
+//   - every alarm tick ALSO re-reports the active tab, so context stays fresh
+//     even with zero navigation events (user just reading one long page);
+//   - the worker re-reports on every cold start (bottom of this file), so a
+//     suspension can never end in a silent, stale site.
+async function reportActiveFromQuery() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (tab) reportActive(tab);
+  } catch {}
+}
+
 chrome.alarms.create('gemair-policy', { periodInMinutes: 0.25 });
-chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'gemair-policy') refreshPolicy(); });
+chrome.alarms.onAlarm.addListener((a) => {
+  if (a.name === 'gemair-policy') { refreshPolicy(); reportActiveFromQuery(); }
+});
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
@@ -144,3 +159,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 refreshPolicy();
 setInterval(refreshPolicy, POLICY_REFRESH_MS);
+// Cold start (worker revival, browser launch): restore policy + report the
+// current tab immediately instead of waiting for the user to navigate.
+reportActiveFromQuery();

@@ -1381,6 +1381,9 @@ body.sys-degraded #sysChipText { color: var(--warn); }
 
 .settings-section { display: none; flex-direction: column; gap: 16px; }
 .settings-section.active { display: flex; }
+/* Perf: skip layout/paint for off-screen fieldsets inside the big settings
+   modal — only what is scrolled into view (or near it) renders. */
+.settings-section.active fieldset { content-visibility: auto; contain-intrinsic-size: auto 320px; }
 
 .connection-rows { display: flex; flex-direction: column; gap: 10px; }
 .conn-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--panel-border); font-size: 11px; flex-wrap: wrap; backdrop-filter: blur(10px); transition: border-color .2s; }
@@ -1782,7 +1785,7 @@ body.sys-degraded #sysChipText { color: var(--warn); }
 .plan-step-row { font-size: 11px; padding: 3px 0; }
 
 /* --- Modal overlays: subtle blur --- */
-.modal-backdrop { backdrop-filter: blur(8px); }
+.modal-backdrop { backdrop-filter: blur(5px); }
 
 /* --- Chat input area: refined --- */
 #chatInput {

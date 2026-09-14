@@ -80,6 +80,48 @@ Dave = planning) injected as its own system prompt.
 
 ---
 
+## ⚡ GemCore Engine (any provider, hardened)
+
+GemCore is the engine layer under **Settings → ⚡ GemCore Engine**. It lets you connect
+**any OpenAI-compatible provider** — Gemini, Groq, Cerebras, OpenRouter, NVIDIA, OpenAI,
+a local **Ollama**, or a custom endpoint — and routes every request through one hardened
+pipeline:
+
+- **Honest errors** — a failed key says *invalid key*, a dead model says *model not found*,
+  an empty account says *quota exhausted*. Secrets are scrubbed from every detail.
+- **Timeouts, retries with backoff, and a circuit breaker** per provider — one bad
+  endpoint can't hang or spam.
+- **Layered recovery** — if a provider fails, your other connected providers take over
+  automatically.
+- **Context compaction** — when a conversation outgrows a model's window, older turns are
+  summarized instead of the request dying.
+- **Model registry** — per-provider model lists with defaults; retired defaults fall back
+  instead of stranding you.
+
+### Multi-AI Team (⚡ in the chat box)
+
+Press the **⚡ button** in the chat composer and describe a job. A director drafts a plan,
+then specialist agents (architect → developer → reviewer → …) work it as a dependency
+graph — each agent builds on the previous agents' outputs, live in the team modal.
+
+### Scoped memory, audit trail, and permissions
+
+- **Scoped memory** — *User* (preferences, cross-session), *Task* (current task), and
+  *Long-term* (only when you ask). Everything is secret-redacted before it touches disk.
+- **Audit trail** — every gated tool call, memory change, and permission grant is appended
+  to a tamper-evident, hash-chained log you can verify with one click.
+- **Impact tiers** — tools are gated LOW / MODERATE / HIGH / CRITICAL. High-impact actions
+  ask first; you can approve a tier for a whole session if you want fewer prompts.
+- **Reasoning trace** — every request is classified (reflex / heuristic / deliberate /
+  deep) and traced, so you can see *how* Gem thought.
+- **Emotion-aware voice** — Gem's tone adapts to yours: frustration gets an apologetic,
+  careful voice; good news gets celebrated. Seven new dialogue states (attentive,
+  deliberate, concerned, apologetic, curious, celebratory, stern) extend the TTS engine.
+
+Run the engine tests with `npm run test:gemcore`.
+
+---
+
 ## 🧠 Memory that never goes away
 
 | Type | Where | How it helps |
@@ -128,11 +170,25 @@ embarrassment, neutral) with valence, arousal and intensity.
 
 ---
 
-## 🚀 Deploy to Vercel
+## 🌐 The website is a storefront — the app is desktop-only
+
+GemAir is a **desktop application**. The website exists to show it off and hand
+you the installer — nothing more. `vercel.json` enforces this:
+
+| URL | Serves | Why |
+| --- | --- | --- |
+| `/` , `/download` | `download.html` | Showcase + download page |
+| `/app`, `/index.html`, `/renderer/*` | `desktop-only.html` | "Get the desktop app" notice |
+
+Even if someone fetches the app files directly, `renderer/web-gate.js` (loaded
+first in `renderer/index.html`) detects the missing desktop bridge
+(`window.gemair`), hides the UI, and shows a download card — and `app.js`
+refuses to boot behind it. `scripts/web-desktop-only-test.js` pins this whole
+contract and runs in `npm run check`.
 
 ```bash
 npm i -g vercel
-vercel        # auto-detects vercel.json (renderer/ static + api/ serverless)
+vercel        # deploys the download-only site
 ```
 
 Optional env vars (`.env.example`): `GROQ_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`.
@@ -143,67 +199,6 @@ Connect the repo under Supabase → **Integrations → GitHub** (production bran
 `main`). Migrations in `supabase/migrations/` are applied automatically on merge.
 Then enable **Anonymous sign-ins** and add the two env vars.
 Memory syncs across devices with per-user Row-Level Security.
-
----
-
-## 🛠 Extending GemAir (adding a tool)
-
-Tools live in one registry — `TOOLS` in `main.js` (and the matching `executeTool` case):
-
-1. Add a schema entry:
-```js
-{ type: 'function', function: { name: 'get_quote', description: 'Get a random quote.', parameters: { type: 'object', properties: {} } } }
-```
-2. Add a handler:
-```js
-case 'get_quote':
-  return { quote: QUOTES[Math.floor(Math.random() * QUOTES.length)] };
-```
-3. (Optional) mention it in `buildSystemPrompt()` so the AI knows when to use it.
-
-For the **web version**, add a matching `/api/<tool>.js` and call it from
-`offlineBrain()` in `renderer/app.js` so it works keyless too.
-
-### AI providers & free models
-
-`renderer/providers.js` is the single source of truth for AI providers and their
-free-tier models (21 providers, 38 free OpenAI-compatible models + local Ollama).
-It's consumed by the Settings → AI BRAIN **FREE MODELS** panel (one-click setup), by
-`detectProvider()` / `applyPreset()`, and by the GemAir slash commands
-(`/providers`, `/models`, `/use <model>`, `/local`). Add a provider by appending an
-entry to `PROVIDERS` in `providers.js`; add its key env name to `FREE_PROVIDERS` in
-`api/chat.js` so the serverless FREE CORE can fall back to it too.
-
-### The Desktop Agent (Computer Use)
-
-The **keyless computer-use suite** is a set of input tools (`move_mouse`, `mouse_click`,
-`type_text`, `press_key`, `scroll_mouse`, `capture_agent_screen`, `describe_screen`,
-`get_screen_size`) implemented in `lib/computer-agent.js` using only OS-native calls
-(PowerShell / AppleScript / `xdotool`) — no native Node addon, no API key, no vendor.
-They live in the same `TOOLS` registry and the same `executeTool` switch as any other tool,
-but every mouse/keyboard action is gated behind the `allowComputerUse` preference and a
-human-in-the-loop confirmation (or opt-in auto-approve).
-
-The `computerUseAgent()` loop (in `main.js`) turns it into a real desktop agent:
-screenshot → ask a model to decide → act → re-look, up to N steps. It auto-picks a
-**keyless local Ollama** first, then the user's optional free-tier key, then the
-deterministic no-model `offlineComputerUse` fallback. Wire a new input primitive by
-adding it to `lib/computer-agent.js`, exporting it, registering it in `TOOLS`, and adding
-a `case` in `executeToolNow` (and to `COMPUTER_TOOL_NAMES` if it belongs in the agent loop).
-
-### The Coding Agent
-
-`codingAgent()` in `main.js` is the same picture for code: a keyless loop that uses the
-existing `list_directory` / `read_file` / `write_file` / `search_files` / `run_command`
-tools (plus a `run_coding_cli` tool that delegates to a local coding CLI when installed). It
-is gated on `allowCodingAgent` and supports `codingAgentAuto` (skip per-edit confirms).
-Upstream reference source for both the Desktop Agent and the Coding Agent is vendored in
-`vendor/` (see `vendor/README.md`).
-
-### Adding an emotion
-Add a word list to `EMOTION_LEXICON`, a valence in `EMOTION_VALENCE`, an emoji in
-`MOOD_EMOJI`, a name in `updateMoodIndicator`, and (optionally) a support response
-in `supportGuidance`. That's it.
 
 ---
 
@@ -218,6 +213,43 @@ npm run dist:win       # Windows .exe (NSIS)
 npm run dist:mac       # macOS .dmg
 npm run dist:linux     # Linux .AppImage + .deb
 ```
+
+---
+
+## ⬆️ Updates: silent, automatic, and on every push
+
+- **Every push to `main`** runs the full test chain, then
+  `.github/workflows/nightly.yml` rebuilds Windows/macOS/Linux installers and
+  overwrites the rolling **`nightly`** pre-release (installers, blockmaps,
+  `latest*.yml`, `SHA256SUMS.txt`).
+- **Bump `package.json` version** on `main` and `auto-release.yml` tags
+  `v<version>`, which triggers `release.yml` to publish the stable release.
+- **The app updates itself silently** (default on, toggle in Settings →
+  Connections → App Updates): stable builds use `electron-updater` to download
+  in the background and install on quit — no prompts. Where the updater engine
+  is unavailable, GemAir pre-downloads the NSIS installer and applies it with
+  `/S` on quit. Turn the toggle off to be asked first; **Check Now** always
+  works for the impatient.
+
+---
+
+## ⧉ Pairing the browser extension (exact website awareness)
+
+The island can tell exactly which site you're on — but only through the
+companion extension talking to a loopback bridge (`127.0.0.1:8677`):
+
+1. GemAir → **Gem Air** tab → *Browser link* → **Open extension folder**
+   (or **Copy folder path**).
+2. Chrome/Edge → `chrome://extensions` → enable **Developer mode** →
+   **Load unpacked** → select that folder.
+3. Back in GemAir, **Generate pairing code**, type it into the extension's
+   popup, done.
+
+The extension reports the active tab on navigation, on window focus, and on a
+15-second heartbeat (so a suspended service worker never leaves the island
+with a stale site), enforces block policy in the browser, and reports blocked
+attempts back to the app. Without it, GemAir falls back to inferring the site
+from window titles.
 
 ---
 
