@@ -57,6 +57,11 @@ contextBridge.exposeInMainWorld('gemair', {
   onUpdateAvailable: (cb) => subscribeIpc('app:update-available', cb),
   onUpdaterEvent: (cb) => subscribeIpc('app:updater-event', cb),
   version: () => ipcRenderer.invoke('app:version'),
+  updaterStatus: () => ipcRenderer.invoke('app:updaterStatus'),
+  borrowGeminiKey: () => ipcRenderer.invoke('connections:borrowGeminiKey'),
+  openExtensionFolder: () => ipcRenderer.invoke('app:openExtensionFolder'),
+  extensionFolderPath: () => ipcRenderer.invoke('app:extensionFolderPath'),
+  copyText: (text) => ipcRenderer.invoke('app:copyText', text),
 
   memoryGet: () => ipcRenderer.invoke('memory:get'),
   memoryAppend: (role, content) => ipcRenderer.invoke('memory:append', role, content),

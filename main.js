@@ -3474,6 +3474,43 @@ function digestText(value, limit = 1800) {
  * local intent brain and return the real source so the UI can say what
  * answered. This also prevents the old "anonymous fallback failed" dead end.
  */
+/**
+ * GemCore brain fallback: when the user's own provider config is absent and
+ * the ChatGPT/Gemini connections are missing or failed mid-turn, any provider
+ * connected in the GemCore engine answers instead — before the anonymous
+ * sidecar and the offline brain. This is what makes "connect once, chat works"
+ * true regardless of which panel the key was entered in.
+ * Returns null when no GemCore provider is usable, so callers fall through.
+ */
+async function gemcoreBrainChat(messages, onDelta) {
+  try {
+    const service = gemcoreEngine.providerService;
+    const order = service.recoveryOrder();
+    const usable = order.filter((id) => {
+      const config = service.getProvider(id);
+      return config && config.connected && config.enabled !== false;
+    });
+    if (usable.length === 0) return null;
+    const providerId = usable[0];
+    const config = service.getProvider(providerId);
+    const model = service.modelRegistry.resolveModel(config.provider, null, config.extraModels);
+    let text = '';
+    await service.streamComplete({
+      providerId, model, messages,
+      onEvent: (event) => {
+        const delta = event && event.choices && event.choices[0] && event.choices[0].delta;
+        if (delta && typeof delta.content === 'string' && delta.content) {
+          text += delta.content;
+          if (onDelta) onDelta(delta.content);
+        }
+      }
+    });
+    const reply = text.trim();
+    if (!reply) return null;
+    return { reply, provider: 'GemCore', model, providerId };
+  } catch { return null; }
+}
+
 async function anonymousBrainChat(messages, onDelta) {
   try {
     const result = await freeGPT35Sidecar.chat(messages, { onDelta });
@@ -3574,58 +3611,63 @@ async function aiChat(config, messages) {
   throw new Error('TOOL_LOOP');
 }
 async function streamRequest(base, key, model, messages, onDelta) {
-  const url = base + (base.endsWith('/chat/completions') ? '' : '/chat/completions');
-  const doFetch = (withTools) => {
-    const body = { model, messages, temperature: 0.6, max_tokens: 1200, stream: true };
+  // Hardened through the gemcore request pipeline: per-attempt timeouts, an
+  // overall deadline, honest classified failures, and no infinite hangs. A raw
+  // fetch here meant a dead provider could freeze the chat forever.
+  const STREAM_TIMEOUT_MS = 120000;
+  const runStream = (withTools) => {
+    const body = { model, messages, temperature: 0.6, max_tokens: 1200, stream: true, stream_options: { include_usage: true } };
     if (withTools) { body.tools = TOOLS; body.tool_choice = 'auto'; }
-    return fetch(url, { method: 'POST', headers: aiHeaders(base, key), body: JSON.stringify(body) });
-  };
-  let res = await doFetch(true);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    if (/tool|function|unsupported|invalid/i.test(text) && [400, 404, 422].includes(res.status)) {
-      res = await doFetch(false);
-    }
-    if (!res.ok) {
-      const t2 = await res.text().catch(() => '');
-      throw new Error('HTTP_' + res.status + ((t2 || text) ? ' ' + (t2 || text).slice(0, 200) : ''));
-    }
-  }
-  let content = '';
-  const toolCalls = [];
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      const t = line.trim();
-      if (!t.startsWith('data:')) continue;
-      const payload = t.slice(5).trim();
-      if (payload === '[DONE]') continue;
-      let json;
-      try { json = JSON.parse(payload); } catch { continue; }
-      const delta = json.choices && json.choices[0] && json.choices[0].delta;
-      if (!delta) continue;
-      if (delta.content) { content += delta.content; onDelta(delta.content); }
-      if (delta.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          const idx = tc.index != null ? tc.index : 0;
-          if (!toolCalls[idx]) toolCalls[idx] = { id: tc.id || ('call_' + idx), name: '', args: '' };
-          if (tc.id) toolCalls[idx].id = tc.id;
-          if (tc.function && tc.function.name) toolCalls[idx].name += tc.function.name;
-          if (tc.function && tc.function.arguments) toolCalls[idx].args += tc.function.arguments;
+    let content = '';
+    const toolCalls = [];
+    return gemcore.requestManager.providerRequestStream({
+      provider: 'custom:' + base, baseUrl: base, apiKey: key,
+      path: base.endsWith('/chat/completions') ? '' : '/chat/completions',
+      body, timeoutMs: STREAM_TIMEOUT_MS,
+      onEvent: (event) => {
+        const delta = event && event.choices && event.choices[0] && event.choices[0].delta;
+        if (!delta) return;
+        if (delta.content) { content += delta.content; onDelta(delta.content); }
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index != null ? tc.index : 0;
+            if (!toolCalls[idx]) toolCalls[idx] = { id: tc.id || ('call_' + idx), name: '', args: '' };
+            if (tc.id) toolCalls[idx].id = tc.id;
+            if (tc.function && tc.function.name) toolCalls[idx].name += tc.function.name;
+            if (tc.function && tc.function.arguments) toolCalls[idx].args += tc.function.arguments;
+          }
         }
       }
+    }).then(() => ({ content, toolCalls: toolCalls.filter(Boolean) }));
+  };
+  try {
+    return await runStream(true);
+  } catch (error) {
+    const category = error && error.category;
+    // Some models reject tool schemas outright — retry once without tools.
+    if (category === 'TOOLS_UNSUPPORTED' || category === 'BAD_REQUEST') {
+      try { return await runStream(false); } catch { /* fall through with the original shape */ }
     }
+    const detail = error && error.technicalDetails ? ' ' + String(error.technicalDetails).slice(0, 200) : '';
+    const friendly = {
+      INVALID_API_KEY: 'The API key was rejected. Check the key in Settings.',
+      AUTH_ERROR: 'The provider rejected this credential.',
+      MODEL_NOT_FOUND: `Model "${model}" was not found on this provider — pick another model in Settings.`,
+      MODEL_UNAVAILABLE: 'The selected model is unavailable right now.',
+      RATE_LIMITED: 'The provider is rate limiting requests. Wait a moment and retry.',
+      QUOTA_EXHAUSTED: 'This provider account is out of quota or credits.',
+      CONTEXT_TOO_LARGE: 'The conversation grew beyond this model\'s context window. Start a shorter conversation.',
+      TIMEOUT: 'The provider request timed out. Try again or use a faster model.',
+      CONNECTION_ERROR: 'Could not connect to the provider. Check the network or the base URL.',
+      PROVIDER_SERVER_ERROR: 'The provider is having trouble right now. Try again in a moment.'
+    };
+    const message = (category && friendly[category]) || (error && error.message) || 'REQUEST_FAILED';
+    const wrapped = new Error(message + detail);
+    wrapped.category = category || 'UNKNOWN';
+    throw wrapped;
   }
-  return { content, toolCalls: toolCalls.filter(Boolean) };
 }
-async function aiChatStream(config, messages, onDelta, onTool) {
+async function aiChatStream(config, messages, onDelta, onTool, meta) {
   const input = config && typeof config === 'object' ? config : {};
   const base = normalizeBaseURL(input.baseURL);
   const key = (input.apiKey || '').trim();
@@ -3633,6 +3675,13 @@ async function aiChatStream(config, messages, onDelta, onTool) {
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   const plannedMessages = await withOpenJarvisReasoning(Array.isArray(messages) ? messages : [], onTool);
   if (!base || (!key && !isLocal)) {
+    // GemCore-connected providers answer before the anonymous sidecar, so a
+    // key entered in the GemCore engine panel works for normal chat too.
+    const gemcoreReply = await gemcoreBrainChat(plannedMessages, onDelta);
+    if (gemcoreReply) {
+      if (meta) meta.brain = { provider: gemcoreReply.provider, model: gemcoreReply.model };
+      return gemcoreReply.reply;
+    }
     if (readProfile().anonymousChat !== false) return (await anonymousBrainChat(plannedMessages, onDelta)).reply;
     throw new Error(!base ? 'NO_ENDPOINT' : 'NO_KEY');
   }
@@ -4661,6 +4710,33 @@ function autoUpdatesEnabled() {
     return profile.autoUpdateChecks !== false;
   } catch { return true; }
 }
+/** Silent updates: install new versions on quit without asking. Default ON. */
+function silentUpdatesEnabled() {
+  try {
+    const profile = readProfile();
+    return profile.silentAutoUpdates !== false;
+  } catch { return true; }
+}
+/**
+ * Fallback silent path when electron-updater cannot run (unpackaged dev, or a
+ * release feed without latest.yml): the predownloaded NSIS installer is run
+ * with /S the next time the user quits GemAir. The installer preserves user
+ * data (deleteAppDataOnUninstall: false) and relaunches the app when finished
+ * (runAfterFinish), so the update lands without a single click.
+ */
+let silentInstallerScheduled = false;
+function scheduleSilentInstallOnQuit(result) {
+  if (silentInstallerScheduled) return;
+  if (!pendingUpdate || !pendingUpdate.path || !fs.existsSync(pendingUpdate.path)) return;
+  if (String(pendingUpdate.version || '').replace(/^v/i, '') === String(result && result.latest || '').replace(/^v/i, '')) {
+    silentInstallerScheduled = true;
+    app.once('will-quit', () => {
+      try {
+        spawn(pendingUpdate.path, ['/S'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+      } catch { /* never block quitting on an update failure */ }
+    });
+  }
+}
 async function pollAutoUpdate(reason) {
   if (!autoUpdatesEnabled()) return null;
   const now = Date.now();
@@ -4669,27 +4745,39 @@ async function pollAutoUpdate(reason) {
   lastAutoUpdateAt = now;
   try {
     const result = await checkForUpdates(false);
-    if (result && result.ok && result.available && mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('app:update-available', {
-        current: result.current,
-        latest: result.latest,
-        url: result.url,
-        windowsAssetUrl: result.windowsAssetUrl || null,
-        name: result.name,
-        publishedAt: result.publishedAt || null,
-        downloaded: !!(pendingUpdate && pendingUpdate.path && fs.existsSync(pendingUpdate.path) && String(pendingUpdate.version || '').replace(/^v/i, '').toLowerCase() === String(result.latest || '').replace(/^v/i, '').toLowerCase()),
-        reason: reason || 'poll'
-      });
-      if (silentUpdaterReady()) {
-        // Preferred path: differential silent download; progress and
-        // completion arrive via updater events. Manual flow stays as fallback.
-        try { await silentUpdater.checkForUpdates(); }
-        catch { predownloadUpdate(result).catch(() => {}); }
+    if (result && result.ok && result.available) {
+      const silent = silentUpdatesEnabled();
+      // Fully silent mode: no update prompt at all. The update downloads in
+      // the background and installs when the user quits GemAir. Only a subtle
+      // toast event tells the renderer a new version is ready.
+      if (silent && silentUpdaterReady()) {
+        try {
+          await silentUpdater.checkForUpdates();
+        } catch { predownloadUpdate(result).catch(() => {}); }
       } else {
-        // Pre-download the Windows installer in the background so the one-click
-        // update is instant. Failures are silent here; the manual INSTALL UPDATE
-        // path still works.
-        predownloadUpdate(result).catch(() => {});
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('app:update-available', {
+            current: result.current,
+            latest: result.latest,
+            url: result.url,
+            windowsAssetUrl: result.windowsAssetUrl || null,
+            name: result.name,
+            publishedAt: result.publishedAt || null,
+            downloaded: !!(pendingUpdate && pendingUpdate.path && fs.existsSync(pendingUpdate.path) && String(pendingUpdate.version || '').replace(/^v/i, '').toLowerCase() === String(result.latest || '').replace(/^v/i, '').toLowerCase()),
+            reason: reason || 'poll'
+          });
+        }
+        if (silentUpdaterReady()) {
+          // Preferred path: differential silent download; progress and
+          // completion arrive via updater events. Manual flow stays as fallback.
+          try { await silentUpdater.checkForUpdates(); }
+          catch { predownloadUpdate(result).catch(() => {}); }
+        } else {
+          // Pre-download the Windows installer in the background so the one-click
+          // update is instant. In silent mode the installer applies itself
+          // quietly on the next quit (see scheduleSilentInstallOnQuit).
+          predownloadUpdate(result).catch(() => {}).then(() => { if (silent) scheduleSilentInstallOnQuit(result); });
+        }
       }
     }
     return result;
@@ -5190,14 +5278,21 @@ ipcMain.handle('ai:chat', async (_e, config, messages) => {
 });
 ipcMain.handle('ai:chatStream', async (e, reqId, config, messages) => {
   const wc = e.sender;
+  const meta = {};
   try {
     const reply = await aiChatStream(config, messages,
       (delta) => wc.send('ai:chunk', { reqId, delta }),
-      (info) => { try { wc.send('ai:activity', { reqId, ...info }); } catch {} }
+      (info) => { try { wc.send('ai:activity', { reqId, ...info }); } catch {} },
+      meta
     );
     const input = config && typeof config === 'object' ? config : {};
     const base = normalizeBaseURL(input.baseURL);
     const anonymous = !base || (!(input.apiKey || '').trim() && !/localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base));
+    if (meta.brain && meta.brain.provider === 'GemCore') {
+      // A GemCore-connected provider answered: name it honestly.
+      wc.send('ai:streamEnd', { reqId, reply, provider: 'GemCore', model: meta.brain.model || '' });
+      return { ok: true, reqId, reply, provider: 'GemCore', model: meta.brain.model || '' };
+    }
     // The anonymous route is the loopback sidecar: which upstream model answers
     // is the sidecar's business, and this handler cannot know it. It used to
     // claim `gpt-3.5-turbo` outright — a model OpenAI retired long ago — which
@@ -5552,6 +5647,61 @@ ipcMain.handle('connections:listGeminiModels', async (_event, apiKey) => {
 });
 ipcMain.handle('connections:setPriority', (_e, p) => connections.setPriority(p));
 ipcMain.handle('connections:acknowledgeWarning', () => { connections.acknowledgeWarning(); return true; });
+
+/**
+ * Borrow the stored, encrypted Gemini AI Studio key for a Live voice/text
+ * session. The settings input deliberately never shows the stored secret —
+ * without this, a saved key could not start a live session at all (the input
+ * is cleared on every Settings open). Called only on an explicit user action
+ * (start/test live voice); the key never persists in renderer memory beyond
+ * the session and is never logged.
+ */
+ipcMain.handle('connections:borrowGeminiKey', () => {
+  try {
+    const tokens = connections.getDecryptedTokens('gemini');
+    const key = tokens && tokens.apiKey ? String(tokens.apiKey) : '';
+    return { hasKey: !!key, key: key || null, textModel: tokens && tokens.selectedModel || 'gemini-2.5-flash' };
+  } catch { return { hasKey: false, key: null, textModel: 'gemini-2.5-flash' }; }
+});
+
+/** Updater status snapshot for the Settings → About updates card. */
+ipcMain.handle('app:updaterStatus', () => {
+  const profile = readProfile();
+  return {
+    version: app.getVersion(),
+    channel: getUpdateChannel(),
+    autoUpdateChecks: profile.autoUpdateChecks !== false,
+    silentUpdates: profile.silentAutoUpdates !== false,
+    silentEngineReady: silentUpdaterReady(),
+    downloaded: silentUpdateDownloaded,
+    pendingInstaller: pendingUpdate ? { version: pendingUpdate.version, downloadedAt: pendingUpdate.downloadedAt } : null,
+    lastCheckAt: releaseCheckCache.at || null
+  };
+});
+
+/** Open the bundled browser-extension folder so it can be loaded unpacked. */
+ipcMain.handle('app:openExtensionFolder', () => {
+  try {
+    const folder = path.join(app.isPackaged ? process.resourcesPath : __dirname, 'extension', 'chrome');
+    if (!fs.existsSync(folder)) return { ok: false, error: 'EXTENSION_FOLDER_MISSING', path: folder };
+    shell.openPath(folder);
+    return { ok: true, path: folder };
+  } catch (error) { return { ok: false, error: String(error.message || error).slice(0, 300) }; }
+});
+
+/** Where the packaged extension lives (shown in the pairing steps). */
+ipcMain.handle('app:extensionFolderPath', () => {
+  try {
+    const folder = path.join(app.isPackaged ? process.resourcesPath : __dirname, 'extension', 'chrome');
+    return { ok: fs.existsSync(folder), path: folder };
+  } catch { return { ok: false, path: '' }; }
+});
+
+ipcMain.handle('app:copyText', (_e, text) => {
+  try { clipboard.writeText(String(text || '').slice(0, 10000)); return { ok: true }; }
+  catch (error) { return { ok: false, error: String(error.message || error).slice(0, 200) }; }
+});
+
 ipcMain.handle('connections:openChatGPT', async () => {
   createAuthWindow('chatgpt');
   return { ok: true };
@@ -5657,7 +5807,16 @@ ipcMain.handle('connections:chatStream', async (e, reqId, provider, messages) =>
     }
     // A provider that fails before emitting text falls through to the isolated
     // anonymous sidecar in the same turn. Never append a second answer after a
-    // partial provider stream.
+    // partial provider stream. GemCore providers sit between them: a key
+    // connected in the engine panel keeps the chat alive when an account
+    // connection dies.
+    if (!emittedProviderText) {
+      const gemcoreReply = await gemcoreBrainChat(messages, (delta) => wc.send('ai:chunk', { reqId, delta }));
+      if (gemcoreReply) {
+        wc.send('ai:streamEnd', { reqId, reply: gemcoreReply.reply, provider: gemcoreReply.provider, model: gemcoreReply.model, fallbackFrom: provider });
+        return { ok: true, reqId, reply: gemcoreReply.reply, provider: gemcoreReply.provider, model: gemcoreReply.model };
+      }
+    }
     if (!emittedProviderText && readProfile().anonymousChat !== false) {
       try {
         const fallback = await anonymousBrainChat(messages,

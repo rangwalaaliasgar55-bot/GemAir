@@ -10,11 +10,12 @@
   <div id="island" class="island compact" data-mode="idle">
     <!-- Compact pill: status at a glance, click or Enter to expand -->
     <div class="capsule" id="capsule" role="button" tabindex="0" aria-expanded="false" aria-label="Gem Air status. Activate to expand details.">
-      <span class="orb" id="orb" aria-hidden="true"><span class="orb-core"></span></span>
+      <span class="orb" id="orb" aria-hidden="true"><span class="orb-ring"></span><span class="orb-core"></span></span>
       <span class="capsule-text">
         <span class="subject" id="subject">Gem Air</span>
         <span class="meta" id="meta">Starting…</span>
       </span>
+      <span class="site-chip" id="site-chip" hidden></span>
       <span class="timer" id="timer" aria-hidden="true"></span>
       <span class="chevron" aria-hidden="true">
         <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
@@ -95,6 +96,7 @@
         <div class="state-row" id="row-block"><span class="k"><span class="k-ico" aria-hidden="true">⛔</span>Blocking</span><span class="v" id="v-block">Idle</span></div>
         <div class="state-row" id="row-sleep"><span class="k"><span class="k-ico" aria-hidden="true">☾</span>Sleep</span><span class="v" id="v-sleep">Off</span></div>
         <div class="state-row" id="row-next"><span class="k"><span class="k-ico" aria-hidden="true">→</span>Next</span><span class="v" id="v-next">—</span></div>
+        <div class="state-row" id="row-ext"><span class="k"><span class="k-ico" aria-hidden="true">⧉</span>Link</span><span class="v" id="v-ext">—</span></div>
       </div>
 
       <div class="controls" role="group" aria-label="Quick actions">

@@ -1818,8 +1818,16 @@
           </fieldset>
           <fieldset>
             <legend>APP UPDATES</legend>
+            <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px;">
+              <span style="font:600 12px var(--font-mono);">GemAir <span id="updateCurrentVersion">—</span></span>
+              <span class="dim" id="updateChannelLabel" style="font:600 10px var(--font-mono);">stable channel</span>
+              <span class="dim" id="updateEngineLabel" style="font:600 10px var(--font-mono);"></span>
+            </div>
             <label class="check-label">
-              <input type="checkbox" id="setAutoUpdateChecks" checked /> Check GitHub automatically for app updates
+              <input type="checkbox" id="setAutoUpdateChecks" checked /> Check automatically for app updates
+            </label>
+            <label class="check-label" title="New versions download in the background and install themselves the next time you quit GemAir — no prompts, no reinstall clicks.">
+              <input type="checkbox" id="setSilentUpdates" checked /> Update silently in the background (install on quit)
             </label>
             <label>Update channel
               <select id="setUpdateChannel" aria-label="Update channel">
@@ -1827,7 +1835,7 @@
                 <option value="nightly">Nightly builds (every repo change)</option>
               </select>
             </label>
-              <p class="hint" style="font-size:11px;color:var(--text-dim);">GemAir checks for new releases automatically and downloads the installer in the background. Click INSTALL UPDATE once — no manual reinstall needed. Nothing installs without your click.</p>
+              <p class="hint" style="font-size:11px;color:var(--text-dim);">With silent updates on, GemAir downloads new versions in the background and applies them when you quit — you never see an update prompt. Turn it off to be asked before anything installs.</p>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
               <button class="ghost-btn" id="checkUpdatesBtn" type="button">⟳ CHECK NOW</button>
               <button class="primary-btn" id="viewUpdateBtn" type="button" hidden>VIEW RELEASE</button>
@@ -2062,6 +2070,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0"></script>
+  <script src="web-gate.js"></script>
   <script src="themes.js"></script>
   <script src="i18n.js"></script>
   <script src="store.js"></script>

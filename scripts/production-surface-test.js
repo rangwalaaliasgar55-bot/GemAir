@@ -17,7 +17,11 @@ assert(/id="downloadModal"[^>]*role="dialog"[^>]*aria-modal="true"/.test(html), 
 assert(app.includes("b.setAttribute('aria-current', active ? 'page' : 'false')"), 'navigation current-page state is missing');
 assert(css.includes('prefers-reduced-motion'), 'reduced-motion support is missing');
 assert(website.includes('id="windows"') && website.includes('id="macos"') && website.includes('id="linux"'), 'website platform cards are missing');
-assert(website.includes('Open web app'), 'website web-app path is missing');
+// Web policy: the site is download-only — it must point at the download page
+// and GitHub, never pretend the app runs in a browser.
+assert(!/open web app/i.test(website), 'website must not offer an in-browser app path');
+assert(website.includes('/download'), 'website download path is missing');
+assert(website.includes('github.com/rangwalaaliasgar55-bot/GemAir'), 'website GitHub link is missing');
 assert(website.includes('checksum ?'), 'website makes checksum claims conditionally');
 assert(html.includes('id="topbarDownloadBtn"'), 'desktop download action must be visible in the app shell');
 const vercel = JSON.parse(read('vercel.json'));

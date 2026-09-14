@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <meta name="description" content="GemAir is a desktop app. Download it for Windows, macOS, or Linux." />
+  <title>GemAir — desktop app</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; color: #eef1f6; text-align: center;
+      background: radial-gradient(1200px 600px at 50% -10%, #1b2436 0%, #0b0e14 55%, #07090d 100%); }
+    .card { max-width: 520px; }
+    .logo { width: 74px; height: 74px; margin: 0 auto 22px; border-radius: 22px; background: linear-gradient(135deg, #6d8bff, #9a6dff);
+      display: flex; align-items: center; justify-content: center; font-size: 34px; }
+    h1 { font-size: clamp(26px, 5vw, 38px); letter-spacing: -0.03em; margin: 0 0 12px; line-height: 1.12; }
+    p { color: #9aa4b8; font-size: 16px; line-height: 1.65; margin: 0 0 26px; }
+    .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    a.btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 22px; border-radius: 999px; text-decoration: none;
+      background: linear-gradient(135deg, #6d8bff, #9a6dff); color: #fff; font-weight: 650; font-size: 15px; }
+    a.btn.ghost { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #cfd6e4; }
+    .note { margin-top: 26px; color: #66708a; font-size: 12.5px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="logo" aria-hidden="true">💎</div>
+    <h1>GemAir lives on your desktop</h1>
+    <p>GemAir's assistant — voice, memory, tools and agents — runs privately on your PC, not in a browser tab. Download the app; it is free and needs no account.</p>
+    <div class="actions">
+      <a class="btn" href="/download">⬇ Download GemAir</a>
+      <a class="btn ghost" href="https://github.com/rangwalaaliasgar55-bot/GemAir" target="_blank" rel="noopener">View source on GitHub</a>
+    </div>
+    <p class="note">This webpage is the GemAir home &amp; download center.</p>
+  </main>
+  <script>
+    // Anyone landing on an app route goes to the download home.
+    if (window.location.pathname !== '/') {
+      try { window.location.replace('/'); } catch (e) {}
+    }
+  </script>
+</body>
+</html>

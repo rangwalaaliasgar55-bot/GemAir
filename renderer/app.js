@@ -3,6 +3,14 @@
    ============================================================ */
 'use strict';
 
+// Desktop-only gate: on the public website the renderer is download-page
+// only. web-gate.js (loaded first) raises this flag when the page is served
+// over http(s) without the Electron bridge; throwing here halts the whole
+// app script so nothing of the assistant boots in a browser tab.
+if (window.__GEMAIR_WEB_BLOCKED) {
+  throw new Error('GemAir is a desktop app — the web build is download-only.');
+}
+
 // ---------------------------------------------------------------------------
 // Bridge: Electron IPC or browser-supported capabilities.
 // ---------------------------------------------------------------------------
@@ -285,6 +293,8 @@ const api = {
   async connectionsOauthGemini() { if (window.gemair && window.gemair.connectionsOauthGemini) return window.gemair.connectionsOauthGemini(); return { ok: false, error: 'WEB_OAUTH_NOT_CONFIGURED', message: 'Gemini OAuth requires GemAir Desktop or a configured web callback.' }; },
   async connectionsSetGeminiApiKey(apiKey, model) { if (window.gemair && window.gemair.connectionsSetGeminiApiKey) return window.gemair.connectionsSetGeminiApiKey(apiKey, model); return { error: 'DESKTOP_ONLY', message: 'Encrypted Gemini key storage is available in GemAir Desktop.' }; },
   async connectionsTestGeminiApiKey(apiKey, model) { if (window.gemair && window.gemair.connectionsTestGeminiApiKey) return window.gemair.connectionsTestGeminiApiKey(apiKey, model); return { ok: false, error: 'DESKTOP_ONLY', message: 'Gemini key testing is available in GemAir Desktop.' }; },
+  async connectionsBorrowGeminiKey() { if (window.gemair && window.gemair.borrowGeminiKey) return window.gemair.borrowGeminiKey(); return { hasKey: false, key: null, textModel: 'gemini-2.5-flash' }; },
+  async updaterStatus() { if (window.gemair && window.gemair.updaterStatus) return window.gemair.updaterStatus(); return null; },
   async connectionsListGeminiModels(apiKey) { if (window.gemair && window.gemair.connectionsListGeminiModels) return window.gemair.connectionsListGeminiModels(apiKey); return { ok: false, error: 'DESKTOP_ONLY', message: 'Gemini model discovery is available in GemAir Desktop.' }; },
   async connectionsGetStatus() {
     if (window.gemair && window.gemair.connectionsGetStatus) return window.gemair.connectionsGetStatus();
@@ -6444,6 +6454,27 @@ function trustedReleasePage(value) {
     return url.protocol === 'https:' && url.hostname === 'github.com' && url.pathname.startsWith('/rangwalaaliasgar55-bot/GemAir/releases/') ? url.toString() : null;
   } catch { return null; }
 }
+async function refreshUpdaterCard() {
+  if (!window.gemair || !window.gemair.updaterStatus) return;
+  try {
+    const status = await api.updaterStatus();
+    if (!status) return;
+    const versionEl = $('#updateCurrentVersion');
+    if (versionEl) versionEl.textContent = 'v' + (status.version || '?');
+    const channelEl = $('#updateChannelLabel');
+    if (channelEl) channelEl.textContent = (status.channel === 'nightly' ? 'nightly channel' : 'stable channel');
+    const engineEl = $('#updateEngineLabel');
+    if (engineEl) engineEl.textContent = status.silentUpdates
+      ? (status.silentEngineReady ? 'silent auto-update armed' : 'silent update on quit')
+      : 'ask before installing';
+    const statusEl = $('#updateStatus');
+    if (statusEl && (!statusEl.textContent || statusEl.textContent === 'Not checked yet.')) {
+      statusEl.textContent = status.downloaded
+        ? 'Update ' + (status.downloaded.version || '') + ' is downloaded — it installs the next time you quit GemAir.'
+        : 'Auto-updates ' + (status.autoUpdateChecks ? 'on' : 'off') + '.';
+    }
+  } catch {}
+}
 async function checkForAppUpdates({ force = false, silent = false } = {}) {
   const status = $('#updateStatus');
   const checkButton = $('#checkUpdatesBtn');
@@ -6523,6 +6554,13 @@ async function clearLocalUsageStats() {
 }
 
 function openSettings() {
+  // Fast open: the modal paints FIRST, then the heavy population runs in the
+  // next frames. Populating ~120 controls before showing the modal made
+  // Settings feel like it froze for a moment every time it opened.
+  $('#settingsModal').classList.add('open');
+  requestAnimationFrame(() => requestAnimationFrame(() => { try { populateSettings(); } catch (e) { console.warn('[settings]', e); } }));
+}
+function populateSettings() {
   $('#setUserName').value = profile.name || '';
   $('#setBaseURL').value = (profile.ai?.baseURL) || '';
   $('#setApiKey').value = (profile.ai?.apiKey) || '';
@@ -6551,6 +6589,8 @@ function openSettings() {
   if ($('#setOpenJarvisMcpUrl')) $('#setOpenJarvisMcpUrl').value = profile.openJarvis?.mcpUrl || '';
   $('#setAllowShell').checked = !!profile.allowShell;
   $('#setAutoUpdateChecks').checked = profile.autoUpdateChecks !== false;
+  { const silent = $('#setSilentUpdates'); if (silent) silent.checked = profile.silentAutoUpdates !== false; }
+  refreshUpdaterCard();
   { const channel = $('#setUpdateChannel'); if (channel) channel.value = profile.updateChannel === 'nightly' ? 'nightly' : 'stable'; }
   { const live = profile.geminiLive || {}; const textModel = $('#setGeminiTextModel'); if (textModel) textModel.value = live.textModel || 'gemini-2.5-flash'; const m = $('#setGeminiLiveModel'); if (m) m.value = live.model || ''; const k = $('#setGeminiLiveKey'); if (k) k.value = ''; }
   $('#setUsageStats').checked = profile.usageStats === true;
@@ -6593,7 +6633,6 @@ function openSettings() {
   renderFreeModelsList();
   renderModelSelect();
   refreshOllamaModels();
-  $('#settingsModal').classList.add('open');
 }
 function closeSettings() { $('#settingsModal').classList.remove('open'); }
 
@@ -6921,32 +6960,45 @@ function renderModelSelect() {
   sel.value = $('#setModel').value;
 }
 
-async function refreshOllamaModels() {
+let ollamaModelsCache = { at: 0, models: null };
+async function refreshOllamaModels({ force = false } = {}) {
   const box = $('#ollamaModels');
   if (!box) return;
+  // Ollama's model list rarely changes: reuse it for a minute instead of
+  // probing the local server every time Settings opens.
+  if (!force && ollamaModelsCache.models && Date.now() - ollamaModelsCache.at < 60000) {
+    renderOllamaModels(ollamaModelsCache.models);
+    return;
+  }
   try {
     const list = await api.listLocalModels().catch(() => ({ models: [] }));
     const local = (list && list.models) || [];
-    if (!local || !local.length) {
-      box.innerHTML = '<div class="empty">No local model detected. Start Ollama (`ollama pull llama3`) for a fully keyless local brain.</div>';
-      return;
-    }
-    box.innerHTML = '<span class="dim" style="font:600 9px var(--font-mono);">LOCAL (OLLAMA) MODELS</span>' + local.slice(0, 20).map((m) => `
-      <div class="free-model-row" role="button" tabindex="0">
-        <div class="fm-info"><span class="fm-provider">Ollama</span><span class="fm-model">${escapeHtml(m.name)}</span><span class="fm-free">LOCAL · FREE</span></div>
-        <div class="fm-note">${escapeHtml(m.details || 'Runs entirely on your machine, no key, no vendor.')}</div>
-        <button class="mini-btn fm-use" data-model="${escapeHtml(m.name)}">USE</button>
-      </div>`).join('');
-    box.querySelectorAll('.fm-use').forEach((btn) => btn.addEventListener('click', () => {
-      $('#setBaseURL').value = 'http://localhost:11434/v1';
-      $('#setModel').value = btn.dataset.model;
-      $('#setApiKey').value = '';
-      updateAiHint();
-      toast('LOCAL MODEL', 'Using ' + btn.dataset.model + ' — keyless', '🪶');
-    }));
+    ollamaModelsCache = { at: Date.now(), models: local };
+    renderOllamaModels(local);
   } catch (e) {
     box.innerHTML = '<div class="empty">Could not reach Ollama.</div>';
   }
+}
+function renderOllamaModels(local) {
+  const box = $('#ollamaModels');
+  if (!box) return;
+  if (!local || !local.length) {
+    box.innerHTML = '<div class="empty">No local model detected. Start Ollama (`ollama pull llama3`) for a fully keyless local brain.</div>';
+    return;
+  }
+  box.innerHTML = '<span class="dim" style="font:600 9px var(--font-mono);">LOCAL (OLLAMA) MODELS</span>' + local.slice(0, 20).map((m) => `
+    <div class="free-model-row" role="button" tabindex="0">
+      <div class="fm-info"><span class="fm-provider">Ollama</span><span class="fm-model">${escapeHtml(m.name)}</span><span class="fm-free">LOCAL · FREE</span></div>
+      <div class="fm-note">${escapeHtml(m.details || 'Runs entirely on your machine, no key, no vendor.')}</div>
+      <button class="mini-btn fm-use" data-model="${escapeHtml(m.name)}">USE</button>
+    </div>`).join('');
+  box.querySelectorAll('.fm-use').forEach((btn) => btn.addEventListener('click', () => {
+    $('#setBaseURL').value = 'http://localhost:11434/v1';
+    $('#setModel').value = btn.dataset.model;
+    $('#setApiKey').value = '';
+    updateAiHint();
+    toast('LOCAL MODEL', 'Using ' + btn.dataset.model + ' — keyless', '🪶');
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -7463,7 +7515,10 @@ function bindEvents() {
         if (status) status.textContent = `Downloading update… ${event.percent || 0}% (installs on restart, nothing to click through).`;
         if (pill) { pill.hidden = false; pill.textContent = `⬇ Downloading ${event.percent || 0}%`; }
       } else if (event.type === 'downloaded') {
-        if (status) status.textContent = `Update ${event.version || ''} is downloaded. Click RESTART TO UPDATE.`;
+        const silentMode = !$('#setSilentUpdates') || $('#setSilentUpdates').checked;
+        if (status) status.textContent = silentMode
+          ? `Update ${event.version || ''} is downloaded — it installs automatically the next time you quit GemAir.`
+          : `Update ${event.version || ''} is downloaded. Click RESTART TO UPDATE.`;
         if (pill) { pill.hidden = false; pill.textContent = '⬆ Restart to update'; }
         if (viewButton) { viewButton.hidden = false; viewButton.textContent = 'RESTART TO UPDATE'; }
         try { toast('UPDATE READY', 'Update downloaded — restart to install.', '⬆'); } catch {}
@@ -7567,6 +7622,7 @@ function bindEvents() {
     };
     profile.allowShell = $('#setAllowShell').checked;
     profile.autoUpdateChecks = $('#setAutoUpdateChecks').checked;
+    profile.silentAutoUpdates = !$('#setSilentUpdates') || $('#setSilentUpdates').checked;
     profile.updateChannel = $('#setUpdateChannel')?.value === 'nightly' ? 'nightly' : 'stable';
     profile.usageStats = $('#setUsageStats').checked;
     profile.ambientScore = $('#setAmbientScore').checked;
@@ -7901,9 +7957,8 @@ function bindEvents() {
       if (hint) { hint.textContent = text; hint.classList.toggle('ok', !!ok); hint.classList.toggle('bad', !ok); }
     };
     if (!window.geminiLive) { say('✗ Live transport failed to load.', false); return; }
-    const model = ($('#setGeminiLiveModel')?.value || '').trim();
-    const apiKey = ($('#setGeminiLiveKey')?.value || '').trim();
-    if (!model || !apiKey) { say('Enter a live model ID and your AI Studio API key first.', false); return; }
+    const { apiKey, model } = await resolveGeminiLiveCredentials();
+    if (!apiKey) { say('Enter your AI Studio API key in Settings → Siri & Voice first (it is then remembered, encrypted).', false); return; }
     say('Connecting…');
     let session = null;
     try {
@@ -7941,9 +7996,8 @@ function bindEvents() {
     if (!window.geminiLive) { say('✗ Live transport failed to load.', false); return; }
     const text = (input && input.value || '').trim();
     if (!text) return;
-    const model = ($('#setGeminiLiveModel')?.value || '').trim();
-    const apiKey = ($('#setGeminiLiveKey')?.value || '').trim();
-    if (!model || !apiKey) { say('Enter a live model ID and your AI Studio API key first.', false); return; }
+    const { apiKey, model } = await resolveGeminiLiveCredentials();
+    if (!apiKey) { say('Enter your AI Studio API key in Settings → Siri & Voice first (it is then remembered, encrypted).', false); return; }
     geminiLiveTextBusy = true;
     if (input) input.value = '';
     const bubble = (who, body) => {
@@ -8047,6 +8101,22 @@ function bindEvents() {
     if (stop) stop.hidden = !running;
     if (recon && running) recon.hidden = true;
   };
+  // Gemini Live credentials: the typed key wins; otherwise the encrypted key
+  // stored in the main process is borrowed for this session. Without this, a
+  // saved key could never start a live session (the input is cleared each time
+  // Settings opens) and every start failed with "enter your key first".
+  const DEFAULT_GEMINI_LIVE_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
+  async function resolveGeminiLiveCredentials() {
+    let apiKey = ($('#setGeminiLiveKey')?.value || '').trim();
+    let model = ($('#setGeminiLiveModel')?.value || '').trim();
+    if (!apiKey) {
+      const borrowed = await api.connectionsBorrowGeminiKey().catch(() => ({ hasKey: false }));
+      if (borrowed && borrowed.hasKey && borrowed.key) apiKey = String(borrowed.key);
+    }
+    if (!model) model = (profile.geminiLive && profile.geminiLive.model) || DEFAULT_GEMINI_LIVE_MODEL;
+    return { apiKey, model, usedStoredKey: !($('#setGeminiLiveKey')?.value || '').trim() && !!apiKey };
+  }
+
   $('#startGeminiLiveVoiceBtn')?.addEventListener('click', async () => {
     const hint = $('#geminiLiveHint');
     const say = (text, ok) => {
@@ -8054,9 +8124,8 @@ function bindEvents() {
     };
     if (!window.geminiLive) { say('✗ Live transport failed to load.', false); return; }
     if (geminiLiveVoice && geminiLiveVoice.ready) { say('Live voice is already running.', true); return; }
-    const model = ($('#setGeminiLiveModel')?.value || '').trim();
-    const apiKey = ($('#setGeminiLiveKey')?.value || '').trim();
-    if (!model || !apiKey) { say('Enter a live model ID and your AI Studio API key first.', false); return; }
+    const { apiKey, model } = await resolveGeminiLiveCredentials();
+    if (!apiKey) { say('Enter your AI Studio API key in Settings → Siri & Voice first (it is then remembered, encrypted).', false); return; }
     liveState('connecting');
     try {
       geminiLiveVoice = await window.geminiLive.startVoice({

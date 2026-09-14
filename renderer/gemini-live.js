@@ -224,7 +224,11 @@
       let ws = null;
       try {
         ws = new WebSocket(buildUrl(opts.apiKey));
-      } catch (e) { setState(session, 'error'); reject(new Error('SOCKET_FAILED')); return; }
+      } catch (e) {
+        setState(session, 'error');
+        reject(new Error('Live socket could not open — check your network (VPNs and proxies often block WebSockets), then retry.'));
+        return;
+      }
       session._ws = ws;
       attachCommon(ws, session, opts, () => resolve(session));
       ws.onopen = () => {
@@ -248,7 +252,7 @@
           session._settled = true;
           clearTimeout(session._timer);
           setState(session, 'error');
-          reject(new Error('SOCKET_ERROR'));
+          reject(new Error('Live socket error — the API key, the live model ID, or the network is refusing the connection.'));
         } else {
           setState(session, 'error');
         }
@@ -258,12 +262,20 @@
         const userClosed = !!session._userClosed;
         const code = event && typeof event.code === 'number' ? event.code : 0;
         const reason = event && typeof event.reason === 'string' && event.reason ? ': ' + String(event.reason).slice(0, 160) : '';
+        // Close-code hints: the Live API surfaces auth and quota failures as
+        // abnormal closes with no reason text. Naming the likely cause turns
+        // "SOCKET_CLOSED (1006)" into something a user can act on.
+        const closeHint = code === 1006
+          ? ' — connection dropped without a reason. This usually means the API key was rejected, the key has no Live API access, or a proxy/firewall cut the WebSocket. Verify the key at aistudio.google.com/apikey and retry.'
+          : code === 1011 ? ' — the Live service hit an internal error. Retry in a moment.'
+            : (code === 4001 || code === 4401 || code === 4403) ? ' — authentication rejected. Check the API key.'
+              : '';
         stopWatchdog(session);
         setState(session, 'closed');
         if (!session._settled) {
           session._settled = true;
           clearTimeout(session._timer);
-          reject(new Error('SOCKET_CLOSED' + (code ? ' (code ' + code + ')' : '') + reason));
+          reject(new Error('Live connection closed' + (code ? ' (code ' + code + ')' : '') + reason + closeHint));
           return;
         }
         if (userClosed || code === 1000) {

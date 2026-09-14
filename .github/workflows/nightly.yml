@@ -2,7 +2,8 @@ name: Nightly build
 
 # Builds installers from every push to main (and nightly on schedule) and
 # publishes them to a rolling "nightly" pre-release, so the desktop app's
-# nightly update channel always has something fresh to install.
+# nightly update channel always has something fresh to install. Every push
+# runs the full test chain first — a broken commit never reaches users.
 #
 # NOTE: this previously used marvinpinto/action-automatic-releases, which is
 # archived and fails on current runners — ncipollo/release-action is the
@@ -19,7 +20,22 @@ permissions:
   contents: write
 
 jobs:
+  # Gate: every push to main ships to users via the rolling nightly release,
+  # so the full offline test chain must pass before any installer is built.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Run test chain
+        run: npm run check
+
   build:
+    needs: test
     strategy:
       fail-fast: false
       matrix:

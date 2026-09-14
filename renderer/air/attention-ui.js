@@ -388,8 +388,8 @@
       h('div', { class: 'air-sub', text: ctx ? `${ctx.categoryLabel} · source: ${ctx.urlSource === 'extension' ? 'browser extension (exact)' : ctx.urlSource === 'title' ? 'window title (inferred)' : 'not a browser'}` : '' }))));
 
     const pairBox = h('div', { class: 'air-card' },
-      h('p', { class: 'air-sub', text: `Loopback bridge on 127.0.0.1:${bridge.port}. Load extension/chrome as an unpacked extension in Chrome or Edge, then pair with a one-time code.` }),
-      h('div', { class: 'air-form', style: 'margin-top:10px' },
+      h('p', { class: 'air-sub', text: `GemAir reads the exact website you're on through a tiny Chrome/Edge extension talking to a loopback bridge on 127.0.0.1:${bridge.port}. Pair it once and the island always knows the site — no guessing from window titles.` }),
+      h('div', { class: 'air-form', style: 'margin-top:10px;flex-direction:column;align-items:stretch;gap:8px' },
         h('button', {
           class: 'air-btn',
           onclick: async (e) => {
@@ -399,8 +399,39 @@
             if (old) old.remove();
             box.appendChild(h('span', { class: 'air-code', text: code }));
           }
-        }, 'Generate pairing code')));
+        }, 'Generate pairing code'),
+        h('button', {
+          class: 'air-btn',
+          onclick: async () => {
+            try {
+              if (window.gemair && window.gemair.openExtensionFolder) await window.gemair.openExtensionFolder();
+            } catch (e) { try { window.alert && window.alert('Could not open the folder: ' + (e && e.message ? e.message : e)); } catch {} }
+          }
+        }, 'Open extension folder'),
+        h('button', {
+          class: 'air-btn',
+          onclick: async () => {
+            try {
+              let path = null;
+              if (window.gemair && window.gemair.extensionFolderPath) path = await window.gemair.extensionFolderPath();
+              if (!path) return;
+              let copied = false;
+              try { if (window.gemair && window.gemair.copyText) copied = await window.gemair.copyText(path); } catch {}
+              if (!copied) { try { await navigator.clipboard.writeText(path); copied = true; } catch {} }
+              try { window.alert && window.alert((copied ? 'Copied to clipboard:\n' : 'Extension folder path:\n') + path); } catch {}
+            } catch (e) { try { window.alert && window.alert('Could not read the folder path.'); } catch {} }
+          }
+        }, 'Copy folder path')));
+    const steps = [
+      'Click "Open extension folder" above (or copy the path).',
+      'In Chrome/Edge open chrome://extensions and turn on Developer mode.',
+      'Click "Load unpacked" and select that folder.',
+      'Pin GemAir, click its icon, then press "Generate pairing code" here and type the code in the extension popup.',
+      'Done — the island shows the exact site you are on, and Focus mode can whitelist it.'
+    ];
     panel.appendChild(section('Browser link', pairBox));
+    panel.appendChild(section('Pair the extension — 5 steps', h('ol', { class: 'air-list', style: 'padding-left:18px;margin:0;display:flex;flex-direction:column;gap:6px' },
+      steps.map((s) => h('li', { class: 'air-sub', style: 'list-style:decimal' }, s)))));
 
     panel.appendChild(section('Website rules', siteRuleList(), [siteRuleForm()]));
   }
