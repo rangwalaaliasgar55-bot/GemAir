@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.11.0] — 2026-09-14
+
+**Release pipeline fix + stable installers.** v2.10.0 was tagged correctly but the Build & Release workflow never ran for that tag — GitHub Actions does not trigger other workflows when a tag is created via `GITHUB_TOKEN` in some runners, leaving the GitHub Release empty with no Setup.exe. This release re-publishes the full artifact set and hardens the release flow.
+
+### Added — release hardening
+- **Release verification in CI**: `scripts/release-verification.js` now checks that `package.json`, `VERSION`, `api/_lib/http.js`, `renderer/index.html`, and `download.html` all carry the same version. `npm run verify:release` is run before every `dist` job in `release.yml` and `nightly.yml`.
+- **Manual tag re-push trigger**: documented fallback — if auto-release creates a tag that doesn't trigger Build & Release, deleting and re-pushing the tag via PAT triggers the workflow (push tag events always trigger). Added to `DOWNLOAD.md` publish notes.
+- **Download page live asset resolution**: `download.html` now queries GitHub Releases API for real installer URLs and file sizes, with fallback to `/releases/latest`. Windows card points to `GemAir Setup *.exe`, macOS to `.dmg`, Linux to `.AppImage`/`.deb`, plus SHA256SUMS.txt.
+- **Version single-sourcing**: bumped `CACHE_VERSION` in `renderer/sw.js` to `gemair-shell-v2.11.0-release` so PWA clients pick up the new shell.
+
+### Fixed — release artifacts
+- **v2.10.0 installers missing**: re-pushed tag `v2.10.0` via git to trigger Build & Release — now publishes `GemAir.Setup.2.10.0.exe` + `.blockmap`, `.dmg`, `.zip`, `.AppImage`, `.deb`, `latest.yml`/`latest-mac.yml`/`latest-linux.yml`, and `SHA256SUMS.txt`.
+- **v2.11.0 full release**: this version publishes the same complete set for `v2.11.0` across Windows, macOS, and Linux runners.
+
+### Changed
+- Version bumped `2.10.0` → `2.11.0` across `package.json`, `package-lock.json`, `VERSION`, `api/_lib/http.js`, `renderer/index.html`, `renderer/app.js` fallback, `renderer/sw.js`, `download.html`, and `scripts/selfcheck.js`.
+
 ## [2.10.0] — 2026-09-14
 
 The island got tab awareness, the desktop agent got real autonomy, and the connection paths got an end-to-end test that runs them instead of describing them.
