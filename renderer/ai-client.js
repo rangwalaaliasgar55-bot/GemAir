@@ -173,8 +173,26 @@
     let baseURL = (config && config.baseURL || '').trim();
     let model = (config && config.model || '').trim();
 
-    if (!baseURL) baseURL = 'https://api.groq.com/openai/v1';
-    if (!model) model = 'llama-3.1-8b-instant';
+    // Defaults come from the shared provider catalog. They used to be the
+    // literals `api.groq.com` + `llama-3.1-8b-instant`, and Groq retired that
+    // model on 2026-08-16 — so a config with no model was guaranteed to fail
+    // with an opaque 404 no matter what the user's key could actually serve.
+    const catalog = window.GemAirProviders;
+    if (!baseURL && catalog && catalog.byId) {
+      const groq = catalog.byId('groq');
+      baseURL = (groq && groq.baseURL) || 'https://api.groq.com/openai/v1';
+    } else if (!baseURL) {
+      baseURL = 'https://api.groq.com/openai/v1';
+    }
+    if (!model && catalog && catalog.detect && catalog.byId) {
+      const detected = catalog.byId(catalog.detect(baseURL));
+      model = (detected && detected.models[0] && detected.models[0].id) || 'openai/gpt-oss-120b';
+    } else if (!model) {
+      model = 'openai/gpt-oss-120b';
+    }
+    if (model && window.GemAirModelCurrency && window.GemAirModelCurrency.repairModelId) {
+      model = window.GemAirModelCurrency.repairModelId(model, catalog && catalog.detect ? catalog.detect(baseURL) : '').model || model;
+    }
 
     baseURL = baseURL.replace(/\/+$/, '');
     const url = baseURL + (baseURL.endsWith('/chat/completions') ? '' : '/chat/completions');

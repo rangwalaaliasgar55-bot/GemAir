@@ -13,7 +13,7 @@
    ============================================================ */
 'use strict';
 
-const CACHE_VERSION = 'gemair-shell-v2.8.2-refresh';
+const CACHE_VERSION = 'gemair-shell-v2.10.0-tabs';
 const SHELL = [
   'index.html',
   'design-tokens.css',
@@ -35,6 +35,8 @@ const SHELL = [
   'edge-tts.js',
   'gemini-live.js',
   'ai-client.js',
+  'providers.js',
+  'model-currency.js',
   'favicon.svg',
   'manifest.webmanifest',
   'assets/gemair-logo.png',

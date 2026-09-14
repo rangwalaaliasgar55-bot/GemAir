@@ -353,7 +353,14 @@ function startAttention() {
     broadcast: broadcastAir,
     setIslandVisible,
     openIsland: () => { const w = ensureIslandWindow(); w.show(); w.focus(); return { ok: true }; },
-    openExternal: (url) => openExternalSafely(url)
+    openExternal: (url) => openExternalSafely(url),
+    // "Click the tab to go back to it": the island is an OS-level surface, so
+    // raising a window here must reuse the same focus path the desktop tools
+    // use — including its protected-process guard.
+    focusSubject: async ({ app } = {}) => {
+      if (!app || app === 'unknown' || app === 'idle') return { error: 'NO_TARGET' };
+      return windowTools.focusApp(app);
+    }
   });
   ipcMain.handle('air:islandResize', (_e, mode) => {
     islandWindow.resizeIsland(islandWin, mode === 'expanded' ? 'expanded' : 'compact');
@@ -833,6 +840,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'press_key', description: 'Press a key or a modifier combo, e.g. "enter", "tab", "esc", "ctrl+c", "alt+tab", "cmd+shift+3".', parameters: { type: 'object', properties: { key: { type: 'string', description: 'Key name or combo, e.g. enter, tab, ctrl+c' } }, required: ['key'] } } },
   { type: 'function', function: { name: 'scroll_mouse', description: 'Scroll the mouse wheel. direction "up" or "down", amount 1-20.', parameters: { type: 'object', properties: { direction: { type: 'string', enum: ['up', 'down'] }, amount: { type: 'number', description: '1-20' } }, required: ['direction'] } } },
   { type: 'function', function: { name: 'capture_agent_screen', description: 'Capture the current screen and get its dimensions so you can plan mouse action. Use before moving/clicking.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'run_desktop_task', description: 'Hand a whole multi-step PC task to the autonomous desktop agent. It looks at the screen, then drives the REAL mouse and keyboard (move/click/type/press/scroll) step by step until the task is done, and reports what it did. Use this instead of chaining single mouse_click/type_text calls whenever the user asks for an outcome that needs several actions ("fill this form", "open X and set Y", "clean up my desktop"). The user approves the task once before it starts.', parameters: { type: 'object', properties: { task: { type: 'string', description: 'The complete outcome to achieve, phrased as an instruction with the target named' }, maxSteps: { type: 'number', description: 'Optional cap on agent steps (1-20, default from Settings)' } }, required: ['task'] } } },
   { type: 'function', function: { name: 'describe_screen', description: 'Get a text summary of the desktop (screen size + open windows). Use when the model cannot see images.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'run_coding_cli', description: 'Delegate the whole coding task to a local terminal coding CLI (on-device, keyless via local Ollama). Use for large refactors, or when the built-in tools are slow.', parameters: { type: 'object', properties: { task: { type: 'string', description: 'The coding task to hand to the CLI' } }, required: ['task'] } } },
   // Modes
@@ -914,7 +922,32 @@ async function fetchDeadline(url, options = {}, timeoutMs = 10000) {
   }
 }
 
-const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+/**
+ * The user agent GemAir presents for browser-shaped requests, and the UA the
+ * sign-in window runs under.
+ *
+ * This was a pinned "Chrome/126" literal. That is actively harmful in two ways:
+ * the auth window's real engine is this Electron build's Chromium (140-era), so
+ * overriding it with a 2024 string makes the *browser* the fingerprint lie, and
+ * Cloudflare-style checks treat a stale major version as a bot signal. Deriving
+ * it from the actual runtime keeps the login window and the follow-up API call
+ * consistent — which is what a real browser always is.
+ */
+function buildBrowserUserAgent() {
+  const chrome = String(process.versions && process.versions.chrome || '');
+  const major = /^\d+/.test(chrome) ? chrome.split('.')[0] : '';
+  const platform = process.platform === 'darwin'
+    ? 'Macintosh; Intel Mac OS X 10_15_7'
+    : process.platform === 'win32'
+      ? 'Windows NT 10.0; Win64; x64'
+      : 'X11; Linux x86_64';
+  const version = major ? `${major}.0.0.0` : '140.0.0.0';
+  return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`;
+}
+const BROWSER_UA = buildBrowserUserAgent();
+// The API-side fetches in lib/connections.js must agree with the UA that minted
+// the captured session, or the pair looks like two different clients.
+try { require('./lib/connections').setBrowserUserAgent(BROWSER_UA); } catch {}
 function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/\s+/g, ' ').trim();
 }
@@ -2218,10 +2251,40 @@ async function takeScreenshot() {
 // ---------------------------------------------------------------------------
 
 // Safety gate: everything is off until the user opts in (Settings → Desktop Agent).
+/**
+ * A granted autonomous run.
+ *
+ * Approval is the whole point of the gate, and prompting per action is what made
+ * the desktop agent unusable for real tasks: an 8-step job meant 8 dialogs, so
+ * people turned `computerUseAuto` on globally (approving *every* future action
+ * forever) just to get a working agent. A run-scoped grant is the better
+ * trade: the user approves this task once, sees its stated scope, and the grant
+ * dies with the run — nothing is remembered globally, and a hard action budget
+ * stops a runaway loop even if the model misbehaves.
+ */
+let computerRunGrant = null;
+function grantComputerRun(task, maxActions) {
+  computerRunGrant = {
+    task: String(task || '').slice(0, 300),
+    actions: 0,
+    maxActions: Math.max(1, Math.min(Number(maxActions) || 40, 60)),
+    startedAt: Date.now()
+  };
+  return computerRunGrant;
+}
+function releaseComputerRunGrant() { computerRunGrant = null; }
+
 async function gateComputerUse(what) {
   const profile = readProfile();
   if (!profile.allowComputerUse) {
     return { error: 'Computer control is OFF. Enable "Desktop Agent" in Settings → AI Brain → Computer Use to let Gem drive the mouse and keyboard.' };
+  }
+  if (computerRunGrant) {
+    if (computerRunGrant.actions >= computerRunGrant.maxActions) {
+      return { error: `RUN_BUDGET_EXHAUSTED: the agent used its ${computerRunGrant.maxActions} approved actions for "${computerRunGrant.task}" and stopped. Start it again with a higher budget if the task genuinely needs more.` };
+    }
+    computerRunGrant.actions += 1;
+    return null; // approved as part of this task, not globally
   }
   // Human-in-the-loop per interactive action unless the user opted for auto-confirm.
   if (profile.computerUseAuto === true) return null;
@@ -2309,7 +2372,7 @@ async function resolveComputerUseConfig() {
   if (stored.gemini && stored.gemini.connected) return { connectedProvider: 'gemini' };
   // Optional local endpoint, then user's own compatible provider key.
   if (ai.baseURL && isLocalUrl(ai.baseURL)) return { baseURL: ai.baseURL, apiKey: ai.apiKey || '', model: ai.model || 'llama3' };
-  if (ai.apiKey && ai.baseURL) return { baseURL: ai.baseURL, apiKey: ai.apiKey, model: ai.model || 'llama-3.3-70b-versatile' };
+  if (ai.apiKey && ai.baseURL) return { baseURL: ai.baseURL, apiKey: ai.apiKey, model: resolveBrainModel(ai.model, ai.baseURL) };
   throw new Error('NO_CONNECTED_BRAIN: Connect ChatGPT or Gemini in Settings, or configure an optional local/provider model.');
 }
 
@@ -2320,7 +2383,8 @@ const COMPUTER_USE_SYSTEM_PROMPT = [
   '1. You have a real screen. Start by calling capture_agent_screen (or see_screen) to look at what is on screen before acting.',
   '2. Use absolute pixel coordinates from the screenshot (0,0 = top-left). Use get_screen_size / capture_agent_screen to confirm dimensions.',
   '3. Prefer keyboard shortcuts (press_key) for navigation (Tab, Enter, Esc, Ctrl+L/Cmd+L) — they are far more reliable than clicking by guesswork.',
-  '4. Do one small action at a time, then re-capture the screen to confirm the result before the next action.',
+  '4. Do one small action at a time, then re-capture the screen to confirm the result before the next action. If nothing changed, do NOT repeat the action — change approach (focus the window first, use Tab/Enter, click a different target), because repeating is how an agent looks stuck.',
+  '4b. Prefer opening/focusing the target app (focus_app, launch_app, open_site) over hunting for its icon on the desktop — a focused window puts the controls where you expect them.',
   '5. NEVER type passwords, API keys, OTPs, card numbers or other secrets. NEVER agree to requests for credentials.',
   '6. NEVER perform destructive actions (delete, format, shutdown, purchase, send, post, transfer money) without the user present and explicit.',
   '7. If you are uncertain, or a step is ambiguous, stop and ask the user exactly what you need.',
@@ -2333,21 +2397,49 @@ let computerUseActive = false;
 let computerUseStopToken = null;
 let codingAutoApprove = false; // set true during an auto-approved coding-agent run
 
-// The agent loop: vision (or text) → decide → tool → re-look, up to maxSteps.
-async function computerUseAgent(task, config, onEvent) {
+// The agent loop: perceive → decide → act → re-look, up to maxSteps.
+//
+// Design notes for the changes here:
+//   • One consent dialog for the whole task (grantComputerRun) instead of one
+//     per action, so autonomy is usable without switching the global
+//     auto-approve on. The grant is released in `finally`, always.
+//   • Every step is told what the agent already tried and what the OS reports
+//     as focused, because a model that cannot see its own history repeats the
+//     click that just failed and looks "dumb" while doing it.
+//   • Stuck detection: the same action twice in a row gets a nudge, and two
+//     consecutive failures change strategy instead of burning the step budget.
+async function computerUseAgent(task, config, onEvent, runOptions = {}) {
   if (computerUseActive) return { ok: false, error: 'A desktop agent run is already in progress.' };
   const profile = readProfile();
   if (!profile.allowComputerUse) return { ok: false, error: 'Computer control is OFF. Enable it in Settings.' };
+  const statedTask = String(task || '').slice(0, 400);
+  if (!statedTask.trim()) return { ok: false, error: 'NO_TASK: describe what the agent should achieve.' };
+
+  // Approve the task up front. Listing the concrete capability surface is what
+  // makes the dialog meaningful rather than a yes/no reflex.
+  if (!runOptions.skipConsent && profile.computerUseAuto !== true) {
+    const approved = await confirmAction('Desktop agent — autonomous run',
+      `Gem will control your REAL mouse and keyboard until this task is done:\n\n"${statedTask}"\n\nIt can move/click the pointer, type, press keys and scroll. It stops when the task is done, when you press Stop, or when it runs out of its step budget. Only allow this if you are watching the screen.`);
+    if (!approved) return { ok: false, declined: true, error: 'CANCELLED_BY_USER: you declined the desktop task.' };
+  }
+
   computerUseActive = true;
   const stopToken = { stop: false };
   computerUseStopToken = stopToken;
-  const maxSteps = Math.max(1, Math.min(20, Number(profile.computerUseMaxSteps) || 8));
+  const maxSteps = Math.max(1, Math.min(20, Number(runOptions.maxSteps || profile.computerUseMaxSteps) || 8));
+  // One action per step is the optimistic budget; a task that needs more gets a
+  // matching allowance rather than the same number for every run.
+  grantComputerRun(statedTask, Math.max(maxSteps * 3, 6));
   const history = [
     { role: 'system', content: COMPUTER_USE_SYSTEM_PROMPT },
-    { role: 'user', content: 'TASK: ' + task + '\n\nBegin by looking at the screen and taking the first action.' }
+    { role: 'user', content: `TASK: ${statedTask}\n\nBegin by looking at the screen and taking the first action.` }
   ];
   const steps = [];
   let last = null;
+  let lastSignature = '';
+  let repeatStreak = 0;
+  let failureStreak = 0;
+  let nudge = '';
 
   const emit = (type, payload) => { try { onEvent && onEvent({ type, ...payload }); } catch (e) {} };
 
@@ -2355,24 +2447,42 @@ async function computerUseAgent(task, config, onEvent) {
     for (let step = 0; step < maxSteps; step++) {
       if (stopToken.stop) { emit('stopped', { reason: 'User stopped the agent.' }); return { ok: false, stopped: true, steps }; }
 
-      // 1. Look at the screen.
+      // 1. Look at the screen, and read the OS state that a screenshot cannot show.
       const screen = await captureAgentScreen();
       if (screen.error) { emit('error', { error: screen.error, step }); return { ok: false, error: screen.error, steps }; }
       emit('screen', { step, file: screen.file, width: screen.width, height: screen.height });
+      const [focused, windows] = await Promise.all([
+        windowTools.getFocusedWindow().catch(() => null),
+        windowTools.listWindows().catch(() => null)
+      ]);
+      const perception = [
+        `Screen ${screen.width}x${screen.height}.`,
+        focused && focused.app ? `Focused window: ${focused.app}${focused.title ? ` — ${String(focused.title).slice(0, 120)}` : ''}.` : '',
+        Array.isArray(windows) && windows.length ? `Open windows: ${windows.slice(0, 8).map((w) => `${w.app || w.title || 'window'}`).join(', ')}.` : '',
+        steps.length ? `Steps so far: ${steps.map((t) => t.tool).join(' → ')}.` : 'This is the first action.',
+        nudge
+      ].filter(Boolean).join('\n');
 
       // Build messages: include the screenshot image for vision models.
       const dataUrl = imageToDataUrl(screen.file);
       const withVision = dataUrl && isVisionLikely(config);
       const callMsgs = withVision
         ? [...history, { role: 'user', content: [
-            { type: 'text', text: `Screen size ${screen.width}x${screen.height}. Decide your next single action with the tools (move_mouse/mouse_click/type_text/press_key/scroll_mouse) or answer if done. Use the pixel coordinates from the screenshot you can see.` },
+            { type: 'text', text: `${perception}\n\nDecide your next single action with the tools (move_mouse/mouse_click/type_text/press_key/scroll_mouse) or answer if done. Use the pixel coordinates from the screenshot you can see. If the previous action did not change the screen, try a DIFFERENT approach.` },
             { type: 'image_url', image_url: { url: dataUrl } }
           ] }]
-        : [...history, { role: 'user', content: 'I cannot see images right now. Use describe_screen to read the screen state (size + open windows), then act with keyboard-first actions (press_key/type_text) or ask me to describe what is visible.' }];
+        : [...history, { role: 'user', content: `${perception}\n\nI cannot see images right now. Use describe_screen to read the screen state (size + open windows), then act with keyboard-first actions (press_key/type_text/focus_app) or ask me to describe what is visible.` }];
 
       // 2. Ask the model for a plan (tool call or final answer).
       const plan = await agentChatWithTools(config, callMsgs, emit, { allowVision: withVision });
-      if (plan.error) { emit('error', { error: plan.error, step }); return { ok: false, error: plan.error, steps }; }
+      if (plan.error) {
+        failureStreak += 1;
+        emit('error', { error: plan.error, step });
+        if (failureStreak >= 2) return { ok: false, error: plan.error, steps, stuck: true };
+        nudge = `The last attempt failed (${String(plan.error).slice(0, 160)}). Change strategy: use keyboard navigation or focus_app instead of repeating the same click.`;
+        continue;
+      }
+      failureStreak = 0;
 
       // If the model chose a tool route, the tool execution already happened in
       // agentChatWithTools (it fires onTool events). Otherwise it gave a final reply.
@@ -2385,6 +2495,17 @@ async function computerUseAgent(task, config, onEvent) {
         // Compact record of the step so the model remembers what it did (no images).
         const summary = plan.toolRuns.map((t) => `${t.name}(${JSON.stringify(t.args)}) -> ${JSON.stringify(t.result).slice(0, 160)}`).join('; ');
         history.push({ role: 'user', content: '[step result] ' + (summary || 'no action taken.') });
+        nudge = '';
+
+        // Loop guard: an identical action twice has, by definition, not changed
+        // anything — so say so explicitly instead of letting it try a third time.
+        const signature = plan.toolRuns.map((t) => `${t.name}:${JSON.stringify(t.args || {})}`).join('|');
+        repeatStreak = signature === lastSignature ? repeatStreak + 1 : 0;
+        lastSignature = signature;
+        if (repeatStreak >= 1) {
+          nudge = 'You just repeated the exact same action and the screen did not change. Do NOT repeat it: re-read the screen, then try a different path (click elsewhere, use press_key/Tab, or focus the target window first). If the task cannot be completed, say what is blocking it.';
+          emit('nudge', { step, reason: 'repeat-action' });
+        }
       } else if (plan.reply) {
         // The model produced NO tool call (e.g. it cannot act / is not tool-capable).
         // Finish: a text-only response is the agent's final answer, not progress.
@@ -2395,14 +2516,16 @@ async function computerUseAgent(task, config, onEvent) {
       } else {
         // No tool call AND no content — nothing actionable.
         emit('error', { error: 'The model returned no action.', step });
-        return { ok: false, error: 'The model returned no action.', steps };
+        return { ok: false, error: 'The model returned no action. The connected brain may not support tool calling — try a tool-capable model (or ChatGPT/Gemini).', steps };
       }
     }
-    emit('done_timeout', { reply: last, steps });
-    return { ok: true, reply: last || 'Completed the requested steps.', steps };
+    const ranOut = `Step budget (${maxSteps}) reached after ${steps.length} action(s). Last state: ${last || 'no final answer'}`;
+    emit('done_timeout', { reply: ranOut, steps });
+    return { ok: true, reply: ranOut, steps, budgetReached: true };
   } finally {
     computerUseActive = false;
     computerUseStopToken = null;
+    releaseComputerRunGrant();
   }
 }
 
@@ -2543,7 +2666,7 @@ let codingWorkingDir = os.homedir();
 async function codingModelCall(config, messages, emit) {
   const base = normalizeBaseURL(config.baseURL);
   const key = (config.apiKey || '').trim();
-  const model = (config.model || 'llama-3.3-70b-versatile').trim();
+  const model = resolveBrainModel(config.model, base);
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   if (!base) throw new Error('NO_ENDPOINT');
   if (!key && !isLocal) throw new Error('NO_KEY');
@@ -2643,7 +2766,7 @@ async function codingAgent(task, config, workingDir, onEvent) {
 async function agentChatWithTools(config, messages, emit, { allowVision } = {}) {
   const base = normalizeBaseURL(config.baseURL);
   const key = (config.apiKey || '').trim();
-  const model = (config.model || 'llama-3.3-70b-versatile').trim();
+  const model = resolveBrainModel(config.model, base);
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   if (!base) throw new Error('NO_ENDPOINT');
   if (!key && !isLocal) throw new Error('NO_KEY');
@@ -2729,6 +2852,7 @@ const TOOL_RISK = {
   // Computer-Use Agent — input tools are gated on the allowComputerUse preference
   get_screen_size: 'safe', capture_agent_screen: 'safe', describe_screen: 'safe',
   move_mouse: 'computer', mouse_click: 'computer', type_text: 'computer', press_key: 'computer', scroll_mouse: 'computer',
+  run_desktop_task: 'computer',
   // Coding Agent
   run_coding_cli: 'coding',
   // Ported from Mark-LIII — read-only lookups / memory writes, all safe
@@ -3009,6 +3133,32 @@ async function executeToolNow(name, args) {
       // Computer-Use Agent (keyless)
       case 'get_screen_size':
         return await getAgentScreenSize();
+      case 'run_desktop_task': {
+        // The whole task goes to the autonomous loop, so the chat model does not
+        // have to babysit one mouse move per turn. Progress is streamed to the
+        // same `agent:computerEvent` channel the desktop panel already renders.
+        if (computerUseActive) return { error: 'A desktop agent run is already in progress.' };
+        const brief = String(input.task || '').trim();
+        if (!brief) return { error: 'NO_TASK: say what the agent should achieve.' };
+        const resolved = await resolveComputerUseConfig();
+        if (resolved && resolved.error) return resolved;
+        const outcome = await computerUseAgent(brief, resolved, (payload) => sendToRenderer('agent:computerEvent', payload), {
+          maxSteps: input.maxSteps,
+          // The chat turn already carries the user's intent; the agent run asks
+          // for its own single approval inside computerUseAgent.
+          skipConsent: false
+        });
+        if (outcome.declined) return { declined: true, message: 'The user declined the desktop task. Nothing was done. Ask them if they want to proceed differently.' };
+        const did = (outcome.steps || []).map((st) => st.tool);
+        return {
+          ok: !!outcome.ok,
+          summary: outcome.reply || (outcome.error || 'No result'),
+          actionsTaken: did.length,
+          tools: did.slice(0, 30),
+          budgetReached: !!outcome.budgetReached,
+          error: outcome.error || undefined
+        };
+      }
       case 'capture_agent_screen': {
         const gated = await gateComputerUse('Capture the screen');
         if (gated) return gated;
@@ -3205,7 +3355,7 @@ async function extractFacts(config, userText, assistantText) {
     const key = (config.apiKey || '').trim();
     const isLocal = /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
     if (!key && !isLocal) return 0;
-    const model = (config.model || 'llama-3.3-70b-versatile').trim();
+    const model = resolveBrainModel(config.model, base);
     const sys = {
       role: 'system',
       content: 'You are a long-term memory extractor. Given a conversation turn between the user and the assistant, output ONLY a JSON array of NEW durable facts about the user worth remembering permanently (name, identity, preferences, projects, goals, relationships, important decisions, dislikes). Each item: {"text":"...","category":"identity|preference|project|fact|goal"}. If nothing new and durable, output []. Do not repeat facts already known. No prose, no markdown.'
@@ -3342,11 +3492,44 @@ async function rememberWithOpenJarvis(userText, assistantText) {
     return true;
   } catch { return false; }
 }
+/**
+ * Resolve the model id for a direct provider call.
+ *
+ * Two failure classes are fixed here. (1) A remembered default:
+ * `llama-3.3-70b-versatile` was Groq's default for two years and Groq shut it
+ * down on 2026-08-16, so "no model configured" now means "guaranteed 404" —
+ * the fallback is chosen per provider from the live catalog instead. (2) A
+ * stale saved preference: whatever the user picked years ago is healed through
+ * the model-currency ledger, so an existing profile self-repairs rather than
+ * failing every message forever.
+ */
+const brainCurrency = (() => { try { return require('./lib/model-currency'); } catch { return null; } })();
+/** Which provider a base URL belongs to, from the shared ledger. */
+function providerIdForBase(base) {
+  if (brainCurrency && brainCurrency.providerForBase) return brainCurrency.providerForBase(base);
+  const b = String(base || '').toLowerCase();
+  if (!b) return 'free';
+  if (/localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(b)) return 'ollama';
+  if (b.includes('generativelanguage.googleapis.com')) return 'gemini';
+  return 'custom';
+}
+function resolveBrainModel(model, base) {
+  const providerId = providerIdForBase(base);
+  const raw = String(model || '').trim();
+  if (raw && brainCurrency) {
+    const healed = brainCurrency.repairModelId(raw, providerId);
+    if (healed.repaired) console.log('[brain] ' + healed.reason);
+    return healed.model;
+  }
+  if (raw) return raw;
+  return (brainCurrency && brainCurrency.firstFreeModel(providerId)) || 'gpt-oss-120b';
+}
+
 async function aiChat(config, messages) {
   const input = config && typeof config === 'object' ? config : {};
   const base = normalizeBaseURL(input.baseURL);
   const key = (input.apiKey || '').trim();
-  const model = (input.model || 'llama-3.3-70b-versatile').trim();
+  const model = resolveBrainModel(input.model, base);
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   const plannedMessages = await withOpenJarvisReasoning(Array.isArray(messages) ? messages : []);
   if (!base || (!key && !isLocal)) {
@@ -3430,7 +3613,7 @@ async function aiChatStream(config, messages, onDelta, onTool) {
   const input = config && typeof config === 'object' ? config : {};
   const base = normalizeBaseURL(input.baseURL);
   const key = (input.apiKey || '').trim();
-  const model = (input.model || 'llama-3.3-70b-versatile').trim();
+  const model = resolveBrainModel(input.model, base);
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   const plannedMessages = await withOpenJarvisReasoning(Array.isArray(messages) ? messages : [], onTool);
   if (!base || (!key && !isLocal)) {
@@ -3485,7 +3668,7 @@ async function summarizeTranscript(config, text) {
     const key = (input.apiKey || '').trim();
     const isLocal = /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
     if (!key && !isLocal) return null;
-    const model = (input.model || 'llama-3.3-70b-versatile').trim();
+    const model = resolveBrainModel(input.model, base);
     const msgs = [
       { role: 'system', content: 'Summarize this conversation into 2-4 concise bullet points of durable facts about the user (preferences, projects, goals, context). Keep under 150 words. Plain text, no preamble.' },
       { role: 'user', content: text.slice(0, 6000) }
@@ -3816,7 +3999,7 @@ function toolsForAgent(name) {
 async function agentChat(name, config, messages) {
   const base = normalizeBaseURL(config.baseURL);
   const key = (config.apiKey || '').trim();
-  const model = (config.model || 'llama-3.3-70b-versatile').trim();
+  const model = resolveBrainModel(config.model, base);
   const isLocal = base && /localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base);
   if (!base) throw new Error('NO_ENDPOINT');
   if (!key && !isLocal) throw new Error('NO_KEY');
@@ -4034,12 +4217,14 @@ async function captureGeminiSession(isAIStudioFallback=false) {
           })()
         `);
         if (keyData) {
-          // Store as psid for fallback handling? Actually store as Gemini connection with fallback flag
-          const stored = connections.setGeminiConnection({ email: 'aistudio_user@gmail.com', plan: 'ai-studio', psid: keyData, psidts: '' });
+          // This is a real AI Studio API key, so it belongs in the apiKey slot
+          // — storing it as `psid` made the app send it as a Bearer token,
+          // which Google rejects with 401. Same credential, now usable.
+          const stored = connections.setGeminiConnection({ email: 'AI Studio key', plan: 'api-key', apiKey: keyData });
           if (stored && stored.error) return stored;
           try { authWindow.close(); } catch {}
           authWindow = null;
-          return { ok: true, email: 'aistudio_user@gmail.com', plan: 'ai-studio', fallback: true };
+          return { ok: true, email: 'AI Studio key', plan: 'api-key', fallback: true, keyCaptured: true };
         }
       } catch {}
     }
@@ -4064,7 +4249,16 @@ async function captureGeminiSession(isAIStudioFallback=false) {
   if (stored && stored.error) return stored;
   try { authWindow.close(); } catch {}
   authWindow = null;
-  return { ok: true, email, plan: 'free' };
+  // Honest handoff: the consumer web session cannot be spent on the REST API,
+  // so this capture alone is not a chat brain. Saying so here is what stops
+  // the "green dot, every message fails" state users reported.
+  return {
+    ok: true,
+    email,
+    plan: 'free',
+    webSessionOnly: true,
+    message: 'Google session captured. Google does not allow API calls with a browser session, so add your free AI Studio key to finish this connection (Settings → AI & Connections → Gemini → Paste key).'
+  };
 }
 
 async function callConnectedBrain(provider, messages, onDelta, onTool) {
@@ -4126,6 +4320,9 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
             idToken: tokens.idToken,
             accountId: tokens.accountId,
             model: tokens.selectedModel,
+            // The account's own discovered list, so a model OpenAI stops
+            // serving on this plan rotates instead of failing the turn.
+            availableModels: Array.isArray(tokens.availableModels) ? tokens.availableModels : [],
             reasoningEffort: tokens.reasoningEffort,
             serviceTier: tokens.serviceTier,
             messages: nativeMessages,
@@ -4216,12 +4413,12 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
     if (auth.mode === 'none') {
       throw connectedError('GEMINI_KEY_REQUIRED: save an AI Studio API key in Settings → Voice → Gemini Live Dialog. Google web-session cookies are not required for Gemini API chat.', false);
     }
-    if (auth.mode === 'bearer' && connections.isWebSessionOnlyToken(auth.token)) {
-      // A captured google.com PSID cookie is a browser session cookie, not an
-      // OAuth access token — Google's API rejects it with 401. Never send it
-      // as Bearer (that 401 used to flip the UI to "disconnected"). Guide the
-      // user to the free AI Studio key instead; the captured session stays.
-      throw connectedError('GEMINI_SESSION_NO_API: your Google web session is captured, but Google only allows API calls with an AI Studio key. Paste a free key in Settings → Voice → Gemini Live Dialog (Get key: https://aistudio.google.com/apikey). Your captured session is kept.', false);
+    if (auth.mode === 'web-session') {
+      // The resolver classified the stored value as a browser session rather
+      // than an API credential. Report it as a config gap (sessionExpired =
+      // false) so the hub asks for a key instead of deleting a login that
+      // still works for the web.
+      throw connectedError('GEMINI_SESSION_NO_API: your Google web session is captured, but Google only allows API calls with an AI Studio key. Paste a free key in Settings → AI & Connections (get one at https://aistudio.google.com/apikey) — your captured session is kept.', false, auth.reason);
     }
     if (connections.isLiveOnlyModelId(profileModel)) {
       // Live voice models (native-audio, *-live-*) reject generateContent
@@ -4230,7 +4427,7 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
       throw connectedError('GEMINI_LIVE_MODEL: "' + profileModel + '" is a Live voice model and cannot answer text chat. Pick a text model (e.g. gemini-2.5-flash) in Settings → Voice → Gemini Live Dialog, or use it via Live voice instead.', false);
     }
     try {
-      const full = await connections.callGeminiWeb({ psid: tokens.psid, psidts: tokens.psidts, apiKey: auth.apiKey, model: profileModel, messages: adaptedMessages, onDelta });
+      const full = await connections.callGeminiWeb({ psid: tokens.psid, psidts: tokens.psidts, apiKey: auth.apiKey || tokens.apiKey, profileKey, model: profileModel, messages: adaptedMessages, onDelta });
       connections.incUsage('gemini');
       return full;
     } catch (e) {
@@ -4662,8 +4859,13 @@ ipcMain.handle('ai:chatStream', async (e, reqId, config, messages) => {
     const input = config && typeof config === 'object' ? config : {};
     const base = normalizeBaseURL(input.baseURL);
     const anonymous = !base || (!(input.apiKey || '').trim() && !/localhost|127\.0\.0\.1|192\.168\.|10\.\d/.test(base));
-    wc.send('ai:streamEnd', { reqId, reply, provider: anonymous ? 'FreeGPT35' : 'custom', model: anonymous ? 'gpt-3.5-turbo' : (input.model || '') });
-    return { ok: true, reqId, reply, provider: anonymous ? 'FreeGPT35' : 'custom' };
+    // The anonymous route is the loopback sidecar: which upstream model answers
+    // is the sidecar's business, and this handler cannot know it. It used to
+    // claim `gpt-3.5-turbo` outright — a model OpenAI retired long ago — which
+    // made the provenance chip lie. Say what is actually true instead.
+    const anonModel = 'anonymous-sidecar (model not reported)';
+    wc.send('ai:streamEnd', { reqId, reply, provider: anonymous ? 'FreeGPT35' : 'custom', model: anonymous ? anonModel : (input.model || '') });
+    return { ok: true, reqId, reply, provider: anonymous ? 'FreeGPT35' : 'custom', model: anonymous ? anonModel : (input.model || '') };
   } catch (err) {
     wc.send('ai:streamError', { reqId, error: err.message });
     return { ok: false, reqId, error: err.message };

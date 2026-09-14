@@ -223,7 +223,10 @@ npm run dist:linux     # Linux .AppImage + .deb
 
 ## ❤️ Philosophy
 
-1. **Free forever** — the web, weather, search, voice, memory and tools all work with no key.
+1. **Free forever** — the web, weather, search, voice, memory and tools all work with no
+   key. General model answers need a brain: your own free provider key, a connected
+   ChatGPT/Gemini account (Desktop), local Ollama, or a deployment whose `/api/chat`
+   proxy has provider keys configured.
 2. **Local-first & private** — your data stays on your machine (or your own Supabase).
 3. **Truthful** — never fabricate; always cite; admit uncertainty.
 4. **Kind** — a companion that lifts you up, especially on hard days.

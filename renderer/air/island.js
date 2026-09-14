@@ -17,6 +17,13 @@ let currentQuestion = null;
 
 const COLORS = ['#0a84ff', '#30d158', '#ff9f0a', '#ff453a', '#bf5af2', '#5ac8fa'];
 
+// GemAir's own tabs, so the island can say which section the app is in.
+const VIEW_LABEL = {
+  assistant: 'Assistant', core: 'Workspace', companion: 'Tasks & Goals',
+  town: 'Automations', attention: 'Gem Air', world: 'Discover',
+  dashboard: 'Dashboard', settings: 'Settings'
+};
+
 const MODE_LABEL = {
   working: 'Focusing',
   distraction: 'Distracted',
@@ -63,6 +70,18 @@ document.addEventListener('keydown', (e) => {
   }
 });
 el('btn-collapse').addEventListener('click', () => setExpanded(false, { keepFocus: true }));
+el('tab-list')?.addEventListener('click', async (event) => {
+  const row = event.target && event.target.closest ? event.target.closest('.tab-item') : null;
+  if (!row) return;
+  try {
+    const result = await api.focusTab({ app: row.dataset.app, title: row.dataset.title, kind: row.dataset.kind });
+    if (!result || result.ok === false) throw new Error((result && result.error) || 'Could not raise that window');
+    confirm(`Back to ${row.dataset.app || 'that window'}.`);
+    setExpanded(false, { keepFocus: true });
+  } catch (error) {
+    confirm(error.message || 'That window could not be raised.');
+  }
+});
 el('btn-dashboard').addEventListener('click', () => api.openMain('dashboard'));
 el('btn-focus').addEventListener('click', async () => {
   const active = snapshot && snapshot.island && snapshot.island.focusBlock;
@@ -118,8 +137,12 @@ function render(snap) {
   localTimerBase = { ms: is.elapsedMs || 0, at: Date.now() };
   const ticking = is.mode === 'working' || is.mode === 'distraction';
 
-  el('subject').textContent = is.primary;
-  el('meta').textContent = is.secondary || MODE_LABEL[is.mode] || '';
+  // The pill used to answer "Work" — a category. People asked for the tab, so
+  // the title wins when we have one and the category moves to the meta line.
+  const tabLabel = is.tab && is.tab.label && is.tab.label.trim() ? is.tab.label.trim() : '';
+  const pillSubject = tabLabel ? (tabLabel.length > 38 ? `${tabLabel.slice(0, 37)}…` : tabLabel) : (is.primary || 'Gem Air');
+  el('subject').textContent = pillSubject;
+  el('meta').textContent = [is.secondary || MODE_LABEL[is.mode] || '', tabLabel && is.primary && is.primary !== tabLabel ? is.primary : ''].filter(Boolean).join(' · ');
   el('timer').textContent = ticking ? fmtCompact(is.elapsedMs) : '';
   el('capsule').setAttribute('aria-label',
     `Gem Air status: ${is.primary}. ${is.secondary || MODE_LABEL[is.mode] || ''}. Activate to ${expanded ? 'collapse' : 'expand'} details.`);
@@ -134,6 +157,7 @@ function render(snap) {
   el('ctx-timer').textContent = fmt(is.elapsedMs);
 
   renderProgress(is.focusBlock);
+  renderTabs(is);
 
   const plan = is.focusBlock;
   const focusButton = el('btn-focus');
@@ -153,6 +177,80 @@ function render(snap) {
   setRow('row-next', 'v-next', is.next ? `${is.next.label} in ${humanMinutes(is.next.in)}` : '—', false);
 
   renderQuestion(is.question);
+}
+
+/**
+ * Tab strip: the current tab, the ones just left, and how long each held focus.
+ * Rows are buttons — activating one raises that window through the same
+ * focusApp path the desktop tools use, so "go back to what I was doing" is one
+ * keypress from the island instead of an Alt-Tab hunt.
+ */
+function renderTabs(is) {
+  const panel = el('tabs-panel');
+  if (!panel) return;
+  const tabs = Array.isArray(is.tabs) ? is.tabs : [];
+  const current = is.tab;
+  panel.hidden = false;
+
+  const source = el('tabs-source');
+  if (source) {
+    const live = !!(current && current.source === 'extension');
+    source.textContent = live ? 'live tab' : (current ? 'from window title' : 'no focus');
+    source.classList.toggle('live', live);
+    source.title = live
+      ? 'Read directly from the browser extension, so this is the real tab title.'
+      : 'The browser extension is not paired, so the tab is inferred from the window title and can be less precise.';
+  }
+
+  const nowLabel = el('tab-now-label');
+  const nowMeta = el('tab-now-meta');
+  if (nowLabel) {
+    nowLabel.textContent = (current && current.label) || 'Nothing focused';
+    nowLabel.classList.toggle('empty', !current);
+  }
+  if (nowMeta) {
+    const bits = [];
+    if (current && current.app) bits.push(current.app);
+    if (tabs.length && tabs[0] && tabs[0].current) bits.push(fmtCompact(tabs[0].ms || 0));
+    nowMeta.textContent = bits.join(' · ');
+  }
+
+  const list = el('tab-list');
+  if (list) {
+    list.innerHTML = '';
+    // The first row is the current tab, already shown large above.
+    for (const tab of tabs.slice(1, 6)) {
+      const li = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'tab-item';
+      button.dataset.app = tab.app || '';
+      button.dataset.title = tab.title || '';
+      button.dataset.kind = tab.kind || 'app';
+      const dot = document.createElement('span');
+      dot.className = 'tab-dot';
+      dot.style.background = tab.categoryColor || '#8ea0b5';
+      const label = document.createElement('span');
+      label.className = 'tab-label';
+      label.textContent = tab.label || tab.appLabel || 'Unknown';
+      const time = document.createElement('span');
+      time.className = 'tab-time';
+      time.textContent = fmtCompact(tab.ms || 0);
+      button.title = `${tab.categoryLabel || 'Other'} · ${Math.max(1, Math.round((tab.ms || 0) / 60000))} min`;
+      button.append(dot, label, time);
+      li.append(button);
+      list.append(li);
+    }
+    list.hidden = list.children.length === 0;
+  }
+
+  const appRow = el('tab-app');
+  const appValue = el('tab-app-v');
+  if (appRow && appValue) {
+    const view = is.appView && VIEW_LABEL[is.appView] ? VIEW_LABEL[is.appView] : (is.appView || '');
+    appRow.hidden = !view;
+    appValue.textContent = view || '';
+  }
 }
 
 function renderProgress(focusBlock) {

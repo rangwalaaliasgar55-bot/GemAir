@@ -1,7 +1,10 @@
 # ChatGPT account wiring in GemAir
 
-The account connection is already integrated in GemAir 2.8.0. No patch or
-`apply_oauth_*` script is required.
+The account connection is already integrated in GemAir 2.9.0. No patch or
+`apply_oauth_*` script is required — and since 2.9.0 the old one-shot
+`scripts/apply_oauth_*` patchers are gone from the repo entirely, because they
+rewrote source with literal string matches and would corrupt the files they
+target.
 
 ## Primary flow
 

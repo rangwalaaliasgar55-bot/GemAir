@@ -28,8 +28,12 @@ function handler(env = {}, fetch = () => { throw new Error('Unexpected network r
     module: { exports: {} }, process: { env }, Buffer, fetch,
     AbortController, TextDecoder, setTimeout, clearTimeout,
     require(name) {
-      assert.equal(name, './_lib/http');
-      return { ...require('../api/_lib/http'), env: (key) => env[key] || '' };
+      // The handler is loaded in a bare vm context, so every module it pulls in
+      // has to be handed over explicitly. Both are real modules on purpose:
+      // stubbing model-currency out would hide the repair step the chain runs.
+      if (name === './_lib/http') return { ...require('../api/_lib/http'), env: (key) => env[key] || '' };
+      if (name === '../lib/model-currency.js') return require('../lib/model-currency.js');
+      throw new Error('unexpected require in api/chat.js: ' + name);
     }
   };
   vm.runInNewContext(serverSource, context, { filename: 'api/chat.js' });
@@ -106,19 +110,49 @@ function client(fetch, extra = {}) {
   assert.equal(rotated.data.free, false);
   console.log('ok - real fallback reports the responding provider/model');
 
-  const perModel = handler({ GROQ_API_KEY: 'g' }, async (_url, options) => {
+  // Derive the provider's chain from the source instead of hard-coding model
+  // names: this fixture used to pin `llama-3.1-8b-instant` /
+  // `llama-3.3-70b-versatile`, and when Groq retired both on 2026-08-16 the
+  // assertions described a chain that no longer exists. The behaviour under
+  // test is "first model 404s, second model answers" whatever those ids are.
+  const groqModels = (serverSource.match(/id: 'groq'[\s\S]*?models: \[([^\]]*)\]/) || [])[1]
+    .split(',').map((entry) => entry.trim().replace(/'/g, '')).filter(Boolean);
+  assert.ok(groqModels.length >= 2, 'api/chat.js: the groq chain needs at least two models to test rotation');
+  const perModel = handler({ GROQ_API_KEY: 'g' }, async (url, options) => {
+    if (/\/models(\?|$)/.test(url)) {
+      return json({ object: 'list', data: groqModels.map((id) => ({ id })) });
+    }
     const model = JSON.parse(options.body).model;
-    return model === 'llama-3.1-8b-instant'
+    return model === groqModels[0]
       ? json({ error: 'model not found' }, 404)
       : json({ model, choices: [{ message: { content: 'second-model reply' } }] });
   });
   const second = await invoke(perModel);
   assert.equal(second.data.ok, true);
   assert.equal(second.data.provider, 'groq');
-  assert.equal(second.data.model, 'llama-3.3-70b-versatile');
+  assert.equal(second.data.model, groqModels[1]);
   assert.equal(second.data.reply, 'second-model reply');
   assert.ok(second.data.attempts === undefined);
-  console.log('ok - a retired model falls through to the next model on the same provider');
+  console.log(`ok - a retired model falls through to the next model on the same provider (${groqModels[0]} → ${groqModels[1]})`);
+
+  // Discovery is what stops a retired built-in id from breaking the product:
+  // the chain must ask the provider what its key can actually serve, and a
+  // model the provider does not list must never be tried.
+  let askedModels = 0;
+  const discovered = handler({ GROQ_API_KEY: 'g' }, async (url, options) => {
+    if (/\/models(\?|$)/.test(url)) {
+      askedModels += 1;
+      return json({ object: 'list', data: [{ id: 'solo-available-model' }] });
+    }
+    const sent = JSON.parse(options.body).model;
+    assert.equal(sent, 'solo-available-model', 'the chain must use the discovered model, not the retired catalog entry');
+    return json({ model: sent, choices: [{ message: { content: 'discovered reply' } }] });
+  });
+  const found = await invoke(discovered);
+  assert.equal(found.data.ok, true);
+  assert.equal(found.data.model, 'solo-available-model');
+  assert.equal(askedModels, 1, 'model discovery should run once per provider, not per request');
+  console.log('ok - live model discovery replaces a retired catalog entry');
 
   const delta = { model: 'actual-model', choices: [{ delta: { content: 'Hi \u{1f30d}' } }] };
   const upstream = ': heartbeat\r\n\r\n' + frame(delta) + 'data: [DONE]';
@@ -155,7 +189,13 @@ function client(fetch, extra = {}) {
   console.log('ok - multiline events, malformed/error frames and truncated/empty streams');
 
   let calls = 0;
-  const interrupted = await invoke(handler({ GROQ_API_KEY: 'g', OPENAI_API_KEY: 'o' }, async () => { calls++; return stream(frame(delta)); }), { messages, stream: true });
+  // Count completions only: the chain may also fetch /models for live model
+  // discovery, which is unrelated to whether it rotated after partial output.
+  const interrupted = await invoke(handler({ GROQ_API_KEY: 'g', OPENAI_API_KEY: 'o' }, async (url) => {
+    if (!/\/chat\/completions$/.test(String(url))) return json({ object: 'list', data: [] });
+    calls++;
+    return stream(frame(delta));
+  }), { messages, stream: true });
   const incomplete = await client(async () => stream(interrupted.text)).serverChat(messages, () => {});
   assert.equal(calls, 1, 'must not rotate after emitting partial content');
   assert.equal(incomplete.ok, false);

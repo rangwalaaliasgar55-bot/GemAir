@@ -128,7 +128,9 @@ function byteStream(frames) {
     };
     const okFetch = async (url, options) => {
       assert.ok(url.includes('/v1beta/models?pageSize='), 'wrong catalog endpoint: ' + url);
-      assert.ok(url.includes('key=test-key'), 'API key must authenticate the catalog request');
+      // Header, not query string — see listModels().
+      assert.ok(!/key=/.test(url), 'the catalog request must not carry the key in the URL: ' + url);
+      assert.equal((options.headers || {})['x-goog-api-key'], 'test-key', 'API key must authenticate the catalog request via x-goog-api-key');
       assert.equal(options.method, 'GET');
       return { ok: true, status: 200, json: async () => catalog };
     };

@@ -504,10 +504,14 @@
     const key = String(apiKey || '').trim();
     if (!key) throw new Error('MISSING_API_KEY');
     const doFetch = fetchImpl || fetch;
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=' + encodeURIComponent(key);
+    // No `?key=`: a credential in a URL persists in browser history and shows up
+    // in any error text that echoes the request. The documented header keeps the
+    // key out of both, and Google's CORS policy accepts it (their own browser
+    // SDK sends it that way).
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=100';
     let response;
     try {
-      response = await doFetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+      response = await doFetch(url, { method: 'GET', headers: { Accept: 'application/json', 'x-goog-api-key': key } });
     } catch (e) {
       throw new Error('LIST_MODELS_NETWORK');
     }

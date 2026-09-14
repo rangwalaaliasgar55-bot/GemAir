@@ -276,10 +276,12 @@
         let data = null;
         try {
           const res = await fetch(
-            'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey),
+            // Key travels in the documented header, never the query string:
+            // URLs are logged by proxies and land in crash reports.
+            'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent',
             {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
               body: JSON.stringify({
                 contents: [{ role: 'user', parts: [{ text: part }] }],
                 generationConfig: {

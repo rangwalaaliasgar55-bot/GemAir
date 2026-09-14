@@ -183,6 +183,9 @@ contextBridge.exposeInMainWorld('air', {
   platform: process.platform,
   snapshot: () => ipcRenderer.invoke('air:snapshot'),
   state: () => ipcRenderer.invoke('air:state'),
+  setAppView: (view) => ipcRenderer.invoke('air:setAppView', view),
+  tabs: (limit) => ipcRenderer.invoke('air:tabs', limit),
+  focusTab: (entry) => ipcRenderer.invoke('air:focusTab', entry),
   capabilities: () => ipcRenderer.invoke('air:capabilities'),
 
   summary: (day) => ipcRenderer.invoke('air:summary', day),

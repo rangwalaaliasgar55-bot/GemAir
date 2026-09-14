@@ -113,32 +113,52 @@ GemAir supports two transport families while keeping one permission-gated tool e
 - **ChatGPT account (Desktop):** OpenAI device authorization → ChatGPT-backed Codex Responses API → native function calls. No OpenAI Platform key; usage follows the signed-in account's plan and limits.
 - **Provider/local models:** OpenAI-compatible `chat/completions` endpoints for Gemini, Groq, Ollama, OpenRouter and others.
 
-| Brain | Connection | Model |
+| Brain | Connection | Default model (current as of the catalog revision) |
 | --- | --- | --- |
-| **ChatGPT account** (Desktop) | Settings → AI & Connections → **Connect ChatGPT** | Discovered from your account |
-| **Anonymous GPT sidecar** (Desktop, experimental) | Enabled by default as a fallback; no account or key | FreeGPT35-compatible `gpt-3.5-turbo` route |
-| **OpenJarvis reasoning** (Desktop, optional) | Settings → Connections → **Install runtime**; requires Python 3.10–3.13 and normally local Ollama | Orchestrator/ReAct, deep research, memory, guardrails, and opt-in read-only loopback MCP; optional Rust acceleration |
-| **Google Gemini** (free tier) | [aistudio.google.com](https://aistudio.google.com/apikey) | `gemini-2.5-flash` |
-| **Groq** (free tier) | [console.groq.com/keys](https://console.groq.com/keys) | `llama-3.3-70b-versatile` |
-| **Cerebras** (free tier) | [cloud.cerebras.ai](https://cloud.cerebras.ai) | `llama-3.3-70b` |
-| **SambaNova** (free tier) | [cloud.sambanova.ai](https://cloud.sambanova.ai) | `Meta-Llama-3.3-70B-Instruct` |
-| **NVIDIA NIM** (free credits) | [build.nvidia.com](https://build.nvidia.com) | `meta/llama-3.3-70b-instruct` |
-| **Together AI** | [api.together.xyz](https://api.together.xyz/settings/api-keys) | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
-| **Fireworks AI** | [fireworks.ai](https://fireworks.ai/login) | `accounts/fireworks/models/llama-v3p3-70b-instruct` |
-| **xAI (Grok)** | [console.x.ai](https://console.x.ai) | `grok-3-mini` |
-| **Z.AI (GLM)** | [z.ai/glm](https://z.ai/glm) | `glm-4-flash` |
-| **Cohere** | [cohere.com/api-key](https://cohere.com/api-key) | `command-r-plus` |
-| **Hugging Face** | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) | `meta-llama/Llama-3.3-70B-Instruct` |
-| **DeepSeek** | [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) | `deepseek-chat` |
-| **Mistral** (free Experiment plan) | [console.mistral.ai](https://console.mistral.ai) | `mistral-small-latest` |
-| **OpenRouter** | openrouter.ai/keys | any of 300+ models |
-| **ChatGPT / OpenAI** (optional, paid) | [platform.openai.com](https://platform.openai.com/api-keys) | `gpt-4o-mini` |
-| **Ollama** (fully local, keyless) | — none — | `llama3` |
+| **Google Gemini** (free tier, no card) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | `gemini-3.5-flash` |
+| **Groq** (free tier, no card) | [console.groq.com/keys](https://console.groq.com/keys) | `openai/gpt-oss-120b` |
+| **OpenRouter** (free tier, no card) | [openrouter.ai/keys](https://openrouter.ai/keys) | `meta-llama/llama-3.3-70b-instruct:free` |
+| **Z.AI (GLM)** (free tier, no card) | [z.ai/subscribe/api-key](https://z.ai/subscribe/api-key) | `glm-4.7-flash` |
+| **SambaNova** (free tier, no card) | [cloud.sambanova.ai](https://cloud.sambanova.ai) | `Meta-Llama-3.3-70B-Instruct` |
+| **Cerebras** (credits / paid) | [cloud.cerebras.ai](https://cloud.cerebras.ai) | `gpt-oss-120b` |
+| **Mistral** (free tier, no card) | [console.mistral.ai](https://console.mistral.ai) | `mistral-small-latest` |
+| **NVIDIA NIM** (free tier, no card) | [build.nvidia.com](https://build.nvidia.com) | `meta/llama-3.3-70b-instruct` |
+| **Together AI** (credits / paid) | [api.together.xyz/settings/api-keys](https://api.together.xyz/settings/api-keys) | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| **Fireworks AI** (credits / paid) | [fireworks.ai/login](https://fireworks.ai/login) | `accounts/fireworks/models/llama-v3p3-70b-instruct` |
+| **xAI (Grok)** (credits / paid) | [console.x.ai](https://console.x.ai) | `grok-4.1-fast` |
+| **Cohere** (free tier, no card) | [cohere.com/api-key](https://cohere.com/api-key) | `command-r-plus` |
+| **Hugging Face** (free tier, no card) | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) | `meta-llama/Llama-3.3-70B-Instruct` |
+| **DeepSeek** (credits / paid) | [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) | `deepseek-chat` |
+| **Hyperbolic** (free tier) | [app.hyperbolic.xyz](https://app.hyperbolic.xyz) | `meta-llama/Llama-3.3-70B-Instruct` |
+| **DeepInfra** (credits / paid) | [deepinfra.com](https://deepinfra.com) | `meta-llama/Llama-3.3-70B-Instruct` |
+| **SiliconFlow** (free tier) | [cloud.siliconflow.cn](https://cloud.siliconflow.cn) | `Qwen/Qwen2.5-72B-Instruct` |
+| **Novita AI** (credits / paid) | [novita.ai](https://novita.ai) | `meta-llama/llama-3.3-70b-instruct` |
+| **ChatGPT / OpenAI** (credits / paid) | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | `gpt-5.6-terra` |
+| **Anthropic Claude** (credits / paid) | [console.anthropic.com](https://console.anthropic.com) | `claude-sonnet-5` |
+| **Ollama** (local, keyless) | — none — | `llama3.2` |
+
+> **Model ids are dated on purpose.** Providers retire ids several times a year —
+> Groq shut the whole Llama 3.x line down on 2026-08-16, Google retired Gemini 2.0
+> on 2026-06-01, xAI retired Grok 3/4 on 2026-05-15 — and a remembered id fails as a
+> bare 404 that reads as a broken app. The table above is generated from the same
+> ledger the app uses (`renderer/model-currency.js`, revision **2026-09-13**): stale
+> settings are healed on load, the free chain asks each provider which models your key
+> can actually serve, and `npm run check` fails if a retired id reappears in the source.
+
 
 > **🆓 Free models are shown in the app.** Settings → AI BRAIN shows a **FREE MODELS**
-> panel with one-click setup for 38 free-tier OpenAI-compatible models and a live
-> list of any local Ollama models — no credit card required. You can also switch models
-> from chat with GemAir slash commands: `/providers`, `/models`, `/use <model>`, `/local`.
+> panel with one-click setup for every free-tier OpenAI-compatible model in the catalog
+> and a live list of any local Ollama models — no credit card required. You can also
+> switch models from chat with GemAir slash commands: `/providers`, `/models`,
+> `/use <model>`, `/local`.
+
+> **What "free" means here, precisely.** The deployed `/api/chat` proxy is a *proxy*,
+> not a free model service: it spends the provider keys configured in the deployment's
+> environment. A fork or fresh Vercel deploy with no keys therefore answers
+> `NO_PROVIDERS_CONFIGURED`, and the app says so and switches to your own key rather
+> than failing quietly. Desktop needs no key at all — the account connections and the
+> opt-in anonymous route cover it. Check `/api/health` (`chatReady`,
+> `providersConfigured`, `catalogRevision`) when deploying.
 
 Provider keys are stored locally. ChatGPT bearer/refresh/ID tokens and the account id stay in the Electron main process and are encrypted at rest with the operating system's credential protection. The browser build still offers keyless live tools; general model answers require a configured provider. The anonymous desktop route depends on undocumented OpenAI web endpoints and can break upstream; GemAir reports failures rather than pretending it answered. See **[AI-FRAMEWORK.md](AI-FRAMEWORK.md)** and the exact upstream/license review in **[docs/UPSTREAM-INTEGRATION.md](docs/UPSTREAM-INTEGRATION.md)**.
 
