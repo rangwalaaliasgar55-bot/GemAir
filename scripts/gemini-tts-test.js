@@ -68,7 +68,7 @@ const tts = global.window.ttsEngine;
   {
     let seen = null;
     global.fetch = async (url, options) => {
-      seen = { url, body: JSON.parse(options.body) };
+      seen = { url, body: JSON.parse(options.body), headers: (options && options.headers) || {} };
       return { ok: true, json: async () => ttsFixture() };
     };
     const r = await tts.speak('hello there', {
@@ -76,7 +76,9 @@ const tts = global.window.ttsEngine;
       geminiModel: 'gemini-2.5-flash', geminiVoice: '', gender: 'male'
     });
     assert.equal(r, true, 'gemini speech failed');
-    assert.ok(seen.url.includes(':generateContent?key=AIzaTestKey1234567890'), 'key must ride ?key=, got: ' + seen.url);
+    assert.ok(/:generateContent(\?|$)/.test(seen.url), 'the model must still be addressed in the path, got: ' + seen.url);
+    assert.ok(!/key=/.test(seen.url), 'the key must not ride the query string, got: ' + seen.url);
+    assert.equal(seen.headers['x-goog-api-key'], 'AIzaTestKey1234567890', 'Gemini TTS must authenticate with x-goog-api-key');
     assert.deepEqual(seen.body.generationConfig.responseModalities, ['AUDIO']);
     assert.equal(seen.body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, 'Charon');
     assert.ok(started.length >= 1, 'no PCM source was started');

@@ -6,49 +6,68 @@ const { originAllowed, applyCors, requestOrigin, env } = require('./_lib/http');
 
 const KEY_ENV_NAMES = ['GROQ_API_KEY', 'OPENAI_API_KEY', 'AI_KEY', 'GROQ_KEY', 'VERCEL_GROQ_KEY'];
 
+// The model-currency ledger heals stale ids instead of failing. Vercel traces
+// this require; a bundling miss degrades to "no repair", never to an error.
+let modelCurrency = null;
+try { modelCurrency = require('../lib/model-currency.js'); } catch { modelCurrency = null; }
+
 // Free provider fallback chain. Each entry is an OpenAI-compatible endpoint;
 // a key under any of keyEnv makes it usable. `nativeHeader` is sent alongside
 // Bearer where a provider wants its own auth header (Gemini).
 // A much broader free fallback chain. Each entry is OpenAI-compatible; any key
 // under keyEnv makes it usable. Adding more providers here means the FREE CORE
 // is more resilient: if one rate-limits or goes down, the next answers.
+//
+// Model ids are reconciled with each provider's own deprecation page (see
+// renderer/model-currency.js). They are only a PREFERRED order: `discover()`
+// below asks each live provider for its real model list and drops anything the
+// key cannot serve, so a retired id in this table costs one cached round-trip
+// instead of breaking the product the way it did when Groq shut the Llama line
+// down on 2026-08-16.
 const FREE_PROVIDERS = [
   {
     id: 'groq', free: true,
     base: 'https://api.groq.com/openai/v1',
     keyEnv: ['GROQ_API_KEY', 'GROQ_KEY', 'VERCEL_GROQ_KEY'],
-    models: ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'llama3-8b-8192', 'mixtral-8x7b-32768']
+    models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b']
   },
   {
     id: 'gemini', free: true,
     base: 'https://generativelanguage.googleapis.com/v1beta/openai',
     keyEnv: ['GEMINI_API_KEY', 'GEMINI_KEY', 'GOOGLE_AI_API_KEY', 'GOOGLE_GEMINI_API_KEY'],
     nativeHeader: 'x-goog-api-key',
-    models: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+    models: ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
   },
   {
     id: 'openrouter', free: true,
     base: 'https://openrouter.ai/api/v1',
     keyEnv: ['OPENROUTER_API_KEY', 'OPENROUTER_KEY'],
-    models: ['meta-llama/llama-3.3-70b-instruct', 'meta-llama/llama-3.1-8b-instruct', 'mistralai/mistral-7b-instruct', 'deepseek/deepseek-chat-v3-0324']
+    models: ['meta-llama/llama-3.3-70b-instruct:free', 'deepseek/deepseek-chat-v3-0324:free', 'z-ai/glm-5.2:free']
   },
   {
-    id: 'cerebras', free: true,
-    base: 'https://api.cerebras.ai/v1',
-    keyEnv: ['CEREBRAS_API_KEY', 'CEREBRAS_KEY'],
-    models: ['llama-3.3-70b', 'qwen-3-32b']
+    id: 'zai', free: true,
+    base: 'https://api.z.ai/api/paas/v4',
+    keyEnv: ['ZAI_API_KEY'],
+    nativeHeader: 'x-api-key',
+    models: ['glm-4.7-flash', 'glm-4.5-flash']
   },
   {
     id: 'sambanova', free: true,
     base: 'https://api.sambanova.ai/v1',
     keyEnv: ['SAMBANOVA_API_KEY', 'SAMBANOVA_KEY'],
-    models: ['Meta-Llama-3.1-8B-Instruct', 'Meta-Llama-3.3-70B-Instruct']
+    models: ['Meta-Llama-3.3-70B-Instruct', 'DeepSeek-V3.1', 'gpt-oss-120b']
   },
   {
-    id: 'together', free: true,
-    base: 'https://api.together.xyz/v1',
-    keyEnv: ['TOGETHER_API_KEY', 'TOGETHER_KEY'],
-    models: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'Qwen/Qwen2.5-72B-Instruct-Turbo']
+    id: 'cerebras', free: true,
+    base: 'https://api.cerebras.ai/v1',
+    keyEnv: ['CEREBRAS_API_KEY', 'CEREBRAS_KEY'],
+    models: ['gpt-oss-120b', 'llama3.1-8b']
+  },
+  {
+    id: 'mistral', free: true,
+    base: 'https://api.mistral.ai/v1',
+    keyEnv: ['MISTRAL_API_KEY', 'MISTRAL_KEY'],
+    models: ['mistral-small-latest', 'mistral-large-latest']
   },
   {
     id: 'nvidia', free: true,
@@ -57,17 +76,16 @@ const FREE_PROVIDERS = [
     models: ['meta/llama-3.3-70b-instruct', 'deepseek-ai/deepseek-r1']
   },
   {
-    id: 'xai', free: true,
-    base: 'https://api.x.ai/v1',
-    keyEnv: ['XAI_API_KEY', 'GROK_API_KEY'],
-    models: ['grok-3-mini']
+    id: 'together', free: true,
+    base: 'https://api.together.xyz/v1',
+    keyEnv: ['TOGETHER_API_KEY', 'TOGETHER_KEY'],
+    models: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'Qwen/Qwen2.5-72B-Instruct-Turbo']
   },
   {
-    id: 'zai', free: true,
-    base: 'https://api.z.ai/api/paas/v4',
-    keyEnv: ['ZAI_API_KEY'],
-    nativeHeader: 'x-api-key',
-    models: ['glm-4-flash']
+    id: 'xai', free: false,
+    base: 'https://api.x.ai/v1',
+    keyEnv: ['XAI_API_KEY', 'GROK_API_KEY'],
+    models: ['grok-4.1-fast']
   },
   {
     id: 'hf', free: true,
@@ -76,13 +94,13 @@ const FREE_PROVIDERS = [
     models: ['meta-llama/Llama-3.3-70B-Instruct', 'Qwen/Qwen2.5-72B-Instruct']
   },
   {
-    id: 'deepseek', free: true,
+    id: 'deepseek', free: false,
     base: 'https://api.deepseek.com/v1',
     keyEnv: ['DEEPSEEK_API_KEY'],
     models: ['deepseek-chat', 'deepseek-reasoner']
   },
   {
-    id: 'deepinfra', free: true,
+    id: 'deepinfra', free: false,
     base: 'https://api.deepinfra.com/v1/openai',
     keyEnv: ['DEEPINFRA_API_KEY'],
     models: ['meta-llama/Llama-3.3-70B-Instruct']
@@ -91,7 +109,7 @@ const FREE_PROVIDERS = [
     id: 'openai', free: false,
     base: 'https://api.openai.com/v1',
     keyEnv: ['OPENAI_API_KEY'],
-    models: ['gpt-4o-mini']
+    models: ['gpt-5.6-luna', 'gpt-5.6-terra']
   }
 ];
 
@@ -104,14 +122,122 @@ function availableProviders() {
   const modelOverride = env('AI_MODEL');
   if (baseOverride) {
     const key = KEY_ENV_NAMES.map(env).find(Boolean) || '';
-    out.push({ id: 'override', base: baseOverride.replace(/\/+$/, ''), key, models: modelOverride ? [modelOverride] : ['llama-3.1-8b-instant'] });
+    // An explicit gateway used to default to 'llama-3.1-8b-instant' — an id
+    // Groq retired on 2026-08-16 — so AI_BASE_URL without AI_MODEL always
+    // failed. With no model configured we send none of our own and let
+    // resolveProviderModels() pick one the gateway actually serves.
+    const repaired = modelOverride && modelCurrency ? modelCurrency.repairModelId(modelOverride).model : (modelOverride || '');
+    out.push({ id: 'override', base: baseOverride.replace(/\/+$/, ''), key, models: repaired ? [repaired] : [] });
   }
   for (const p of FREE_PROVIDERS) {
     const key = p.keyEnv.map(env).find(Boolean) || '';
-    if (key) out.push({ ...p, key, base: p.base.replace(/\/+$/, '') });
+    if (!key) continue;
+    // Heal stale ids in the built-in chain as well, then de-duplicate.
+    const models = (p.models || [])
+      .map((m) => (modelCurrency ? modelCurrency.repairModelId(m, p.id).model : m))
+      .filter((m, i, arr) => m && arr.indexOf(m) === i);
+    out.push({ ...p, key, base: p.base.replace(/\/+$/, ''), models });
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// LIVE MODEL DISCOVERY (2.9)
+//
+// Hard-coded model ids are the reason a working install silently stops
+// working: a provider retires a model and every chain entry for it 404s, which
+// the user reads as "the connection is broken". So before the chain runs, each
+// configured provider is asked which models its own key can actually serve.
+// Results are cached per provider (success 6h, failure 10min) and every failure
+// is non-fatal: discovery only narrows or extends the preferred list, it can
+// never turn a working provider off.
+// ---------------------------------------------------------------------------
+const DISCOVER_OK_TTL_MS = 6 * 60 * 60 * 1000;
+const DISCOVER_FAIL_TTL_MS = 10 * 60 * 1000;
+const DISCOVER_TIMEOUT_MS = 6000;
+const DISCOVER_MAX_EXTRA = 6;
+const _discovered = new Map(); // providerId -> { at, ok, ids }
+
+function modelsEndpoint(base) {
+  const trimmed = String(base || '').replace(/\/+$/, '');
+  if (/\/chat\/completions$/.test(trimmed)) return trimmed.replace(/\/chat\/completions$/, '/models');
+  return trimmed + '/models';
+}
+
+function parseModelList(data) {
+  const list = Array.isArray(data) ? data
+    : (data && Array.isArray(data.data)) ? data.data
+    : (data && Array.isArray(data.models)) ? data.models : [];
+  return list
+    .map((m) => (typeof m === 'string' ? m : String((m && (m.id || m.name || m.model)) || '')))
+    .filter((m) => m && !m.includes('://'))
+    .slice(0, 400);
+}
+
+async function discoverModels(provider) {
+  const cached = _discovered.get(provider.id);
+  const now = Date.now();
+  if (cached && now - cached.at < (cached.ok ? DISCOVER_OK_TTL_MS : DISCOVER_FAIL_TTL_MS)) return cached.ids;
+  let ids = [];
+  let ok = false;
+  try {
+    ids = await fetchWithTimeout(modelsEndpoint(provider.base), {
+      method: 'GET',
+      headers: { Accept: 'application/json', ...(provider.key ? { Authorization: 'Bearer ' + provider.key } : {}) }
+    }, DISCOVER_TIMEOUT_MS, async (res) => {
+      if (!res.ok) { if (res.body) await res.body.cancel().catch(() => {}); return []; }
+      return parseModelList(await res.json());
+    });
+    ok = true;
+  } catch {
+    ids = [];
+    ok = false; // discovery is an optimization, never a dependency
+  }
+  if (!Array.isArray(ids)) ids = [];
+  _discovered.set(provider.id, { at: now, ok, ids });
+  return ids;
+}
+
+/**
+ * Preferred models for one provider: catalog order first (kept only when the
+ * provider confirms them), then live ids that look like general chat models.
+ * Falls back to the repaired catalog whenever discovery is unavailable, so a
+ * provider that forbids /models still answers.
+ */
+async function resolveProviderModels(provider) {
+  const preferred = (provider.models || []).filter(Boolean);
+  if (!provider.key) return preferred;
+  const live = await discoverModels(provider);
+  if (!live.length) return preferred;
+  const liveSet = new Set(live);
+  const kept = preferred.filter((m) => liveSet.has(m));
+  const extras = live
+    .filter((m) => !preferred.includes(m))
+    .filter((m) => !modelCurrency || modelCurrency.isChatCapable(m))
+    .filter((m) => !(modelCurrency && modelCurrency.isKnownRetired(m)))
+    .slice(0, DISCOVER_MAX_EXTRA);
+  const ordered = kept.concat(extras);
+  return ordered.length ? ordered : preferred;
+}
+
+/** Attach a live, non-empty `models` array to every provider in the chain. */
+async function prepareProviders(providers) {
+  const resolved = await Promise.all(providers.map(async (provider) => ({
+    ...provider,
+    models: await resolveProviderModels(provider)
+  })));
+  return resolved.filter((provider) => provider.models.length > 0);
+}
+
+function nextStepsForNoProviders() {
+  return [
+    'Fastest fix for one user: Settings → AI BRAIN → paste a free key (Groq: console.groq.com/keys, or Google AI Studio: aistudio.google.com/apikey) and press TEST CONNECTION.',
+    'To power the shared free core for everyone, add a provider credential to the deployment: vercel env add GROQ_API_KEY production (or GEMINI_API_KEY).',
+    'Alternatively point the proxy at any OpenAI-compatible gateway: AI_BASE_URL + AI_MODEL.',
+    'GemAir Desktop also works with no key at all via Connect ChatGPT, or the opt-in anonymous sidecar in Settings.'
+  ];
+}
+
 
 function aiHeaders(provider, key) {
   const headers = { 'Content-Type': 'application/json' };
@@ -539,11 +665,28 @@ module.exports = async (req, res) => {
   if (validated.error) return res.status(400).json({ error: validated.error });
   const messages = validated.messages;
 
-  const providers = availableProviders();
-  if (!providers.length) {
+  const configured = availableProviders();
+  if (!configured.length) {
+    // This used to be a dead end that read as "GemAir is broken": the product
+    // advertises a free core, but the core is a proxy onto keys the *deployer*
+    // must supply. Say exactly that, and hand the client the code it needs to
+    // switch itself to a user-supplied key instead of showing a wall of text.
     return res.status(503).json({
       ok: false, error: 'NO_PROVIDERS_CONFIGURED', retryable: false,
-      message: 'Server AI is not configured. The server operator must set a provider credential such as GROQ_API_KEY, GEMINI_API_KEY or OPENAI_API_KEY, or configure AI_BASE_URL and AI_MODEL for a compatible gateway.'
+      useDirectProvider: true,
+      message: 'This deployment has no AI provider keys, so the shared free core cannot answer. Two ways out: add a free key in Settings → AI BRAIN (Groq or Google AI Studio — about a minute, no card) and GemAir will use it directly, or set GROQ_API_KEY / GEMINI_API_KEY on the deployment to power the shared free core for everyone.',
+      nextSteps: nextStepsForNoProviders()
+    });
+  }
+
+  // Narrow/extend each provider's model list against its own live catalog, then
+  // keep only providers that have something to serve.
+  const providers = await prepareProviders(configured);
+  if (!providers.length) {
+    return res.status(503).json({
+      ok: false, error: 'NO_MODELS_AVAILABLE', retryable: true,
+      message: 'Every configured provider key refused to list any usable chat model. The key may lack access, be out of quota, or the project may need the provider API enabled.',
+      providers: configured.map((p) => ({ id: p.id, base: p.base }))
     });
   }
 

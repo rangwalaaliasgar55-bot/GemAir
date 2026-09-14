@@ -169,9 +169,9 @@ Content-Type: application/json
 
 Details handled by GemAir:
 
-- **Auth**: `aiHeaders()` (main.js) and `directClientChat()` (ai-client.js) add `x-goog-api-key` automatically when the base URL is Gemini.
+- **Auth**: `aiHeaders()` (main.js), `directClientChat()` (ai-client.js) and `callGeminiWeb()` add `x-goog-api-key` automatically when the base URL is Gemini. The key goes in the **header only** — never `?key=` — so a credential cannot persist in a URL, a proxy log, or an error that echoes the request.
 - **Tool compatibility**: if a Gemini model refuses the `tools` schema (400/404/422 mentioning tools/functions), the client **retries once without tools** so you still get an answer.
-- **Models**: `gemini-2.5-flash` (default), `gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-2.5-pro`.
+- **Models**: the current free set is `gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-2.5-flash`, `gemini-2.5-flash-lite` and `gemma-4-31b-it`. Ids are not repeated in this document on purpose: they live in `renderer/providers.js` and `renderer/model-currency.js` (revision-dated), and `scripts/catalog-currency-test.js` fails the build if any doc or source file quotes a retired id. The Gemini 2.0 family was retired upstream on 2026-06-01, and the free tier has been Flash-only since 2026-05.
 
 ### 4.2 The way Stonic does its *voice* — Gemini Live API
 
@@ -245,13 +245,18 @@ emerald: {
 
 | Brain | Get a key | Base URL | Model | Notes |
 |---|---|---|---|---|
-| **ChatGPT / OpenAI** | platform.openai.com | `https://api.openai.com/v1` | `gpt-4o-mini` | preset `ChatGPT` |
-| **Gemini** | aistudio.google.com/apikey | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.5-flash` | preset `Gemini`; free tier available |
-| **Claude** | console.anthropic.com | `https://api.anthropic.com/v1` | `claude-sonnet-4-20250514` | preset `Claude` |
-| **Groq** | console.groq.com | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` | preset `Groq`; fast + free tier |
-| **OpenRouter** | openrouter.ai | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.3-70b-instruct` | one key, many models |
-| **Ollama (local)** | none | `http://localhost:11434/v1` | `llama3` | fully offline |
-| **Free core (no key)** | none | — | — | web mode only, Vercel serverless |
+| **ChatGPT / OpenAI** | platform.openai.com | `https://api.openai.com/v1` | `gpt-5.6-luna` | preset `ChatGPT`; paid. Desktop's **Connect ChatGPT** uses your own plan and needs no key here |
+| **Gemini** | aistudio.google.com/apikey | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-3.5-flash` | preset `Gemini`; the free tier is Flash-only since 2026-05 |
+| **Claude** | console.anthropic.com | `https://api.anthropic.com/v1` | `claude-sonnet-5` | preset `Claude` |
+| **Groq** | console.groq.com | `https://api.groq.com/openai/v1` | `openai/gpt-oss-120b` | preset `Groq`; its Llama 3.x ids were shut down 2026-08-16 |
+| **OpenRouter** | openrouter.ai | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.3-70b-instruct:free` | one key, many models; the `:free` ids are the free routes |
+| **Ollama (local)** | none | `http://localhost:11434/v1` | `llama3.2` | fully offline |
+| **Free core** | none (the deployment supplies keys) | `/api/chat` | provider-selected | a **proxy**, not a keyless service: needs `GROQ_API_KEY`/`GEMINI_API_KEY` or `AI_BASE_URL` on the deployment |
+
+Exact current ids for every provider live in `renderer/providers.js`, dated by
+`renderer/model-currency.js`. Pick from Settings → AI BRAIN rather than from a table in
+prose: a model id quoted in a document is a model id nobody re-checks, which is exactly
+how this file outlived two rounds of upstream retirements.
 
 ### Troubleshooting
 

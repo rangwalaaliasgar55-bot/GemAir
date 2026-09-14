@@ -54,7 +54,24 @@ const api = {
 
   async _webChat(messages, onDelta) {
     if (!window.aiClient) return { ok: false, error: 'Chat client unavailable. Reload the app.' };
-    return window.aiClient.serverChat(messages, onDelta);
+    const result = await window.aiClient.serverChat(messages, onDelta);
+    // The shared free core is a proxy onto the DEPLOYER's keys. When a
+    // deployment has none, the server now says so with `useDirectProvider`,
+    // which means "use your own key instead" — do it immediately rather than
+    // showing the user a 503 they cannot act on.
+    if (!result.ok && result.error === 'NO_PROVIDERS_CONFIGURED') {
+      const config = (window.profile && window.profile.ai) || (typeof profile !== 'undefined' ? profile.ai : null);
+      if (config && config.apiKey && config.baseURL) {
+        const direct = await window.aiClient.directClientChat(config, messages, onDelta);
+        if (direct && direct.ok) return { ...direct, via: 'direct', fellBackFromServer: true };
+      }
+      return {
+        ...result,
+        message: 'This GemAir deployment has no AI provider keys, so the free core cannot answer. Open Settings → AI BRAIN and paste a free Groq or Google AI Studio key — GemAir will then use your key directly. Desktop also works with Connect ChatGPT.',
+        settingsHint: true
+      };
+    }
+    return result;
   },
   async aiChat(config, messages) {
     if (window.gemair) return window.gemair.aiChat(config, messages);
@@ -226,7 +243,7 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.8.2'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.10.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
@@ -275,10 +292,20 @@ const api = {
     try {
       const response = await fetch('/api/health', { headers: { Accept: 'application/json' } });
       const health = await response.json();
+      // `status: ok` only means the functions are deployed. The FREE CORE chip
+      // must answer a different question — can it actually generate? — which is
+      // `chatReady`: a deployment with no provider keys answers 503 on every
+      // message while the hub happily showed READY.
       status.freeCore.connected = response.ok && health.status === 'ok';
-      status.freeCore.serverAiConfigured = !!health.anyAiConfigured;
-      status.freeCore.dot = status.freeCore.connected ? 'READY' : 'UNAVAILABLE';
-      status.freeCore.message = status.freeCore.connected ? 'Live server tools available' : 'Live server tools unavailable';
+      status.freeCore.serverAiConfigured = health.chatReady !== undefined ? !!health.chatReady : !!health.anyAiConfigured;
+      status.freeCore.providersConfigured = Array.isArray(health.providersConfigured) ? health.providersConfigured : [];
+      status.freeCore.catalogRevision = health.catalogRevision || 'unknown';
+      status.freeCore.dot = status.freeCore.serverAiConfigured ? 'READY' : (status.freeCore.connected ? 'NO_KEYS' : 'UNAVAILABLE');
+      status.freeCore.message = status.freeCore.serverAiConfigured
+        ? 'Live server tools and free core ready'
+        : (status.freeCore.connected
+          ? 'Server is up but has no AI provider keys — add a free Groq or Gemini key in Settings and GemAir will use it directly.'
+          : 'Live server tools unavailable');
     } catch { status.freeCore.dot = 'UNAVAILABLE'; status.freeCore.message = 'Network unavailable'; }
     return status;
   },
@@ -568,7 +595,10 @@ const DEFAULTS = Object.freeze({
   name: 'Commander',
   get theme() { return (window.GemAirThemes && window.GemAirThemes.DEFAULT) || 'crimson'; },
   city: 'Mumbai',
-  model: 'llama-3.1-8b-instant',
+  // Groq's long-standing default was `llama-3.1-8b-instant`; Groq shut it down
+  // on 2026-08-16, so a pristine profile shipped a model id that could never
+  // answer. Kept in step with the shared catalog rather than a literal.
+  model: (window.GemAirProviders && window.GemAirProviders.byId('groq') && window.GemAirProviders.byId('groq').models[0].id) || 'openai/gpt-oss-120b',
   voiceMode: 'edge',
   voicePreset: 'gem',
   voiceRate: 1.0,
@@ -1761,6 +1791,9 @@ function switchView(view) {
     b.classList.toggle('active', active);
     b.setAttribute('aria-current', active ? 'page' : 'false');
   });
+  // Tell the Gem Air island which tab is showing, so the pill can answer
+  // "where am I in GemAir" alongside "what window is focused on the machine".
+  try { if (window.air && window.air.setAppView) window.air.setAppView(view); } catch {}
   $$('.view').forEach((v) => {
     const active = v.id === 'view-' + view;
     if (active && previous && previous !== v) {
@@ -2856,6 +2889,7 @@ User: "play soft music" -> open lofi playlist + set volume 35 + apply theme viol
       `- If the user's premise is wrong, correct it first, briefly.\n` +
       `PLANNER: For a request with two or more steps, begin with a short numbered plan, then execute the necessary tools in order and report completion against that plan. ` +
       `AGENTIC DESKTOP MANAGEMENT: Big requests ("set up my workspace for editing") get decomposed into numbered steps, executed sequentially with live progress checklist, per-step retry once, final spoken+written summary. Show the plan before executing (dry-run chip: SHOW PLAN / RUN). Use launch_app, focus_app, snap_window, open_site, list_windows etc. Everything destructive stays behind HITL; every step logged to action log (undo stays available).\n` +
+      `RUN_DESKTOP_TASK: when the outcome needs several physical mouse/keyboard actions in a row (fill a form, change a system setting, drive an app that has no dedicated tool), call run_desktop_task ONCE with the whole objective instead of chaining move_mouse/mouse_click/type_text yourself — the desktop agent re-reads the screen between actions and reports what it did. Do not use it for a single click or for anything a dedicated tool already does.\n` +
       `WORKFLOW RECIPES (Section III) — when the user asks for one of these, execute the exact tool chain, show a short numbered plan with checkpoints, and report which steps completed. Multi-step missions log every action (undo is available via the action log):\n` +
       `- "organize downloads by type" → organize_folder(path="~/Downloads") and report categories\n` +
       `- "gather this week's screenshots" → find_large_files/move_files (find recent screenshots, move them into one folder)\n` +
@@ -2880,6 +2914,16 @@ const humanError = (err) => {
   if (err === 'TOOL_LOOP') return 'The model got stuck calling tools.';
   if (err.startsWith('HTTP_401')) return 'AI core reconnecting (auth) — I will use the built-in brain for now.';
   if (err.startsWith('HTTP_429')) return '429 Rate limited — wait a moment and retry.';
+  if (err.startsWith('NO_PROVIDERS_CONFIGURED')) return 'This deployment has no AI provider keys, so the shared free core is idle — add a free Groq or Gemini key in Settings → AI BRAIN, or use a connected account.';
+  if (err.startsWith('NO_MODELS_AVAILABLE')) return 'Your provider key did not list any usable chat model — check its quota and enabled models in the provider console.';
+  if (err.startsWith('PROVIDERS_UNAVAILABLE')) return 'Every configured provider failed this turn. GemAir is answering with the built-in brain — retry in a moment.';
+  if (err.startsWith('GEMINI_WEB_SESSION_ONLY')) return 'Google sign-in alone cannot call the Gemini API. Paste a free AI Studio key (Settings → AI & Connections) to finish — your sign-in is kept.';
+  if (err.startsWith('GEMINI_OAUTH_SCOPE_MISSING')) return 'Google accepted the sign-in but this token has no Generative Language scope. A free AI Studio key finishes the connection in seconds.';
+  if (err.startsWith('GEMINI_BLOCKED')) return 'Gemini filtered that reply — the connection is fine, so try rephrasing.';
+  if (err.startsWith('GEMINI_OAUTH_TIMEOUT')) return 'Gemini sign-in timed out before the browser finished. Press Connect Gemini again and complete the Google page.';
+  if (err.startsWith('GEMINI_CALLBACK_PORT_IN_USE')) return 'Another Gemini sign-in is still waiting on the callback port. Close that window and try again.';
+  if (err.startsWith('CHATGPT_OAUTH_TIMEOUT')) return 'ChatGPT sign-in timed out before the code was accepted. Press Connect ChatGPT again.';
+  if (err.startsWith('CALLBACK_PORT_IN_USE')) return 'Another ChatGPT sign-in is still waiting on the callback port. Close that window and try again.';
   if (err.startsWith('GEMINI_SESSION_NO_API')) return 'Google session captured, but Google needs a free AI Studio key for API calls — paste one in Settings → Voice → Gemini Live Dialog. Session kept.';
   if (err.startsWith('GEMINI_KEY_REQUIRED')) return 'Gemini needs a free AI Studio key — Settings → Voice → Gemini Live Dialog.';
   if (err.startsWith('GEMINI_HTTP_404')) return 'Gemini model retired or API disabled — refresh the model list in Settings → Voice.';
@@ -3400,14 +3444,14 @@ async function handleMessage(text) {
   const activeBrain = getActiveBrain();
   let useConnected = null;
   if (activeBrain === 'CHATGPT' && connectionsStatus.chatgpt.connected) useConnected = 'chatgpt';
-  else if (activeBrain === 'GEMINI' && connectionsStatus.gemini.connected) useConnected = 'gemini';
+  else if (activeBrain === 'GEMINI' && geminiBrainUsable(connectionsStatus)) useConnected = 'gemini';
   else {
     const prio = connectionsStatus.meta ? connectionsStatus.meta.priority : (profile.brainPriority||'chatgpt');
     if (prio === 'free') useConnected = null;
     else if (prio === 'chatgpt' && connectionsStatus.chatgpt.connected) useConnected = 'chatgpt';
-    else if (prio === 'gemini' && connectionsStatus.gemini.connected) useConnected = 'gemini';
+    else if (prio === 'gemini' && geminiBrainUsable(connectionsStatus)) useConnected = 'gemini';
     else if (connectionsStatus.chatgpt.connected) useConnected = 'chatgpt';
-    else if (connectionsStatus.gemini.connected) useConnected = 'gemini';
+    else if (geminiBrainUsable(connectionsStatus)) useConnected = 'gemini';
   }
 
   // @Agent routing
@@ -5983,6 +6027,35 @@ async function refreshHeadlines(category = worldCategory) {
 // ---------------------------------------------------------------------------
 async function loadProfile() {
   try { const saved = await api.getProfile(); if (saved && Object.keys(saved).length) profile = { ...profile, ...saved }; } catch (e) {}
+  healStaleModels();
+}
+
+/**
+ * Heal retired model ids in the loaded profile (2.9).
+ *
+ * Provider catalogs retire model ids several times a year, and a saved
+ * preference outlives them: after Groq's 2026-08-16 shutdown, every user who
+ * had ever pressed "Use" on a Groq preset was permanently 404-ing with no
+ * explanation. Repairing on load (and persisting once) turns that class of
+ * silent breakage into a one-time notice.
+ */
+function healStaleModels() {
+  const currency = window.GemAirModelCurrency;
+  if (!currency || !currency.repairModelId || !profile) return;
+  const healed = [];
+  const fix = (obj, key, providerId) => {
+    if (!obj || typeof obj[key] !== 'string' || !obj[key].trim()) return;
+    const result = currency.repairModelId(obj[key].trim(), providerId);
+    if (result.repaired) { obj[key] = result.model; healed.push(result.reason); }
+  };
+  fix(profile.ai, 'model', profile.ai && profile.ai.baseURL ? undefined : 'groq');
+  if (profile.geminiLive) fix(profile.geminiLive, 'textModel', 'gemini');
+  if (!healed.length) return;
+  try { console.info('[GemAir] model catalog self-repair:', healed.join(' ')); } catch {}
+  persistProfile();
+  if (typeof toast === 'function') {
+    toast('CATALOG UPDATED', healed[0] + (healed.length > 1 ? ` (+${healed.length - 1} more)` : '') + ' GemAir refreshed your saved model automatically.', '🔄');
+  }
 }
 async function loadMemory() {
   try { memory = await api.memoryGet(); } catch (e) {}
@@ -6453,7 +6526,9 @@ function openSettings() {
   $('#setUserName').value = profile.name || '';
   $('#setBaseURL').value = (profile.ai?.baseURL) || '';
   $('#setApiKey').value = (profile.ai?.apiKey) || '';
-  $('#setModel').value = (profile.ai?.model) || 'llama-3.3-70b-versatile';
+  // Never a literal default: the Groq id this used to fall back to was shut
+  // down upstream on 2026-08-16, so an unset model meant a guaranteed 404.
+  $('#setModel').value = (profile.ai && profile.ai.model) || defaultBrainModel($('#setBaseURL') && $('#setBaseURL').value);
   if ($('#setAvatarGender')) $('#setAvatarGender').value = profile.avatarGender || 'female';
   if ($('#setVoiceGender')) $('#setVoiceGender').value = profile.voiceGender || profile.avatarGender || 'female';
   $('#setRate').value = profile.voice?.rate ?? 1.0;
@@ -6742,35 +6817,48 @@ function updateAiHint() {
   else if (base && /localhost|127\.0\.0\.1/.test(base)) el.textContent = '✓ Local model detected (no key needed).';
   else el.textContent = '✓ Live tools ready. General model answers require a configured provider or the optional local WebGPU model.';
 }
+/** Current default model for a base URL, taken from the shared catalog. */
+/**
+ * Whether a Gemini row can actually serve chat. `connected` means a credential
+ * is stored; `usable` means that credential is accepted by the API. A captured
+ * Google web session is the first without the second, and offering it as a brain
+ * is what produced "green dot, every reply fails".
+ */
+function geminiBrainUsable(status) {
+  const gemini = (status || connectionsStatus || {}).gemini || {};
+  if (gemini.usable !== undefined) return gemini.usable === true;
+  return !!gemini.connected;
+}
+
+function defaultBrainModel(baseURL) {
+  const providers = window.GemAirProviders;
+  if (providers && providers.detect && providers.byId) {
+    const id = providers.detect(baseURL || '');
+    const entry = providers.byId(id === 'free' ? 'groq' : id);
+    if (entry && entry.models[0] && entry.models[0].id) return entry.models[0].id;
+  }
+  return 'openai/gpt-oss-120b';
+}
+
 function applyPreset(p) {
-  // Provider presets — one click fills Base URL + Model. All of these speak
-  // the OpenAI-compatible chat/completions protocol, so the SAME tool-calling
-  // engine drives every provider (see AI-FRAMEWORK.md).
-  const map = {
-     groq: { baseURL: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' },
-    openai: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-    gemini: { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
-    claude: { baseURL: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-5' },
-    cerebras: { baseURL: 'https://api.cerebras.ai/v1', model: 'llama-3.3-70b' },
-    sambanova: { baseURL: 'https://api.sambanova.ai/v1', model: 'Meta-Llama-3.3-70B-Instruct' },
-    nvidia: { baseURL: 'https://integrate.api.nvidia.com/v1', model: 'meta/llama-3.3-70b-instruct' },
-    together: { baseURL: 'https://api.together.xyz/v1', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
-    fireworks: { baseURL: 'https://api.fireworks.ai/inference/v1', model: 'accounts/fireworks/models/llama-v3p3-70b-instruct' },
-    xai: { baseURL: 'https://api.x.ai/v1', model: 'grok-3-mini' },
-    zai: { baseURL: 'https://api.z.ai/api/paas/v4', model: 'glm-4-flash' },
-    cohere: { baseURL: 'https://api.cohere.ai/v1', model: 'command-r-plus' },
-    hf: { baseURL: 'https://router.huggingface.co/v1', model: 'meta-llama/Llama-3.3-70B-Instruct' },
-    deepseek: { baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-    hyperbolic: { baseURL: 'https://api.hyperbolic.xyz/v1', model: 'meta-llama/Llama-3.1-70B-Instruct' },
-    deepinfra: { baseURL: 'https://api.deepinfra.com/v1/openai', model: 'meta-llama/Llama-3.3-70B-Instruct' },
-    siliconflow: { baseURL: 'https://api.siliconflow.com/v1', model: 'Qwen/Qwen2.5-72B-Instruct' },
-    novita: { baseURL: 'https://api.novita.ai/v3/openai', model: 'meta-llama/llama-3.3-70b-instruct' },
-    mistral: { baseURL: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
-    openrouter: { baseURL: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
-    ollama: { baseURL: 'http://localhost:11434/v1', model: 'llama3', apiKey: '' },
-    offline: { baseURL: '', apiKey: '', model: '' }
-  };
-  const v = map[p];
+  // Provider presets — one click fills Base URL + Model. The values come from
+  // the shared catalog (renderer/providers.js), NOT a second hard-coded table:
+  // this function used to carry its own copy, which is how a preset kept
+  // offering `llama-3.1-8b-instant` months after Groq retired it on 2026-08-16.
+  const providers = window.GemAirProviders;
+  const map = {};
+  if (providers && providers.PROVIDERS) {
+    for (const entry of providers.PROVIDERS) {
+      map[entry.id] = {
+        baseURL: entry.baseURL,
+        model: (entry.models[0] && entry.models[0].id) || '',
+        apiKey: entry.local ? '' : undefined
+      };
+    }
+  }
+  // Providers with a settings preset but no catalog entry (offline switch).
+  map.offline = { baseURL: '', apiKey: '', model: '' };
+  const v = map[p] || {};
   if (v.baseURL !== undefined) $('#setBaseURL').value = v.baseURL;
   if (v.apiKey !== undefined) $('#setApiKey').value = v.apiKey;
   if (v.model !== undefined) $('#setModel').value = v.model;
@@ -7445,7 +7533,7 @@ function bindEvents() {
   $('#clearUsageBtn').addEventListener('click', clearLocalUsageStats);
   $('#saveBtn').addEventListener('click', async () => {
     profile.name = $('#setUserName').value.trim() || 'Commander';
-    profile.ai = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || 'llama-3.3-70b-versatile' };
+    profile.ai = { baseURL: $('#setBaseURL').value.trim(), apiKey: $('#setApiKey').value.trim(), model: $('#setModel').value.trim() || defaultBrainModel($('#setBaseURL').value.trim()) };
     profile.avatarGender = $('#setAvatarGender')?.value || 'female';
     profile.voiceGender = $('#setVoiceGender')?.value || profile.avatarGender || 'female';
     applyAvatarGender(profile.avatarGender);
@@ -8639,6 +8727,17 @@ async function boot() {
         }
       }
       window.__gemairAiConfigured = !!(cfg && cfg.aiConfigured);
+      // Say it up front. The old behaviour was a wall of "AI request failed"
+      // with no hint that this particular deployment simply has no keys.
+      if (cfg && cfg.freeCore && cfg.freeCore.configured === false) {
+        window.__gemairFreeCoreUnavailable = true;
+        safe('freeCoreNotice', () => toast(
+          'FREE CORE OFF',
+          'This deployment has no AI provider keys, so the shared brain is idle. Add a free Groq or Gemini key in Settings → AI BRAIN (no card needed) — or run GemAir Desktop.',
+          '🔑'
+        ));
+      }
+      if (cfg && cfg.catalogRevision) window.__gemairCatalogRevision = cfg.catalogRevision;
     } catch (e) {}
   }
 
@@ -8929,9 +9028,15 @@ function renderConnectionHub() {
     chatgptDot.title = status.chatgpt.dot + (status.chatgpt.tokenState ? ` · token ${status.chatgpt.tokenState}` : '') + (status.chatgpt.experimental ? ' (EXPERIMENTAL)' : '');
   }
   if (geminiDot) {
-    geminiDot.className = 'conn-dot ' + (status.gemini.connected ? (status.gemini.experimental ? 'experimental' : 'connected') : 'disconnected');
-    geminiDot.textContent = status.gemini.connected ? '●' : '○';
-    geminiDot.title = status.gemini.dot + (status.gemini.experimental ? ' (EXPERIMENTAL)' : '');
+    const geminiUsable = geminiBrainUsable(status);
+    const geminiAttention = status.gemini.connected && !geminiUsable;
+    geminiDot.className = 'conn-dot ' + (geminiUsable ? (status.gemini.experimental ? 'experimental' : 'connected') : (geminiAttention ? 'fallback' : 'disconnected'));
+    geminiDot.textContent = geminiUsable ? '●' : (geminiAttention ? '!' : '○');
+    // The title states the NEXT ACTION, not just a state word — "EXPERIMENTAL"
+    // told people their connection was broken when it only needed a free key.
+    geminiDot.title = (geminiAttention ? 'LINKED, NOT USABLE' : status.gemini.dot)
+      + (status.gemini.needsApiKeyMessage ? ' — ' + status.gemini.needsApiKeyMessage : '')
+      + (status.gemini.experimental && geminiUsable ? ' (EXPERIMENTAL)' : '');
   }
   if (freeDot) {
     const free = sidecarsStatus.freeGPT35 || {};
@@ -8962,8 +9067,21 @@ function renderConnectionHub() {
     chatgptEmail.textContent = status.chatgpt.connected ? (status.chatgpt.email || 'connected') + state : (status.chatgpt.tokenState === 'expired' ? 'Session expired — reconnect' : 'Not connected');
   }
   if (geminiEmail) geminiEmail.textContent = status.gemini.connected
-    ? (status.gemini.email || 'connected') + (status.gemini.authMode === 'api-key' ? ' · AI Studio key' : ' · web session')
+    ? (status.gemini.email || 'connected') + (status.gemini.authMode === 'api-key' ? ' · AI Studio key' : (geminiBrainUsable(status) ? ' · OAuth' : ' · needs an API key'))
     : 'Not connected';
+  // One-tap fix for a linked-but-unusable session: jump to the key field instead
+  // of leaving the user to find it.
+  if (geminiEmail && status.gemini.needsApiKey) {
+    geminiEmail.title = status.gemini.needsApiKeyMessage || 'Add a free AI Studio key';
+    geminiEmail.style.cursor = 'pointer';
+    geminiEmail.onclick = () => {
+      const field = document.querySelector('#setGeminiLiveKey');
+      if (field) { field.focus(); field.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+      else document.querySelector('#settingsBtn')?.click();
+    };
+  } else if (geminiEmail) {
+    geminiEmail.title = ''; geminiEmail.style.cursor = ''; geminiEmail.onclick = null;
+  }
   if (chatgptBadge) {
     const plan = String(status.chatgpt.plan || 'free');
     chatgptBadge.textContent = status.chatgpt.connected ? plan.toUpperCase() : '—';
@@ -9345,12 +9463,21 @@ async function handleCaptureGemini() {
   try {
     const res = await api.connectionsCaptureGemini(false);
     if (res.ok) {
-      toast('GEMINI', 'Connected as ' + res.email, '✅');
+      // A captured Google web session is not an API credential (see
+      // captureGeminiSession in main.js). Say what is still missing instead of
+      // announcing "Connected", which is exactly how the green-dot-dead-chat
+      // state got past people.
+      if (res.webSessionOnly || (res.status && res.status.gemini && res.status.gemini.needsApiKey)) {
+        toast('GEMINI LINKED', res.message || 'Google session captured. Add your free AI Studio key to make it usable for chat.', '🔑');
+        speak('Gemini linked. Add your AI Studio key to finish.');
+      } else {
+        toast('GEMINI', 'Connected as ' + res.email, '✅');
+        speak('Gemini connected');
+      }
       profile.connectionsWarningAcknowledged = true;
       await persistProfile();
       await api.connectionsAcknowledgeWarning();
       await loadConnectionsStatus();
-      speak('Gemini connected');
     } else if (res && /No auth window/.test(res.error || '')) {
       await api.connectionsOpenGemini();
       toast('GEMINI', 'Sign-in window opened — log in with Google, then press Capture Session.', '🔐');
@@ -9426,7 +9553,10 @@ function setupConnectionsHub() {
     const isFallback = btn && btn.dataset.fallback === '1';
     if (isFallback) {
       const res = await api.connectionsCaptureGemini(true);
-      if (res.ok) { toast('GEMINI', 'AI Studio credential captured', '✅'); await loadConnectionsStatus(); }
+      if (res.ok) {
+        toast('GEMINI', res.keyCaptured ? 'AI Studio key captured — Gemini is live, no pasting needed' : 'AI Studio credential captured', '✅');
+        await loadConnectionsStatus();
+      }
       else toast('GEMINI', res.error, '⚠️');
     } else {
       await handleCaptureGemini();

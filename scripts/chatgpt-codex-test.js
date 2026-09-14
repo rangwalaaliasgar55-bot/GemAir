@@ -230,5 +230,49 @@ const accessToken = jwt({
     console.log('  ok   non-JSON error bodies stay actionable');
   }
 
+  // 7. A model the account cannot use rotates to the next one on the same
+  // session, and never reads as a dead login.
+  {
+    const attempted = [];
+    const fetch = async (url, options) => {
+      const body = JSON.parse(String(options.body));
+      attempted.push(body.model);
+      if (body.model === 'gpt-blocked-on-plan') {
+        return new Response(JSON.stringify({ error: { message: "The model 'gpt-blocked-on-plan' is not supported for this account." } }), { status: 400, headers: { 'content-type': 'application/json' } });
+      }
+      return sse([
+        { type: 'response.output_text.delta', delta: 'rotated fine' },
+        { type: 'response.completed', response: { output: [{ type: 'message', content: [{ type: 'output_text', text: 'rotated fine' }] }] } }
+      ]);
+    };
+    const result = await codex.callCodexResponses({
+      fetch, accessToken, accountId, model: 'gpt-blocked-on-plan',
+      availableModels: ['gpt-blocked-on-plan', 'gpt-next-available'],
+      instructions: 'x', input: [{ role: 'user', content: 'hi' }], tools: []
+    });
+    assert.equal(result.text, 'rotated fine');
+    assert.equal(result.model, 'gpt-next-available', 'the rotated model must be reported as the one that answered');
+    assert.deepEqual(attempted, ['gpt-blocked-on-plan', 'gpt-next-available']);
+    console.log('  ok   a plan-rejected model rotates to another account model');
+
+    // Same failure with no alternative must say "pick another model", never
+    // "sign in again" — and must not be classified as session expiry.
+    const dead = async (url, options) => {
+      attempted.push(JSON.parse(String(options.body)).model);
+      return new Response(JSON.stringify({ error: { message: 'model not supported' } }), { status: 400, headers: { 'content-type': 'application/json' } });
+    };
+    await assert.rejects(
+      codex.callCodexResponses({ fetch: dead, accessToken, accountId, model: 'gpt-alone', availableModels: ['gpt-alone'], instructions: 'x', input: [], tools: [] }),
+      (error) => {
+        assert.match(String(error.message + ' ' + (error.detail || '')), /CODEX_MODEL_NOT_AVAILABLE/);
+        assert.equal(codex.isTransientCodexError(error.message + ' ' + (error.code || '')), true, 'a model rejection is a config blip, not a dead session');
+        assert.match(error.detail, /Pick another model/);
+        return true;
+      },
+      'an unsupported model must explain itself and stay retryable'
+    );
+    console.log('  ok   unsupported-model failures stay actionable and are not expiry');
+  }
+
   console.log('\n  All ChatGPT Codex integration tests passed.\n');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -14,7 +14,9 @@
 // Everything here is free and keyless, forever.
 const { guard, json, fetchText, fetchJson } = require('./_lib/http');
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+// A deliberately current-looking browser UA: an ancient pinned version is itself
+// a bot signal to the HTML endpoints this function scrapes.
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 
 function stripTags(s) {
   return String(s || '')
@@ -36,19 +38,77 @@ function unwrapDdg(href) {
   return url;
 }
 
-/** Scrape organic results from the DDG HTML page. */
+/**
+ * Scrape organic results from a DuckDuckGo HTML surface.
+ *
+ * `html.duckduckgo.com/html/` rate-limits aggressively; when it does, it answers
+ * 200 with an anomaly page rather than an error, and a 200-with-no-results is
+ * indistinguishable from "the web has nothing about that". So: try the lite
+ * endpoint too, and report BLOCKED explicitly so the caller can say "search is
+ * rate-limited" instead of "I found nothing".
+ */
+const DDG_ENDPOINTS = [
+  'https://html.duckduckgo.com/html/',
+  'https://lite.duckduckgo.com/lite/'
+];
+
 async function ddgHtmlResults(query, limit = 8) {
-  const html = await fetchText('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query), {
+  let blocked = false;
+  let lastError = null;
+  for (const endpoint of DDG_ENDPOINTS) {
+    try {
+      const results = await ddgScrape(endpoint, query, limit);
+      if (results.length) return results;
+    } catch (error) {
+      if (error && error.ddgBlocked) blocked = true;
+      else lastError = error;
+    }
+  }
+  if (blocked || lastError) {
+    // Distinguish "the engine is refusing us" from "we could not reach it" —
+    // they need different words in the reply and different fixes.
+    const out = new Error(blocked ? 'SEARCH_UPSTREAM_BLOCKED' : 'SEARCH_UPSTREAM_UNREACHABLE');
+    out.searchBlocked = blocked;
+    out.detail = blocked ? 'DuckDuckGo returned an anti-bot page' : String((lastError && lastError.message) || 'unreachable');
+    throw out;
+  }
+  return [];
+}
+
+async function ddgScrape(endpoint, query, limit) {
+  const html = await fetchText(endpoint + '?q=' + encodeURIComponent(query), {
     headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9' },
     timeoutMs: 9000
   });
+  if (/anomaly|Unfortunately, bots use DuckDuckGo too|report this activity/i.test(html)) {
+    const err = new Error('DDG_ANOMALY_PAGE');
+    err.ddgBlocked = true;
+    throw err;
+  }
   const titles = [];
-  const anchorRe = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
   let m;
+  // Full layout (html.duckduckgo.com).
+  const anchorRe = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
   while ((m = anchorRe.exec(html))) {
     const url = unwrapDdg(m[1]);
     const title = stripTags(m[2]);
     if (url && title) titles.push({ title, url });
+  }
+  // Lite layout (lite.duckduckgo.com): a bare nofollow anchor per row, and the
+  // real URL is sometimes only in the `uddg` redirect. Parse it too so the
+  // fallback endpoint can actually contribute results.
+  if (!titles.length) {
+    const liteRe = /<a[^>]*rel="nofollow"[^>]*href="([^"]+)"[^>]*>([\s\S]{3,300}?)<\/a>/g;
+    while ((m = liteRe.exec(html))) {
+      let url = m[1] ? decodeURIComponent(m[1]).replace(/^\/\/l\.duckduckgo\.com\/\?uddg=/, '') : '';
+      const unwrapped = unwrapDdg(m[1]);
+      if (unwrapped) url = unwrapped;
+      if (url.startsWith('//')) url = 'https:' + url;
+      const title = stripTags(m[2]);
+      if (!url || !/^https?:\/\//i.test(url)) continue;
+      if (!title || /duckduckgo\.com/i.test(url)) continue;
+      titles.push({ title, url });
+    }
   }
   const snippets = {};
   const snippetRe = /<a[^>]*class="result__snippet"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
@@ -109,6 +169,8 @@ module.exports = async (req, res) => {
   const sourcesUsed = [];
   let answer = null, source = null, url = null;
   let results = [];
+  let upstreamBlocked = false;
+  let blockedReason = '';
 
   // 1) Real organic results (the actual fix).
   try {
@@ -123,7 +185,13 @@ module.exports = async (req, res) => {
         url = organic[0].url;
       }
     }
-  } catch { /* DDG HTML blocked/unreachable → fallbacks below */ }
+  } catch (error) {
+    // DDG blocked or unreachable → the fallbacks below may still answer, but
+    // record WHY so the caller can say "search is rate-limited" instead of the
+    // misleading "I found nothing about that".
+    upstreamBlocked = true;
+    blockedReason = String((error && error.detail) || (error && error.message) || 'unreachable').slice(0, 120);
+  }
 
   // 2) Wikipedia reference answer.
   if (!answer) {
@@ -164,6 +232,13 @@ module.exports = async (req, res) => {
     results: results.slice(0, 10),
     searched: true,
     sourcesUsed,
+    // Honest diagnostics: an empty result set and a blocked upstream are
+    // different states and must not look the same to the model.
+    upstreamBlocked,
+    ...(upstreamBlocked && blockedReason ? { blockedReason } : {}),
+    ...(results.length || answer ? {} : {
+      hint: 'No source returned anything for this query. When upstreamBlocked is true the search engine was unreachable or rate-limited us — say that plainly, retry once, or rephrase with fewer words. Otherwise the topic may simply be too obscure for these free sources; admit it instead of guessing.'
+    }),
     free: true
   });
 };

@@ -70,7 +70,30 @@ console.log('ok - ChatGPT and Gemini OAuth, encrypted storage, IPC, and provider
   };
   const out = await connections.callGeminiWeb({ apiKey: 'AIzaTestKey1234567890', messages: [{ role: 'user', content: 'hi' }], fetchFn: fakeFetch });
   assert.equal(out, 'hi');
-  assert.ok(fakeFetch.seen.url.includes('?key=AIzaTestKey1234567890'), 'key mode must use ?key=, got: ' + fakeFetch.seen.url);
+  // The key must ride in the documented x-goog-api-key HEADER, never in the
+  // URL: query strings end up in proxy logs, browser history and crash reports.
+  assert.ok(!/key=/.test(fakeFetch.seen.url), 'key mode must not put the credential in the URL, got: ' + fakeFetch.seen.url);
+  assert.equal(fakeFetch.seen.options.headers['x-goog-api-key'], 'AIzaTestKey1234567890', 'key mode must send x-goog-api-key');
+  // A captured google.com browser cookie can never be spent on the REST API, so
+  // it must be classified as a web session and reported, not sent as Bearer.
+  const cookieFetch = async (url, options) => { cookieFetch.seen = { url, options }; return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'x' }] } }] }) }; };
+  await assert.rejects(
+    () => connections.callGeminiWeb({ psid: '5pAb1QlZC8-not-an-oauth-token-abcdef', messages: [{ role: 'user', content: 'hi' }], fetchFn: cookieFetch }),
+    /GEMINI_WEB_SESSION_ONLY/,
+    'a PSID cookie must be reported as unusable instead of fired at the API as a bearer token'
+  );
+  assert.equal(cookieFetch.seen, undefined, 'a web-session credential must never reach the network');
+  // An AI Studio key scraped by the AI Studio capture path used to be stored in
+  // the psid slot and then sent as Bearer (guaranteed 401). Same slot, now the
+  // right credential type.
+  const scraped = await connections.callGeminiWeb({ psid: 'AIzaScrapedStudioKey0123456789', messages: [{ role: 'user', content: 'hi' }], fetchFn: cookieFetch });
+  assert.equal(scraped, 'x');
+  assert.equal(cookieFetch.seen.options.headers['x-goog-api-key'], 'AIzaScrapedStudioKey0123456789', 'an AIza-shaped value in the session slot must be treated as an API key');
+  // A retired id from an old profile heals before the request goes out.
+  const retiredFetch = async (url, options) => { retiredFetch.seen = { url, options }; return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'healed' }] } }] }) }; };
+  const healedOut = await connections.callGeminiWeb({ apiKey: 'AIzaTestKey1234567890', model: 'gemini-2.0-flash', messages: [{ role: 'user', content: 'hi' }], fetchFn: retiredFetch });
+  assert.equal(healedOut, 'healed');
+  assert.ok(retiredFetch.seen.url.includes('gemini-2.5-flash'), 'a retired Gemini model must be healed, got: ' + retiredFetch.seen.url);
   assert.ok(!fakeFetch.seen.options.headers.Authorization, 'key mode must not send an Authorization header');
   await connections.callGeminiWeb({ psid: 'ya29.valid-looking-token-string-here', messages: [{ role: 'user', content: 'hi' }], fetchFn: fakeFetch });
   assert.ok(String(fakeFetch.seen.options.headers.Authorization || '').startsWith('Bearer '), 'bearer fallback must send the OAuth token');

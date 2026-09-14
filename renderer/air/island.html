@@ -53,6 +53,25 @@
         </div>
       </div>
 
+      <!-- Tab awareness: what you are on right now, and what you were on before.
+           Source is shown because a live extension tab title and a guess scraped
+           off the window title are not equally trustworthy. -->
+      <div class="panel tabs card" id="tabs-panel">
+        <div class="tabs-head">
+          <span class="tabs-title">Tabs</span>
+          <span class="tabs-source" id="tabs-source">—</span>
+        </div>
+        <div class="tab-now" id="tab-now">
+          <span class="tab-now-label" id="tab-now-label">Nothing focused</span>
+          <span class="tab-now-meta" id="tab-now-meta"></span>
+        </div>
+        <ul class="tab-list" id="tab-list" role="list"></ul>
+        <div class="tab-app" id="tab-app" hidden>
+          <span class="tab-app-k">In GemAir</span>
+          <span class="tab-app-v" id="tab-app-v">—</span>
+        </div>
+      </div>
+
       <div class="panel question card" id="question" hidden>
         <div class="q-head">
           <span class="q-eyebrow">Teach Gem Air</span>

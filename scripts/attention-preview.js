@@ -65,6 +65,11 @@ const handlers = {
     settings: service.state.settings, attempts: service.state.attempts.slice(-100).reverse()
   }),
   'air:capabilities': () => ({ ...enforcer.capabilities, platform: process.platform, detector: true, preview: true }),
+  'air:setAppView': (v) => service.setAppView(String(v || '').slice(0, 40)),
+  'air:tabs': (n) => ({ ok: true, tabs: service.tabs(Number(n) || 6) }),
+  // The preview harness cannot raise OS windows, so it answers honestly instead
+  // of pretending the jump happened.
+  'air:focusTab': (p) => ({ ok: false, error: 'preview harness cannot focus OS windows', target: String((p && p.app) || '') }),
   'air:summary': (d) => tracking.summarize(service.state, d || tracking.dayKey(Date.now())),
   'air:timeline': (d) => tracking.timeline(service.state, d || tracking.dayKey(Date.now())),
   'air:trend': (n) => tracking.trend(service.state, Number(n) || 7),
