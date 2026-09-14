@@ -26,6 +26,7 @@ const attentionIpc = require('./lib/attention/ipc');
 const islandWindow = require('./lib/attention/island-window');
 const flightFinder = require('./lib/flight-finder');
 const gameUpdater = require('./lib/game-updater');
+const gemcore = require('./lib/gemcore');
 
 const isDev = process.argv.includes('--dev');
 const userDataDir = app.getPath('userData');
@@ -66,6 +67,21 @@ let focusPollTimer = null;
 let lastFocused = { app: '', title: '', pid: 0 };
 let fatalCrashInProgress = false;
 let rendererCrashHistory = [];
+
+// — GemCore engine (ALTREX provider engine + AERA memory/audit/reasoning) —
+// executeTool and confirmAction are hoisted function declarations, so the
+// broker can reference them here before their definitions appear below.
+const gemcoreEngine = gemcore.createGemCore(userDataDir, {
+  confirm: async (tier, message) => {
+    try {
+      const ok = await confirmAction(tier + '-impact action approval', message);
+      return ok;
+    } catch { return false; }
+  },
+  executeTool: (name, args) => executeTool(name, args)
+});
+let gemcoreDirector = null;
+const gemcoreChatControllers = new Map();
 
 const DEFAULT_BOUNDS = { width: 1440, height: 900 };
 
@@ -4749,6 +4765,329 @@ function startAutoUpdateWatcher() {
 // ---------------------------------------------------------------------------
 // IPC handlers
 // ---------------------------------------------------------------------------
+/* ============================================================
+   GemCore IPC — provider engine, memory, audit, reasoning,
+   Multi-AI director, emotion profiles (ALTREX + AERA systems)
+   ============================================================ */
+
+function gemcoreSend(channel, payload) {
+  try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload); } catch {}
+}
+
+function gemcoreSanitizeMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+  return messages.slice(-60).map((message) => ({
+    role: ['system', 'user', 'assistant', 'tool'].includes(message && message.role) ? message.role : 'user',
+    ...(message.content != null ? { content: String(message.content).slice(0, 30000) } : {}),
+    ...(message.tool_call_id ? { tool_call_id: String(message.tool_call_id).slice(0, 80) } : {}),
+    ...(Array.isArray(message.tool_calls) ? { tool_calls: message.tool_calls } : {})
+  }));
+}
+
+/** Compose the gemcore system prompt: persona + reasoning scaffold + memory. */
+function gemcoreSystemPrompt(userText, { toolCount = 0 } = {}) {
+  const level = gemcore.classifyReasoningLevel(userText, { toolCount });
+  const scaffold = gemcore.reasoningScaffoldPrompt(level);
+  const memoryBlock = gemcoreEngine.memory.contextBlock(userText, { limit: 6 });
+  const parts = [
+    'You are Gem, the GemAir desktop assistant. Be genuinely useful, concrete, and honest. Prefer doing (tools) over describing.',
+    scaffold ? ('## Reasoning approach\n' + scaffold) : '',
+    memoryBlock
+  ];
+  return { systemPrompt: parts.filter(Boolean).join('\n\n'), level };
+}
+
+ipcMain.handle('gemcore:providers', () => gemcoreEngine.providerService.listProviders());
+
+ipcMain.handle('gemcore:providerConnect', async (_event, payload) => {
+  try {
+    return await gemcoreEngine.providerService.connectProvider({
+      providerId: String(payload && payload.providerId || ''),
+      label: payload && payload.label,
+      baseUrl: payload && payload.baseUrl,
+      apiKey: payload && payload.apiKey,
+      models: payload && payload.models
+    });
+  } catch (error) {
+    return { connected: false, error: { category: 'VALIDATION', message: String(error.message || error).slice(0, 500) } };
+  }
+});
+
+ipcMain.handle('gemcore:providerUpdate', (_event, providerId, patch) => {
+  try { return { ok: true, provider: gemcoreEngine.providerService.updateProvider(String(providerId || ''), patch || {}) }; }
+  catch (error) { return { ok: false, error: String(error.message || error).slice(0, 400) }; }
+});
+
+ipcMain.handle('gemcore:providerTest', async (_event, providerId) => {
+  try { return await gemcoreEngine.providerService.testProvider(String(providerId || '')); }
+  catch (error) { return { connected: false, error: { category: 'VALIDATION', message: String(error.message || error).slice(0, 400) } }; }
+});
+
+ipcMain.handle('gemcore:providerDisconnect', (_event, providerId) => {
+  try { return gemcoreEngine.providerService.disconnectProvider(String(providerId || '')); }
+  catch (error) { return { error: String(error.message || error).slice(0, 400) }; }
+});
+
+ipcMain.handle('gemcore:providerRemove', (_event, providerId) => {
+  try { return gemcoreEngine.providerService.removeProvider(String(providerId || '')); }
+  catch (error) { return { error: String(error.message || error).slice(0, 400) }; }
+});
+
+ipcMain.handle('gemcore:status', () => gemcoreEngine.providerService.status());
+ipcMain.handle('gemcore:diagnostics', () => gemcoreEngine.providerService.diagnostics());
+
+ipcMain.handle('gemcore:modelDefault', (_event, providerId, modelId) => {
+  try { return { ok: true, models: gemcoreEngine.providerService.modelRegistry.setDefault(String(providerId || ''), modelId || null) }; }
+  catch (error) { return { ok: false, error: String(error.message || error).slice(0, 400) }; }
+});
+
+ipcMain.handle('gemcore:modelToggle', (_event, providerId, modelId, disabled) => {
+  try { return { ok: true, models: gemcoreEngine.providerService.modelRegistry.setDisabled(String(providerId || ''), String(modelId || ''), !!disabled) }; }
+  catch (error) { return { ok: false, error: String(error.message || error).slice(0, 400) }; }
+});
+
+ipcMain.handle('gemcore:modelRemove', (_event, providerId, modelId) => {
+  try { return { ok: true, models: gemcoreEngine.providerService.modelRegistry.removeModel(String(providerId || ''), String(modelId || '')) }; }
+  catch (error) { return { ok: false, error: String(error.message || error).slice(0, 400) }; }
+});
+
+ipcMain.handle('gemcore:modelRestore', (_event, providerId, modelId) => {
+  try { return { ok: true, models: gemcoreEngine.providerService.modelRegistry.restoreModel(String(providerId || ''), String(modelId || '')) }; }
+  catch (error) { return { ok: false, error: String(error.message || error).slice(0, 400) }; }
+});
+
+/** Open only allowlisted, official provider destinations (never arbitrary URLs). */
+ipcMain.handle('gemcore:openProviderUrl', (_event, providerId, kind) => {
+  try {
+    if (!['apiKey', 'docs', 'install'].includes(String(kind || ''))) {
+      return { ok: false, error: 'Unknown destination kind. Use "apiKey", "docs", or "install".' };
+    }
+    const url = gemcore.officialProviderUrl(String(providerId || ''), String(kind));
+    shell.openExternal(url);
+    return { ok: true, url };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error).slice(0, 400) };
+  }
+});
+
+/* — scoped memory (AERA) — */
+ipcMain.handle('gemcore:memoryList', (_event, scope) => gemcoreEngine.memory.list(scope || undefined));
+ipcMain.handle('gemcore:memoryRemember', (_event, content, options) => {
+  try {
+    const record = gemcoreEngine.memory.remember(String(content || ''), {
+      scope: options && options.scope,
+      key: options && options.key,
+      source: 'user'
+    });
+    gemcoreEngine.audit.append({ kind: 'memory', detail: 'remember [' + record.scope + ']', outcome: 'ok' });
+    return { ok: true, record };
+  } catch (error) { return { ok: false, error: String(error.message || error).slice(0, 400) }; }
+});
+ipcMain.handle('gemcore:memoryRecall', (_event, query, scope) => gemcoreEngine.memory.recall(String(query || ''), scope ? { scope } : {}));
+ipcMain.handle('gemcore:memoryForget', (_event, memoryId) => {
+  const result = gemcoreEngine.memory.forget(String(memoryId || ''));
+  gemcoreEngine.audit.append({ kind: 'memory', detail: 'forget ' + memoryId, outcome: result.forgotten ? 'ok' : 'not-found' });
+  return result;
+});
+ipcMain.handle('gemcore:memoryClear', (_event, scope) => {
+  const result = gemcoreEngine.memory.clearScope(String(scope || 'user'));
+  gemcoreEngine.audit.append({ kind: 'memory', detail: 'clear scope ' + result.scope, outcome: 'ok' });
+  return result;
+});
+ipcMain.handle('gemcore:memoryStats', () => gemcoreEngine.memory.stats());
+
+/* — audit log (AERA) — */
+ipcMain.handle('gemcore:auditRecent', (_event, limit, kind) => gemcoreEngine.audit.recent(Math.min(500, Number(limit) || 50), kind || null));
+ipcMain.handle('gemcore:auditStats', () => gemcoreEngine.audit.stats());
+ipcMain.handle('gemcore:auditVerify', () => gemcoreEngine.audit.verify());
+ipcMain.handle('gemcore:auditClear', () => gemcoreEngine.audit.clear());
+
+/* — reasoning trace (AERA) — */
+ipcMain.handle('gemcore:reasoning', (_event, limit) => ({
+  recent: gemcoreEngine.reasoningTrace.recent(Math.min(100, Number(limit) || 25)),
+  summary: gemcoreEngine.reasoningTrace.summary()
+}));
+
+/* — emotion profiles (AERA) — */
+ipcMain.handle('gemcore:emotion', (_event, payload) => {
+  const text = payload && payload.text || '';
+  const userText = payload && payload.userText || '';
+  const userState = userText ? gemcore.emotionProfiles.classifyUserSentiment(userText) : null;
+  const baseEmotion = text ? gemcore.emotionProfiles.classifyResponseEmotion(text) : 'neutral';
+  const emotion = userState ? gemcore.emotionProfiles.adaptEmotionToUserState(userState, baseEmotion) : baseEmotion;
+  return {
+    baseEmotion, emotion, userState,
+    profile: gemcore.emotionProfiles.profileFor(emotion),
+    prosody: gemcore.emotionProfiles.prosodyFor(emotion),
+    delayMs: gemcore.emotionProfiles.delayForEmotion(emotion)
+  };
+});
+
+ipcMain.handle('gemcore:emotionProfiles', () => gemcore.emotionProfiles.EMOTION_PROFILES);
+
+/* — impact-tier approvals (AERA tool broker) — */
+ipcMain.handle('gemcore:approveTier', (_event, tier) => {
+  try {
+    gemcoreEngine.toolBroker.approveTierForSession(String(tier || '').toUpperCase());
+    gemcoreEngine.audit.append({ kind: 'permission', detail: 'session approval for tier ' + tier, outcome: 'ok' });
+    return { ok: true };
+  } catch (error) { return { ok: false, error: String(error.message || error).slice(0, 400) }; }
+});
+ipcMain.handle('gemcore:toolTiers', () => ({ tiers: gemcore.IMPACT_TIERS, impact: gemcore.TOOL_IMPACT }));
+
+/* — gemcore chat (streaming, hardened) — */
+ipcMain.handle('gemcore:chatStream', async (event, payload) => {
+  const requestId = String(payload && payload.requestId || ('gcs-' + Date.now().toString(36)));
+  const providerId = payload && payload.providerId ? String(payload.providerId) : (gemcoreEngine.providerService.recoveryOrder()[0] || null);
+  const useTools = !(payload && payload.useTools === false);
+  const messages = gemcoreSanitizeMessages(payload && payload.messages);
+  const userText = [...messages].reverse().find((m) => m.role === 'user');
+  const { systemPrompt, level } = gemcoreSystemPrompt(userText ? userText.content : '', { toolCount: useTools ? 6 : 0 });
+
+  gemcoreEngine.reasoningTrace.record({ level, phase: 'gemcore:chatStream', detail: (userText ? String(userText.content) : '').slice(0, 200) });
+
+  if (!providerId) {
+    gemcoreSend('gemcore:error', { requestId, message: 'No connected provider is available. Connect a provider in AI & Connections settings.', category: 'NO_PROVIDER' });
+    return { ok: false, requestId, error: 'NO_PROVIDER' };
+  }
+
+  const controller = new AbortController();
+  gemcoreChatControllers.set(requestId, controller);
+  const budget = gemcoreEngine.budgets.create(requestId, { maxTokens: 90000, maxToolCalls: 24, maxDurationMs: 8 * 60 * 1000 });
+
+  const allMessages = [{ role: 'system', content: systemPrompt }, ...messages];
+  const selectedTools = useTools ? selectRelevantTools(TOOLS, allMessages, { limit: 16 }) : [];
+
+  (async () => {
+    try {
+      const result = await gemcore.runAgentTurnStream({
+        streamComplete: async ({ messages: roundMessages, tools, onEvent, signal }) => {
+          const order = gemcoreEngine.providerService.recoveryOrder(providerId);
+          let lastError = null;
+          for (const candidateId of order) {
+            const config = gemcoreEngine.providerService.getProvider(candidateId);
+            if (!config || config.enabled === false) continue;
+            try {
+              await gemcoreEngine.providerService.streamComplete({
+                providerId: candidateId,
+                model: payload && payload.model || null,
+                messages: roundMessages, tools, signal, requestId,
+                temperature: payload && payload.temperature,
+                onEvent: (sseEvent) => onEvent(sseEvent)
+              });
+              return;
+            } catch (error) {
+              lastError = error;
+              // Cross-provider fallback only makes sense before content has flowed;
+              // the runner surfaces deltas itself, so we rethrow after the first round.
+              if (error && error.category === 'CANCELLED') throw error;
+              continue;
+            }
+          }
+          throw lastError || new Error('No provider could serve this request.');
+        },
+        messages: allMessages,
+        tools: selectedTools,
+        executeTool: (name, args) => gemcoreEngine.toolBroker.execute(name, args, { source: 'gemcore-chat' }),
+        budget,
+        requestId,
+        signal: controller.signal,
+        onEvent: (agentEvent) => {
+          if (agentEvent.type === 'delta') gemcoreSend('gemcore:chunk', { requestId, text: agentEvent.text });
+          else if (agentEvent.type === 'tool') {
+            gemcoreSend('gemcore:tool', { requestId, name: agentEvent.name, args: agentEvent.args });
+            gemcoreEngine.audit.append({ kind: 'tool-call', tool: agentEvent.name, source: 'gemcore-chat', outcome: 'started' });
+          } else if (agentEvent.type === 'tool-result') gemcoreSend('gemcore:toolResult', { requestId, name: agentEvent.name, preview: agentEvent.preview });
+          else if (agentEvent.type === 'system') gemcoreSend('gemcore:system', { requestId, message: agentEvent.message, level: agentEvent.level });
+          else if (agentEvent.type === 'error') gemcoreSend('gemcore:error', { requestId, message: agentEvent.message, category: agentEvent.category, recovery: agentEvent.recovery });
+        }
+      });
+      gemcoreSend('gemcore:done', {
+        requestId, ok: result.ok, content: result.content, rounds: result.rounds,
+        usage: result.usage, budget: budget.snapshot(),
+        reasoningLevel: level.id, stoppedEarly: !!result.stoppedEarly
+      });
+    } catch (error) {
+      gemcoreSend('gemcore:error', { requestId, message: String(error && error.message || error).slice(0, 800), recovery: gemcore.recoveryHint(error && error.category) });
+    } finally {
+      gemcoreChatControllers.delete(requestId);
+      gemcoreEngine.budgets.release(requestId);
+    }
+  })();
+
+  return { ok: true, requestId, providerId, toolCount: selectedTools.length, reasoningLevel: level.id };
+});
+
+ipcMain.handle('gemcore:abort', (_event, requestId) => {
+  const id = String(requestId || '');
+  const controller = gemcoreChatControllers.get(id);
+  if (controller) {
+    controller.abort(new Error('Request cancelled by user'));
+    gemcoreChatControllers.delete(id);
+  }
+  const budget = gemcoreEngine.budgets.get(id);
+  if (budget) budget.close();
+  return { aborted: !!controller };
+});
+
+/* — Multi-AI director (ALTREX) — */
+ipcMain.handle('gemcore:multiaiRun', async (_event, payload) => {
+  const requestId = String(payload && payload.requestId || ('mai-' + Date.now().toString(36)));
+  const userRequest = String(payload && payload.userRequest || '').slice(0, 8000);
+  if (!userRequest) return { ok: false, error: 'A request is required.' };
+  if (gemcoreDirector && gemcoreDirector.session && gemcoreDirector.session.phase === 'running') {
+    return { ok: false, error: 'A Multi-AI session is already running. Stop it first.' };
+  }
+
+  const emit = (directorEvent) => gemcoreSend('gemcore:multiai', { requestId, ...directorEvent });
+  const director = new gemcore.Director({
+    complete: async ({ agent, messages, onEvent }) => {
+      const budget = gemcoreEngine.budgets.create('mai-' + agent.agentId, { maxTokens: 60000, maxToolCalls: 0, maxDurationMs: 4 * 60 * 1000 });
+      try {
+        const result = await gemcoreEngine.providerService.completeWithRecovery({
+          messages, tools: [],
+          maxTokens: 4000,
+          requestId: requestId + '-' + agent.agentId
+        });
+        return result;
+      } finally {
+        gemcoreEngine.budgets.release('mai-' + agent.agentId);
+      }
+    }
+  }, { emit });
+  gemcoreDirector = director;
+
+  (async () => {
+    try {
+      let plan = payload && payload.plan;
+      if (!plan || !Array.isArray(plan.tasks)) {
+        emit({ type: 'planning', message: 'Drafting a team plan…' });
+        const planResult = await gemcoreEngine.providerService.completeWithRecovery({
+          messages: [
+            { role: 'system', content: gemcore.PLANNING_PROMPT },
+            { role: 'user', content: userRequest }
+          ],
+          maxTokens: 2000, requestId: requestId + '-plan'
+        });
+        const raw = String(planResult.content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+        const jsonStart = raw.indexOf('{');
+        const jsonEnd = raw.lastIndexOf('}');
+        plan = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
+        emit({ type: 'plan', plan });
+      }
+      director.start(plan, { userRequest });
+    } catch (error) {
+      emit({ type: 'error', message: String(error && error.message || error).slice(0, 800) });
+      emit({ type: 'session-ended', phase: 'failed' });
+    }
+  })();
+
+  return { ok: true, requestId };
+});
+
+ipcMain.handle('gemcore:multiaiStatus', () => (gemcoreDirector ? gemcoreDirector.snapshot() : null));
+ipcMain.handle('gemcore:multiaiStop', () => (gemcoreDirector ? gemcoreDirector.stop() : null));
+
 ipcMain.handle('sidecars:status', async () => {
   openJarvisRequestConfig();
   const [freeGPT35, openJarvis] = await Promise.all([

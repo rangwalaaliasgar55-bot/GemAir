@@ -80,6 +80,48 @@ Dave = planning) injected as its own system prompt.
 
 ---
 
+## ⚡ GemCore Engine (any provider, hardened)
+
+GemCore is the engine layer under **Settings → ⚡ GemCore Engine**. It lets you connect
+**any OpenAI-compatible provider** — Gemini, Groq, Cerebras, OpenRouter, NVIDIA, OpenAI,
+a local **Ollama**, or a custom endpoint — and routes every request through one hardened
+pipeline:
+
+- **Honest errors** — a failed key says *invalid key*, a dead model says *model not found*,
+  an empty account says *quota exhausted*. Secrets are scrubbed from every detail.
+- **Timeouts, retries with backoff, and a circuit breaker** per provider — one bad
+  endpoint can't hang or spam.
+- **Layered recovery** — if a provider fails, your other connected providers take over
+  automatically.
+- **Context compaction** — when a conversation outgrows a model's window, older turns are
+  summarized instead of the request dying.
+- **Model registry** — per-provider model lists with defaults; retired defaults fall back
+  instead of stranding you.
+
+### Multi-AI Team (⚡ in the chat box)
+
+Press the **⚡ button** in the chat composer and describe a job. A director drafts a plan,
+then specialist agents (architect → developer → reviewer → …) work it as a dependency
+graph — each agent builds on the previous agents' outputs, live in the team modal.
+
+### Scoped memory, audit trail, and permissions
+
+- **Scoped memory** — *User* (preferences, cross-session), *Task* (current task), and
+  *Long-term* (only when you ask). Everything is secret-redacted before it touches disk.
+- **Audit trail** — every gated tool call, memory change, and permission grant is appended
+  to a tamper-evident, hash-chained log you can verify with one click.
+- **Impact tiers** — tools are gated LOW / MODERATE / HIGH / CRITICAL. High-impact actions
+  ask first; you can approve a tier for a whole session if you want fewer prompts.
+- **Reasoning trace** — every request is classified (reflex / heuristic / deliberate /
+  deep) and traced, so you can see *how* Gem thought.
+- **Emotion-aware voice** — Gem's tone adapts to yours: frustration gets an apologetic,
+  careful voice; good news gets celebrated. Seven new dialogue states (attentive,
+  deliberate, concerned, apologetic, curious, celebratory, stern) extend the TTS engine.
+
+Run the engine tests with `npm run test:gemcore`.
+
+---
+
 ## 🧠 Memory that never goes away
 
 | Type | Where | How it helps |

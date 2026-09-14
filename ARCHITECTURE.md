@@ -234,6 +234,37 @@ Further rules:
 
 ---
 
+## 8b. GemCore — the hardened provider engine (`lib/gemcore/`)
+
+A self-contained, dependency-free engine suite (ported from the ALTREX provider
+engine and AERA agent systems) that sits beside the existing brains:
+
+| Module | Role |
+| --- | --- |
+| `provider-registry.js` | Catalog of OpenAI-compatible providers with pinned base URLs and an allowlist for every external link the app may open. |
+| `provider-errors.js` | Classifies raw HTTP failures into honest categories (invalid key / model not found / rate limited / quota exhausted / tools unsupported…) with secrets scrubbed. |
+| `request-manager.js` | The pipeline every provider request goes through: per-attempt timeouts, deadline, exponential backoff honoring `retry-after`, per-provider circuit breaker, abort-safe SSE parsing, context compaction, storage redaction. |
+| `model-registry.js` | Persistent per-provider model lists: defaults, disables, removals, live status, fallback resolution. |
+| `model-router.js` | Routes each request between a reasoning tier (deliberate, tool-heavy) and a direct tier (fast chat). |
+| `provider-service.js` | Provider lifecycle: connect with a live validation call, discover models, disconnect, health status, diagnostics, and layered recovery across configured providers. |
+| `task-budget.js` | Per-task token / tool-call / duration budgets so a runaway loop can't burn quota forever. |
+| `tool-broker.js` | Impact-tiered tool gating (LOW/MODERATE/HIGH/CRITICAL), per-task and per-session approvals, path-traversal defense, audit records. |
+| `agent-runner.js` | The provider-facing agent loop (batch + streaming): rounds of completion → tool calls → observations with compaction, budgets, and honest system-error recovery messages. |
+| `multi-ai.js` | The Director: validates team plans (DAG, no cycles), runs specialist agents in dependency order, passes upstream outputs downstream, marks dependents of failed agents honestly. |
+| `memory-store.js` | Scoped memory (user / task / long-term) with secret redaction, dedup, keyed updates, and relevance-ranked recall. |
+| `audit.js` | Append-only, hash-chained local audit log with hygiene (prune + re-tighten the chain). |
+| `reasoning.js` | Reasoning levels (reflex / heuristic / deliberate / deep), scaffold prompts, and a session trace. |
+| `emotion-profiles.js` | Voice emotion superset in the TTS engine's own delta format (7 new dialogue states), text→emotion classification, and user-sentiment adaptation. |
+
+Wiring: `main.js` builds the stack once (`createGemCore(userDataDir)`), exposes
+33 `gemcore:*` IPC channels, and `preload.js` bridges them as `window.gemcore`
+(the block sits before the `air` bridge so the attention-contract test's
+extraction stays scoped). `renderer/gemcore-ui.js` owns the settings section,
+the Multi-AI team modal, and the TTS emotion extension. Tests:
+`npm run test:gemcore` (part of `npm run check`).
+
+---
+
 ## 9. Deploying
 
 **Web.** `vercel.json` uses modern `rewrites` + `headers`. Do not reintroduce
