@@ -1,5 +1,36 @@
 # Changelog
 
+## [2.12.0] — 2026-09-14
+
+**GemCore — the hardened provider engine.** A self-contained, dependency-free engine suite ported from the ALTREX provider engine and AERA agent systems now sits beside GemAir's existing brains: provider lifecycle with real validation calls, one hardened request pipeline, scoped agent budgets, impact-tiered tool gating, a multi-AI Director, and scoped persistent memory — wired end-to-end through 33 `gemcore:*` IPC channels and a new settings surface.
+
+### Added — GemCore engine (`lib/gemcore/`)
+- **Provider stack (ALTREX)**: `provider-registry.js` (pinned OpenAI-compatible catalog plus an allowlist for every external link the app may open — the renderer can never make GemAir open an arbitrary URL), `provider-errors.js` (raw HTTP failures classified into honest categories — bad key, dead model, throttle, exhausted account, tools unsupported — with secrets scrubbed), `request-manager.js` (the pipeline every provider request goes through: per-attempt timeouts, deadline, exponential backoff honouring `retry-after`, per-provider circuit breaker, abort-safe SSE parsing, context compaction on window overflow, secret redaction before durable storage), `model-registry.js` (persistent per-provider model lists with health status, user disables, and fallback resolution so a retired default never strands a provider), `model-router.js` (routes each request between a reasoning tier for deliberate tool-heavy work and a direct tier for fast chat), and `provider-service.js` (connect with a live validation call, model discovery, disconnect, per-provider health, diagnostics, and layered recovery across configured providers: auth → quota → connection).
+- **Agent systems (AERA)**: `agent-runner.js` (the provider-facing agent loop in batch + streaming — completion → tool calls → observations with compaction between rounds, budgets, and honest system-error recovery when infrastructure rather than the model fails), `task-budget.js` (per-task token / tool-call / duration budgets so a runaway loop cannot burn quota forever; budgets are released when the task ends), `tool-broker.js` (LOW/MODERATE/HIGH/CRITICAL impact tiers with per-task and per-session approvals, path-traversal defense for file tools, structured audit records), `multi-ai.js` (the Director: DAG-validated team plans with no cycles, specialist agents scheduled in dependency order, upstream outputs passed downstream, and an honest synthetic notice to agents waiting on a failed dependency), `memory-store.js` (scoped memory — USER / TASK / LONG_TERM, user scope the default — with secret redaction, dedup, keyed updates, and relevance-ranked recall), `audit.js` (append-only, hash-chained local audit trail with prune + re-tighten hygiene), `reasoning.js` (reflex / heuristic / deliberate / deep levels with scaffold prompts and a session trace so the user can see *how* Gem thought), and `emotion-profiles.js` (voice-emotion superset in the TTS engine's own delta format, 7 new dialogue states, text→emotion classification, and turn-by-turn user-sentiment adaptation).
+- **Wiring**: `main.js` builds the stack once (`createGemCore(userDataDir)`) and exposes 33 `gemcore:*` IPC channels; `preload.js` bridges them as `window.gemcore` (before the `air` bridge so the attention-contract test's extraction stays scoped); `renderer/gemcore-ui.js` owns the settings section, the Multi-AI team modal, and the TTS emotion extension.
+
+### Added — the web build is download-only
+- `renderer/web-gate.js`: when the renderer is served over http(s) without the Electron preload bridge, the app is unusable by design — a "GemAir lives on your desktop" gate takes over with download + GitHub CTAs. In the desktop app (`file://` + `window.gemair`) it does nothing.
+- `vercel.json` rewritten: `/` now serves the download page, `/app` and every app route serve the new `desktop-only.html` landing, and all responses gain `X-Frame-Options: DENY`.
+
+### Added — island & extension
+- **Site chip + focus ring**: the exact host (e.g. `youtube.com`) now sits in the compact pill, tinted by mode, with a title that says whether it is exact (extension) or inferred (window title); Focus mode draws a conic progress ring around the orb.
+- The expanded sheet gains a **Link** row: "Live · extension paired" / "Not paired · titles only" / "No browser in focus".
+- Pairing is now a guided 5-step card with **Open extension folder** and **Copy folder path** buttons (`openExtensionFolder` / `extensionFolderPath` IPC) instead of raw instructions about a loopback bridge.
+- Extension heartbeat fix: the service worker suspends after ~30 s idle, which used to stop tab reports — the app then "forgot" the current website. The `gemair-policy` alarm tick now re-reports the active tab (context stays fresh on a long unread page) and the worker re-reports on every cold start, so a suspension can never end in a silent, stale site.
+
+### Fixed — Gemini Live error honesty
+- Live-socket failures now name the likely cause instead of a bare code: `SOCKET_FAILED` → "check your network (VPNs and proxies often block WebSockets)", and abnormal closes carry hints — 1006 (key rejected / no Live API access / proxy cut the socket), 1011 (service internal error, retry), 4001/4401/4403 (authentication rejected).
+
+### Added — tests
+- `scripts/gemcore-provider-test.js`, `scripts/gemcore-agent-test.js`, `scripts/gemcore-core-test.js` (runnable as `npm run test:gemcore`, all wired into `npm run check` and `npm test`): request-pipeline timeouts/backoff/circuit-breaker/compaction, error classification and secret scrubbing, budget exhaustion and release, tool-broker tiers and path-traversal defense, Director DAG validation and honest failure notices, memory scoping/redaction, and audit chain integrity.
+- `scripts/web-desktop-only-test.js` (wired into `npm run check`): the gate blocks the app renderer on http(s) without the bridge and stays silent on the desktop.
+- `scripts/production-surface-test.js` and `scripts/update-test.js` updated for the new surface; `nightly.yml` now runs the full offline test chain (`npm run check`) before building installers, so a broken commit never reaches the rolling nightly release.
+
+### Changed
+- Version bumped `2.11.0` → `2.12.0` across `package.json`, `package-lock.json`, `VERSION`, `api/_lib/http.js`, `renderer/index.html`, `renderer/app.js` fallback, `renderer/sw.js`, `download.html`, and `scripts/selfcheck.js`.
+- `ARCHITECTURE.md` documents the engine (section 8b) and `GUIDE.md` covers the new settings surface.
+
 ## [2.11.0] — 2026-09-14
 
 **Release pipeline fix + stable installers.** v2.10.0 was tagged correctly but the Build & Release workflow never ran for that tag — GitHub Actions does not trigger other workflows when a tag is created via `GITHUB_TOKEN` in some runners, leaving the GitHub Release empty with no Setup.exe. This release re-publishes the full artifact set and hardens the release flow.
