@@ -82,7 +82,14 @@ screen/camera frames in the voice conversation, single-file drop-in skills,
 consumed-once session memory, proactive time/context-aware check-ins,
 Unicode-reduced viseme lip-sync, OS-aware first-run setup, and local-first
 privacy hardening (git-tracked secret guard + revoke-and-rotate
-documentation).
+documentation). The 2.13 wave added concept ports of Mark's accountability
+features (shared undo stack, clipboard intelligence, push-to-talk, self-echo
+guard, runtime self-knowledge, instant acknowledgement, launch-at-login,
+plus transcript de-dup / resumption-handle hardening from its own fix list),
+and 2.14 completed the set with an honest audio-device picker with probing,
+gaze/presence behaviour for the avatar (look away while thinking, meet the
+eyes while listening, lids falling while asleep), and source-labelled vision
+frames so screen captures are never confused with photos of the user.
 
 The Mark series is licensed Creative Commons BY-NC 4.0 (personal,
 non-commercial use). **No Mark source code, prompts, assets, or tests are

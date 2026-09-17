@@ -80,7 +80,7 @@
         </div>
         <div class="brand-text">
           <h1>GemAir</h1>
-          <p>Personal assistant <span class="ver" id="verTag">v2.13.0</span></p>
+          <p>Personal assistant <span class="ver" id="verTag">v2.14.0</span></p>
         </div>
       </div>
 
@@ -1543,6 +1543,17 @@
               <input type="checkbox" id="setPushToTalk" /> Push-to-talk (hold Ctrl+Space)
             </label>
             <span class="hint" id="pushToTalkHint" style="font-size:10px;display:block;margin-bottom:12px;">Mic stays closed until you hold Ctrl+Space — release to send. Bound to this window (honest note: there is no dependency-free global hotkey on macOS/Linux, so the chord lives in the app window everywhere).</span>
+            <label>Microphone
+              <select id="setMicDevice"><option value="">System default</option></select>
+            </label>
+            <label>Speakers / headphones
+              <select id="setSpeakerDevice"><option value="">System default</option></select>
+            </label>
+            <div class="field-row" style="margin-bottom:12px">
+              <button class="ghost-btn" id="audioDeviceRefresh" type="button">↻ REFRESH &amp; MEASURE</button>
+              <span class="hint" id="audioDeviceNote" role="status" style="font-size:10px;">One entry per device, the short list your OS shows — not the ×host-API duplicates. The system voice (web-speech) always follows the OS output; only Edge/mp3 and Live audio route to the pick. Missing devices fall back to default and say so.</span>
+            </div>
+            <span class="hint" id="micProbeStatus" style="font-size:10px;display:block;margin-bottom:12px;"></span>
             <div class="voice-presets" id="voicePresets" role="group" aria-label="Voice preset">
               <button type="button" class="voice-preset active" data-voice-preset="gem"><b>GEM</b><span>warm · balanced</span></button>
               <button type="button" class="voice-preset" data-voice-preset="jarvis"><b>JARVIS</b><span>deep · measured</span></button>
@@ -2146,6 +2157,7 @@
   <script src="gemcore-ui.js"></script>
   <script src="echo-guard.js"></script>
   <script src="instant-ack.js"></script>
+  <script src="audio-devices.js"></script>
   <script src="app.js"></script>
   <script src="air/attention-ui.js"></script>
   <script src="interface.js"></script>

@@ -627,9 +627,13 @@
     };
 
     // 1. microphone first, so a denied permission fails fast with MIC_UNAVAILABLE
+    const micId = String(options.micDeviceId || '').trim();
+    const speakerId = String(options.speakerDeviceId || '').trim();
     try {
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { sampleRate: { ideal: MIC_RATE }, channelCount: { ideal: 1 }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        audio: Object.assign(
+          { sampleRate: { ideal: MIC_RATE }, channelCount: { ideal: 1 }, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          micId ? { deviceId: { ideal: micId } } : {})
       });
     } catch (e) {
       setState(session, 'error');
@@ -638,6 +642,11 @@
 
     inCtx = new AudioContext({ sampleRate: MIC_RATE });
     outCtx = new AudioContext({ sampleRate: OUT_RATE });
+    // Route the model's voice to the chosen output when supported
+    // (AudioContext.setSinkId, Chromium ≥110). Unsupported/no-pick → default.
+    if (speakerId && typeof outCtx.setSinkId === 'function') {
+      try { outCtx.setSinkId(speakerId).catch(() => {}); } catch {}
+    }
     try { await inCtx.resume(); await outCtx.resume(); } catch {}
     micSource = inCtx.createMediaStreamSource(micStream);
     micAnalyser = inCtx.createAnalyser();
@@ -741,8 +750,28 @@
     return (models || []).filter((m) => m && set.has(m.id));
   }
 
+  /**
+   * Source-labelled vision (Mark-LIV fix list: unlabelled screen captures
+   * meant a screenshot of this app — which has a face in the middle — could
+   * be read as a photo of the user). A short in-band text note marks where
+   * frames come from before they start flowing.
+   */
+  function labelVisionSource(session, source) {
+    if (!session || !session.ready) return false;
+    const note = source === 'screen'
+      ? '[GemAir context note: the video frames that follow are SCREEN captures of the desktop. A screenshot may contain the GemAir window itself, including its avatar face — that face is the app, never a photo of the user.]'
+      : '[GemAir context note: the video frames that follow come from the device CAMERA and show what is captured nearby — surroundings, possibly the user.]';
+    try {
+      session._ws.send(JSON.stringify({
+        clientContent: { turns: [{ role: 'user', parts: [{ text: note }] }], turnComplete: true
+      }}));
+      sessionLog(session, 'vision source labelled: ' + source);
+      return true;
+    } catch (e) { return false; }
+  }
+
   window.geminiLive = {
-    connect, startVoice, listModels, filterFreeModels, ENDPOINT,
+    connect, startVoice, listModels, filterFreeModels, ENDPOINT, labelVisionSource,
     audio: { floatToPcm16, chunkFrames, encodeBase64, decodeBase64ToInt16, pcm16ToFloat, resampleTo16k, rms, MIC_RATE, MIC_FRAME, OUT_RATE },
     // Exposed for unit tests: backoff schedule, liveness probe, intervals,
     // and the long-horizon setup merge (resumption + sliding-window

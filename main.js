@@ -2209,7 +2209,13 @@ async function seeScreen() {
   const file = path.join(app.getPath('pictures'), `gemair-screen-${Date.now()}.png`);
   await fs.promises.writeFile(file, source.thumbnail.toPNG());
   logAction('see_screen', `Captured screen to ${file}`);
-  return { ok: true, file, note: 'Screen captured. If your AI model supports vision, it can analyze this image.' };
+  // Source-labelled (2.14): the capture MAY contain GemAir's own avatar
+  // window — the model must never read it as a photo of the user.
+  return {
+    ok: true, file,
+    source: 'screen',
+    note: 'This is a SCREEN capture of the user\'s desktop (it may show the GemAir app itself, including its avatar — that is the app, not a photo of the user). If your AI model supports vision, it can analyze this image.'
+  };
 }
 let lastScreenFingerprint = null;
 async function inspectScreenChange() {

@@ -251,7 +251,7 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.13.0'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.14.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
@@ -2454,7 +2454,14 @@ function trimChatDom(log) {
   }
 }
 function addMessage(role, text, opts = {}) {
-  if (role === 'ai' && !opts.typing) playSfx('message');
+  if (role === 'ai' && !opts.typing) {
+    playSfx('message');
+    // 2.14: the face glances down at new content — a wordless "that landed".
+    try { window.gemAvatar && window.gemAvatar.glance && window.gemAvatar.glance(650); } catch (e) {}
+  }
+  if (role === 'system-msg') {
+    try { window.gemAvatar && window.gemAvatar.glance && window.gemAvatar.glance(500); } catch (e) {}
+  }
   const log = $('#chatLog');
   const div = chatNodePool.pop() || document.createElement('div');
   div.className = 'msg ' + role;
@@ -3987,7 +3994,12 @@ async function startMicMeter() {
   const canvas = $('#micVuCanvas');
   if (!canvas || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
   try {
-    if (!micStream) micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (!micStream) {
+      const micId = String(profile.audioDevices?.micId || '').trim();
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: micId ? { deviceId: { ideal: micId }, echoCancellation: true } : true
+      });
+    }
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = globalAudioCtx || new AudioCtx(); globalAudioCtx = ctx;
@@ -6660,6 +6672,7 @@ function populateSettings() {
   { const ptt = $('#setPushToTalk'); if (ptt) ptt.checked = !!profile.pushToTalk; }
   { const ci = $('#setClipboardIntel'); if (ci) ci.checked = !!profile.clipboardIntel; }
   refreshAutostartRow();
+  populateAudioDevices(); // 2.14 — refresh the short live lists on open
   populateVoices(); populateNeuralVoices(); populateEdgeVoices(); updateAiHint();
   syncVoicePresetUi(profile.voice?.preset || 'gem');
   renderCostPanel();
@@ -7695,6 +7708,8 @@ function bindEvents() {
     { const ci = $('#setClipboardIntel'); if (ci) profile.clipboardIntel = ci.checked; }
     { const as_ = $('#setAutoStart'); if (as_ && !as_.disabled) { try { const r = await api.autostartSet(as_.checked); if (r && r.error) toast('AUTO-START', r.error, '⚠'); else profile.autoStart = as_.checked; } catch {} } }
     try { await api.automationApply(); } catch {} // sync main-side loops (clipboard watcher)
+    // 2.14 — audio devices (select change already persists; re-sync the sink)
+    syncSpeakerSink();
     if (geminiKeyInput) {
       const secure = await api.connectionsSetGeminiApiKey(geminiKeyInput, geminiTextModel);
       if (secure && secure.error) {
@@ -8184,6 +8199,9 @@ function bindEvents() {
 
   function startLiveScreenShare() {
     if (liveVision.screenTimer) return;
+    // 2.14: label the source before the first frame — the model then KNOWS
+    // the avatar in a screenshot is GemAir itself, never a photo of the user.
+    try { window.geminiLive && window.geminiLive.labelVisionSource && window.geminiLive.labelVisionSource(geminiLiveVoice, 'screen'); } catch (e) {}
     const send = async () => {
       const session = geminiLiveVoice;
       if (!session || !session.ready || !session.sendVideoFrame) return;
@@ -8217,6 +8235,9 @@ function bindEvents() {
       visionState('camera permission denied — nothing was shared');
       return false;
     }
+    // 2.14: camera frames are labelled as camera before they start flowing —
+    // surroundings, possibly the user; mirroring Mark's source-labelled images.
+    try { window.geminiLive && window.geminiLive.labelVisionSource && window.geminiLive.labelVisionSource(geminiLiveVoice, 'camera'); } catch (e) {}
     const video = document.createElement('video');
     video.muted = true;
     video.playsInline = true;
@@ -8284,6 +8305,8 @@ function bindEvents() {
       const assistantName = (profile.assistantName || 'Gem').trim() || 'Gem';
       geminiLiveVoice = await window.geminiLive.startVoice({
         apiKey, model, timeoutMs: 25000,
+        micDeviceId: profile.audioDevices?.micId || '',     // 2.14: the Settings pick drives Live too
+        speakerDeviceId: profile.audioDevices?.speakerId || '',
         systemPrompt: `You are ${assistantName}, the voice assistant inside the GemAir desktop app.${name ? ` The user's name is ${name}.` : ''} Keep spoken answers short and natural. When the user shares their screen or camera, describe only what is actually visible.`,
         onLog: (message) => { liveState(message); },
         onText: (text, done) => { if (text && done !== true) setCaption('ai', text); },
@@ -8549,6 +8572,7 @@ function configureScreenAwareness(enabled) {
 function startAiLoop() {
   isRunning = true;
   listening = true;
+  avatar({ sleeping: false }); // 2.14: eyes open the instant you call
   startMicMeter();
   if (profile.screenAwareness) inspectActiveScreen();
   $('#startBtn').classList.add('running');
@@ -8575,6 +8599,7 @@ function armWakeAutoSleep() {
     $('#orbStatus').classList.remove('active');
     stopListening();
     addMessage('system-msg', `Going quiet after 2 minutes of silence — say “${profile.wakeWordText || 'Hey Gem'}” to wake me.`);
+    avatar({ sleeping: true }); // 2.14: lids fall while asleep
     configureWakeWord(true);
   }, WAKE_AUTO_SLEEP_MS);
 }
@@ -8650,6 +8675,7 @@ async function armLocalWakeWord(phrase) {
   try {
     await window.GemWakeWord.start({
       phrase,
+      micDeviceId: profile.audioDevices?.micId || '', // 2.14: same pick as dictation + Live
       onStatus: (message) => addMessage('system-msg', message),
       onWake: (heard) => {
         addMessage('system-msg', `Wake phrase “${phrase}” detected (on-device) — listening.`);
@@ -8674,6 +8700,7 @@ async function armLocalWakeWord(phrase) {
 function configureWakeWord(enabled) {
   document.body.classList.toggle('wake-armed', !!enabled);
   if (!enabled) {
+    avatar({ sleeping: false });
     if (localWakeActive && window.GemWakeWord) { try { window.GemWakeWord.stop(); } catch (e) {} }
     localWakeActive = false;
     if (wakeRecognition) { try { wakeRecognition.stop(); } catch (e) {} }
@@ -8682,6 +8709,7 @@ function configureWakeWord(enabled) {
     stopMicMeter();
     return;
   }
+  if (!isRunning) avatar({ sleeping: true }); // armed, quiet, eyes resting
   if (useLocalWakeWord() && !localWakeActive && !wakeArmed) {
     const phrase = profile.wakeWordText || 'Hey Gem';
     armLocalWakeWord(phrase).then((started) => { if (!started) configureWakeWordCloud(); });
@@ -9097,6 +9125,8 @@ async function boot() {
   safe('pushToTalk', setupPushToTalk);                 // 2.13 Ctrl+Space hold-to-talk
   safe('clipIntel', setupClipboardIntel);              // 2.13 floating clipboard panel
   safe('selfKnowledge', refreshSelfKnowledgeCache);    // 2.13 live self-knowledge
+  safe('audioDevices', setupAudioDevicePicker);        // 2.14 mic/speaker picker
+  safe('audioDevicesBoot', () => { syncSpeakerSink(); populateAudioDevices(); }); // 2.14
   safe('circuitWires', startCircuitWires);
   safe('townPreview', startTownPreview);
   safe('townChrome', initTownChrome);
@@ -10676,6 +10706,78 @@ function setupClipboardIntel() {
   api.onClipIntelSecret(() => {
     toast('CLIPBOARD', 'That copy looked like a key or token — stored redacted; the floating panel was skipped.', '🔒');
   });
+}
+
+// Audio device picker (2.14): the OS "default" moves when a headset plugs
+// in — pick the hardware once, by name, and every audio path in the app
+// (dictation, wake listener, Live voice, Edge/Live playback) follows it.
+function syncSpeakerSink() {
+  try { window.__gemSpeakerDeviceId = String(profile.audioDevices?.speakerId || ''); } catch (e) {}
+}
+function selectedDeviceLabel(sel, id) {
+  if (!id) return 'System default';
+  const opt = sel && sel.querySelector(`option[value="${CSS.escape(id)}"]`);
+  return opt ? opt.textContent : id;
+}
+async function populateAudioDevices() {
+  const micSel = $('#setMicDevice'), spkSel = $('#setSpeakerDevice');
+  if (!micSel || !spkSel || !window.GemAudioDevices) return;
+  const result = await window.GemAudioDevices.listAudioDevices();
+  if (!result.ok) {
+    const note = $('#audioDeviceNote');
+    if (note && result.error) note.textContent = result.error;
+  }
+  const fill = (sel, list, preferred) => {
+    const current = preferred || sel.value || '';
+    sel.innerHTML = '<option value="">System default</option>' +
+      (list || []).filter((d) => !d.isDefault).map((d) => `<option value="${escapeHtml(d.deviceId)}">${escapeHtml(d.label)}</option>`).join('');
+    const stillThere = current && (list || []).some((d) => d.deviceId === current);
+    sel.value = stillThere ? current : '';
+    return { current, stillThere, had: !!current };
+  };
+  const micRes = fill(micSel, result.inputs, profile.audioDevices?.micId);
+  const spkRes = fill(spkSel, result.outputs, profile.audioDevices?.speakerId);
+  // Honest fallback, like Mark: an unplugged device → default, and we say so.
+  const note = $('#audioDeviceNote');
+  if (note && (micRes.had && !micRes.stillThere || spkRes.had && !spkRes.stillThere)) {
+    const what = [
+      micRes.had && !micRes.stillThere ? `microphone “${profile.audioDevices?.micLabel || 'saved'}”` : '',
+      spkRes.had && !spkRes.stillThere ? `speaker “${profile.audioDevices?.speakerLabel || 'saved'}”` : ''
+    ].filter(Boolean).join(' and ');
+    note.textContent = `Saved ${what} not present — using the system default for ${micRes.had && !micRes.stillThere && spkRes.had && !spkRes.stillThere ? 'both' : 'it'} instead. Plug it back in and press REFRESH.`;
+  }
+}
+function setupAudioDevicePicker() {
+  if (!window.GemAudioDevices) return;
+  $('#audioDeviceRefresh')?.addEventListener('click', async () => {
+    playSfx('click');
+    await populateAudioDevices();
+    // Measure the CURRENT mic pick so every listed device actually works:
+    const micSel = $('#setMicDevice');
+    const status = $('#micProbeStatus');
+    if (micSel && status) {
+      status.textContent = 'Measuring picked microphone…';
+      const probe = await window.GemAudioDevices.probeMic(micSel.value || '');
+      status.textContent = probe.ok
+        ? `✓ works — opened in ${probe.latencyMs} ms${probe.trackLabel ? ` (${probe.trackLabel})` : ''}`
+        : `✗ could not open: ${probe.error}. Falls back to the OS default automatically.`;
+    }
+  });
+  const persistPick = () => {
+    const micSel = $('#setMicDevice'), spkSel = $('#setSpeakerDevice');
+    profile.audioDevices = {
+      micId: micSel ? micSel.value : '',
+      micLabel: micSel ? selectedDeviceLabel(micSel, micSel.value) : '',
+      speakerId: spkSel ? spkSel.value : '',
+      speakerLabel: spkSel ? selectedDeviceLabel(spkSel, spkSel.value) : ''
+    };
+    syncSpeakerSink();
+    persistProfile();
+    const note = $('#audioDeviceNote');
+    if (note) note.textContent = 'Pick saved — new mic feed applies the next time the microphone opens (dictation, wake listener and Live voice all share it).';
+  };
+  $('#setMicDevice')?.addEventListener('change', persistPick);
+  $('#setSpeakerDevice')?.addEventListener('change', persistPick);
 }
 
 // Read OS autostart state honestly into the Settings row.

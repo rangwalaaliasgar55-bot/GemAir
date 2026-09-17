@@ -396,6 +396,45 @@ settlement.
 
 ---
 
+## 9d. The 2.14 honesty surface — devices, presence, labelled vision
+
+**Audio device picking (`renderer/audio-devices.js`).** `listAudioDevices()`
+wraps `enumerateDevices` with Chromium's label problem solved honestly:
+names are hidden until the mic has been granted once, so it opens the mic
+one time, re-enumerates, and stops every track — a denied grant returns
+`{ok:false, error}` instead of a dead list. `filterDeviceList()` keeps the
+picker short and truthful (dedupe by `deviceId`, default first, synthesized
+names for empty labels, 48-char trim, 8 per kind). `resolveSaved()` treats
+`''` as \"system default\" and reports `fellBack:true` with the lost
+device's name when a saved pick has vanished — never a silent substitution.
+`probeMic()` opens the candidate with `deviceId:{exact}` (the reported
+track label must be truthful about *which* device answered), measures open
+latency, and releases in `finally`. Capture sites (`app.js` mic meter,
+`gemini-live.js`, `wake-word.js`) use `{ideal}` instead — unplugged
+hardware degrades to default instead of erroring. Speaker routing flows
+through `window.__gemSpeakerDeviceId` + guarded `setSinkId` on every
+playback element; the UI note is explicit that the OS web-speech voice
+cannot be routed at all.
+
+**Avatar presence (`renderer/avatar.js`).** A pure `presenceFor(mode)` map
+turns intent into physiology: `thinking` damps pointer tracking and slows
+blinks; `listening` raises pointer damping so the eyes meet the cursor;
+`sleeping` caps the eyelids low and the breath at a third rate; `glance`
+leans gaze down. `currentPresenceMode()` resolves a total priority
+(glance > sleeping > thinking > listening > base) from state the app
+already knows, and `glance(ms)` is edge-triggered, clamped 250ms–2.5s, and
+refuses to interrupt thought or sleep. The renderer drives it from real
+events (auto-sleep timeout, wake-word re-arm, ai/system cards landing) —
+the face is a status channel, not decoration.
+
+**Source-labelled vision (`labelVisionSource` in `gemini-live.js`).**
+Before the first frames of a screen share or camera share flow, one in-band
+`clientContent` note declares the source — and the screen note names the
+trap (\"may contain the GemAir window itself … never a photo of the
+user\"). Both call sites are ordered before their send loops and the
+one-shot `see_screen` tool annotates its result (`source:'screen'`) the
+same way, so one-shot and streaming vision share the contract.
+
 ## 10. Where to add things
 
 | I want to… | Touch |

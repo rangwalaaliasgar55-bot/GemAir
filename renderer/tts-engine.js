@@ -396,6 +396,13 @@
     playUrl(url, opts = {}, cfg = {}) {
       return new Promise((resolve) => {
         const audio = new Audio();
+        // 2.14: route to the chosen speaker when the platform supports it.
+        // (The OS web-speech voice has no routing handle — Chromium gives
+        // SpeechSynthesis no deviceId; the Settings hint says this plainly.)
+        try {
+          const sink = (typeof window !== 'undefined' && window.__gemSpeakerDeviceId) || '';
+          if (sink && typeof audio.setSinkId === 'function') audio.setSinkId(sink);
+        } catch (e) {}
         let settled = false;
         let timer = null;
         let guard = null;

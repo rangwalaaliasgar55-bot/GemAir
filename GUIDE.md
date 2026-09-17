@@ -181,6 +181,37 @@ Settings → **Launch GemAir at login** registers with the OS (Windows Run key,
 macOS Login Item, Linux XDG autostart). The toggle reads its state back from
 the OS — what you see is what's registered, never a stored assumption.
 
+## 🎛️ Pick your mic & speakers — honestly (2.14)
+
+Settings → Avatar & Voice now lists your **microphones and speakers by name**
+(short lists, max 8 each, deduplicated, system default first). Hit **Refresh
+devices** and GemAir also *probes* the selected mic — opens it, tells you how
+long that took and which track actually answered, then lets it go. A saved
+device that has been unplugged falls back to the system default **and names
+what it lost** instead of silently swapping hardware. One honest caveat the
+panel states itself: the built-in web-speech voice belongs to the OS and
+can't be routed to a chosen speaker — Edge-quality voices and the Live voice
+respect your pick.
+
+## 🎭 Watch the face — it is a status line now (2.14)
+
+Gem's avatar behaves the way a person at a desk does. Ask something long and
+it **looks away to think**; while it listens it **meets your eyes** (it
+follows your cursor more closely); after two silent minutes with the wake
+word armed its **lids fall and its breath slows** — wake it and they open
+again. When a reply or system card lands while you weren't talking, Gem
+**glances down at it**, a wordless \"that landed\". A glance never interrupts
+thinking or sleep — rests outrank politeness.
+
+## 🏷️ Vision that admits where it came from (2.14)
+
+Screen-share frames now announce themselves *as screen frames* before they
+flow — including the warning that a screenshot may contain GemAir's own
+window and **its avatar face is the app, never a photo of you**. Camera
+frames are labelled as camera. The same annotation rides on one-shot
+`see_screen` captures. The model can't confuse your desktop for your face
+anymore.
+
 ## 🌅 Proactive Gem (2.12)
 
 On launch, Gem greets you with the time of day, any reminders due in the next

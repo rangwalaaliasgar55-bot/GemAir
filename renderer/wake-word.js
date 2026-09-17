@@ -87,7 +87,9 @@
       && typeof (window.AudioContext || window.webkitAudioContext) === 'function';
   }
 
-  async function start({ phrase, onWake, onStatus, onLevel } = {}) {
+  async function start({ phrase, onWake, onStatus, onLevel, micDeviceId } = {}) {
+    // micDeviceId: the Settings device pick routes here too — one hardware
+    // choice governs the wake listener, the dictation mic, and Live voice.
     if (!isSupported()) throw new Error('Local wake-word engine is not supported in this environment');
     if (active) return;
 
@@ -112,9 +114,12 @@
     recognizer.on('result', (message) => checkText(message && message.result && message.result.text));
     recognizer.on('partialresult', (message) => checkText(message && message.result && message.result.partial));
 
+    const micId = String(micDeviceId || '').trim();
     try {
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, sampleRate: { ideal: SAMPLE_RATE }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        audio: Object.assign(
+          { channelCount: 1, sampleRate: { ideal: SAMPLE_RATE }, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          micId ? { deviceId: { ideal: micId } } : {})
       });
     } catch (error) {
       recognizer = null;

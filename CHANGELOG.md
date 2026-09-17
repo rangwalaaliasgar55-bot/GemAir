@@ -1,5 +1,31 @@
 # Changelog
 
+## [2.14.0] — 2026-09-17
+
+**The \"knows what it hears, knows what it sees\" release — the remaining three items from the Mark-LIV study.** An honest **audio device picker** (mic and speakers by name, measured before you trust them), the **face as a status channel** (Gem's avatar now glances, listens, thinks and sleeps with its body, not just its words), and **source-labelled vision** (every frame stream declares where it came from, so a screenshot of GemAir itself is never read as a photo of you). Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).
+
+### Added — 🎛️ Audio device picker (`renderer/audio-devices.js` + Settings rows)
+- **Mic and speakers by name**: two short, honest lists (max 8 per kind, deduplicated, default first, labels trimmed) under Settings → Avatar & Voice. Chromium hides device names until the mic has been granted once, so the first list quietly touches the mic **once**, re-enumerates, and lets it go — permission-denied says so instead of showing a dead list.
+- **Refresh & probe**: the refresh button re-lists and *probes* the selected mic — opens it, measures open latency, reports the live track label (`✓ USB Microphone — opened in 41ms`) and always releases it. The mic is never left held open and a probe failure is an error line, not a crash.
+- **Honest fallback**: a saved device that has vanished falls back to the system default **and names what it lost** (\"Saved mic unplugged; using system default — 'Old USB Mic'\") — never a silent substitution and never a guessed device. Picks apply to the mic meter, the Live voice session, the wake word, and the speaker route on next open; the note is honest that the OS web-speech voice cannot be routed at all.
+- Routing is by `deviceId: { ideal }` for normal capture (unplugged devices degrade gracefully) and `{ exact }` for probes (the label must be truthful about which device opened). Speaker routing goes through guarded `setSinkId` everywhere audio is played.
+
+### Added — 🎭 Face as a status channel (`renderer/avatar.js` presence)
+- **Presence modes** drive the whole body, not a caption: **thinking** looks away (less pointer tracking, slower blinks), **listening** meets your eyes (it follows your pointer more closely — the way Mark meets the user's gaze), **sleeping** lets the lids fall and the breath slow to a third, and **glance** looks down when something new lands.
+- The app drives it from real events, no theatre: 2 minutes of silence on the wake word → lids fall; any spoken loop or re-enabled wake word → eyes open; a new AI reply or system card while idle → a 500–650ms downward glance. Glance **refuses to interrupt thought or sleep** — rests outrank politeness.
+- Priority is total order (glance > sleeping > thinking > listening > base), durations clamped to a natural 250ms–2.5s, all of it in `presenceFor(mode)` — pure, testable, and exported for the tests.
+
+### Added — 🏷️ Source-labelled vision (`labelVisionSource` + see_screen annotation)
+- Before the first screen-share or camera frame flows to a Gemini Live session, an in-band `clientContent` note declares the source: *screen* frames \"may contain the GemAir window itself, including its avatar face — that face is the app, never a photo of the user\"; *camera* frames are declared as surroundings, possibly the user. The two notes say different things on purpose, and the call has to precede the send loop (test-asserted).
+- The one-shot `see_screen` tool now annotates its result the same way (`source: 'screen'` plus the avatar warning) — the fix from Mark-LIV's own fix list, applied to both live and one-shot vision.
+
+### Changed
+- Version bumped 2.13.0 → 2.14.0 single-sourced across `package.json`, `package-lock.json`, `VERSION`, `api/_lib/http.js`, `renderer/index.html`, `renderer/app.js` fallback, `renderer/sw.js` (`gemair-shell-v2.14.0-release`), `download.html`, and `scripts/selfcheck.js`.
+
+### Tests & docs
+- New suites in `npm run check`: `audio-device-test.js` (14: filtering/dedupe/trim/cap, resolve-fallback honesty, label-permission flow, probe open/measure/release, full routing-site wiring), `avatar-presence-test.js` (8: mode map physiology, priority order, glance no-op under sleep/thought, app wiring), `vision-source-test.js` (7: wire shape, screen-vs-camera notes, graceful failure, call-site ordering, see_screen annotation).
+- `GUIDE.md` gains the audio-devices and presence sections; `ARCHITECTURE.md` §9d documents the routing, presence and labelling pipelines.
+
 ## [2.13.0] — 2026-09-17
 
 **The "take it back" release.** A second deep pass over FatihMakes/Mark-LIV lands the features that make an assistant feel accountable: a shared **undo stack** for every file it touches, **clipboard intelligence** with a floating Translate/Summarise/Explain/Fix panel, **push-to-talk**, a **self-echo guard** (it no longer answers its own voice ringing in the room), **runtime self-knowledge** assembled live (including honest limits), **instant acknowledgment** in your language, **auto-start at login**, and two transport-hardening fixes straight off Mark-LIV's fix list. Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).

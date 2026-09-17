@@ -190,8 +190,34 @@
       viseme: 'MM', syllableT: 0, syllablePhase: 0,
       eyeOpen: 1, nextBlink: 1.8, blinkT: -1,
       lean: 0, leanY: 0, tilt: 0, breath: 0, glow: 0.4,
-      nod: 0
+      nod: 0,
+      // 2.14 face-as-status: sleep state + content glance
+      sleeping: false, glanceUntil: 0, glanceX: 0.15, glanceY: 0.6
     };
+
+    // Face-as-status presence map (concept port of Mark-LIV: you read a gaze
+    // faster than a word). Pure: mode → lens targets/lid caps/blink pacing,
+    // so the head tells you what the assistant is doing before it speaks.
+    //   base      — follow the pointer (ambient)
+    //   listening — meet your eyes (pointer-damped so it stays alive, not glued)
+    //   thinking  — look away and HOLD it; blinking suppressed (concentration)
+    //   sleeping  — lids fallen, slow breath, no pointer reaction
+    //   glance    — brief look down at the content panel ("that landed")
+    const PRESENCE = {
+      base:      { leanX: null, leanY: null, blinkRateFactor: 1.0, breathRate: 0.8, label: 'ambient' },
+      listening: { leanX: null, leanY: null, pointerDamp: 0.8, blinkRateFactor: 1.1, breathRate: 0.85, label: 'eyes on you' },
+      thinking:  { leanX: -0.55, leanY: -0.28, blinkRateFactor: 0.4, breathRate: 0.9, label: 'concentrating' },
+      sleeping:  { leanX: 0, leanY: 0.16, lidCap: 0.24, blinkRateFactor: 0.35, breathRate: 0.35, label: 'asleep — wake word only' },
+      glance:    { leanX: 0.15, leanY: 0.6, blinkRateFactor: 0.5, breathRate: 0.9, label: 'noted the content' }
+    };
+    function presenceFor(mode) { return PRESENCE[mode] || PRESENCE.base; }
+    function currentPresenceMode() {
+      if (S.glanceUntil && time < S.glanceUntil) return 'glance';
+      if (S.sleeping) return 'sleeping';
+      if (S.thinking) return 'thinking';
+      if (S.listening && !S.speaking) return 'listening';
+      return 'base';
+    }
     let emotion = { emotion: 'neutral', valence: 0 };
     const pointer = { x: 0, y: 0 };
 
@@ -454,8 +480,9 @@
 
       const ex = EXPRESSION[(emotion && emotion.emotion) || 'neutral'] || EXPRESSION.neutral;
 
-      // Blink
-      S.nextBlink -= dt;
+      // Blink (presence-paced: suppressed while concentrating, slow asleep)
+      const presence = presenceFor(currentPresenceMode());
+      S.nextBlink -= dt * (presence.blinkRateFactor || 1);
       if (S.nextBlink <= 0 && S.blinkT < 0) { S.blinkT = 0; S.nextBlink = 2.2 + Math.random() * 4.0; }
       let blink = 1;
       if (S.blinkT >= 0) {
@@ -464,12 +491,21 @@
         blink = S.blinkT < d / 2 ? 1 - S.blinkT / (d / 2) : clamp((S.blinkT - d / 2) / (d / 2), 0, 1);
         if (S.blinkT > d) S.blinkT = -1;
       }
-      S.eyeOpen = blink;
+      if (presence.lidCap != null) {
+        // Sleeping: lids rest low with a slow breathing ripple — never wide.
+        const ripple = Math.sin(time * 0.4) * 0.05;
+        S.eyeOpen = Math.min(blink, presence.lidCap + ripple);
+      } else {
+        S.eyeOpen = blink;
+      }
 
-      // Breathing + lean
-      S.breath = Math.sin(time * (S.speaking ? 1.45 : 0.8)) * 0.5 + 0.5;
-      S.lean = approach(S.lean, pointer.x, 2.4, dt);
-      S.leanY = approach(S.leanY, pointer.y, 2.4, dt);
+      // Breathing (presence-rated) + gaze lean (presence-targeted)
+      S.breath = Math.sin(time * (S.speaking ? 1.45 : (presence.breathRate || 0.8))) * 0.5 + 0.5;
+      const damp = presence.pointerDamp == null ? 1 : presence.pointerDamp;
+      const leanXTarget = presence.leanX != null ? presence.leanX : pointer.x * damp;
+      const leanYTarget = presence.leanY != null ? presence.leanY : pointer.y * damp;
+      S.lean = approach(S.lean, leanXTarget, 2.4, dt);
+      S.leanY = approach(S.leanY, leanYTarget, 2.4, dt);
 
       // Micro head nods on speech volume surges
       const nodTarget = S.speaking ? Math.sin(time * 6) * audioVolume * 0.04 : 0;
@@ -593,7 +629,16 @@
         if ('speaking' in next) S.speaking = !!next.speaking;
         if ('listening' in next) S.listening = !!next.listening;
         if ('thinking' in next) S.thinking = !!next.thinking;
+        if ('sleeping' in next) S.sleeping = !!next.sleeping;
       },
+      // Brief look down at new content — a wordless "that landed", like
+      // Mark's content-panel glance. Short by design; presence falls back.
+      glance(durationMs) {
+        if (S.sleeping || S.thinking) return; // rests/concentration outrank the glance
+        S.glanceUntil = time + Math.max(0.25, Math.min(2.5, (Number(durationMs) || 700) / 1000));
+      },
+      presenceMode() { return currentPresenceMode(); },
+      presenceFor,
       setEmotion(e) {
         if (e && typeof e === 'object') emotion = e;
         else if (typeof e === 'string') emotion = { emotion: e, valence: 0 };
@@ -654,5 +699,8 @@
   window.gemAvatar.parseColor = parseColor;
   // Exposed for unit tests: the pure viseme pipeline (Unicode-reduced,
   // language-free mouth shapes — Latin / Cyrillic / Greek from one rule set).
-  window.gemAvatar._internals = { visemesForWord, VISEMES, LETTER_VISEME, CYRILLIC_VISEME, GREEK_VISEME };
+  window.gemAvatar._internals = {
+    visemesForWord, VISEMES, LETTER_VISEME, CYRILLIC_VISEME, GREEK_VISEME,
+    presenceFor: window.gemAvatar.presenceFor // face-as-status map (pure)
+  };
 })();
