@@ -251,7 +251,7 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.12.0'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.13.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
@@ -666,6 +666,7 @@ function makeDefaultProfile() {
     dailyDigest: { enabled: false, time: '08:00' },
     ambientScore: false, ambientTrack: DEFAULTS.ambientTrack, ambientVolume: DEFAULTS.ambientVolume,
     screenAwareness: false,
+    pushToTalk: false, clipboardIntel: false, autoStart: false,
     modes: {}
   };
 }
@@ -2890,6 +2891,7 @@ User: "play soft music" -> open lofi playlist + set volume 35 + apply theme viol
       (instructions ? `THE USER'S STANDING INSTRUCTIONS (always follow these):\n${instructions}\n\n` : '') +
       (modes ? `AVAILABLE MODES:\n${modes}\n\n` : '') +
       `INPUT HANDLING: The user often types fast with misspellings, missing letters, no punctuation, or mixed Hindi/Urdu romanisation. Silently infer what they meant and answer that. Never correct their spelling, never comment on it, and never ask "did you mean" unless the intent is genuinely ambiguous between two real options.\n` +
+      (selfKnowledgeText ? `\n${selfKnowledgeText}\n` : '') +
       `ANSWER STYLE (follow strictly):\n` +
       `- Lead with the answer. No preamble, no "Great question", no restating what was asked.\n` +
       `- Default to 1-3 sentences. Expand only when the user asks for detail, or the task genuinely needs steps.\n` +
@@ -3817,6 +3819,9 @@ function ttsOptionsFor(clean, gen, mode) {
 function speak(text) {
   const clean = String(text || '').replace(/```[\s\S]*?```/g, '(code).').replace(/[#*_`]/g, '').replace(/\s+/g, ' ').trim();
   if (!clean) return;
+  // 2.13 echo guard: remember exactly what Gem is about to say so fresh STT
+  // text that IS this sentence gets dropped, not answered.
+  try { echoGuard && echoGuard.noteSpoken(clean); } catch {}
   stopSpeaking(); // interrupt prior speech so new replies cut in cleanly
   const gen = ++speechGen;
   const mode = profile.voice?.mode || DEFAULTS.voiceMode;
@@ -4038,9 +4043,26 @@ function initRecognition() {
       }
       if (event.results[i].isFinal) finalText += text; else interim += text;
     }
+    // 2.13 echo guard: if what the mic just heard is (the tail of) Gem's own
+    // last sentence, drop it instead of answering ourselves. Continuations in
+    // your voice are kept — the mic was never muted, only the echo is.
+    if (interim && echoGuard) {
+      try {
+        const g = echoGuard.inspect(interim);
+        if (g.dropped) interim = '';
+        else if (g.remainder) interim = g.remainder;
+      } catch {}
+    }
     if (interim) {
       $('#chatInput').value = interim;
       setCaption('user', interim, { autoHide: 1200 });
+    }
+    if (finalText.trim() && echoGuard) {
+      try {
+        const g = echoGuard.inspect(finalText.trim());
+        if (g.dropped) finalText = '';
+        else if (g.remainder) finalText = g.remainder;
+      } catch {}
     }
     if (finalText.trim()) { $('#chatInput').value = finalText.trim(); sendMessage(finalText.trim()); }
   };
@@ -6634,6 +6656,10 @@ function populateSettings() {
   applyAppearance(profile.appearance || DEFAULTS.appearance);
   $('#setWakeWord').checked = !!profile.wakeWord;
   $('#setWakeWordText').value = profile.wakeWordText || 'Hey Gem';
+  // 2.13 — push-to-talk / clipboard intelligence / auto-start rows
+  { const ptt = $('#setPushToTalk'); if (ptt) ptt.checked = !!profile.pushToTalk; }
+  { const ci = $('#setClipboardIntel'); if (ci) ci.checked = !!profile.clipboardIntel; }
+  refreshAutostartRow();
   populateVoices(); populateNeuralVoices(); populateEdgeVoices(); updateAiHint();
   syncVoicePresetUi(profile.voice?.preset || 'gem');
   renderCostPanel();
@@ -7664,6 +7690,11 @@ function bindEvents() {
     if (setCodingAgentSteps) profile.codingAgentMaxSteps = Math.max(1, Math.min(20, Number(setCodingAgentSteps.value) || 10));
     profile.wakeWord = $('#setWakeWord').checked;
     profile.wakeWordText = ($('#setWakeWordText').value || 'Hey Gem').trim().replace(/\s+/g, ' ').slice(0, 40) || 'Hey Gem';
+    // 2.13 — push-to-talk / clipboard intelligence / auto-start at login
+    { const ptt = $('#setPushToTalk'); if (ptt) profile.pushToTalk = ptt.checked; }
+    { const ci = $('#setClipboardIntel'); if (ci) profile.clipboardIntel = ci.checked; }
+    { const as_ = $('#setAutoStart'); if (as_ && !as_.disabled) { try { const r = await api.autostartSet(as_.checked); if (r && r.error) toast('AUTO-START', r.error, '⚠'); else profile.autoStart = as_.checked; } catch {} } }
+    try { await api.automationApply(); } catch {} // sync main-side loops (clipboard watcher)
     if (geminiKeyInput) {
       const secure = await api.connectionsSetGeminiApiKey(geminiKeyInput, geminiTextModel);
       if (secure && secure.error) {
@@ -9062,6 +9093,10 @@ async function boot() {
   safe('settingsReorg', setupSettingsReorg);           // 2.4 U3
   safe('pluginsPanel', setupPluginsPanel);             // 2.12 drop-in plugins
   safe('wakeModelInstall', setupWakeModelInstall);     // 2.12 one-click wake model
+  safe('instantAck', setupInstantAck);                 // 2.13 "on it" acks
+  safe('pushToTalk', setupPushToTalk);                 // 2.13 Ctrl+Space hold-to-talk
+  safe('clipIntel', setupClipboardIntel);              // 2.13 floating clipboard panel
+  safe('selfKnowledge', refreshSelfKnowledgeCache);    // 2.13 live self-knowledge
   safe('circuitWires', startCircuitWires);
   safe('townPreview', startTownPreview);
   safe('townChrome', initTownChrome);
@@ -10510,6 +10545,7 @@ function setupPluginsPanel() {
   $('#pluginsReloadBtn')?.addEventListener('click', async () => {
     await api.pluginsReload();
     playSfx('click');
+    try { refreshSelfKnowledgeCache(); } catch {} // a plugin (dis)appeared — update what Gem claims
     await renderPluginsPanel();
   });
   $('#pluginsOpenFolderBtn')?.addEventListener('click', async () => {
@@ -10520,6 +10556,145 @@ function setupPluginsPanel() {
   // Load lazily the first time the Plugins section opens.
   document.querySelector('.settings-nav-btn[data-ssection="plugins"]')?.addEventListener('click', () => { renderPluginsPanel(); });
 }
+
+// ---------------------------------------------------------------------------
+// 2.13 — echo guard · instant ack · push-to-talk · clipboard intel ·
+// self-knowledge prompt injection (Mark-LIV concept ports)
+// ---------------------------------------------------------------------------
+
+// Self-echo guard: the tail of Gem's own voice is recognised in fresh STT
+// text and dropped — without ever muting you. noteSpoken() runs in speak();
+// inspect() runs in the SpeechRecognition onresult handler.
+const echoGuard = (typeof window !== 'undefined' && window.GemEchoGuard) ? window.GemEchoGuard.createEchoGuard() : null;
+
+// Self-knowledge cache: the live "what it is and isn't" snapshot from main,
+// injected into every system prompt instead of stale hand-written claims.
+let selfKnowledgeText = '';
+async function refreshSelfKnowledgeCache() {
+  try {
+    const info = await api.selfKnowledge();
+    selfKnowledgeText = (info && typeof info.text === 'string') ? info.text : '';
+  } catch { selfKnowledgeText = ''; }
+}
+
+// Instant acknowledgment: when main says a gap-prone tool just STARTED, say
+// one short line in the user's language so the wait never feels dead. The
+// model itself never narrates — this comes from the shell.
+const ackPicker = (typeof window !== 'undefined' && window.GemInstantAck) ? window.GemInstantAck.createAckPicker() : null;
+function setupInstantAck() {
+  if (!ackPicker) return;
+  if (!api.onToolStarted) return; // bridge missing (unsupported env) — degrade silently
+  api.onToolStarted((info) => {
+    if (!info || !info.name) return;
+    const langMap = { hinglish: 'hi', ur: 'hi', hi: 'hi', en: 'en' };
+    const language = langMap[currentLang] || (typeof currentLang === 'string' ? currentLang : 'en');
+    const ack = ackPicker.pick({ language, tool: info.name });
+    // Never talk over an answer already being spoken — toast only then.
+    if (document.body.classList.contains('rgb-speaking')) {
+      toast('GEM', ack.line, '⏳');
+    } else {
+      try { speak(ack.line); } catch { toast('GEM', ack.line, '⏳'); }
+    }
+  });
+}
+
+// Push-to-talk: Ctrl+Space hold opens the mic, release ends dictation (the
+// final transcript sends on release, like the mic button does). Bound to this
+// window by design — no dependency-free global key read exists outside
+// Windows native code, and the Settings hint says so.
+let pttHeld = false;
+function setupPushToTalk() {
+  const isChord = (e) => e.code === 'Space' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey;
+  window.addEventListener('keydown', (e) => {
+    if (!profile.pushToTalk || pttHeld || e.repeat || !isChord(e)) return;
+    if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) && e.target.id !== 'chatInput') return;
+    e.preventDefault();
+    pttHeld = true;
+    if (!listening && recognition) {
+      try { window.GemWakeWord && window.GemWakeWord.stop && window.GemWakeWord.stop(); } catch {}
+      listening = true;
+      startMicMeter(); avatar({ listening: true });
+      $('#micBtn')?.classList.add('recording'); document.body.classList.add('rgb-recording');
+      try { recognition.start(); } catch (err) {}
+      setCaption('user', 'Listening — release Ctrl+Space to send');
+    }
+  });
+  const release = () => {
+    if (!pttHeld) return;
+    pttHeld = false;
+    if (listening && recognition) {
+      listening = false;
+      try { recognition.stop(); } catch (e) {} // onresult final fires, then onend cleans up
+    }
+  };
+  window.addEventListener('keyup', (e) => { if (e.code === 'Space' || !e.ctrlKey) release(); });
+  window.addEventListener('blur', release);           // never leave the mic open in the background
+  document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
+}
+
+// Clipboard intelligence card: floating Translate/Summarise/Explain/FIX on
+// new copies (opt-in via Settings; secrets never reach this panel).
+let clipIntelCurrentId = 0;
+let clipIntelHideTimer = null;
+function clipIntelHide() {
+  const card = $('#clipIntelCard');
+  if (card) card.hidden = true;
+  clipIntelCurrentId = 0;
+  clearTimeout(clipIntelHideTimer); clipIntelHideTimer = null;
+}
+const CLIP_INTEL_PROMPTS = {
+  translate: 'Translate this into natural English (if already English, translate to Hindi):\n',
+  summarise: 'Summarise this in 3 short bullets:\n',
+  explain: 'Explain this simply — what is it, and why does it matter:\n',
+  fix: 'Fix any grammar/spelling problems in this text and return the corrected version:\n'
+};
+function setupClipboardIntel() {
+  const card = $('#clipIntelCard');
+  if (!card) return;
+  if (!api.onClipIntelNew || !api.clipIntelRecall) return; // bridge missing (unsupported env) — degrade silently
+  $('#clipIntelClose')?.addEventListener('click', clipIntelHide);
+  $('#clipIntelActions')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn || !clipIntelCurrentId) return;
+    const act = btn.dataset.act;
+    playSfx('click');
+    const entry = await api.clipIntelRecall(clipIntelCurrentId);
+    clipIntelHide();
+    if (!entry || entry.error || !entry.text) { toast('Clipboard', (entry && entry.error) || 'Entry unavailable.', '⚠'); return; }
+    $('#chatInput').value = (CLIP_INTEL_PROMPTS[act] || CLIP_INTEL_PROMPTS.explain) + entry.text;
+    $('#chatInput').focus();
+  });
+  api.onClipIntelNew((entry) => {
+    if (!entry || !entry.preview) return;
+    clipIntelCurrentId = entry.id;
+    const textEl = $('#clipIntelText');
+    if (textEl) textEl.textContent = entry.preview + (entry.chars > 140 ? '…' : '');
+    card.hidden = false;
+    clearTimeout(clipIntelHideTimer);
+    clipIntelHideTimer = setTimeout(clipIntelHide, 15000);
+  });
+  api.onClipIntelSecret(() => {
+    toast('CLIPBOARD', 'That copy looked like a key or token — stored redacted; the floating panel was skipped.', '🔒');
+  });
+}
+
+// Read OS autostart state honestly into the Settings row.
+async function refreshAutostartRow() {
+  const el = $('#setAutoStart');
+  if (!el || !api.autostartGet) return;
+  try {
+    const state = await api.autostartGet();
+    el.checked = !!(state && state.enabled);
+    const hint = $('#autoStartHint');
+    if (hint && state) {
+      hint.textContent = state.supported
+        ? (state.note || '') + (state.devMode ? ' (Dev-mode note: this registers the Electron binary — most reliable from an installed package.)' : '')
+        : 'Auto-start is not available on this platform.';
+      el.disabled = !state.supported;
+    }
+  } catch {}
+}
+
 
 function setupSettingsReorg() {
   $$('.settings-nav-btn').forEach(btn=>{

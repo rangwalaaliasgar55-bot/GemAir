@@ -111,7 +111,9 @@ module.exports = {
   or other plugins' state.
 - The Plugins settings panel also shows the **memory archive** stats (below).
 
-## 👁 Live vision — "what's on my screen?" mid-call (2.12)
+## 👁 Live vision — "what's on my screen?" mid-call (2.12, hardened 2.13)
+
+
 
 In Settings → Siri & Voice, the Live voice card has two toggles:
 **SHARE SCREEN** and **SHARE CAMERA**. While a Gemini Live voice session is
@@ -127,6 +129,57 @@ resumption handles ride through reconnects, sliding-window compression keeps
 one conversation alive for hours, server interruptions flush playback
 instantly, and Gem's own transcript drives the avatar's mouth — phoneme by
 phoneme, even in Cyrillic and Greek, thanks to Unicode-reduced visemes.
+
+## ↩️ Undo — "take it back" (2.13)
+
+Say **"undo"** and GemAir reverses its own most recent file action: writes
+(fresh files removed only while untouched, overwrites rolled back to an exact
+snapshot), folder organizes, renames, moves, archive sweeps, folder trees —
+each removed only while still empty. It never guesses (files over 1 MB are
+excluded up front and say so), refuses when you edited things since (your
+work is sacred), and a failed undo stays on the list with its reason. Ask
+"what can you undo?" for the live list.
+
+## 📋 Clipboard intelligence (2.13)
+
+Settings → **Clipboard intelligence** (opt-in): copy any text and a floating
+card offers **TRANSLATE / SUMMARISE / EXPLAIN / FIX** — one click stages the
+prompt in chat; you still press send. Keys and tokens are never put in the
+panel: they're stored redacted with a lock toast instead. The history ring is
+small; what ages out goes to the memory archive, not the void.
+
+## 🎚️ Push-to-talk & the echo guard (2.13)
+
+Meetings and noisy rooms: turn on **Push-to-talk** and hold **Ctrl+Space** —
+the mic is closed unless you're holding it (release sends; it follows the
+window honestly: there is no dependency-free global hotkey on macOS/Linux).
+And whether or not you use it, Gem no longer answers the echo of its own
+voice ringing in the room after a reply — the tail of its own sentence is
+recognised and dropped without ever muting you. While it's talking, real
+interruptions still land instantly.
+
+## 🪪 Ask it what it is (2.13)
+
+Ask "what can you do?" and the answer now comes from the **live registry** —
+tools discovered this session, plugins loaded since launch (broken ones
+disclaimed), what the machine is, what Memory holds — plus the honest limits:
+sight is a frame on demand, not a live feed; it acts on this machine only.
+Rename it or drop in a plugin and it knows — the knowledge is rebuilt live,
+never baked into the prompt.
+
+## ⚡ "On it" (2.13)
+
+When a longer job starts — a desktop task, a search, a folder sweep — you hear
+one short line in your language right away ("अभी कर रहा हूँ।", "Hallediyorum.",
+"On it."), and Gem still doesn't narrate its own tool calls: the ack comes
+from the app shell, not the model. If Gem is mid-sentence the line toasts
+instead of talking over the answer.
+
+## ⚡ Launch at login (2.13)
+
+Settings → **Launch GemAir at login** registers with the OS (Windows Run key,
+macOS Login Item, Linux XDG autostart). The toggle reads its state back from
+the OS — what you see is what's registered, never a stored assumption.
 
 ## 🌅 Proactive Gem (2.12)
 

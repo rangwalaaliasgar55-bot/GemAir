@@ -349,6 +349,53 @@ Chromium install, `--check` validation mode for CI.
 
 ---
 
+## 9c. The 2.13 accountability layer
+
+**Undo stack (`lib/undo-stack.js`).** One shared journal where every
+reversible file tool registers its reversal at the moment it acts. Semantics
+ported from Mark-LIV's `core/undo.py`: reversal runs only on demand; >1 MB
+snapshots are refused with a note (no hoarding); created files are removed
+only while byte-identical to what we wrote (user edits are never destroyed);
+folders only while empty; move-backs refuse on collisions and stay on the
+stack with their reason. `undo_last` still passes a human confirm — reversal
+is itself a state change. Live cap 25; evictions go to the memory archive.
+
+**Clipboard intelligence (`lib/clipboard-intel.js`).** An opt-in 1.2 s poll in
+main (`electron.clipboard.readText` — the loop exists only while enabled).
+Classification (url/secret/long/text), secrets redacted at rest via
+`lib/privacy-redaction.js` and never shown in the floating panel, ring of 30
+with archive-on-evict. Bridge: `clipIntel:list/recall/clear/stats` +
+`clipIntel:new/secret` pushes; renderer card stages prompts, never sends.
+
+**Self-echo guard (`renderer/echo-guard.js`).** Transcript-level echo
+suppression: `speak()` registers normalized text; the SpeechRecognition
+handler drops exact/partial echoes and strips echo prefixes, keeping genuine
+continuations. 8 s expiry window, bounded 12-entry ring, mic never muted.
+
+**Runtime self-knowledge (`lib/self-knowledge.js`).** `refreshSelfKnowledge()`
+(main) snapshots the live registry after boot and every plugin reload — tool
+names, plugin names+errors, capability flags, memory/archive counts — and the
+honest limits, injected into every system prompt as
+`RUNTIME SELF-KNOWLEDGE`. Tool: `get_assistant_capabilities` for
+mid-session freshness.
+
+**Instant acknowledgment (`renderer/instant-ack.js`).** `executeToolNow`
+emits `tool:started` for the gap-prone set AFTER all confirm gates pass;
+the picker renders one line in the user's language (10 locales shipped),
+rotated, spoken unless Gem is already mid-sentence (then a toast).
+
+**Auto-start (`lib/autostart.js`).** Electron `setLoginItemSettings` per-OS
+(Run key / Login Item / XDG `.desktop`), state read back from the OS,
+never hidden, dev-mode caveat on unpackaged Linux.
+
+**Live-loop fixes.** Transcript-tail de-dup against a 600-char turn
+accumulator (Live API re-sends tails across tool-call turn-completes);
+rejected resumption handles dropped after exactly one replay; socket-epoch
+guard so a previous socket's trailing close can't consume a new attempt's
+settlement.
+
+---
+
 ## 10. Where to add things
 
 | I want to… | Touch |

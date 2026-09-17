@@ -46,6 +46,24 @@ const PLUGINS_DIR = path.join(__dirname, 'plugins');
 // Cold overflow store for hot-memory evictions (facts / transcript /
 // actionLog / mood): nothing the assistant learned is silently deleted.
 const memoryArchive = new MemoryArchive(MEMORY_ARCHIVE_FILE);
+// ---------------------------------------------------------------------------
+// 2.13 additions (Mark-LIV concept ports — no upstream code):
+//  - UndoStack: one shared "take back what GemAir did" journal; file tools
+//    register their reversal at the moment they act. In-memory, capped,
+//    evictions go to the cold archive.
+//  - ClipboardIntel: opt-in clipboard watcher → floating action panel; secrets
+//    redacted at rest; evictions archived (see lib/clipboard-intel.js).
+//  - autoStart: OS-native launch-at-login (registry / LoginItem / XDG).
+//  - Self-knowledge: live "what it is and isn't" snapshot for the prompt.
+// ---------------------------------------------------------------------------
+const { UndoStack, snapshotFile, fileWriteEntry, fileMoveEntry, organizeEntry, folderCreateEntry } = require('./lib/undo-stack.js');
+const { ClipboardIntel } = require('./lib/clipboard-intel.js');
+const { createAutoStart } = require('./lib/autostart.js');
+const selfKnowledge = require('./lib/self-knowledge.js');
+const undoStack = new UndoStack({ cap: 25, archive: memoryArchive });
+const autoStart = createAutoStart(app, { name: 'GemAir' });
+let selfKnowledgeCache = null; // {text, oneLine, builtAt} rebuilt below
+let clipboardIntel = null;     // constructed lazily after mainWindow exists
 openJarvisSidecar.configure({
   runtimeRoot: OPENJARVIS_RUNTIME_DIR,
   resourceRoot: app.isPackaged ? process.resourcesPath : __dirname
@@ -416,6 +434,9 @@ app.whenReady().then(() => {
   try { startDailyDigestScheduler(); } catch (e) { console.error('[daily-digest] disabled:', e.message); }
   try { startProactiveScheduler(); } catch (e) { console.error('[proactive] disabled:', e.message); }
   try { runLocalSecretGuard(); } catch (e) { console.error('[security] guard disabled:', e.message); }
+  // 2.13: self-knowledge snapshot + opt-in clipboard watcher + auto-start.
+  try { refreshSelfKnowledge(); } catch (e) { console.error('[self-knowledge] disabled:', e.message); }
+  try { applyAutomationSettings(); } catch (e) { console.error('[automation] disabled:', e.message); }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     else mainWindow.show();
@@ -836,6 +857,11 @@ const TOOLS = [
   { type: 'function', function: { name: 'get_power_storage', description: 'Read live battery charging state and primary disk capacity/free-space sensors.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'see_screen', description: 'Capture the current screen so the AI is aware of what is on it.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'get_action_log', description: 'Get the recent log of actions the AI has performed (transparency).', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'undo_last', description: 'Take back GemAir\'s own most recent reversible action (file written/moved/renamed/organized). Only its own actions are reversible, and only while the entries are in the live undo stack. Use when the user says undo/take it back/put it back in any language.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'list_undoable', description: 'List what GemAir can still take back right now (its own recent reversible file/folder actions), newest first.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'recall_clipboard_entry', description: 'Fetch the (secret-redacted) text of a clipboard-intelligence entry by id from list_clipboard_entries. Only available while clipboard intelligence is enabled.', parameters: { type: 'object', properties: { id: { type: 'number' } }, required: ['id'] } } },
+  { type: 'function', function: { name: 'list_clipboard_entries', description: 'List recently copied text snippets with ids, kinds and previews (secrets redacted). Empty unless the user enabled clipboard intelligence in Settings.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'get_assistant_capabilities', description: 'Get Gem\'s live self-knowledge: who it is, what machine it runs on, the tools and plugins actually registered right now, and its honest limits. Use when asked "what can you do" or what it cannot do.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'add_skill', description: 'Remember a reusable skill / ability the user has taught you (persistent).', parameters: { type: 'object', properties: { text: { type: 'string' }, name: { type: 'string' } }, required: ['text'] } } },
   { type: 'function', function: { name: 'list_skills', description: 'List the skills you have learned.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'add_instruction', description: 'Remember a standing instruction / rule / preference the user wants you to always follow.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
@@ -1159,9 +1185,15 @@ async function writeFile(path_, content) {
     const safePath = resolveUserPath(path_);
     const text = String(content);
     if (Buffer.byteLength(text, 'utf8') > 1024 * 1024) return { error: 'File content exceeds the 1 MB tool limit.' };
+    // Undo journal (2.13): snapshot BEFORE we touch anything, then register
+    // how to take this exact write back. The 1 MB snapshot guard matches the
+    // tool's own limit, so tool writes are always reversible.
+    const before = await snapshotFile(fs.promises, safePath);
     await fs.promises.mkdir(path.dirname(safePath), { recursive: true });
     await fs.promises.writeFile(safePath, text, { encoding: 'utf8', mode: 0o600 });
-    return { ok: true, path: safePath };
+    try { undoStack.push(fileWriteEntry(safePath, before, Buffer.from(text, 'utf8'))); } catch {}
+    const reversible = !before.excluded;
+    return { ok: true, path: safePath, reversible, note: reversible ? undefined : before.reason };
   } catch (error) { return { error: error.message }; }
 }
 async function searchFiles(root, query) {
@@ -1671,7 +1703,7 @@ async function organizeFolder(dir) {
     if (!entries.length) return { ok: true, total: 0, categories: {}, base, note: 'Nothing to organize.' };
     const ok = await confirmAction('Organize folder?', `GemAir will sort ${entries.length} files in:\n${base}\n\ninto subfolders by type (images, documents, videos, etc.). Files are moved, not deleted.`);
     if (!ok) return { error: 'Cancelled by user.' };
-    const moved = {}, failures = [];
+    const moved = {}, failures = [], journalMoves = [], journalDirs = new Set();
     for (const entry of entries) {
       const category = categorizeFile(entry.name);
       const destination = path.join(base, category);
@@ -1679,11 +1711,18 @@ async function organizeFolder(dir) {
         await fs.promises.mkdir(destination, { recursive: true });
         await fs.promises.rename(path.join(base, entry.name), path.join(destination, entry.name));
         moved[category] = (moved[category] || 0) + 1;
+        journalMoves.push({ from: path.join(base, entry.name), to: path.join(destination, entry.name) });
+        journalDirs.add(destination);
       } catch (error) { failures.push({ file: entry.name, error: error.message }); }
+    }
+    // Undo journal (2.13): one batch entry reverses the whole organize in one
+    // go and prunes the category folders it created while still empty.
+    if (journalMoves.length) {
+      try { undoStack.push(organizeEntry(`organize ${journalMoves.length} files in ${base}`, journalMoves, [...journalDirs])); } catch {}
     }
     const total = Object.values(moved).reduce((sum, count) => sum + count, 0);
     logAction('organize_folder', `Organized ${total} files into ${Object.keys(moved).length} categories in ${base}`);
-    return { ok: failures.length === 0, total, categories: moved, base, failures: failures.slice(0, 20) };
+    return { ok: failures.length === 0, total, categories: moved, base, failures: failures.slice(0, 20), reversible: journalMoves.length > 0 };
   } catch (error) { return { error: error.message }; }
 }
 async function findDuplicates(dir) {
@@ -1737,12 +1776,17 @@ async function renameFiles(dir, pattern) {
     }
     let renamed = 0;
     const failures = [];
+    const journalMoves = [];
     for (const item of staged) {
-      try { await fs.promises.rename(item.temporary, item.final); renamed++; }
+      try { await fs.promises.rename(item.temporary, item.final); renamed++; journalMoves.push({ from: item.source, to: item.final }); }
       catch (error) { failures.push({ file: path.basename(item.source), temporary: item.temporary, error: error.message }); }
     }
+    // Undo journal (2.13): the rename batch is one reversible entry.
+    if (journalMoves.length) {
+      try { undoStack.push(organizeEntry(`rename ${journalMoves.length} files in ${base} to "${safePattern}-NNN"`, journalMoves, [])); } catch {}
+    }
     logAction('rename_files', `Renamed ${renamed} files with pattern "${safePattern}"`);
-    return { ok: failures.length === 0, renamed, pattern: safePattern, failures: failures.slice(0, 20) };
+    return { ok: failures.length === 0, renamed, pattern: safePattern, failures: failures.slice(0, 20), reversible: journalMoves.length > 0 };
   } catch (error) { return { error: error.message }; }
 }
 
@@ -1764,12 +1808,16 @@ async function archiveOldFiles(dir, days) {
     await fs.promises.mkdir(archive, { recursive: true });
     let archived = 0;
     const failures = [];
+    const journalMoves = [];
     for (const entry of candidates) {
-      try { await fs.promises.rename(path.join(base, entry.name), path.join(archive, entry.name)); archived++; }
+      try { await fs.promises.rename(path.join(base, entry.name), path.join(archive, entry.name)); archived++; journalMoves.push({ from: path.join(base, entry.name), to: path.join(archive, entry.name) }); }
       catch (error) { failures.push({ file: entry.name, error: error.message }); }
     }
+    if (journalMoves.length) {
+      try { undoStack.push(organizeEntry(`archive ${journalMoves.length} old files into ${archive}`, journalMoves, [archive])); } catch {}
+    }
     logAction('archive_old_files', `Archived ${archived} files older than ${ageDays} days`);
-    return { ok: failures.length === 0, archived, archive, failures: failures.slice(0, 20) };
+    return { ok: failures.length === 0, archived, archive, failures: failures.slice(0, 20), reversible: journalMoves.length > 0 };
   } catch (error) { return { error: error.message }; }
 }
 
@@ -1887,8 +1935,17 @@ async function createFolderTree(root, folders) {
     if (!withinBase(dest)) { skipped.push(raw); continue; }
     try { await fs.promises.mkdir(dest, { recursive: true }); created.push(dest); } catch { skipped.push(raw); }
   }
+  // Undo journal (2.13): deepest-first, each created folder is removed ONLY
+  // while still empty — Mark parity: undoing a create never deletes content.
+  if (created.length) {
+    try {
+      for (const dir of created.slice().sort((a, b) => b.length - a.length)) {
+        undoStack.push(folderCreateEntry(dir));
+      }
+    } catch {}
+  }
   logAction('create_folder_tree', `Created ${created.length} folder(s) under ${base}${skipped.length ? ` (${skipped.length} rejected as unsafe)` : ''}`);
-  return { ok: true, base, created, count: created.length, skipped, rejected: skipped.length };
+  return { ok: true, base, created, count: created.length, skipped, rejected: skipped.length, reversible: created.length > 0 };
 }
 async function moveFiles(source, dest, filter) {
   const from = resolveUserPath(source, path.join(os.homedir(), 'Downloads'));
@@ -1911,12 +1968,16 @@ async function moveFiles(source, dest, filter) {
     await fs.promises.mkdir(to, { recursive: true });
     let moved = 0;
     const failures = [];
+    const journalMoves = [];
     for (const entry of candidates) {
-      try { await fs.promises.rename(path.join(from, entry.name), path.join(to, entry.name)); moved++; }
+      try { await fs.promises.rename(path.join(from, entry.name), path.join(to, entry.name)); moved++; journalMoves.push({ from: path.join(from, entry.name), to: path.join(to, entry.name) }); }
       catch (error) { failures.push({ file: entry.name, error: error.message }); }
     }
+    if (journalMoves.length) {
+      try { undoStack.push(organizeEntry(`move ${journalMoves.length} files to ${to}`, journalMoves, [to])); } catch {}
+    }
     logAction('move_files', `Moved ${moved} file(s) matching "${filter || 'all'}" to ${to}`);
-    return { ok: failures.length === 0, moved, to, failures: failures.slice(0, 20) };
+    return { ok: failures.length === 0, moved, to, failures: failures.slice(0, 20), reversible: journalMoves.length > 0 };
   } catch (error) { return { error: error.message }; }
 }
 
@@ -2878,6 +2939,7 @@ const TOOL_RISK = {
   run_command: 'sensitive', write_file: 'sensitive', control_system: 'sensitive',
   organize_folder: 'sensitive', archive_old_files: 'sensitive', send_email: 'sensitive',
   close_app: 'sensitive', move_files: 'sensitive', create_folder_tree: 'sensitive', optimize_gaming: 'sensitive',
+  undo_last: 'safe', list_undoable: 'safe', recall_clipboard_entry: 'safe', list_clipboard_entries: 'safe', get_assistant_capabilities: 'safe',
   find_large_files: 'safe',
   show_panel: 'safe', hide_panel: 'safe',
   launch_app: 'safe', focus_app: 'safe', snap_window: 'safe', minimize_all: 'safe',
@@ -2894,6 +2956,16 @@ const TOOL_RISK = {
   find_flights: 'safe', update_game: 'safe', list_installed_epic_games: 'safe',
   add_topic_monitor: 'safe', remove_topic_monitor: 'safe', list_topic_monitors: 'safe', check_topic_monitors: 'safe'
 };
+// Tools whose run (or whose tool-call composing) leaves an audible gap: the
+// shell says one short "on it" line the moment they START. The model itself
+// is never asked to narrate — the ack is emitted by the app, keeping the
+// existing "never narrate tool use" prompt rule intact.
+const ACK_TOOLS = new Set([
+  'run_desktop_task', 'run_coding_cli', 'web_search', 'fetch_webpage',
+  'organize_folder', 'move_files', 'rename_files', 'archive_old_files',
+  'create_folder_tree', 'find_duplicates', 'find_large_files',
+  'system_scan', 'optimize_gaming', 'close_app', 'search_files', 'search_youtube'
+]);
 
 // ---------------------------------------------------------------------------
 // Drop-in plugins (single-file skills, Mark-heritage "adding a skill is
@@ -3018,6 +3090,12 @@ async function executeToolNow(name, args) {
       const ok = await confirmAction(name === 'send_email' ? 'Open email draft?' : 'Open WhatsApp draft?', `GemAir wants to open a message draft for:\n\n    ${target}\n\nYou will review and send it yourself. Proceed?`);
       if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
     }
+    // Instant acknowledgment (2.13): every gate has passed, the tool is about
+    // to run — for gap-prone tools tell the renderer to speak one short line
+    // in the user's language so the wait never feels dead.
+    if (ACK_TOOLS.has(name)) {
+      sendToRenderer('tool:started', { name, ts: Date.now() });
+    }
 
     switch (name) {
       case 'get_current_time':
@@ -3131,6 +3209,32 @@ async function executeToolNow(name, args) {
         const m = readMemory();
         return { log: (m.actionLog || []).slice(0, 30) };
       }
+      case 'undo_last': {
+        const list = undoStack.list();
+        if (!list.length) return { error: 'Nothing of mine to undo right now. Only file changes I made this session are reversible, and the live stack holds at most 25.' };
+        const target = list[0];
+        const ok = await confirmAction('Take this back?', `GemAir will internally reverse its own action:\n\n    ${target.label}\n\n(specifically: ${target.kind}, id ${target.id}). I never touch anything else. Proceed?`);
+        if (!ok) return { error: 'Cancelled by user.' };
+        const result = await undoStack.undoLast();
+        if (result.ok) logAction('undo', `Reversed: ${result.label} — ${result.detail}`);
+        return result.ok ? result : { ok: false, error: result.error || result.detail, note: result.note };
+      }
+      case 'list_undoable': {
+        const list = undoStack.list();
+        return { undoable: list, count: list.length, note: list.length ? 'Reversal is session-scoped; evicted entries are archived but no longer runnable.' : 'Nothing reversible right now.' };
+      }
+      case 'recall_clipboard_entry': {
+        const intel = ensureClipboardIntel();
+        if (!intel.enabled) return { error: 'Clipboard intelligence is off — enable it in Settings → Assistant first.' };
+        return intel.recall(args.id);
+      }
+      case 'list_clipboard_entries': {
+        const intel = ensureClipboardIntel();
+        if (!intel.enabled) return { entries: [], count: 0, note: 'Clipboard intelligence is off; enable it in Settings for the floating panel + history.' };
+        return { entries: intel.history(), stats: intel.stats() };
+      }
+      case 'get_assistant_capabilities':
+        return (refreshSelfKnowledge() || selfKnowledgeCache || {});
       case 'add_skill':
         return addSkill(args.text, args.name);
       case 'list_skills':
@@ -4220,11 +4324,92 @@ ipcMain.handle('vision:screenFrame', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// 2.13 — clipboard intelligence / self-knowledge / auto-start / undo IPC
+// ---------------------------------------------------------------------------
+let clipboardTimer = null;
+function ensureClipboardIntel() {
+  if (clipboardIntel) return clipboardIntel;
+  clipboardIntel = new ClipboardIntel({
+    readText: () => clipboard.readText(),
+    archive: memoryArchive,
+    onEvent: (evt) => {
+      if (evt.type === 'new' && evt.showPanel) sendToRenderer('clipIntel:new', evt.entry);
+      if (evt.type === 'secret') {
+        sendToRenderer('clipIntel:secret', evt.entry);
+        logAction('clipboard_intel', 'Clipboard copy looked like a key/token — stored redacted.');
+      }
+    }
+  });
+  return clipboardIntel;
+}
+function syncClipboardIntel() {
+  const intel = ensureClipboardIntel();
+  const p = readProfile();
+  const on = p.clipboardIntel === true;
+  intel.setEnabled(on);
+  if (on && !clipboardTimer) {
+    clipboardTimer = setInterval(() => { try { intel.tick(); } catch {} }, 1200);
+    if (clipboardTimer.unref) clipboardTimer.unref();
+  } else if (!on && clipboardTimer) {
+    clearInterval(clipboardTimer); clipboardTimer = null;
+  }
+  return on;
+}
+
+function refreshSelfKnowledge() {
+  try {
+    const p = readProfile(); const m = readMemory();
+    let brainConnected = false;
+    try { const status = connections.getSanitizedStatus(); brainConnected = !!(status && (status.geminiKey || status.hasGeminiKey || status.chatgpt || status.byok)); } catch {}
+    const caps = {
+      liveReady: brainConnected || !!p.apiKey || !!p.groqKey,
+      wakeEnabled: p.wakeWord === true,
+      visionReady: p.screenAwareness === true,
+      lowResource: false
+    };
+    selfKnowledgeCache = selfKnowledge.gatherFacts({
+      assistantName: 'Gem', userName: String(p.name || '').slice(0, 80),
+      version: app.getVersion(),
+      toolNames: getAllTools().map((t) => t.function.name),
+      pluginNames: pluginRegistry.list().map((pl) => pl.name),
+      pluginErrors: pluginRegistry.errors().map((e) => `${e.file}: ${e.error}`),
+      memory: m, archiveStats: memoryArchive.stats(), capabilities: caps
+    });
+  } catch (error) { selfKnowledgeCache = { text: '', oneLine: '', builtAt: Date.now(), error: error.message }; }
+  return selfKnowledgeCache;
+}
+
+ipcMain.handle('clipIntel:list', () => ensureClipboardIntel().history());
+ipcMain.handle('clipIntel:recall', (_e, id) => ensureClipboardIntel().recall(id));
+ipcMain.handle('clipIntel:clear', () => { ensureClipboardIntel().clear(); return { ok: true }; });
+ipcMain.handle('clipIntel:stats', () => ensureClipboardIntel().stats());
+ipcMain.handle('self:knowledge', () => selfKnowledgeCache || refreshSelfKnowledge());
+ipcMain.handle('autostart:get', () => autoStart.getState());
+ipcMain.handle('autostart:set', (_e, enabled) => {
+  const result = autoStart.setEnabled(enabled === true);
+  if (result.ok) {
+    const p = readProfile(); p.autoStart = !!enabled; writeProfile(p);
+    logAction('autostart', enabled ? 'Registered GemAir for launch at login.' : 'Removed GemAir from login items.');
+    console.log('[autostart]', enabled ? 'enabled —' : 'disabled —', result.note);
+  }
+  return result;
+});
+ipcMain.handle('undo:list', () => undoStack.list());
+
+/** Called at boot and after Settings toggles that need main-process loops. */
+function applyAutomationSettings() {
+  try { syncClipboardIntel(); } catch (error) { console.warn('[clipIntel] sync failed:', error.message); }
+  try { refreshSelfKnowledge(); } catch {}
+}
+ipcMain.handle('automation:apply', () => { applyAutomationSettings(); return { ok: true }; });
+
+// ---------------------------------------------------------------------------
 // Plugins IPC — renderer Settings lists/reloads drop-in skills.
 // ---------------------------------------------------------------------------
 ipcMain.handle('plugins:list', () => ({ ok: true, plugins: pluginRegistry.list(), errors: pluginRegistry.errors() }));
 ipcMain.handle('plugins:reload', () => {
   pluginRegistry.reload();
+  try { refreshSelfKnowledge(); } catch {} // the live registry changed — so does what Gem claims it can do
   return { ok: true, plugins: pluginRegistry.list(), errors: pluginRegistry.errors() };
 });
 ipcMain.handle('plugins:openFolder', async () => {

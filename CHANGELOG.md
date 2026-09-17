@@ -1,5 +1,49 @@
 # Changelog
 
+## [2.13.0] — 2026-09-17
+
+**The "take it back" release.** A second deep pass over FatihMakes/Mark-LIV lands the features that make an assistant feel accountable: a shared **undo stack** for every file it touches, **clipboard intelligence** with a floating Translate/Summarise/Explain/Fix panel, **push-to-talk**, a **self-echo guard** (it no longer answers its own voice ringing in the room), **runtime self-knowledge** assembled live (including honest limits), **instant acknowledgment** in your language, **auto-start at login**, and two transport-hardening fixes straight off Mark-LIV's fix list. Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).
+
+### Added — ↩️ Undo (`lib/undo-stack.js` + tools)
+- Say **"undo"** and GemAir reverses its own most recent reversible action: file writes (created files removed only while unchanged — your later edits are never destroyed; overwrites roll back to an exact ≤1 MB snapshot), batch organizes, batch renames, moves, archive sweeps, and folder trees (folders removed only while still empty).
+- **It does not guess**: files over 1 MB report "undo snapshots skip this" instead of quiet hoarding; move-backs refuse when the origin is occupied; failed undos stay on the stack and say why, and you can retry them.
+- New tools: `undo_last` (human-confirmed — reversal is still a state change), `list_undoable`. Live stack capped at 25 with evictions archived — the record of what it did is never silently forgotten.
+- `write_file`, `organize_folder`, `rename_files`, `move_files`, `archive_old_files`, `create_folder_tree` now journal their reversal at the moment they act and report `reversible` back to the model.
+
+### Added — 📋 Clipboard intelligence (`lib/clipboard-intel.js` + floating panel)
+- Opt-in (Settings): copy any text and a card floats up with **TRANSLATE / SUMMARISE / EXPLAIN / FIX** — one click stages the prompt; nothing sends itself.
+- **Secret quarantine**: copies that look like API keys/tokens are stored **redacted at rest**, never open the panel, and fire a lock toast instead.
+- History ring of 30 with `list_clipboard_entries` / `recall_clipboard_entry` tools; evictions flow to the memory archive; the watcher only polls while enabled — off means genuinely off.
+
+### Added — 🎚️ Push-to-talk
+- Hold **Ctrl+Space** (⌘Space on macOS) and the mic opens; release sends. Repeat-guarded, text-field safe (with a chat-input exception), and force-releases on window blur or tab hide — the mic can never stay open in the background. Halts the wake loop while held.
+- Honest scope: bound to the app window on every platform (there is no dependency-free global key-read outside Windows native code), and the Settings hint says so — Mark's approach (global on Windows only, windowed elsewhere, logged) adapted to Electron without native dependencies.
+
+### Added — 🔇 Self-echo guard (`renderer/echo-guard.js`)
+- After Gem speaks, its own last sentence is still "in the room" for a moment. `echoGuard` normalizes and matches fresh STT text against the tail of Gem's own voice: exact and partial echoes — even shot through a real-time buffer — are dropped; an echo **prefix + your continuation** is trimmed to just your words. The microphone is never muted; the window expires in 8s so coincidence never silences real speech.
+
+### Added — 🪪 Runtime self-knowledge (`lib/self-knowledge.js`)
+- "What it is, and what it isn't", assembled at boot and after every plugin reload from the *live* registry: identity/version/machine, the tools actually registered (plugins included the moment they load, broken ones disclaimed), session capability state, memory+archive counts — and the honest limits ("sight is a frame on demand, not a feed", "acts on this machine only").
+- Injected into every system prompt as `RUNTIME SELF-KNOWLEDGE` (trust-this-over-older-text), plus a `get_assistant_capabilities` tool for mid-session freshness.
+
+### Added — ⚡ Instant acknowledgment (`renderer/instant-ack.js`)
+- When a gap-prone tool **starts** (long desktop tasks, searches, file sweeps, system scans), the shell speaks one short line in your language — en/hi/tr/es/de/fr/ru/uk/el/pt with deliberate conservatism (unknowns fall back to English), task-kind routed, rotation guaranteed no repeats back-to-back. If Gem is mid-sentence it toasts instead of talking over the answer. The model keeps its "never narrate tool use" contract — the ack comes from the app, not the model.
+
+### Added — ⚡ Auto-start at login (`lib/autostart.js`)
+- Settings toggle registers launch-at-login natively: Windows Run key, macOS Login Item, Linux XDG autostart `.desktop` — the row reads its state **back from the OS** on open, never starts hidden, and the Linux hint is honest about dev-mode vs packaged installs.
+
+### Fixed — Gemini Live transport hardening (from Mark-LIV's own fix list)
+- **Transcript tail de-dup**: the Live API re-sends the tail of a transcript across the turn-completes a tool call produces, so answers could be logged and spoken twice. Now suppressed at both chunk and flush level (verbatim, clipped-suffix, tail-resend, long-containment; bounded 600-char window).
+- **Rejected resumption handles are dropped after one replay**: an expired handle can no longer be re-offered on every retry and block the reconnect it exists to protect.
+- **Socket-epoch guard**: a previous socket's asynchronous close can no longer consume a new attempt's settlement (watchdog theft) or poison the resume handle — a race the first two fixes surfaced while testing.
+
+### Changed
+- Version bumped 2.12.0 → 2.13.0 single-sourced across `package.json`, `package-lock.json`, `VERSION`, `api/_lib/http.js`, `renderer/index.html`, `renderer/app.js` fallback, `renderer/sw.js` (`gemair-shell-v2.13.0-release`), `download.html`, and `scripts/selfcheck.js`.
+
+### Tests & docs
+- New suites in `npm run check`: `undo-stack-test.js`, `clipboard-intel-test.js`, `self-knowledge-test.js`, `autostart-test.js`, `echo-guard-test.js`, `instant-ack-test.js`, `push-to-talk-test.js`; `gemini-live-test.js` extended (+2: transcript de-dup, rejected-handle drop).
+- `GUIDE.md` gains the undo/clipboard/PTT/ack sections; `ARCHITECTURE.md` §9b extended with the undo stack, echo guard, and self-knowledge pipeline.
+
 ## [2.12.0] — 2026-09-17
 
 **The JARVIS-grade voice release.** GemAir studied what makes FatihMakes/Mark-LIV feel like a real-time voice Jarvis and closed the gap on its own stack — a hardened long-horizon Gemini Live loop, screen+camera fused into the same conversation, a drop-in single-file plugin system with a template, a proactive engine that remembers last session exactly once, a memory model that never silently forgets, local-privacy hardening with a startup git-leak guard, and a one-command OS-aware installer. Everything ships end-to-end (main → IPC → preload → renderer → tests → docs), no stubs. Concepts were reimplemented on GemAir's own engine — no upstream code copied (Mark-LIV is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).

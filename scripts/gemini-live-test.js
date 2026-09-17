@@ -463,5 +463,86 @@ function byteStream(frames) {
     console.log('  ok   applyEnhancedFields merge semantics (pure)');
   }
 
+  // L7. transcript tail de-dup — the Live API re-sends the tail of a
+  // transcript across the several turn-completes a tool call produces, so
+  // answers used to be logged and spoken twice (Mark-LIV fix list). Now
+  // duplicates are suppressed at both the chunk and the flush level.
+  {
+    const frames = [
+      { setupComplete: {} },
+      { serverContent: { outputTranscription: { text: 'Your files are ' }, modelTurn: { parts: [] } } },
+      { serverContent: { outputTranscription: { text: 'ready now.' }, modelTurn: { parts: [] }, turnComplete: true } },
+      // — next turn (after a tool call) re-sends the tail verbatim:
+      { serverContent: { outputTranscription: { text: 'ready now.' }, modelTurn: { parts: [] } } },
+      // — and once inside a longer repeated prefix:
+      { serverContent: { outputTranscription: { text: 'Your files are ready now.' }, modelTurn: { parts: [] } } },
+      // — genuinely new words arrive after;
+      { serverContent: { outputTranscription: { text: 'Done!' }, modelTurn: { parts: [] }, turnComplete: true } }
+    ];
+    const { client } = loadClient(byteStream(frames));
+    const heard = [];
+    const session = await client.connect({
+      apiKey: 'k', model: 'm', onError: () => {},
+      onOutputTranscript: (t) => heard.push(t)
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    assert.deepEqual(heard, ['Your files are ', 'ready now.', 'Done!'],
+      'tail re-sends across turn-completes are suppressed once (chunk level)');
+    session.close(1000);
+    console.log('  ok   transcript tail de-dup across turn-completes (chunk+flush level)');
+  }
+
+  // L8. a rejected resumption handle is dropped after exactly one replay —
+  // an expired handle can never be re-offered on every retry and block the
+  // reconnect it exists to protect (Mark-LIV fix list).
+  {
+    const attempts = [];
+    const RefuseHandleWS = class {
+      constructor() { this.readyState = 1; setTimeout(() => this.onopen && this.onopen(), 1); }
+      send(s) {
+        const m = JSON.parse(s);
+        if (!m.setup) return;
+        attempts.push(JSON.parse(JSON.stringify(m.setup)));
+        if (m.setup.session_resumption && m.setup.session_resumption.handle) {
+          // server refuses THIS handle: close before setupComplete
+          setTimeout(() => { this.readyState = 3; this.onclose && this.onclose({ code: 1007, reason: 'handle expired' }); }, 1);
+        } else {
+          setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ setupComplete: {} }) }), 1);
+        }
+      }
+      close() { this.readyState = 3; }
+    };
+    RefuseHandleWS.OPEN = 1;
+    // Life 1: get live and earn a resumption handle from the server.
+    const dying = loadClient(byteStream([
+      { setupComplete: {} },
+      { sessionResumptionUpdate: { newHandle: 'handle-will-expire', resumable: true } }
+    ]));
+    const sess = await dying.client.connect({ apiKey: 'k', model: 'm', onError: () => {} });
+    await new Promise((r) => setTimeout(r, 40)); // resumption frame arrives after setupComplete
+    assert.equal(sess._resumptionHandle, 'handle-will-expire', 'handle stashed from the server');
+
+    // Life 2: the handle has expired server-side. reconnect() re-offers it
+    // exactly once; the refusal must drop it so it never replays again.
+    dying.context.WebSocket = RefuseHandleWS;
+    const outcome = await Promise.resolve(sess.reconnect()).catch((e) => e);
+    assert(outcome && typeof outcome.message === 'string' && !(outcome || {}).ready,
+      'refused-handle attempt surfaces as a failure (cross-realm Error duck-check)');
+    assert.equal(attempts.length, 1, 'the stale handle was re-offered once (as designed)');
+    assert(attempts[0].session_resumption && attempts[0].session_resumption.handle === 'handle-will-expire',
+      'first replay carries the stale handle');
+    assert.equal(sess._resumptionHandle, null, '…then dropped forever');
+    assert.equal(sess._resumeAttached, false, 'no replay pending');
+
+    // Life 3: with the poison handle gone, the same server accepts the
+    // handle-less reconnect — nothing is left to block recovery.
+    const revived = await Promise.resolve(sess.reconnect()).catch((e) => e);
+    assert(revived && revived.ready, 'handle-less reconnect reaches live');
+    assert.equal(attempts.length, 2, 'second attempt used a clean setup');
+    assert(!attempts[1].session_resumption || !attempts[1].session_resumption.handle, 'no handle replayed on the recovery');
+    revived.close(1000);
+    console.log('  ok   rejected resumption handle is dropped, never replayed');
+  }
+
   console.log('\n  All Gemini Live transport tests passed.\n');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

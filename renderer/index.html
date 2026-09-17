@@ -43,6 +43,16 @@
 
   <canvas id="bgCanvas" aria-hidden="true"></canvas>
   <div class="toasts" id="toasts"></div>
+  <div class="clip-intel-card" id="clipIntelCard" role="dialog" aria-label="Clipboard intelligence" hidden>
+    <div class="ci-head"><span class="ci-title">📋 CLIPBOARD</span><button class="ci-close" id="clipIntelClose" aria-label="Dismiss" title="Dismiss">✕</button></div>
+    <div class="ci-text" id="clipIntelText"></div>
+    <div class="ci-actions" id="clipIntelActions">
+      <button type="button" data-act="translate">TRANSLATE</button>
+      <button type="button" data-act="summarise">SUMMARISE</button>
+      <button type="button" data-act="explain">EXPLAIN</button>
+      <button type="button" data-act="fix">FIX</button>
+    </div>
+  </div>
   <div id="appleDim" aria-hidden="true"></div>
   <section class="apple-cc" id="appleControlPanel" aria-label="Control Center" hidden>
     <h3>CONTROL CENTER</h3>
@@ -70,7 +80,7 @@
         </div>
         <div class="brand-text">
           <h1>GemAir</h1>
-          <p>Personal assistant <span class="ver" id="verTag">v2.12.0</span></p>
+          <p>Personal assistant <span class="ver" id="verTag">v2.13.0</span></p>
         </div>
       </div>
 
@@ -1529,6 +1539,10 @@
               <button class="ghost-btn" id="wakeModelInstallBtn" type="button">⬇ INSTALL ON-DEVICE WAKE MODEL</button>
               <span class="hint" id="wakeModelStatus" role="status" style="font-size:10px;">Local model keeps the wake listener fully on this device — one-time ~40 MB download, nothing leaves the machine while asleep.</span>
             </div>
+            <label class="check-label">
+              <input type="checkbox" id="setPushToTalk" /> Push-to-talk (hold Ctrl+Space)
+            </label>
+            <span class="hint" id="pushToTalkHint" style="font-size:10px;display:block;margin-bottom:12px;">Mic stays closed until you hold Ctrl+Space — release to send. Bound to this window (honest note: there is no dependency-free global hotkey on macOS/Linux, so the chord lives in the app window everywhere).</span>
             <div class="voice-presets" id="voicePresets" role="group" aria-label="Voice preset">
               <button type="button" class="voice-preset active" data-voice-preset="gem"><b>GEM</b><span>warm · balanced</span></button>
               <button type="button" class="voice-preset" data-voice-preset="jarvis"><b>JARVIS</b><span>deep · measured</span></button>
@@ -1688,6 +1702,14 @@
               <input type="checkbox" id="setLocalBrain" /> Local AI fallback — run a small language model in your browser (WebGPU)
             </label>
             <span class="hint" id="localBrainHint">Optional. Downloads roughly 800 MB once, then answers general questions locally. Live/current questions still use sources first.</span>
+            <label class="check-label" style="margin-top:10px">
+              <input type="checkbox" id="setClipboardIntel" /> Clipboard intelligence — floating Translate / Summarise / Explain / Fix panel on new copies
+            </label>
+            <span class="hint" style="font-size:10px;display:block;margin-bottom:10px;">Opt-in and local-first: the watcher only runs while this is on; entries that look like API keys or tokens are stored <b>redacted</b>; history is a small ring, evictions go to the memory archive — never silently dropped.</span>
+            <label class="check-label">
+              <input type="checkbox" id="setAutoStart" /> Launch GemAir at login
+            </label>
+            <span class="hint" id="autoStartHint" style="font-size:10px;display:block;margin-bottom:4px;">Registers with the OS (Windows Run key / macOS Login Item / Linux XDG autostart). State is read back from the OS, not guessed.</span>
           </fieldset>
 
           <fieldset id="desktopAgentCard">
@@ -2122,6 +2144,8 @@
   <script src="apple.js"></script>
   <script src="wake-word.js"></script>
   <script src="gemcore-ui.js"></script>
+  <script src="echo-guard.js"></script>
+  <script src="instant-ack.js"></script>
   <script src="app.js"></script>
   <script src="air/attention-ui.js"></script>
   <script src="interface.js"></script>

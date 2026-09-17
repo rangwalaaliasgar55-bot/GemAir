@@ -209,9 +209,14 @@
     delete setup.context_window_compression;
     delete setup.output_audio_transcription;
     delete setup.input_audio_transcription;
-    if (session._degraded) return setup;
+    if (session._degraded) { session._resumeAttached = false; return setup; }
     setup.context_window_compression = { sliding_window: {} };
     setup.session_resumption = session._resumptionHandle ? { handle: session._resumptionHandle } : {};
+    // Remember whether THIS attempt carries a handle: if setup then fails,
+    // the handle was rejected and must be dropped after exactly one replay
+    // (Mark-LIV fix: an expired handle can never be re-offered on every
+    // retry, paradoxically blocking the reconnect it exists to protect).
+    session._resumeAttached = !!session._resumptionHandle;
     if (audio) {
       // Output transcription drives phoneme-accurate avatar lip-sync and the
       // caption line; input transcription powers the "you said" echo line.
@@ -221,11 +226,49 @@
     return setup;
   }
 
+  /** One-shot: drop a resumption handle that the server just failed on. */
+  function dropRejectedResumeHandle(session) {
+    if (session._resumeAttached && session._resumptionHandle) {
+      sessionLog(session, 'Resumption handle rejected by server — dropping it so the next reconnect starts fresh.');
+      session._resumptionHandle = null;
+    }
+    session._resumeAttached = false;
+  }
+
+  // Transcript-tail de-dup (Mark-LIV fix list: the Live API re-sends the
+  // tail of a transcript across the several turn-completes a tool call
+  // produces, so answers got logged and spoken twice). We accumulate the
+  // turn's delivered text and suppress a chunk that is — at ANY level —
+  // content we just delivered: verbatim resend, clipped-chunk resend
+  // (old ends with new), whole-tail resend (new equals/is inside the turn
+  // accumulator), or long-chunk containment. Bounded to the last ~600
+  // normalized chars so hours-long sessions never grow it.
+  function normalizeTranscript(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+  function dedupeTranscript(session, raw) {
+    const clean = normalizeTranscript(raw);
+    if (!clean) return raw; // whitespace-only chunks pass through untouched
+    const acc = session._outAcc || '';
+    const prev = session._outPrev || '';
+    if ((prev && prev === clean) ||
+        (prev && prev.endsWith(clean)) ||
+        (acc && (acc === clean || acc.endsWith(clean))) ||
+        (clean.length >= 12 && ((prev && prev.includes(clean)) || (acc && acc.includes(clean))))) {
+      return null;
+    }
+    session._outPrev = clean;
+    session._outAcc = (acc ? acc + ' ' : '') + clean;
+    if (session._outAcc.length > 600) session._outAcc = session._outAcc.slice(-600).replace(/^\S*\s/, '');
+    return raw;
+  }
+
   function handleMessage(session, opts, raw, emit) {
     let msg = null;
     try { msg = JSON.parse(raw); } catch { return; }
     if (!msg || typeof msg !== 'object') return;
     if (msg.setupComplete !== undefined) {
+      session._resumeAttached = false; // resume accepted — the handle is good
       session._finishSetup && session._finishSetup();
       return;
     }
@@ -261,7 +304,10 @@
       try { opts.onInterrupted && opts.onInterrupted(); } catch {}
     }
     if (content.outputTranscription && typeof content.outputTranscription.text === 'string') {
-      try { opts.onOutputTranscript && opts.onOutputTranscript(content.outputTranscription.text, content.turnComplete === true); } catch {}
+      const text = dedupeTranscript(session, content.outputTranscription.text);
+      if (text !== null) {
+        try { opts.onOutputTranscript && opts.onOutputTranscript(text, content.turnComplete === true); } catch {}
+      }
     }
     if (content.inputTranscription && typeof content.inputTranscription.text === 'string') {
       try { opts.onInputTranscript && opts.onInputTranscript(content.inputTranscription.text, content.turnComplete === true); } catch {}
@@ -282,6 +328,12 @@
     return new Promise((resolve, reject) => {
       session._settled = false;
       session._reject = reject;
+      // Socket epoch: the PREVIOUS socket's asynchronous close can land while
+      // this attempt is live. Without a guard it consumes the new attempt's
+      // settlement (steals the watchdog timeout, poisons the resume handle).
+      // Every handler below ignores events from an earlier epoch.
+      const epoch = (session._socketEpoch = (session._socketEpoch || 0) + 1);
+      const stale = () => session._socketEpoch !== epoch;
       setState(session, 'connecting');
       let ws = null;
       try {
@@ -309,10 +361,12 @@
       };
       ws.onmessage = (event) => handleMessage(session, opts, event.data, emit);
       ws.onerror = () => {
+        if (stale()) return;
         try { opts.onError && opts.onError('Live socket error — check the API key, model ID, and network.'); } catch {}
         if (!session._settled) {
           session._settled = true;
           clearTimeout(session._timer);
+          dropRejectedResumeHandle(session); // handle refused by server — never replay
           setState(session, 'error');
           reject(new Error('Live socket error — the API key, the live model ID, or the network is refusing the connection.'));
         } else {
@@ -320,6 +374,7 @@
         }
       };
       ws.onclose = (event) => {
+        if (stale()) return; // old epoch's trailing close — not this attempt
         const wasLive = session.state === 'live';
         const userClosed = !!session._userClosed;
         const code = event && typeof event.code === 'number' ? event.code : 0;
@@ -337,6 +392,7 @@
         if (!session._settled) {
           session._settled = true;
           clearTimeout(session._timer);
+          dropRejectedResumeHandle(session); // handle refused by server — never replay
           reject(new Error('Live connection closed' + (code ? ' (code ' + code + ')' : '') + reason + closeHint));
           return;
         }
