@@ -132,7 +132,7 @@ free tier is not a demo.
 
 ## 5. Memory — how Gem "remembers everything about you"
 
-Memory is **local-first**, then mirrored. Nine collections:
+Memory is **local-first**, then mirrored. Nine live collections:
 
 | Collection | Meaning |
 |---|---|
@@ -149,6 +149,17 @@ Memory is **local-first**, then mirrored. Nine collections:
 **Write path:** every mutation writes to the local store first (file or
 `localStorage`) and *then* fires a best-effort Supabase upsert. The UI never
 waits on the network, and going offline loses nothing.
+
+**Caps without amnesia (2.12):** the hot collections are bounded (facts 300,
+transcript 2000, action log 200, mood 500) — but since 2.12 every eviction is
+archived before it trims, into `lib/memory-archive.js`
+(`<userData>/gemair-memory-archive.json`): an append-only cold store with
+redaction-on-write and checkpoint rotation. `search_memory` falls back to it
+automatically (answers marked `archived: true`), and GemCore's scoped
+`MemoryStore` does the same per-scope with `remember()` reporting what it
+evicted. The earlier "capped blob that silently deleted the oldest entries"
+failure mode (documented upstream in Mark-LII/LIII) is explicitly designed
+out: memory is a lookup-on-demand store, not a shrinking blob.
 
 **Read path on startup:** load local; if a collection is empty and Supabase is
 connected, seed it from the cloud.
@@ -172,6 +183,7 @@ Gem's portrait is rendered on a high-performance 2D/2.5D canvas with real-time W
 When speech audio plays (Google Neural TTS or Web Speech API), an `AudioContext` and `AnalyserNode` extract real-time frequency FFT spectra (64/128 bands):
 - **Aperture (`mouth`)**: Scaled dynamically by real-time audio RMS volume.
 - **Visemes (`mouthW`, `mouthR`)**: High vs. low frequency energy ratio maps mouth width, rounding, and vowel shapes.
+- **Transcript-driven phonemes (2.12)**: word-boundary events (system voice `onboundary`, Edge `WordBoundary`) and the Gemini Live *output transcription* feed `visemesForWord` → `speakWord`, so the mouth articulates the actual words — bilabial closures on m/b/p (`MM`), spread on i (`EE`), rounding on u (`OO`), teeth-on-lip on f/v (`FV`) — not just a jaw tracking volume. Letter mapping is **Unicode-reduced**: NFD strips accents, Cyrillic and Greek letters map onto the same measured-shape rig (Greek ου → one rounded shape), and unmapped scripts fall back to a neutral open shape — one rule set articulates Latin, Cyrillic and Greek transcripts.
 - **Micro-movements**: Micro head-nods and subtle eye tracking react to voice intensity surges.
 - **Radial Audio Spectrum Ring**: An interactive circular frequency ring renders around Gem's head during speech and microphone input.
 
@@ -284,12 +296,66 @@ all it takes for "Get the app" to go live.
 
 ---
 
+## 9b. The 2.12 voice-loop & autonomy layer
+
+**Long-horizon Gemini Live (`renderer/gemini-live.js`).** One WebSocket
+carries mic PCM upstream, model PCM downstream, typed turns, and — new in
+2.12 — video frames (`realtimeInput.video`) and long-horizon session state:
+
+- `session_resumption`: handles from `sessionResumptionUpdate` are stashed and
+  re-attached on every reconnect path (drop, goAway, manual reconnect).
+- `context_window_compression: { sliding_window: {} }`: on by default —
+  hours-long live conversations without the full-context death.
+- Enhanced-vs-degraded setup: if the server closes the socket before
+  `setupComplete`, the session retries once with the plain setup and flags
+  `_degraded` (never loops the enhancement).
+- `serverContent.interrupted` → immediate playback-queue flush + UI callback;
+  `goAway.timeLeft` → early reconnect before the server walks away.
+- Output transcription → captions + avatar visemes (see §6), input
+  transcription opt-in.
+
+**Fused live vision.** `vision:screenFrame` IPC (main): `desktopCapturer`
+~1 fps JPEG, gated on the Screen Awareness permission, throttled, honest
+error vocabulary. The renderer's Live card toggles stream screen/camera
+frames into the *running* session as media chunks — one socket, so "what's
+on my screen?" is answered in the same breath as everything else.
+
+**Plugins (`plugins/` → `lib/plugin-loader.js`).** Single-file skills:
+`{ PLUGIN: { name, description, parameters, risk }, run(args, context) }`
+discovered at boot and merged into the model catalog via `getAllTools()` at
+every call site. Dispatch happens before the built-in switch inside the same
+risk gates; `risk: 'sensitive'` plugins prompt the human. Failures (invalid
+shape, name collision, throw inside `run`) become tool errors, never crashes.
+`plugins/_template.js` is the canonical, self-validating example; an
+underscore prefix means "docs, don't load".
+
+**Proactive engine (`lib/proactive.js`).** Pure functions over the memory
+file: `recordSessionSummary` (quit-time topic distillation),
+`buildGreeting` (once-per-launch, time-of-day/reminders/monitors/last-session,
+consumed exactly once), `buildCheckIn` (opt-in, 3h rate limit, quiet
+22:00–07:00, rotation-aware). The main process hosts a 5-minute scheduler
+and pushes `proactive:greeting` / `proactive:checkin` to the renderer.
+
+**Local-secret guard (`lib/local-secret-check.js`).** At startup in source
+checkouts: `git ls-files` is scanned for secrets-shaped paths (`.env*`,
+`api_keys.json`, certs/keys, memory exports). Hits warn in-chat with
+`git rm --cached` guidance and the revoke-and-rotate rule from `SECURITY.md`.
+Non-git installs skip silently.
+
+**OS-aware installer (`scripts/setup.js`, `npm run setup`).** Interpreter
+gate (Node ≥ 22.12 with a one-sentence failure), checkout completeness,
+per-OS dependency plan + system notes, optional `--with-browser` Playwright
+Chromium install, `--check` validation mode for CI.
+
+---
+
 ## 10. Where to add things
 
 | I want to… | Touch |
 |---|---|
 | add a free web tool | `api/<name>.js` + a branch in `offlineBrain()` |
 | add an LLM tool | tool schema + handler in `main.js` |
+| **add a skill with zero core changes** | one file in `plugins/` (copy `_template.js`) |
 | change Gem's personality | `buildSystemPrompt()` in `app.js` |
 | change how Gem looks | `renderer/avatar.js` |
 | add a memory collection | `store.js`, `main.js`, a new migration |

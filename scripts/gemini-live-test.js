@@ -285,5 +285,183 @@ function byteStream(frames) {
     console.log('  ok   liveness probe recovers half-dead sockets');
   }
 
+  // -------------------------------------------------------------------------
+  // 2.12 long-horizon live sessions (session resumption + sliding-window
+  // compression + transcriptions + interruption), added with the Mark-heritage
+  // voice-loop upgrade.
+  // -------------------------------------------------------------------------
+
+  // L1. setup carries the long-horizon fields by default
+  {
+    let sentSetup = null;
+    const CaptureWS = class {
+      constructor() { this.readyState = 1; setTimeout(() => this.onopen && this.onopen(), 1); }
+      send(s) {
+        const m = JSON.parse(s);
+        if (m.setup && !sentSetup) {
+          sentSetup = m.setup;
+          setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ setupComplete: {} }) }), 1);
+        }
+      }
+      close() { this.readyState = 3; }
+    };
+    CaptureWS.OPEN = 1;
+    const { client } = loadClient(CaptureWS);
+    const session = await client.connect({ apiKey: 'k', model: 'm' });
+    assert(sentSetup, 'setup frame sent');
+    assert(sentSetup.context_window_compression && sentSetup.context_window_compression.sliding_window, 'sliding-window context compression on by default');
+    assert(sentSetup.session_resumption && typeof sentSetup.session_resumption === 'object', 'session resumption offered by default');
+    assert(!('handle' in sentSetup.session_resumption), 'fresh session must not invent a resumption handle');
+    session.close(1000);
+    console.log('  ok   setup offers sliding-window compression + session resumption');
+  }
+
+  // L2. server handle is stashed, reported, and re-attached on reconnect
+  {
+    const DyingWS = class {
+      constructor() { this.readyState = 1; this.sent = []; setTimeout(() => this.onopen && this.onopen(), 1); }
+      send(s) {
+        const m = JSON.parse(s);
+        this.sent.push(m);
+        if (m.setup) {
+          setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ setupComplete: {} }) }), 1);
+          setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ sessionResumptionUpdate: { newHandle: 'handle-abc', resumable: true } }) }), 2);
+          setTimeout(() => { this.readyState = 3; this.onclose && this.onclose(); }, 5);
+        }
+      }
+      close() { this.readyState = 3; }
+    };
+    DyingWS.OPEN = 1;
+    const harness = loadClient(DyingWS);
+    let reported = null;
+    const session = await harness.client.connect({ apiKey: 'k', model: 'm', onResumption: (h) => { reported = h; }, onError: () => {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(reported, 'handle-abc', 'resumption handle reported to the caller');
+    assert.equal(session._resumptionHandle, 'handle-abc', 'handle stashed on the session');
+
+    const SuccessWS = class {
+      constructor() { this.readyState = 1; this.sent = []; setTimeout(() => this.onopen && this.onopen(), 1); }
+      send(s) {
+        const m = JSON.parse(s);
+        this.sent.push(m);
+        if (m.setup) setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ setupComplete: {} }) }), 1);
+      }
+      close() { this.readyState = 3; }
+    };
+    SuccessWS.OPEN = 1;
+    let refreshed = null;
+    const HolderWS = class extends SuccessWS {
+      constructor() { super(); refreshed = this; }
+    };
+    HolderWS.OPEN = 1;
+    harness.context.WebSocket = HolderWS;
+    await session.reconnect();
+    const setupMsg = refreshed.sent.find((m) => m.setup);
+    assert(setupMsg, 'reconnect sent a setup frame');
+    assert(setupMsg.setup.session_resumption && setupMsg.setup.session_resumption.handle === 'handle-abc', 'reconnect re-attaches the stashed resumption handle');
+    session.close(1000);
+    console.log('  ok   resumption handle reported, stashed, and re-attached on reconnect');
+  }
+
+  // L3. a server that refuses the enhanced fields gets ONE degraded retry
+  {
+    const attempts = [];
+    const RefuseThenAllowWS = class {
+      constructor() { this.readyState = 1; setTimeout(() => this.onopen && this.onopen(), 1); }
+      send(s) {
+        const m = JSON.parse(s);
+        if (!m.setup) return;
+        attempts.push(m.setup);
+        if (m.setup.context_window_compression || m.setup.session_resumption) {
+          // Proto-style server error: close before setupComplete.
+          setTimeout(() => { this.readyState = 3; this.onclose && this.onclose({ code: 1007, reason: 'unsupported field' }); }, 1);
+        } else {
+          setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ setupComplete: {} }) }), 1);
+        }
+      }
+      close() { this.readyState = 3; }
+    };
+    RefuseThenAllowWS.OPEN = 1;
+    const { client } = loadClient(RefuseThenAllowWS);
+    const session = await client.connect({ apiKey: 'k', model: 'm', onError: () => {} });
+    assert.equal(session.ready, true, 'degraded retry still reaches live');
+    assert.equal(session._degraded, true, 'session records that it degraded');
+    assert.equal(attempts.length, 2, 'exactly one retry, no thrash');
+    assert(attempts[0].context_window_compression, 'first attempt used the enhanced setup');
+    assert(!attempts[1].context_window_compression && !attempts[1].session_resumption, 'retry stripped every enhanced field');
+    session.close(1000);
+    console.log('  ok   enhanced-setup refusal triggers one clean degraded retry');
+  }
+
+  // L4. goAway + interruption + output transcription events (text session)
+  {
+    const frames = [
+      { setupComplete: {} },
+      { goAway: { timeLeft: '10s' } },
+      { serverContent: { interrupted: true, modelTurn: { parts: [] } } },
+      { serverContent: { outputTranscription: { text: 'Cape.' }, modelTurn: { parts: [] }, turnComplete: true } }
+    ];
+    const { client } = loadClient(byteStream(frames));
+    let wentAway = null, interruptedCount = 0, transcript = '';
+    const session = await client.connect({
+      apiKey: 'k', model: 'm',
+      onError: () => {},
+      onGoAway: (t) => { wentAway = t; },
+      onInterrupted: () => { interruptedCount++; },
+      onOutputTranscript: (t) => { transcript += t; }
+    });
+    let flushCount = 0;
+    session._onInterrupted = () => { flushCount++; }; // voice layer hook: flush playback
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(wentAway, '10s', 'goAway surfaces its timeLeft to the caller');
+    assert.equal(interruptedCount, 1, 'server interruption fires the UI callback');
+    assert.equal(flushCount, 1, 'server interruption flushes the playback queue hook');
+    assert.equal(transcript, 'Cape.', 'output transcription text streams to the caller');
+    session.close(1000);
+    console.log('  ok   goAway, interruption (queue flush + UI), output transcription');
+  }
+
+  // L5. sendVideoFrame envelope + readiness guard (fused live vision)
+  {
+    const frames = [{ setupComplete: {} }];
+    const { client } = loadClient(byteStream(frames));
+    const session = await client.connect({ apiKey: 'k', model: 'm' });
+    const sent = session.sendVideoFrame('SkVQRw==', 'image/jpeg');
+    assert.equal(sent, true, 'frame accepted on a live session');
+    await new Promise((r) => setTimeout(r, 10));
+    const ws = session._ws;
+    const videoMsg = ws.sent.find((m) => m.realtimeInput && m.realtimeInput.video);
+    assert(videoMsg, 'video frame sent as realtimeInput.video');
+    assert.equal(videoMsg.realtimeInput.video.data, 'SkVQRw==');
+    assert.equal(videoMsg.realtimeInput.video.mimeType, 'image/jpeg');
+    assert.equal(session.sendVideoFrame('', 'image/jpeg'), false, 'empty data refused');
+    session.close(1000);
+    assert.equal(session.sendVideoFrame('SkVQRw=='), false, 'frame refused once the session is closed');
+    console.log('  ok   sendVideoFrame: realtimeInput.video envelope + readiness guard');
+  }
+
+  // L6. applyEnhancedFields merge semantics (pure)
+  {
+    const { client } = loadClient(byteStream([]));
+    const merge = client._internals.applyEnhancedFields;
+    const healthy = { _degraded: false, _resumptionHandle: null };
+    const opts = { setup: { generation_config: { response_modalities: ['AUDIO'] }, model: 'models/x' } };
+    merge(healthy, opts, { audio: true });
+    assert(opts.setup.output_audio_transcription, 'voice sessions request output transcription (drives lip-sync)');
+    assert(!opts.setup.input_audio_transcription, 'input transcription is opt-in only');
+    const withHandle = { _degraded: false, _resumptionHandle: 'h9' };
+    const opts2 = { setup: {} };
+    merge(withHandle, opts2, { audio: false });
+    assert.equal(opts2.setup.session_resumption.handle, 'h9', 'stored handle flows into future setups');
+    const degradedOpts = { setup: { context_window_compression: { sliding_window: {} }, session_resumption: {} } };
+    merge({ _degraded: true, _resumptionHandle: null }, degradedOpts, { audio: true });
+    assert(!degradedOpts.setup.context_window_compression && !degradedOpts.setup.session_resumption && !degradedOpts.setup.output_audio_transcription, 'degraded mode strips everything enhanced');
+    // merge preserves caller-owned fields
+    merge({ _degraded: false, _resumptionHandle: null }, opts, { audio: true });
+    assert(opts.setup.generation_config, 'merge never clobbers caller fields');
+    assert(opts.setup.model === 'models/x', 'model survives the merge');
+    console.log('  ok   applyEnhancedFields merge semantics (pure)');
+  }
+
   console.log('\n  All Gemini Live transport tests passed.\n');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -70,7 +70,7 @@
         </div>
         <div class="brand-text">
           <h1>GemAir</h1>
-          <p>Personal assistant <span class="ver" id="verTag">v2.11.0</span></p>
+          <p>Personal assistant <span class="ver" id="verTag">v2.12.0</span></p>
         </div>
       </div>
 
@@ -1148,6 +1148,7 @@
             <button class="settings-nav-btn" data-ssection="brain"><span class="sico">⚙️</span>General &amp; Memory</button>
             <button class="settings-nav-btn" data-ssection="voice"><span class="sico">🎙</span>Siri &amp; Voice</button>
             <button class="settings-nav-btn" data-ssection="desktop"><span class="sico">🖥</span>Desktop &amp; Focus</button>
+            <button class="settings-nav-btn" data-ssection="plugins"><span class="sico">🧩</span>Plugins</button>
             <button class="settings-nav-btn" data-ssection="appearance"><span class="sico">🎨</span>Appearance &amp; About</button>
             <button class="settings-nav-btn" data-ssection="apple"><span class="sico">🍎</span>Apple &amp; System</button>
           </div>
@@ -1524,6 +1525,10 @@
             <label>Wake phrase
               <input id="setWakeWordText" type="text" maxlength="40" placeholder="Hey Gem" aria-label="Custom wake phrase" />
             </label>
+            <div class="field-row" style="margin-bottom:12px;">
+              <button class="ghost-btn" id="wakeModelInstallBtn" type="button">⬇ INSTALL ON-DEVICE WAKE MODEL</button>
+              <span class="hint" id="wakeModelStatus" role="status" style="font-size:10px;">Local model keeps the wake listener fully on this device — one-time ~40 MB download, nothing leaves the machine while asleep.</span>
+            </div>
             <div class="voice-presets" id="voicePresets" role="group" aria-label="Voice preset">
               <button type="button" class="voice-preset active" data-voice-preset="gem"><b>GEM</b><span>warm · balanced</span></button>
               <button type="button" class="voice-preset" data-voice-preset="jarvis"><b>JARVIS</b><span>deep · measured</span></button>
@@ -1624,6 +1629,11 @@
                 <div style="flex:1;height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;"><i id="geminiLiveMeterOut" style="display:block;height:100%;width:0%;background:var(--good,#3dff9a);"></i></div>
               </div>
               <span class="dim" id="geminiLiveState" role="status" style="font-size:10px;">idle</span>
+              <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;" aria-label="Live vision sharing">
+                <label class="dim" style="font-size:10px;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="geminiLiveShareScreen" /> SHARE SCREEN</label>
+                <label class="dim" style="font-size:10px;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="geminiLiveShareCamera" /> SHARE CAMERA</label>
+                <span class="dim" id="geminiLiveVisionState" role="status" style="font-size:10px;">vision off — enable a share, then ask “what’s on my screen?” mid-call</span>
+              </div>
             </div>
             <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;" aria-label="Live text chat">
               <div class="memory-list" id="geminiLiveTextLog" role="log" aria-label="Gemini Live text chat" style="max-height:180px;overflow:auto;"><div class="empty">No Live text yet — type below and Send. Works with Live voice models too (native-audio), over the same socket as voice.</div></div>
@@ -1878,6 +1888,34 @@
             <div class="cost-note">
               AI core = Vercel serverless · TTS = Microsoft Edge neural voices · STT = Web Speech API · images = pollinations.ai · search = DuckDuckGo Lite + Wikipedia · weather = Open-Meteo · news = Google News RSS · crypto = CoinGecko · currency = Frankfurter (free FX) · translation = MyMemory · dictionary = Free Dictionary API. If a feature ever needs a paid key, GemAir swaps it for a free path automatically.
             </div>
+          </fieldset>
+        </div>
+        <!-- PLUGINS SECTION: single-file drop-in skills, Mark-heritage "adding a skill is moving a file" -->
+        <div class="settings-section" data-section="plugins">
+          <fieldset>
+            <legend>DROP-IN PLUGINS — ONE FILE = ONE SKILL</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+              Every <code>.js</code> file in the app's <code>plugins/</code> folder that exports a <code>PLUGIN</code> declaration plus a
+              <code>run()</code> handler becomes a tool the AI can call — discovered at launch, dispatched through the same
+              permission gates as built-in tools. Copy <code>plugins/_template.js</code> to write your own; files whose name
+              starts with <code>_</code> are documentation, never loaded. GemAir never downloads plugin code — only files
+              you consciously place there are registered.
+            </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+              <button class="ghost-btn" id="pluginsReloadBtn" type="button">↻ RELOAD PLUGINS</button>
+              <button class="ghost-btn" id="pluginsOpenFolderBtn" type="button">📂 OPEN PLUGINS FOLDER</button>
+            </div>
+            <div class="memory-list" id="pluginsList" role="list" aria-label="Loaded plugins"><div class="empty">Loading plugin list…</div></div>
+            <div class="memory-list" id="pluginsErrors" role="list" aria-label="Skipped plugin files"></div>
+            <span class="hint" id="pluginsHint" role="status" style="font-size:10px;"></span>
+          </fieldset>
+          <fieldset>
+            <legend>MEMORY ARCHIVE — NOTHING SILENTLY FORGOTTEN</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+              When hot memory collections hit their caps, evicted entries move to a cold archive on this device instead of
+              being deleted. <code>search_memory</code> falls back to it automatically, so old facts stay recallable.
+            </p>
+            <div id="memoryArchiveStats" class="dim" style="font-size:11px;line-height:1.7;">Archive stats appear here in the desktop app.</div>
           </fieldset>
         </div>
         <div class="settings-section" data-section="apple">

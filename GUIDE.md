@@ -80,6 +80,66 @@ Dave = planning) injected as its own system prompt.
 
 ---
 
+## 🧩 Plugins — one file, one skill (2.12)
+
+Drop a single `.js` file into the app's `plugins/` folder and Gem learns a new
+tool on next launch — no restart wiring, no registry edits. Copy
+`plugins/_template.js` to start; every plugin is just:
+
+```js
+module.exports = {
+  PLUGIN: {
+    name: 'my_skill',                 // lowercase snake_case, unique
+    description: 'When to call this and with what arguments.',
+    parameters: { type: 'object', properties: { /* JSON Schema */ } },
+    risk: 'safe'                      // or 'sensitive' → user confirms each run
+  },
+  async run(args, context) {
+    return { /* any JSON-serializable result, sent back to the model */ };
+  }
+};
+```
+
+- Files whose name starts with `_` (like the template) are documentation and
+  never load; nested folders are ignored. GemAir **never downloads plugin
+  code** — only files you consciously place there run.
+- Broken plugins can't break the app: invalid declarations show up in
+  Settings → **Plugins** with the exact reason, and run-time throws become
+  clean tool errors instead of crashes.
+- `context` is deliberately small: `homeDir`, `platform`, app `version`, your
+  saved `userName`, and `notify(title, body)`. Plugins never receive API keys
+  or other plugins' state.
+- The Plugins settings panel also shows the **memory archive** stats (below).
+
+## 👁 Live vision — "what's on my screen?" mid-call (2.12)
+
+In Settings → Siri & Voice, the Live voice card has two toggles:
+**SHARE SCREEN** and **SHARE CAMERA**. While a Gemini Live voice session is
+running they stream ~1 fps JPEG frames into the *same* conversation as your
+voice, so you can ask "what error is on my screen?" or "what's this cable I'm
+holding?" in the middle of talking — no screenshot dance, no separate feature.
+Screen sharing follows the same **Screen Awareness** permission as the
+`see_screen` tool and stops the instant you hang up, untoggle, or the socket
+closes. While the wake word sleeps, nothing is captured or sent at all.
+
+The Live loop itself got the long-horizon treatment in 2.12: session
+resumption handles ride through reconnects, sliding-window compression keeps
+one conversation alive for hours, server interruptions flush playback
+instantly, and Gem's own transcript drives the avatar's mouth — phoneme by
+phoneme, even in Cyrillic and Greek, thanks to Unicode-reduced visemes.
+
+## 🌅 Proactive Gem (2.12)
+
+On launch, Gem greets you with the time of day, any reminders due in the next
+24 hours, the topic monitors that found something new overnight — and, from
+the second launch onward, a natural recall of what you last worked on,
+mentioned **once** and then consumed, so it never repeats itself. Long
+sessions optionally get rotation-aware idle check-ins (`profile.proactiveCheckIns`,
+Settings); they are rate-limited to one per 3 hours and stay quiet from
+22:00 to 07:00.
+
+---
+
 ## ⚡ GemCore Engine (any provider, hardened)
 
 GemCore is the engine layer under **Settings → ⚡ GemCore Engine**. It lets you connect
@@ -132,6 +192,7 @@ Run the engine tests with `npm run test:gemcore`.
 | **Transcript** | every message | Restores your full conversation on launch |
 | **Mood** | every meaningful message | The AI sees how you've been trending |
 | **Goals / Notes / Todos / Reminders** | explicit | Life & career management |
+| **Cold archive** | automatic | When hot collections hit their caps, evicted entries move to `<userData>/gemair-memory-archive.json` instead of being silently deleted. `search_memory` searches it automatically; Settings → Plugins shows the counts. Nothing Gem learns is ever dropped without being recoverable. |
 
 ### Teaching GemAir
 ```

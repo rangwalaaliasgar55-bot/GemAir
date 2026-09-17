@@ -171,6 +171,21 @@ contextBridge.exposeInMainWorld('gemair', {
   onReminder: (cb) => subscribeIpc('reminder:due', cb),
   onTopicMonitorAlert: (cb) => subscribeIpc('monitor:alert', cb),
   onWakeToggle: (cb) => subscribeIpc('wake:toggle', cb),
+  // Proactive engine: once-per-launch greeting + opt-in idle check-ins
+  onProactiveGreeting: (cb) => subscribeIpc('proactive:greeting', cb),
+  onProactiveCheckIn: (cb) => subscribeIpc('proactive:checkin', cb),
+  // Local-secret git guard warning (only fires inside source checkouts)
+  onLocalSecretsWarning: (cb) => subscribeIpc('security:localSecrets', cb),
+  // Drop-in plugins (single-file skills discovered from plugins/)
+  pluginsList: () => ipcRenderer.invoke('plugins:list'),
+  pluginsReload: () => ipcRenderer.invoke('plugins:reload'),
+  pluginsOpenFolder: () => ipcRenderer.invoke('plugins:openFolder'),
+  // Live vision frames for the Gemini Live voice loop (screen side;
+  // permission-gated on Screen Awareness, throttled main-side)
+  visionCaptureScreenFrame: () => ipcRenderer.invoke('vision:screenFrame'),
+  // Memory cold-archive introspection (Settings → Memory)
+  memoryArchiveStats: () => ipcRenderer.invoke('memory:archiveStats'),
+  memorySearchArchive: (query, limit) => ipcRenderer.invoke('memory:searchArchive', query, limit),
   onActivity: (cb) => subscribeIpc('ai:activity', cb),
   onHudPanel: (cb) => subscribeIpc('hud:panel', cb),
   onConnectionsUpdated: (cb) => subscribeIpc('connections:updated', cb),

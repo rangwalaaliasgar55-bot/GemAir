@@ -194,6 +194,33 @@
     };
   }
 
+  // Long-horizon session fields (concept inherited from Mark's core loop —
+  // "session_resumption" + "context_window_compression with a SlidingWindow"
+  // keep one live conversation running for hours instead of dying on a full
+  // context window or a dropped socket). Field names follow the Live API's
+  // snake_case wire form, consistent with the rest of this file's setup.
+  //
+  // When the server rejects the enhanced setup (older/newer live models that
+  // do not know these fields yet), the session auto-degrades: one reload
+  // attempt with the plain setup, mirroring Mark's `_enhanced_live` flag.
+  function applyEnhancedFields(session, opts, { audio = false } = {}) {
+    const setup = opts.setup || (opts.setup = {});
+    delete setup.session_resumption;
+    delete setup.context_window_compression;
+    delete setup.output_audio_transcription;
+    delete setup.input_audio_transcription;
+    if (session._degraded) return setup;
+    setup.context_window_compression = { sliding_window: {} };
+    setup.session_resumption = session._resumptionHandle ? { handle: session._resumptionHandle } : {};
+    if (audio) {
+      // Output transcription drives phoneme-accurate avatar lip-sync and the
+      // caption line; input transcription powers the "you said" echo line.
+      setup.output_audio_transcription = {};
+      if (opts._wantInputTranscript) setup.input_audio_transcription = {};
+    }
+    return setup;
+  }
+
   function handleMessage(session, opts, raw, emit) {
     let msg = null;
     try { msg = JSON.parse(raw); } catch { return; }
@@ -202,8 +229,43 @@
       session._finishSetup && session._finishSetup();
       return;
     }
+    // Session resumption: the server hands us an opaque handle whenever the
+    // context shifts; stash it so a reconnect (drop, goAway, manual) resumes
+    // the same conversation instead of starting cold.
+    if (msg.sessionResumptionUpdate !== undefined) {
+      const update = msg.sessionResumptionUpdate || {};
+      if (update && update.newHandle && update.resumable !== false) {
+        session._resumptionHandle = String(update.newHandle);
+        try { opts.onResumption && opts.onResumption(session._resumptionHandle); } catch {}
+      }
+      return;
+    }
+    // GoAway: the server warns the connection will be torn down. Reconnect
+    // *immediately* (with the resumption handle attached) so the user never
+    // hears a dead session.
+    if (msg.goAway !== undefined) {
+      const timeLeft = msg.goAway && msg.goAway.timeLeft;
+      try { opts.onGoAway && opts.onGoAway(timeLeft || null); } catch {}
+      if (session._autoRetry && !session._userClosed && session.state === 'live') {
+        scheduleReconnect(session, 1012, 'server goAway');
+      }
+      return;
+    }
     const content = msg.serverContent;
     if (!content) return;
+    // Model-side interruption (the user talked over the model): flush the
+    // playback queue so the tail of the old answer never bleeds into the new
+    // turn — the audio layer registers _onInterrupted to do the flushing.
+    if (content.interrupted === true) {
+      try { session._onInterrupted && session._onInterrupted(); } catch {}
+      try { opts.onInterrupted && opts.onInterrupted(); } catch {}
+    }
+    if (content.outputTranscription && typeof content.outputTranscription.text === 'string') {
+      try { opts.onOutputTranscript && opts.onOutputTranscript(content.outputTranscription.text, content.turnComplete === true); } catch {}
+    }
+    if (content.inputTranscription && typeof content.inputTranscription.text === 'string') {
+      try { opts.onInputTranscript && opts.onInputTranscript(content.inputTranscription.text, content.turnComplete === true); } catch {}
+    }
     const parts = (content.modelTurn && content.modelTurn.parts) || [];
     for (const part of parts) {
       if (!part || typeof part !== 'object') continue;
@@ -304,13 +366,37 @@
       _reconnectTimer: null,
       _watchdog: null,
       _retryGen: 0,
+      _degraded: false,          // true once enhanced setup has been refused
+      _resumptionHandle: null,    // latest sessionResumption handle (if any)
       get ready() { return session.state === 'live' && session._ws && session._ws.readyState === WebSocket.OPEN; },
       reconnect() {
         session._userClosed = false;
         session._reconnectAttempts = 0;
         clearReconnect(session);
         try { session._ws && session._ws.close(); } catch {}
+        // Re-attach the last resumption handle (if the server offered one) so
+        // the reconnected session continues the same conversation.
+        applyEnhancedFields(session, session._opts, { audio: !!session._opts._audio });
         return openSocket(session, session._opts, session._emit);
+      },
+      // Send one video frame (JPEG/PNG, base64) into the live conversation —
+      // screen or camera — so "what's on my screen?" / "what am I holding?"
+      // works mid-voice without leaving the audio loop.
+      sendVideoFrame(base64Data, mimeType) {
+        if (!session.ready) return false;
+        const data = String(base64Data || '');
+        if (!data) return false;
+        try {
+          session._ws.send(JSON.stringify({
+            realtimeInput: {
+              video: {
+                data,
+                mimeType: (typeof mimeType === 'string' && mimeType) ? mimeType : 'image/jpeg'
+              }
+            }
+          }));
+          return true;
+        } catch { return false; }
       },
       close(code) {
         session._userClosed = true;
@@ -325,7 +411,7 @@
     return session;
   }
 
-  function connect(options = {}) {
+  async function connect(options = {}) {
     const apiKey = String(options.apiKey || '').trim();
     const model = String(options.model || '').trim();
     if (!apiKey) return Promise.reject(new Error('MISSING_API_KEY'));
@@ -335,8 +421,13 @@
       apiKey, model,
       timeoutMs: Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 30000,
       onText: options.onText, onError: options.onError, onLog: options.onLog,
+      onResumption: options.onResumption, onGoAway: options.onGoAway,
+      onInterrupted: options.onInterrupted,
+      onOutputTranscript: options.onOutputTranscript, onInputTranscript: options.onInputTranscript,
+      _audio: false,
       setup: { generation_config: { response_modalities: ['TEXT'] } }
     };
+    if (options && typeof options.onAudio === 'function') opts.onAudio = options.onAudio;
     const session = baseSession(opts, options.onState);
     session.send = (text) => {
       if (!session.ready) throw new Error('SESSION_NOT_READY');
@@ -344,7 +435,20 @@
         clientContent: { turns: [{ role: 'user', parts: [{ text: String(text) }] }], turnComplete: true }
       }));
     };
-    return openSocket(session, opts, null);
+    applyEnhancedFields(session, opts, { audio: false });
+    try {
+      return await openSocket(session, opts, null);
+    } catch (error) {
+      // Enhanced config refused -> degrade once and retry with the plain
+      // setup (long-horizon fields off), before giving up.
+      if (!session._degraded && !session._userClosed) {
+        session._degraded = true;
+        sessionLog(session, 'Enhanced live setup refused — retrying without resumption/compression.');
+        applyEnhancedFields(session, opts, { audio: false });
+        return openSocket(session, opts, null);
+      }
+      throw error;
+    }
   }
 
   // --- voice pipeline ------------------------------------------------------
@@ -383,12 +487,17 @@
       apiKey, model,
       timeoutMs: Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 30000,
       onText: options.onText, onError: options.onError, onLog: options.onLog,
+      onResumption: options.onResumption, onGoAway: options.onGoAway,
+      onInterrupted: options.onInterrupted,
+      onOutputTranscript: options.onOutputTranscript, onInputTranscript: options.onInputTranscript,
+      _audio: true,
+      _wantInputTranscript: options.inputTranscript === true,
       setup: {
         generation_config: {
           response_modalities: ['AUDIO'],
-          speech_config: { voice_config: { prebuilt_voice_config: { voice_name: 'Kore' } } }
+          speech_config: { voice_config: { prebuilt_voice_config: { voice_name: (options && typeof options.voiceName === 'string' && options.voiceName.trim()) ? options.voiceName.trim().slice(0, 40) : 'Kore' } } }
         },
-        system_instruction: { parts: [{ text: 'You are a helpful voice assistant.' }] }
+        system_instruction: { parts: [{ text: (options && typeof options.systemPrompt === 'string' && options.systemPrompt.trim()) ? options.systemPrompt.trim().slice(0, 20000) : 'You are a helpful voice assistant.' }] }
       }
     };
     // NOTE: model travels in setup.model via opts.model (see openSocket);
@@ -502,9 +611,33 @@
     try { micAnalyser.getFloatTimeDomainData(meterBuf); } catch {}
 
     session._onSocketClosed = () => session._teardown();
+    // Server-driven interruption: flush playback immediately (do not fire
+    // onBargeIn here — the user's own VAD barge-in already did that path).
+    session._onInterrupted = () => { try { stopOutput(false); } catch {} };
     session._emit = (b64) => playPcm24k(b64);
     session._autoRetry = true;
-    await openSocket(session, opts, (b64) => playPcm24k(b64));
+    applyEnhancedFields(session, opts, { audio: true });
+    try {
+      await openSocket(session, opts, (b64) => playPcm24k(b64));
+    } catch (error) {
+      // A live model that predates/resists the long-horizon fields closes the
+      // socket during setup; degrade once and retry with the plain setup
+      // (Mark's `_enhanced_live` fallback, applied to the same session).
+      if (!session._degraded && !stopped && !session._userClosed) {
+        session._degraded = true;
+        sessionLog(session, 'Enhanced live setup refused — continuing without resumption/compression/transcription.');
+        applyEnhancedFields(session, opts, { audio: true });
+        try {
+          await openSocket(session, opts, (b64) => playPcm24k(b64));
+        } catch (retryError) {
+          session._teardown();
+          throw retryError;
+        }
+      } else {
+        session._teardown();
+        throw error;
+      }
+    }
     startWatchdog(session);
     return session;
   }
@@ -555,7 +688,9 @@
   window.geminiLive = {
     connect, startVoice, listModels, filterFreeModels, ENDPOINT,
     audio: { floatToPcm16, chunkFrames, encodeBase64, decodeBase64ToInt16, pcm16ToFloat, resampleTo16k, rms, MIC_RATE, MIC_FRAME, OUT_RATE },
-    // Exposed for unit tests: backoff schedule, liveness probe, intervals.
-    _internals: { computeBackoff, checkLiveness, RECONNECT_MAX, RECONNECT_BASE_MS, RECONNECT_CAP_MS, HEARTBEAT_MS }
+    // Exposed for unit tests: backoff schedule, liveness probe, intervals,
+    // and the long-horizon setup merge (resumption + sliding-window
+    // compression + transcription, with the degraded-retry escape hatch).
+    _internals: { computeBackoff, checkLiveness, applyEnhancedFields, RECONNECT_MAX, RECONNECT_BASE_MS, RECONNECT_CAP_MS, HEARTBEAT_MS }
   };
 })();

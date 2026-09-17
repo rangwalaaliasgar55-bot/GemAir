@@ -68,3 +68,24 @@ is incompatible with GemAir's general MIT distribution, so no source, prompts,
 assets, or tests from that project are included. See
 [`docs/UPSTREAM-INTEGRATION.md`](docs/UPSTREAM-INTEGRATION.md) for the detailed
 architecture and license review.
+
+## Concept-shaped features — FatihMakes/Mark series (no source included)
+
+GemAir 2.x reimplemented, on its own engine and with its own code, product
+concepts documented by the Mark assistant series
+(<https://github.com/FatihMakes/Mark-LIV> and the sibling Mark-LI–LIII
+releases): the local "Hey Jarvis"-style wake word with auto-sleep, background
+topic monitors with once-a-day only-on-change alerts, flight/game update
+helpers (2.x Mark-LIII ports), and — in 2.12 — the long-horizon live voice
+loop (session resumption + sliding-window compression + interruption), fused
+screen/camera frames in the voice conversation, single-file drop-in skills,
+consumed-once session memory, proactive time/context-aware check-ins,
+Unicode-reduced viseme lip-sync, OS-aware first-run setup, and local-first
+privacy hardening (git-tracked secret guard + revoke-and-rotate
+documentation).
+
+The Mark series is licensed Creative Commons BY-NC 4.0 (personal,
+non-commercial use). **No Mark source code, prompts, assets, or tests are
+included in GemAir** — every behavior above is an original implementation
+against GemAir's own tool-calling engine, memory store, permission gates and
+Gemini Live transport, released under GemAir's MIT license.

@@ -88,4 +88,27 @@ const voskSize = fs.statSync(voskPath).size;
 assert(voskSize > 1024 * 1024, 'vendored vosk.js looks truncated (expected a multi-MB WASM-embedding bundle)');
 console.log('  ok   vendored vosk-browser engine is present and non-empty');
 
+// ---------------------------------------------------------------------------
+// One-click model install (2.12, Mark's "grab it in one click from Settings"
+// flow): installModel() precaches the recognizer WITHOUT touching the mic,
+// modelStatus() reports install state, and the Settings UI drives both.
+// ---------------------------------------------------------------------------
+assert(wakeWordSrc.includes('async function installModel(onStatus)'), 'wake-word.js must expose installModel()');
+assert(/loadModel\(onStatus\)/.test(wakeWordSrc), 'installModel must reuse the same cached loader (no duplicate downloads)');
+assert(!/installModel[\s\S]{0,400}getUserMedia/.test(wakeWordSrc.split('async function installModel')[1].split('window.GemWakeWord')[0]), 'installModel must not open the microphone');
+assert(wakeWordSrc.includes('function modelStatus()'), 'wake-word.js must expose modelStatus()');
+assert(wakeWordSrc.includes('installModel,\n') || /installModel,\s*modelStatus,/.test(wakeWordSrc), 'both new APIs must be exported on window.GemWakeWord');
+const exportedBlock = wakeWordSrc.split('window.GemWakeWord = {')[1];
+assert(exportedBlock.includes('installModel') && exportedBlock.includes('modelStatus'), 'window.GemWakeWord exports installModel + modelStatus');
+console.log('  ok   installModel precaches mic-free; modelStatus reports state; both exported');
+
+assert(htmlSrc.includes('id="wakeModelInstallBtn"'), 'Settings must carry the one-click install button');
+assert(htmlSrc.includes('id="wakeModelStatus"'), 'Settings must carry the model status line');
+assert(htmlSrc.indexOf('setWakeWord') < htmlSrc.indexOf('wakeModelInstallBtn'), 'install control belongs to the wake-word block');
+assert(appSrc.includes('function setupWakeModelInstall()'), 'app.js must wire the install button');
+assert(appSrc.includes('installModel'), 'app.js must call GemWakeWord.installModel');
+assert(appSrc.includes('updateWakeModelStatus'), 'app.js must render model status');
+assert(appSrc.includes("safe('wakeModelInstall', setupWakeModelInstall)"), 'wake-model install wiring must run at boot');
+console.log('  ok   Settings UI: one-click install button + status line, wired at boot');
+
 console.log('\nAll wake-word engine checks passed.\n');

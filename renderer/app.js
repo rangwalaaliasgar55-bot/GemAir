@@ -251,12 +251,21 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.11.0'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.12.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
   onTopicMonitorAlert(cb) { return registerRendererDisposer(window.gemair && window.gemair.onTopicMonitorAlert ? window.gemair.onTopicMonitorAlert(cb) : null); },
   onWakeToggle(cb) { return registerRendererDisposer(window.gemair && window.gemair.onWakeToggle ? window.gemair.onWakeToggle(cb) : null); },
+  onProactiveGreeting(cb) { return registerRendererDisposer(window.gemair && window.gemair.onProactiveGreeting ? window.gemair.onProactiveGreeting(cb) : null); },
+  onProactiveCheckIn(cb) { return registerRendererDisposer(window.gemair && window.gemair.onProactiveCheckIn ? window.gemair.onProactiveCheckIn(cb) : null); },
+  onLocalSecretsWarning(cb) { return registerRendererDisposer(window.gemair && window.gemair.onLocalSecretsWarning ? window.gemair.onLocalSecretsWarning(cb) : null); },
+  async pluginsList() { return window.gemair && window.gemair.pluginsList ? window.gemair.pluginsList() : { ok: false, plugins: [], errors: [{ file: '-', message: 'Desktop app required for plugins.' }] }; },
+  async pluginsReload() { return window.gemair && window.gemair.pluginsReload ? window.gemair.pluginsReload() : { ok: false, plugins: [], errors: [{ file: '-', message: 'Desktop app required for plugins.' }] }; },
+  async pluginsOpenFolder() { return window.gemair && window.gemair.pluginsOpenFolder ? window.gemair.pluginsOpenFolder() : { ok: false, error: 'DESKTOP_ONLY' }; },
+  async visionCaptureScreenFrame() { return window.gemair && window.gemair.visionCaptureScreenFrame ? window.gemair.visionCaptureScreenFrame() : { ok: false, error: 'DESKTOP_ONLY' }; },
+  async memoryArchiveStats() { return window.gemair && window.gemair.memoryArchiveStats ? window.gemair.memoryArchiveStats() : { totalLive: 0, byKind: {} }; },
+  async memorySearchArchive(query, limit) { return window.gemair && window.gemair.memorySearchArchive ? window.gemair.memorySearchArchive(query, limit) : []; },
   onActivity(cb) { return registerRendererDisposer(window.gemair && window.gemair.onActivity ? window.gemair.onActivity(cb) : null); },
   async collaborateAgents(task) {
     if (window.gemair && window.gemair.collaborateAgents) return window.gemair.collaborateAgents(task);
@@ -8117,6 +8126,118 @@ function bindEvents() {
     return { apiKey, model, usedStoredKey: !($('#setGeminiLiveKey')?.value || '').trim() && !!apiKey };
   }
 
+  // --- Live vision sharing (screen + camera fused into the voice loop) -----
+  // Frames stream at ~1 fps into the SAME live session as the mic audio, so
+  // "what's on my screen right now?" / "what am I holding up?" work mid-call
+  // instead of being a separate screenshot feature (Mark-style fused vision,
+  // routed through GemAir's own capture paths and permission gates).
+  const liveVision = { screenTimer: null, cameraTimer: null, cameraStream: null, cameraTrack: null, videoEl: null, canvas: null };
+  const visionState = (text) => { const el = $('#geminiLiveVisionState'); if (el) el.textContent = text; };
+
+  // One deferred word pump so output transcription drives avatar visemes
+  // phonetically (speakWord -> viseme sequence in avatar.js) at a readable
+  // cadence instead of 50 shapes a second of noise.
+  const liveLipSync = { queue: [], timer: null };
+  function pumpLiveLipSync() {
+    if (liveLipSync.timer) return;
+    liveLipSync.timer = setInterval(() => {
+      const word = liveLipSync.queue.shift();
+      if (!word) {
+        clearInterval(liveLipSync.timer);
+        liveLipSync.timer = null;
+        return;
+      }
+      try { if (window.gemAvatar && window.gemAvatar.speakWord) window.gemAvatar.speakWord(word); } catch {}
+    }, 120);
+  }
+
+  function startLiveScreenShare() {
+    if (liveVision.screenTimer) return;
+    const send = async () => {
+      const session = geminiLiveVoice;
+      if (!session || !session.ready || !session.sendVideoFrame) return;
+      try {
+        const frame = await api.visionCaptureScreenFrame();
+        if (frame && frame.ok && frame.data) {
+          if (!session.sendVideoFrame(frame.data, frame.mimeType || 'image/jpeg')) return;
+          visionState('sharing screen' + (($('#geminiLiveShareCamera') || {}).checked ? ' + camera' : '') + ' (@ ~1 fps) — ask what Gem sees');
+        } else if (frame && frame.error === 'SCREEN_AWARENESS_OFF') {
+          visionState('screen sharing needs Settings → “Optional screen awareness” enabled');
+          const box = $('#geminiLiveShareScreen');
+          if (box) box.checked = false;
+          stopLiveScreenShare();
+        }
+      } catch {}
+    };
+    send();
+    liveVision.screenTimer = setInterval(send, 1200);
+  }
+  function stopLiveScreenShare() {
+    if (liveVision.screenTimer) clearInterval(liveVision.screenTimer);
+    liveVision.screenTimer = null;
+  }
+
+  async function startLiveCameraShare() {
+    if (liveVision.cameraTimer) return true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { visionState('camera unavailable in this environment'); return false; }
+    try {
+      liveVision.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }, audio: false });
+    } catch (e) {
+      visionState('camera permission denied — nothing was shared');
+      return false;
+    }
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = liveVision.cameraStream;
+    try { await video.play(); } catch {}
+    liveVision.videoEl = video;
+    const canvas = document.createElement('canvas');
+    liveVision.canvas = canvas;
+    const grab = () => {
+      const session = geminiLiveVoice;
+      if (!session || !session.ready || !session.sendVideoFrame) return;
+      if (!video.videoWidth || !video.videoHeight) return;
+      const scale = Math.min(1, 480 / video.videoWidth);
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.55);
+      const base64 = dataUrl.includes(',') ? dataUrl.slice(dataUrl.indexOf(',') + 1) : dataUrl;
+      if (session.sendVideoFrame(base64, 'image/jpeg')) {
+        visionState('sharing camera' + (($('#geminiLiveShareScreen') || {}).checked ? ' + screen' : '') + ' (@ ~1 fps) — ask what Gem sees');
+      }
+    };
+    liveVision.cameraTimer = setInterval(grab, 1400);
+    setTimeout(grab, 600);
+    return true;
+  }
+  function stopLiveCameraShare() {
+    if (liveVision.cameraTimer) clearInterval(liveVision.cameraTimer);
+    liveVision.cameraTimer = null;
+    try { liveVision.videoEl && liveVision.videoEl.pause(); } catch {}
+    liveVision.videoEl = null;
+    try { liveVision.cameraStream && liveVision.cameraStream.getTracks().forEach((t) => t.stop()); } catch {}
+    liveVision.cameraStream = null;
+  }
+  function stopAllLiveVision() {
+    stopLiveScreenShare();
+    stopLiveCameraShare();
+    const boxS = $('#geminiLiveShareScreen'); if (boxS) boxS.checked = false;
+    const boxC = $('#geminiLiveShareCamera'); if (boxC) boxC.checked = false;
+    visionState('vision off — enable a share, then ask “what’s on my screen?” mid-call');
+  }
+
+  $('#geminiLiveShareScreen')?.addEventListener('change', (e) => {
+    if (e.target.checked) startLiveScreenShare(); else { stopLiveScreenShare(); visionState('screen share paused'); }
+  });
+  $('#geminiLiveShareCamera')?.addEventListener('change', async (e) => {
+    if (e.target.checked) { const ok = await startLiveCameraShare(); if (!ok) e.target.checked = false; }
+    else { stopLiveCameraShare(); visionState('camera share paused'); }
+  });
+
   $('#startGeminiLiveVoiceBtn')?.addEventListener('click', async () => {
     const hint = $('#geminiLiveHint');
     const say = (text, ok) => {
@@ -8128,8 +8249,11 @@ function bindEvents() {
     if (!apiKey) { say('Enter your AI Studio API key in Settings → Siri & Voice first (it is then remembered, encrypted).', false); return; }
     liveState('connecting');
     try {
+      const name = (profile.name || '').trim();
+      const assistantName = (profile.assistantName || 'Gem').trim() || 'Gem';
       geminiLiveVoice = await window.geminiLive.startVoice({
         apiKey, model, timeoutMs: 25000,
+        systemPrompt: `You are ${assistantName}, the voice assistant inside the GemAir desktop app.${name ? ` The user's name is ${name}.` : ''} Keep spoken answers short and natural. When the user shares their screen or camera, describe only what is actually visible.`,
         onLog: (message) => { liveState(message); },
         onText: (text, done) => { if (text && done !== true) setCaption('ai', text); },
         onError: (message) => { say('✗ ' + message, false); },
@@ -8139,21 +8263,36 @@ function bindEvents() {
           if (state === 'closed' || state === 'error') {
             liveVoiceButtons(false);
             liveMeter('#geminiLiveMeterIn', 0); liveMeter('#geminiLiveMeterOut', 0);
+            stopAllLiveVision();
             const recon = $('#reconnectGeminiLiveBtn');
             if (recon) recon.hidden = false;
           }
         },
         onLevel: ({ in: input, out }) => { liveMeter('#geminiLiveMeterIn', input); liveMeter('#geminiLiveMeterOut', out); },
-        onBargeIn: () => { try { toast('LIVE VOICE', 'Barged in — Gem stopped to listen.', '🎙'); } catch {} }
+        onBargeIn: () => { try { toast('LIVE VOICE', 'Barged in — Gem stopped to listen.', '🎙'); } catch {} },
+        onInterrupted: () => { try { setCaption('ai', ''); } catch {} },
+        // The model's own transcript drives captions + phoneme lip-sync.
+        onOutputTranscript: (text) => {
+          if (!text) return;
+          try { setCaption('ai', text); } catch {}
+          for (const word of String(text).trim().split(/\s+/g).filter(Boolean).slice(0, 40)) {
+            liveLipSync.queue.push(word);
+          }
+          if (liveLipSync.queue.length) pumpLiveLipSync();
+        },
+        onResumption: () => { try { liveState('live (session resumable — drops resume, never restart)'); } catch {} },
+        onGoAway: (timeLeft) => { try { toast('LIVE VOICE', 'Live server rotating the session — auto-resuming…', '🔄'); } catch {} liveState('goAway — resuming'); }
       });
     } catch (e) {
       liveState('error');
       liveVoiceButtons(false);
+      stopAllLiveVision();
       say('✗ ' + (e.message === 'MIC_UNAVAILABLE' ? 'Microphone unavailable — grant mic permission and retry.' : (e.message || 'Live voice failed')), false);
       geminiLiveVoice = null;
     }
   });
   const stopLiveVoice = () => {
+    stopAllLiveVision();
     try { geminiLiveVoice && geminiLiveVoice.close(1000); } catch {}
     geminiLiveVoice = null;
     liveState('closed');
@@ -8240,6 +8379,26 @@ function bindEvents() {
     if (!alert || !alert.title) return;
     addMessage('system-msg', `📰 ${alert.topic}: ${alert.title}`);
     speak(`Update on ${alert.topic}: ${alert.title}`);
+  });
+
+  // Proactive engine (Mark-heritage, rebuilt on GemAir memory): the launch
+  // greeting recalls last session once (never repeats); idle check-ins only
+  // arrive when enabled in Settings → voice & identity.
+  if (api.onProactiveGreeting) api.onProactiveGreeting((greeting) => {
+    if (!greeting || !greeting.text) return;
+    addMessage('ai', greeting.text);
+  });
+  if (api.onProactiveCheckIn) api.onProactiveCheckIn((checkIn) => {
+    if (!checkIn || !checkIn.text) return;
+    addMessage('ai', '💭 ' + checkIn.text);
+  });
+
+  // Local-secret git guard — only ever fires inside a dev checkout; tells the
+  // developer to untrack + rotate instead of letting a fork leak by accident.
+  if (api.onLocalSecretsWarning) api.onLocalSecretsWarning((payload) => {
+    const hits = payload && Array.isArray(payload.hits) ? payload.hits : [];
+    if (!hits.length) return;
+    addMessage('system-msg', `⚠️ SECURITY: ${hits.length} sensitive file(s) are tracked by git in this checkout (${hits.slice(0, 3).map((h) => h.file).join(', ')}${hits.length > 3 ? '…' : ''}). Run \`git rm --cached <file>\` to untrack them — and if any was ever pushed, revoke and rotate the credential; deleting the file does not remove it from history. See SECURITY.md.`);
   });
 
   // visible reasoning: live tool-activity chips (single global listener)
@@ -8407,6 +8566,54 @@ let wakeBackoff = 250;
 let localWakeActive = false;
 function useLocalWakeWord() {
   return !!(window.GemWakeWord && window.GemWakeWord.isSupported());
+}
+// One-click wake-model install (Settings → AVATAR & VOICE): downloads the
+// on-device recognizer model ahead of time so enabling the wake word starts
+// instantly — Mark's "grab it in one click from ⚙ → WAKE WORD" flow. The
+// button is a no-op in environments without the local engine.
+function updateWakeModelStatus() {
+  const statusEl = $('#wakeModelStatus');
+  if (!statusEl) return;
+  if (!window.GemWakeWord || !window.GemWakeWord.modelStatus) {
+    statusEl.textContent = 'Local wake engine unavailable in this environment — the cloud wake loop will be used instead.';
+    return;
+  }
+  const status = window.GemWakeWord.modelStatus();
+  if (!status.supported) {
+    statusEl.textContent = 'Local wake engine unavailable in this environment — the cloud wake loop will be used instead.';
+  } else if (status.installed) {
+    statusEl.textContent = '✓ On-device wake model installed — the wake listener never sends audio anywhere.';
+  } else if (status.downloading) {
+    statusEl.textContent = 'Downloading the on-device wake model…';
+  } else {
+    statusEl.textContent = 'Not installed yet — optional one-time ~40 MB download, stays on this device.';
+  }
+}
+function setupWakeModelInstall() {
+  const btn = $('#wakeModelInstallBtn');
+  if (!btn) return;
+  updateWakeModelStatus();
+  btn.addEventListener('click', async () => {
+    if (!window.GemWakeWord || !window.GemWakeWord.installModel) {
+      toast('WAKE WORD', 'The on-device wake engine is not available in this environment.', '⚠');
+      return;
+    }
+    playSfx('click');
+    btn.disabled = true;
+    try {
+      await window.GemWakeWord.installModel((message) => {
+        const statusEl = $('#wakeModelStatus');
+        if (statusEl) statusEl.textContent = message;
+      });
+      toast('WAKE WORD', 'On-device wake model installed — the wake listener stays fully local.', '✓');
+      addMessage('system-msg', 'On-device wake-word model installed. The wake listener never sends microphone audio anywhere.');
+    } catch (error) {
+      toast('WAKE WORD', 'Model install failed: ' + (error && error.message ? error.message : error), '⚠');
+    } finally {
+      btn.disabled = false;
+      updateWakeModelStatus();
+    }
+  });
 }
 async function armLocalWakeWord(phrase) {
   try {
@@ -8853,6 +9060,8 @@ async function boot() {
   safe('desktopTools', setupDesktopTools);             // 2.4 A
   safe('planAct', setupPlanAct);                       // 2.4 A1
   safe('settingsReorg', setupSettingsReorg);           // 2.4 U3
+  safe('pluginsPanel', setupPluginsPanel);             // 2.12 drop-in plugins
+  safe('wakeModelInstall', setupWakeModelInstall);     // 2.12 one-click wake model
   safe('circuitWires', startCircuitWires);
   safe('townPreview', startTownPreview);
   safe('townChrome', initTownChrome);
@@ -10265,6 +10474,53 @@ function setupPlanAct() {
 // ---------------------------------------------------------------------------
 // Settings reorg (U3) + search
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Plugins panel (U-plugins): single-file drop-in skills discovered from
+// plugins/. Lists live plugins + skipped files, reloads on demand, and shows
+// the hot-memory archive stats so the user can see that evictions are kept,
+// not silently deleted (the Mark-LII memory lesson, fixed).
+// ---------------------------------------------------------------------------
+async function renderPluginsPanel() {
+  const list = $('#pluginsList');
+  const errorsBox = $('#pluginsErrors');
+  const hint = $('#pluginsHint');
+  if (!list) return;
+  const result = await api.pluginsList();
+  const plugins = (result && Array.isArray(result.plugins)) ? result.plugins : [];
+  const errors = (result && Array.isArray(result.errors)) ? result.errors : [];
+  list.innerHTML = plugins.length
+    ? plugins.map((p) => `<div class="memory-item" role="listitem"><div><b>${escapeHtml(p.name)}</b> <span class="dim">(${p.file})</span><div class="dim" style="font-size:11px;">${escapeHtml(p.description)}${p.risk === 'sensitive' ? ' · <span style="color:var(--warn,#ffb347)">sensitive — asks before running</span>' : ' · safe'}</div></div></div>`).join('')
+    : '<div class="empty">No plugins loaded. Copy <b>plugins/_template.js</b> to a new file in the plugins folder, edit it, and press RELOAD.</div>';
+  if (errorsBox) {
+    errorsBox.innerHTML = errors.length
+      ? errors.map((e) => `<div class="memory-item" role="listitem"><div class="dim" style="font-size:11px;color:var(--warn,#ffb347);">⚠ skipped ${escapeHtml(e.file)}: ${escapeHtml(e.message)}</div></div>`).join('')
+      : '';
+  }
+  if (hint) hint.textContent = plugins.length ? `${plugins.length} plugin skill${plugins.length === 1 ? '' : 's'} live in the tool catalog.` : '';
+  const stats = await api.memoryArchiveStats();
+  const statsBox = $('#memoryArchiveStats');
+  if (statsBox && stats) {
+    const kinds = Object.entries(stats.byKind || {});
+    statsBox.innerHTML = stats.totalLive === 0 && !kinds.length
+      ? 'Archive is empty — no hot-memory caps have been hit yet.'
+      : `<b>${stats.totalLive.toLocaleString()}</b> archived entries on this device${kinds.length ? ' — ' + kinds.map(([k, n]) => `${escapeHtml(k)}: ${n.toLocaleString()}`).join(' · ') : ''}.`;
+  }
+}
+function setupPluginsPanel() {
+  $('#pluginsReloadBtn')?.addEventListener('click', async () => {
+    await api.pluginsReload();
+    playSfx('click');
+    await renderPluginsPanel();
+  });
+  $('#pluginsOpenFolderBtn')?.addEventListener('click', async () => {
+    playSfx('click');
+    const res = await api.pluginsOpenFolder();
+    if (res && res.ok === false) toast('Plugins', res.error || 'Could not open the plugins folder.', '⚠');
+  });
+  // Load lazily the first time the Plugins section opens.
+  document.querySelector('.settings-nav-btn[data-ssection="plugins"]')?.addEventListener('click', () => { renderPluginsPanel(); });
+}
+
 function setupSettingsReorg() {
   $$('.settings-nav-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{

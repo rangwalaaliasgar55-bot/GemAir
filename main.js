@@ -27,6 +27,10 @@ const islandWindow = require('./lib/attention/island-window');
 const flightFinder = require('./lib/flight-finder');
 const gameUpdater = require('./lib/game-updater');
 const gemcore = require('./lib/gemcore');
+const pluginLoader = require('./lib/plugin-loader');
+const proactiveLib = require('./lib/proactive');
+const { MemoryArchive } = require('./lib/memory-archive');
+const localSecretCheck = require('./lib/local-secret-check');
 
 const isDev = process.argv.includes('--dev');
 const userDataDir = app.getPath('userData');
@@ -37,6 +41,11 @@ const RECOVERY_FILE = path.join(userDataDir, 'gemair-recovery.json');
 const USAGE_STATS_FILE = path.join(userDataDir, 'gemair-usage-stats.json');
 const DAILY_DIGEST_STATE_FILE = path.join(userDataDir, 'gemair-daily-digest.json');
 const OPENJARVIS_RUNTIME_DIR = path.join(userDataDir, 'openjarvis');
+const MEMORY_ARCHIVE_FILE = path.join(userDataDir, 'gemair-memory-archive.json');
+const PLUGINS_DIR = path.join(__dirname, 'plugins');
+// Cold overflow store for hot-memory evictions (facts / transcript /
+// actionLog / mood): nothing the assistant learned is silently deleted.
+const memoryArchive = new MemoryArchive(MEMORY_ARCHIVE_FILE);
 openJarvisSidecar.configure({
   runtimeRoot: OPENJARVIS_RUNTIME_DIR,
   resourceRoot: app.isPackaged ? process.resourcesPath : __dirname
@@ -405,6 +414,8 @@ app.whenReady().then(() => {
   startReminderScheduler();
   try { startTopicMonitorScheduler(); } catch (e) { console.error('[topic-monitor] disabled:', e.message); }
   try { startDailyDigestScheduler(); } catch (e) { console.error('[daily-digest] disabled:', e.message); }
+  try { startProactiveScheduler(); } catch (e) { console.error('[proactive] disabled:', e.message); }
+  try { runLocalSecretGuard(); } catch (e) { console.error('[security] guard disabled:', e.message); }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     else mainWindow.show();
@@ -412,6 +423,7 @@ app.whenReady().then(() => {
 });
 app.on('before-quit', () => {
   isQuitting = true;
+  try { recordSessionEnd(); } catch {}
   try { if (attention) attention.stop(); } catch {}
   try { freeGPT35Sidecar.stop(); } catch {}
   try { openJarvisSidecar.stop(); } catch {}
@@ -1448,7 +1460,12 @@ function searchMemory(query) {
     score += (f.importance || 0) * 0.1;
     return { f, score };
   }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
-  return scored.length ? { matches: scored.map((x) => x.f.text) } : { matches: [], note: 'No matching memories.' };
+  // Cold-archive fallback: facts etc. evicted from the hot caps stay findable
+  // — memory is a lookup-on-demand store, not a silently-shrinking blob.
+  const archived = memoryArchive.search(q, { limit: 5 }).map((x) => ({ text: x.text, archivedAt: x.archivedAt, archived: true }));
+  const matches = scored.map((x) => x.f.text);
+  if (archived.length) return { matches, archived };
+  return scored.length ? { matches } : { matches: [], note: 'No matching memories.' };
 }
 function listTodos() {
   const m = readMemory();
@@ -1493,6 +1510,7 @@ function logMood(emotion, note) {
   const e = analyzeEmotion(emotion);
   const entry = { emotion: e.emotion, valence: e.valence, note: note || '', ts: Date.now() };
   m.mood.push(entry);
+  if (m.mood.length > 500) memoryArchive.append('mood', m.mood.slice(0, m.mood.length - 500), { reason: 'mood-cap' });
   if (m.mood.length > 500) m.mood = m.mood.slice(-500);
   writeMemory(m);
   return { ok: true, entry };
@@ -1619,6 +1637,7 @@ function moodNeedsCheckIn() {
 function logAction(action, detail) {
   const m = readMemory();
   m.actionLog.unshift({ action, detail: String(detail || '').slice(0, 300), ts: Date.now() });
+  if (m.actionLog.length > 200) memoryArchive.append('actionLog', m.actionLog.slice(200).reverse(), { reason: 'actionlog-cap' });
   if (m.actionLog.length > 200) m.actionLog = m.actionLog.slice(0, 200);
   writeMemory(m);
 }
@@ -2876,11 +2895,35 @@ const TOOL_RISK = {
   add_topic_monitor: 'safe', remove_topic_monitor: 'safe', list_topic_monitors: 'safe', check_topic_monitors: 'safe'
 };
 
+// ---------------------------------------------------------------------------
+// Drop-in plugins (single-file skills, Mark-heritage "adding a skill is
+// moving a file"): discovered from plugins/ at boot, merged into the tool
+// catalog the model sees, dispatched below inside the same risk gates as
+// built-ins. A broken or throwing plugin can never take the app down.
+// ---------------------------------------------------------------------------
+const pluginRegistry = pluginLoader.createPluginRegistry(PLUGINS_DIR, {
+  homeDir: os.homedir(),
+  platform: process.platform,
+  version: app.getVersion(),
+  get userName() { return String(readProfile().name || '').slice(0, 80); },
+  notify: (title, body) => { try { if (Notification.isSupported()) new Notification({ title: String(title || 'GemAir plugin').slice(0, 120), body: String(body || '').slice(0, 400) }).show(); } catch {} },
+  log: (message) => console.log('[plugin]', String(message || '').slice(0, 300))
+});
+pluginRegistry.setBuiltins(new Set(TOOLS.map((tool) => tool.function.name)));
+pluginRegistry.reload();
+if (pluginRegistry.errors().length) {
+  console.warn('[plugins] skipped plugin files:', JSON.stringify(pluginRegistry.errors()));
+}
+// The merged catalog the model is offered (built-ins + live plugins).
+function getAllTools() {
+  return TOOLS.concat(pluginRegistry.declarations());
+}
+
 const TOOL_SCHEMAS = new Map(TOOLS.map((tool) => [tool.function.name, tool.function.parameters || { type: 'object', properties: {} }]));
 const TOOL_DEFAULT_STRING_LIMIT = 20000;
 const TOOL_STRING_LIMITS = { path: 4096, content: 1024 * 1024, query: 2000, prompt: 10000, text: 20000, command: 400, url: 2048, topic: 120, origin: 120, destination: 120, date: 40, returnDate: 40 };
 function validateToolInput(name, input) {
-  const schema = TOOL_SCHEMAS.get(name);
+  const schema = TOOL_SCHEMAS.get(name) || (pluginRegistry.has(name) ? (pluginRegistry.get(name).parameters || { type: 'object', properties: {} }) : null);
   if (!schema) return { error: `Unknown tool: ${name}` };
   if (input == null) input = {};
   if (typeof input !== 'object' || Array.isArray(input)) return { error: 'Tool arguments must be an object.' };
@@ -2936,8 +2979,26 @@ function executeTool(name, args) {
 
 async function executeToolNow(name, args) {
   try {
-    const risk = TOOL_RISK[name] || 'safe';
+    const risk = TOOL_RISK[name] || pluginRegistry.risk(name) || 'safe';
     const profile = readProfile();
+    // Drop-in plugin dispatch: runs inside the same risk gates as built-ins.
+    // A risky plugin (marked `risk: 'sensitive'`) gets the same human
+    // confirmation the built-in sensitive tools get.
+    if (pluginRegistry.has(name)) {
+      if (risk === 'sensitive' && !codingAutoApprove) {
+        const ok = await confirmAction('Run plugin skill?', `The plugin "${name}" was granted these arguments:\n\n${JSON.stringify(args || {}).slice(0, 600)}\n\nIt is marked sensitive (may change files or system state). Proceed?`);
+        if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
+      }
+      const output = await pluginRegistry.run(name, args);
+      try {
+        const m = readMemory();
+        m.actionLog.unshift({ action: `plugin:${name}`, detail: (output && output.error) ? `failed: ${String(output.error).slice(0, 200)}` : 'completed', ts: Date.now() });
+        if (m.actionLog.length > 200) memoryArchive.append('actionLog', m.actionLog.slice(200).reverse(), { reason: 'actionlog-cap' });
+        if (m.actionLog.length > 200) m.actionLog = m.actionLog.slice(0, 200);
+        writeMemory(m);
+      } catch {}
+      return output;
+    }
     if (risk === 'sensitive' && profile.allowShell === false && name === 'run_command') {
       return { error: 'Permission denied: shell command execution is disabled in Settings.' };
     }
@@ -3351,7 +3412,13 @@ function upsertFact(fact) {
   const existing = m.facts.find(f => normalizeFact(f.text) === norm);
   if (existing) { existing.updated = Date.now(); existing.importance = (existing.importance || 1) + 1; }
   else m.facts.push({ id: uid(), text: fact.text, category: fact.category || 'fact', importance: 1, created: Date.now(), updated: Date.now() });
-  if (m.facts.length > 300) m.facts = m.facts.sort((a, b) => (b.importance || 0) - (a.importance || 0)).slice(0, 300);
+  if (m.facts.length > 300) {
+    // Importance-sorted cap — but evicted facts are archived, never silently
+    // forgotten (search_memory can still surface them on demand).
+    m.facts.sort((a, b) => (b.importance || 0) - (a.importance || 0));
+    memoryArchive.append('facts', m.facts.slice(300).map((f) => f.text), { reason: 'facts-cap' });
+    m.facts = m.facts.slice(0, 300);
+  }
   writeMemory(m);
 }
 function factsForPrompt() {
@@ -3591,7 +3658,7 @@ async function aiChat(config, messages) {
   }
   const msgs = [...plannedMessages];
   for (let i = 0; i < 6; i++) {
-    const msg = await callChat(base, key, model, msgs, TOOLS);
+    const msg = await callChat(base, key, model, msgs, getAllTools());
     const toolCalls = msg.tool_calls || [];
     if (toolCalls.length) {
       msgs.push(msg);
@@ -3617,7 +3684,7 @@ async function streamRequest(base, key, model, messages, onDelta) {
   const STREAM_TIMEOUT_MS = 120000;
   const runStream = (withTools) => {
     const body = { model, messages, temperature: 0.6, max_tokens: 1200, stream: true, stream_options: { include_usage: true } };
-    if (withTools) { body.tools = TOOLS; body.tool_choice = 'auto'; }
+    if (withTools) { body.tools = getAllTools(); body.tool_choice = 'auto'; }
     let content = '';
     const toolCalls = [];
     return gemcore.requestManager.providerRequestStream({
@@ -3940,7 +4007,14 @@ function startReminderScheduler() {
         }
         changed = true;
         if (mainWindow) mainWindow.webContents.send('reminder:due', due);
-        if (Notification.isSupported()) new Notification({ title: 'GemAir Reminder', body: r.text }).show();
+        if (Notification.isSupported()) {
+          // OS-native notification (toast / NC / notify-send) with the due
+          // time; clicking it brings GemAir to the front.
+          const dueTime = new Date(dueAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+          const notification = new Notification({ title: 'GemAir Reminder', body: `⏰ ${dueTime} — ${String(r.text || '').slice(0, 180)}` });
+          notification.on('click', () => { try { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } } catch {} });
+          notification.show();
+        }
       }
     }
     if (changed) writeMemory(m);
@@ -3956,6 +4030,14 @@ function startTopicMonitorScheduler() {
       const m = readMemory();
       if (!Array.isArray(m.monitors) || !m.monitors.length) return;
       const alerts = await backgroundMonitor.checkMonitors(m, fetchTopicHeadline, { force: false });
+      if (alerts.length) {
+        // Mark entries so the next-launch proactive greeting can mention
+        // exactly which monitor found something new (consumed on delivery).
+        for (const alert of alerts) {
+          const entry = (m.monitors || []).find((mon) => mon && String(mon.topic || '').toLowerCase() === String(alert.topic || '').toLowerCase());
+          if (entry) entry.alertPending = true;
+        }
+      }
       writeMemory(m);
       for (const alert of alerts) {
         if (mainWindow) mainWindow.webContents.send('monitor:alert', alert);
@@ -4020,6 +4102,143 @@ function startDailyDigestScheduler() {
   setInterval(run, 60 * 1000);
 }
 
+// ---------------------------------------------------------------------------
+// Proactive engagement (concept shaped by Mark's "Proactive 2.0" — reimplemented
+// on GemAir's memory model). Two surfaces:
+//   • once-per-launch greeting: time-of-day aware, consumes the stored
+//     previous-session summary exactly once, mentions due reminders and
+//     monitors that found something new overnight;
+//   • optional idle check-ins during long sessions (profile.proactiveCheckIns),
+//     rotation-aware and quiet at night — never more than one per 3 hours.
+// ---------------------------------------------------------------------------
+const proactiveState = { lastCheckInAt: 0, lastAngle: null };
+
+function deliverProactiveGreeting() {
+  try {
+    const memory = readMemory();
+    const profile = readProfile();
+    const greeting = proactiveLib.buildGreeting({ now: Date.now(), memory, profile });
+    // Monitor alert flags + consumed session summary are one-shot state;
+    // clear them regardless of whether a greeting sentence got built.
+    let dirty = false;
+    if (Array.isArray(memory.monitors)) {
+      for (const mon of memory.monitors) {
+        if (mon && mon.alertPending) { mon.alertPending = false; dirty = true; }
+      }
+    }
+    if (greeting && greeting.consumedSession) dirty = true;
+    if (dirty) writeMemory(memory);
+    if (greeting && mainWindow) sendToRenderer('proactive:greeting', greeting);
+  } catch (error) {
+    console.error('[proactive] greeting failed:', error.message);
+  }
+}
+
+function startProactiveScheduler() {
+  // One greeting per launch — a touch after window creation so the renderer
+  // listeners exist by the time it lands.
+  setTimeout(deliverProactiveGreeting, 12000);
+  setInterval(() => {
+    try {
+      const profile = readProfile();
+      if (profile.proactiveCheckIns !== true) return;
+      const memory = readMemory();
+      const checkIn = proactiveLib.buildCheckIn({ now: Date.now(), memory, profile, state: proactiveState });
+      if (!checkIn) return;
+      proactiveState.lastCheckInAt = Date.now();
+      proactiveState.lastAngle = checkIn.angle;
+      sendToRenderer('proactive:checkin', { text: checkIn.text });
+      if (Notification.isSupported() && profile.proactiveNotifications === true) {
+        new Notification({ title: 'Gem check-in', body: checkIn.text }).show();
+      }
+    } catch (error) {
+      console.error('[proactive] check-in failed:', error.message);
+    }
+  }, 5 * 60 * 1000);
+}
+
+// Session memory: snapshot the conversation's topics at quit so the next
+// launch can recall them once (Mark-style "Session Memory", consumed once).
+function recordSessionEnd() {
+  try {
+    const memory = readMemory();
+    // Don't clobber an un-consumed summary from a crash with a second one —
+    // merge: keep whichever has more topics.
+    const existing = memory.lastSession;
+    const record = proactiveLib.recordSessionSummary(memory, { now: Date.now() });
+    if (!record) return;
+    if (existing && existing.consumed === false && Array.isArray(existing.topics) && existing.topics.length > record.topics.length) {
+      memory.lastSession = existing;
+    }
+    writeMemory(memory);
+  } catch {}
+}
+
+// ---------------------------------------------------------------------------
+// Local-secret git guard (Mark-style local-first hardening): when running
+// from a source checkout, warn if a secrets-shaped file is tracked by git —
+// .gitignore cannot protect a file that is already tracked.
+// ---------------------------------------------------------------------------
+let localSecretGuardRan = false;
+async function runLocalSecretGuard() {
+  if (localSecretGuardRan) return;
+  localSecretGuardRan = true;
+  try {
+    const result = await localSecretCheck.findTrackedSecrets(__dirname);
+    if (!result.checked || !result.hits.length) return;
+    console.warn('[security] sensitive files tracked by git in this checkout:', result.hits.map((h) => h.file).join(', '));
+    sendToRenderer('security:localSecrets', { hits: result.hits });
+  } catch (error) {
+    console.error('[security] local-secret guard failed:', error.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Live vision frame IPC (screen capture for the Gemini Live voice loop).
+// Permission-gated on the same screenAwareness setting the see_screen tool
+// uses; throttled so a chatty renderer cannot capture more than ~1 fps.
+// ---------------------------------------------------------------------------
+let lastVisionFrameAt = 0;
+ipcMain.handle('vision:screenFrame', async () => {
+  try {
+    const profile = readProfile();
+    if (profile.screenAwareness !== true) return { ok: false, error: 'SCREEN_AWARENESS_OFF' };
+    const now = Date.now();
+    if (now - lastVisionFrameAt < 900) return { ok: false, error: 'THROTTLED' };
+    lastVisionFrameAt = now;
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 960, height: 540 } });
+    if (!sources || !sources.length) return { ok: false, error: 'NO_SCREEN_SOURCE' };
+    const primary = sources[0];
+    const jpeg = primary.thumbnail.toJPEG(60);
+    if (!jpeg || !jpeg.length) return { ok: false, error: 'FRAME_FAILED' };
+    const size = primary.thumbnail.getSize();
+    trackUsage('vision.frame', { ok: true });
+    return { ok: true, data: jpeg.toString('base64'), mimeType: 'image/jpeg', width: size.width, height: size.height, name: String(primary.name || '').slice(0, 120) };
+  } catch (error) {
+    return { ok: false, error: 'CAPTURE_FAILED', message: String(error.message || error).slice(0, 300) };
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Plugins IPC — renderer Settings lists/reloads drop-in skills.
+// ---------------------------------------------------------------------------
+ipcMain.handle('plugins:list', () => ({ ok: true, plugins: pluginRegistry.list(), errors: pluginRegistry.errors() }));
+ipcMain.handle('plugins:reload', () => {
+  pluginRegistry.reload();
+  return { ok: true, plugins: pluginRegistry.list(), errors: pluginRegistry.errors() };
+});
+ipcMain.handle('plugins:openFolder', async () => {
+  try {
+    fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+    await shell.openPath(PLUGINS_DIR);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error).slice(0, 200) };
+  }
+});
+ipcMain.handle('memory:archiveStats', () => memoryArchive.stats());
+ipcMain.handle('memory:searchArchive', (_e, query, limit) => memoryArchive.search(query, { limit }));
+
 function startFocusPolling() {
   if (focusPollTimer) clearInterval(focusPollTimer);
   focusPollTimer = setInterval(async () => {
@@ -4059,7 +4278,7 @@ function agentSystemPrompt(name) {
 }
 function toolsForAgent(name) {
   const brain = AGENT_BRAINS[name] || AGENT_BRAINS.Alice;
-  return TOOLS.filter((tool) => brain.tools.includes(tool.function.name));
+  return getAllTools().filter((tool) => brain.tools.includes(tool.function.name));
 }
 async function agentChat(name, config, messages) {
   const base = normalizeBaseURL(config.baseURL);
@@ -4339,7 +4558,7 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
     return err;
   };
   const reasonedMessages = await withOpenJarvisReasoning(Array.isArray(messages) ? messages : [], onTool);
-  const selectedTools = selectRelevantTools(TOOLS, reasonedMessages, { limit: 24 });
+  const selectedTools = selectRelevantTools(getAllTools(), reasonedMessages, { limit: 24 });
   const toolPrompt = connections.buildToolPrompt(selectedTools);
   const nowStamp = new Date().toLocaleString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   const baseInstructions = `You are Gem, the personal AI inside the GemAir desktop app — warm, direct, and precise. It is ${nowStamp}; use that for "today/tomorrow" and distrust stale training data (search instead). Use tools silently when action or current facts are needed. Never paste raw tool JSON; synthesize results into a natural reply with sources. Default to 1-3 sentences; expand only when asked or when steps are genuinely needed. Never say "as an AI".`;
@@ -5044,7 +5263,7 @@ ipcMain.handle('gemcore:chatStream', async (event, payload) => {
   const budget = gemcoreEngine.budgets.create(requestId, { maxTokens: 90000, maxToolCalls: 24, maxDurationMs: 8 * 60 * 1000 });
 
   const allMessages = [{ role: 'system', content: systemPrompt }, ...messages];
-  const selectedTools = useTools ? selectRelevantTools(TOOLS, allMessages, { limit: 16 }) : [];
+  const selectedTools = useTools ? selectRelevantTools(getAllTools(), allMessages, { limit: 16 }) : [];
 
   (async () => {
     try {
@@ -5389,6 +5608,7 @@ ipcMain.handle('memory:get', () => readMemory());
 ipcMain.handle('memory:append', (_e, role, content) => {
   const m = readMemory();
   m.transcript.push({ role, content, ts: Date.now() });
+  if (m.transcript.length > 2000) memoryArchive.append('transcript', m.transcript.slice(0, m.transcript.length - 2000), { reason: 'transcript-cap' });
   if (m.transcript.length > 2000) m.transcript = m.transcript.slice(-2000);
   writeMemory(m); return true;
 });

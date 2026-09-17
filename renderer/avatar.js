@@ -97,12 +97,41 @@
     a: 'AA', e: 'EH', i: 'EE', o: 'OH', u: 'OO', y: 'EE',
     m: 'MM', b: 'MM', p: 'MM', f: 'FV', v: 'FV', l: 'L', w: 'OO', r: 'OH'
   };
+  // Unicode reduction (Mark-LIV's "language-free mouth" idea, applied to this
+  // viseme set): accented Latin decomposes to its base vowel via NFD, and
+  // Cyrillic / Greek letters map to the closest mouth shape of the SAME rig.
+  // Latin, Cyrillic and Greek transcripts all articulate from one rule set;
+  // scripts with no mouth-shape mapping (CJK, Arabic…) fall back to EH.
+  const CYRILLIC_VISEME = {
+    'а': 'AA', 'э': 'EH', 'ы': 'EH', 'е': 'EH', 'є': 'EH',
+    'и': 'EE', 'і': 'EE', 'ї': 'EE', 'й': 'EE',
+    'у': 'OO', 'ю': 'OO', 'о': 'OH', 'ё': 'OH',
+    'м': 'MM', 'б': 'MM', 'п': 'MM',
+    'ф': 'FV', 'в': 'FV',
+    'л': 'L', 'р': 'L'
+  };
+  const GREEK_VISEME = {
+    'α': 'AA', 'ά': 'AA', 'ε': 'EH', 'έ': 'EH',
+    'η': 'EE', 'ή': 'EE', 'ι': 'EE', 'ί': 'EE', 'ϊ': 'EE', 'ΐ': 'EE',
+    'υ': 'EE', 'ύ': 'EE', 'ϋ': 'EE', 'ΰ': 'EE',
+    'ο': 'OH', 'ό': 'OH', 'ω': 'OH', 'ώ': 'OH',
+    'μ': 'MM', 'π': 'MM', 'β': 'FV', 'φ': 'FV',
+    'λ': 'L', 'ρ': 'L'
+  };
+  const GREEK_OU_MARKER = '\uE000'; // private-use marker for the ου digraph (/u/)
   function visemesForWord(word) {
-    const w = String(word || '').toLowerCase().replace(/[^a-z]/g, '');
+    let w = String(word || '').toLowerCase().trim();
     if (!w) return [];
+    // Greek ου is pronounced /u/ — one rounded shape, not OH-then-EE.
+    w = w.replace(/ου/g, GREEK_OU_MARKER);
+    // NFD strips accents to their base letters (à→a, ü→u, ñ→n, ϊ→ι…), so the
+    // three table lookups below alone cover accented Latin/Greek orthography.
+    if (w.normalize) w = w.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const out = [];
     for (const ch of w) {
-      const k = LETTER_VISEME[ch];
+      let k = null;
+      if (ch === GREEK_OU_MARKER) k = 'OO';
+      else k = LETTER_VISEME[ch] || CYRILLIC_VISEME[ch] || GREEK_VISEME[ch] || null;
       if (k && out[out.length - 1] !== k) out.push(k);
     }
     if (!out.length) out.push('EH');
@@ -623,4 +652,7 @@
   // R6: the ONE tolerant colour parser (hex / rgb() / hsl()) — app.js routes
   // every accent through this so hsl-based themes (RGB) stop producing NaN.
   window.gemAvatar.parseColor = parseColor;
+  // Exposed for unit tests: the pure viseme pipeline (Unicode-reduced,
+  // language-free mouth shapes — Latin / Cyrillic / Greek from one rule set).
+  window.gemAvatar._internals = { visemesForWord, VISEMES, LETTER_VISEME, CYRILLIC_VISEME, GREEK_VISEME };
 })();

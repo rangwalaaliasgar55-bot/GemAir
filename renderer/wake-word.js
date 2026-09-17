@@ -159,10 +159,30 @@
     recognizer = null; audioCtx = null; micStream = null; micSource = null; processor = null; silentGain = null;
   }
 
+  // One-click model install (Settings → WAKE WORD, Mark-style): downloads and
+  // caches the local recognizer model WITHOUT touching the microphone, so
+  // enabling the wake word later starts instantly. Safe to call repeatedly —
+  // the model is cached by vosk-browser in IndexedDB after the first fetch.
+  async function installModel(onStatus) {
+    if (!isSupported()) throw new Error('Local wake-word engine is not supported in this environment');
+    const installed = await loadModel(onStatus);
+    return !!installed;
+  }
+
+  function modelStatus() {
+    return {
+      supported: isSupported(),
+      installed: !!model,
+      downloading: !model && !!modelLoader
+    };
+  }
+
   window.GemWakeWord = {
     isSupported,
     start,
     stop,
+    installModel,
+    modelStatus,
     get active() { return active; }
   };
 })();

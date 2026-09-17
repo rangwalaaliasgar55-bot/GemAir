@@ -1,5 +1,62 @@
 # Changelog
 
+## [2.12.0] — 2026-09-17
+
+**The JARVIS-grade voice release.** GemAir studied what makes FatihMakes/Mark-LIV feel like a real-time voice Jarvis and closed the gap on its own stack — a hardened long-horizon Gemini Live loop, screen+camera fused into the same conversation, a drop-in single-file plugin system with a template, a proactive engine that remembers last session exactly once, a memory model that never silently forgets, local-privacy hardening with a startup git-leak guard, and a one-command OS-aware installer. Everything ships end-to-end (main → IPC → preload → renderer → tests → docs), no stubs. Concepts were reimplemented on GemAir's own engine — no upstream code copied (Mark-LIV is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).
+
+### Added — long-horizon duplex voice loop (`renderer/gemini-live.js`)
+- **Session resumption**: the Live setup now offers `session_resumption`; server `sessionResumptionUpdate` handles are stashed, reported via `onResumption`, and re-attached automatically on reconnect, manual reconnect, and voice-change — a dropped socket no longer wipes the conversation.
+- **Sliding-window context compression**: `context_window_compression: { sliding_window: {} }` is on by default, so one live conversation can run for hours without dying on a full context window.
+- **Graceful capability degradation**: if a live model refuses the enhanced setup (closes the socket before `setupComplete`), the session retries exactly once with the plain setup and flags itself degraded — Mark's `_enhanced_live` fallback, applied to the same session instead of a reload.
+- **GoAway pre-emption**: the server's `goAway.timeLeft` warning triggers an early, resumption-attached reconnect plus a UI toast — no audible dead-air gap.
+- **True interruption handling**: `serverContent.interrupted` now flushes the playback queue instantly and fires `onInterrupted`, complementing the existing VAD barge-in.
+- **Output transcription stream**: `output_audio_transcription` feeds `onOutputTranscript` — captions and the avatar's phoneme lip-sync now work on the native-audio voice too; input transcription is opt-in.
+- **Voice/prompt passthrough**: `startVoice` accepts `voiceName` and a `systemPrompt` so the live voice matches the configured identity.
+
+### Added — fused live vision (screen + camera in the same call)
+- Two toggles in the Live voice card — **SHARE SCREEN** and **SHARE CAMERA** — stream ~1 fps JPEG frames into the running voice session as `realtimeInput.video`, so "what's on my screen right now?" and "what am I holding up?" work mid-call instead of being a separate screenshot feature.
+- Screen frames come from a new `vision:screenFrame` IPC: `desktopCapturer`-based, **gated on the existing Screen Awareness permission**, throttled main-side, JPEG-compressed, honest errors (`SCREEN_AWARENESS_OFF` / `THROTTLED` / `CAPTURE_FAILED`), never a second socket. Camera frames use `getUserMedia` in the renderer with full track release on hang-up, stop, or error.
+
+### Added — drop-in plugins (`plugins/` + `lib/plugin-loader.js`)
+- **One file = one skill.** Any top-level `.js` file in `plugins/` exporting a `PLUGIN` declaration (`name`, `description`, JSON-Schema `parameters`, `risk`) plus an async `run(args, context)` becomes a callable tool on next launch — or instantly via Settings → Plugins → RELOAD.
+- Declarations merge into the model-facing catalog at every call site (`getAllTools()`); dispatch runs inside the existing permission gates — `risk: 'sensitive'` plugins get a human confirmation dialog like built-in sensitive tools.
+- Broken files, bad names, name collisions with built-ins, and throws at load- or run-time degrade to reported errors, never crashes. `_`-prefixed files are documentation; GemAir never downloads plugin code.
+- Ships `plugins/_template.js` (a validating canonical example) and a Settings → Plugins panel listing live skills, skipped files with reasons, and hot-memory archive stats.
+
+### Added — proactive engagement (`lib/proactive.js`)
+- **Once-per-launch greeting**: time-of-day aware (morning/afternoon/evening/late-night), mentions reminders due in the next 24h, names the topic monitors that found new headlines overnight, and — when a previous session exists — recalls its topics naturally and then marks them **consumed**, so it is said exactly once, never repeated.
+- **Optional idle check-ins** (`profile.proactiveCheckIns`): rotation-aware (never the same angle twice in a row), rate-limited to one per 3 hours, silent 22:00–07:00, and can mirror to an OS notification (`proactiveNotifications`).
+- **Session memory**: quitting records a distilled topic summary (`before-quit`), guarded against clobbering an un-consumed summary after a crash.
+
+### Added — memory cold archive (the end of silent forgetting)
+- New `lib/memory-archive.js`: an append-only, redaction-on-write cold store at `<userData>/gemair-memory-archive.json` with bounded rotation that folds the oldest half into per-kind **checkpoints** — the raw lines rotate, the evidence of what was learned never disappears.
+- Every hot-memory cap now archives before it trims: facts (300, importance-sorted), transcript (2000), action log (200), mood (500). `search_memory` automatically falls back to the archive (results marked `archived: true`).
+- GemCore's scoped `MemoryStore` reports evictions on `remember()`, archives them, and `recall()` merges archived hits (marked) after hot results — the documented fix for Mark-LII/LIII's capped-blob memory that deleted the oldest entries without telling anyone.
+- New IPC: `memory:archiveStats`, `memory:searchArchive`; stats surface in Settings → Plugins → MEMORY ARCHIVE.
+
+### Added — local-privacy hardening
+- `SECURITY.md`: the local-first inventory (what never leaves, what leaves while you use it, the `.gitignore` contract) and the blunt rule — **if you ever push a key, revoke and rotate it; deleting the file later does not remove it from git history.**
+- `lib/local-secret-check.js`: a startup guard that, inside source checkouts, asks `git ls-files` whether any secrets-shaped file (`.env*`, `api_keys.json`, certs, keys, memory exports…) is *tracked* — `.gitignore` cannot protect a tracked file — and warns in chat + logs with the untrack command. Missing git, non-git folders, and timeouts all degrade to silence.
+- `.gitignore` hardened: `.env.*` (`!.env.example`), `**/api_keys.json`, cert/key extensions, `config/certs/`, memory/profile export patterns, `plugins/local/`.
+
+### Added — one-command OS-aware setup (`scripts/setup.js`)
+- `npm run setup` validates Node ≥ 22.12 **before** npm runs (a wrong interpreter exits with one sentence, not a wall of engine warnings), checks the checkout is complete, installs only what the current OS needs, and prints per-OS notes (Electron system libraries on Linux, Xcode CLT on macOS, nothing extra on Windows).
+- `--with-browser` additionally installs the Playwright Chromium browser-automation engine; `--check` validates without installing (CI-friendly).
+
+### Added — wake-word one-click model install
+- Settings → Avatar & Voice gains **INSTALL ON-DEVICE WAKE MODEL**: `GemWakeWord.installModel()` precaches the ~40 MB on-device recognizer model **without opening the microphone**, with a live status line (`modelStatus()`), so enabling "Hey Gem" later starts instantly. The automatic download-on-first-enable path still works.
+
+### Changed
+- **Phoneme lip-sync goes language-free**: the avatar's `visemesForWord` now derives mouth shapes by Unicode reduction — NFD strips accents (à→a, ü→u) and Cyrillic/Greek letters map onto the same measured-shape rig (м/μπ→closure, у/ου→round, и/ι→spread), so non-Latin transcripts articulate instead of falling silent. CJK and other unmapped scripts fall back cleanly.
+- **Live voice captions + lip-sync**: the Live loop drives the avatar word-by-word from output transcription (a 120 ms word pump) instead of volume-only jaw motion. Transcripts also update the live caption.
+- **Reminder notifications**: OS-native reminders now carry the due time in the body and focus the GemAir window when clicked.
+- **Background monitor integration**: monitor alerts now set an `alertPending` flag the next-launch greeting consumes, completing the "tell me overnight changes when I come back" loop.
+- Version bumped 2.11.0 → 2.12.0 across `package.json`, `package-lock.json`, `VERSION`, `api/_lib/http.js`, `renderer/index.html`, `renderer/app.js` fallback, `renderer/sw.js` (`gemair-shell-v2.12.0-release`), `download.html`, and `scripts/selfcheck.js`.
+
+### Tests & docs
+- New suites in `npm run check`: `plugin-system-test.js`, `proactive-test.js`, `memory-archive-test.js`, `privacy-local-files-test.js`, `setup-script-test.js`, `avatar-viseme-test.js`, `live-vision-test.js`, `personalization-ritual-test.js`; extended `gemini-live-test.js` (+6: resumption/compression/degradation/goAway/interruption/video frames) and `wake-word-test.js` (+installModel/modelStatus + Settings wiring).
+- `GUIDE.md` gains the plugins/proactive/live-vision/memory-archive sections; `ARCHITECTURE.md` documents the new modules and the long-horizon live loop.
+
 ## [2.11.0] — 2026-09-14
 
 **Release pipeline fix + stable installers.** v2.10.0 was tagged correctly but the Build & Release workflow never ran for that tag — GitHub Actions does not trigger other workflows when a tag is created via `GITHUB_TOKEN` in some runners, leaving the GitHub Release empty with no Setup.exe. This release re-publishes the full artifact set and hardens the release flow.
