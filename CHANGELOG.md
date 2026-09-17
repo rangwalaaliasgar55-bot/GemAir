@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.15.0] — 2026-09-17
+
+**The \"only a human can say yes\" release — the freshly-updated Mark-LIV checklist.** The upstream README was refreshed Sept 16; this wave closes the remaining gaps between it and GemAir: **power-tier real confirmation** (the one place the model could previously act irreversibly on its own), **continuous hardware watch** with localized voice alerts, **silent language memory** (it notices how you actually speak, and remembers), **memory transparency** (every fact shows when it was learned + \"forget everything\"), and **live session continuity across device changes**. Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).
+
+### Fixed — ⚠️ Real confirmation (power tier) (`lib/power-actions.js` + `control_system`)
+- **Shutdown and restart had NO confirmation anywhere**: the `control_system` tool executed them directly, the typed shortcuts fired on a regex match, and no dialog stood between a model decision and your power button.
+- Now both paths wait on a **human clicking a system dialog** that states the consequence (\"in 10 seconds\"), the unrecoverability, and the rule itself: \"no assistant setting can approve it for you — only this button can.\" The power path contains **zero profile/auto-approve conditionals** — test-asserted, so a future auto-approve flag can never open that door.
+- The tool's own description tells the model it cannot self-confirm; a declined power call is journaled and the reply says the computer stayed on — reply text can never claim an action a human refused. Lock and sleep stay confirmation-free (reversible by nature).
+- Policy lives in pure `lib/power-actions.js` (per-OS commands, tiering, confirm wording) so it's testable without Electron.
+
+### Added — 📊 Hardware watch (`lib/hardware-watch.js` + alerts)
+- Opt-in (Settings): **sustained-heat alerts** — CPU ≥90%, RAM ≤5% free, core temp ≥85°C must persist ~a minute (3 samples × 20s) before saying a word; a lone spike never speaks. Each condition re-speaks at most every 15 minutes. Low battery alerts only when not charging.
+- **Honest instrumentation**: temperature/battery read Linux `/sys` only; on Windows/macOS (no native deps shipped) it says \"no temperature sensor reading on this OS\" **once**, then stays silent rather than guess. Toggling off kills the interval entirely — off means genuinely off.
+- Alerts **speak one short localized line** (en/hi/tr/es/de/fr/ru/uk/el/pt, via the instant-ack engine rotation) or toast when Gem is mid-sentence — never both.
+
+### Added — 🧑‍💻 Silent language memory
+- Every typed/spoken message already detected its language; now the result **persists** (`lastSpokenLang`, written to the profile only when it changes). With no explicit STT language picked, speech recognition/wake word boot in the language you actually speak (hi-IN for Hindi/Hinglish, ur for Urdu) — an **explicit pick always wins**.
+- The mic chip marks auto picks (`·auto`) so adaptation is visible, never hidden.
+
+### Added — 👁️ Memory transparency
+- Every fact row in the MEMORY panel now shows **when Gem learned it** (full \"Learned/updated\" timestamp on hover), closing the \"when did it learn this?\" gap.
+- **Forget everything**: one button deletes the entire fact store — gated by a dialog that says *before* the click that this is irreversible and, on purpose, **not on the undo stack**. The wipe is journaled with a truthful count, and **no bulk-delete memory tool exists for the model** — test-asserted; the panel is the only way in.
+
+### Added — 🔗 Device-change continuity
+- Changing the mic **mid-Live-voice-call** reconnects the session with its **resumption handle attached** — the conversation carries over instead of ending because you switched hardware. Speaker changes don't reconnect at all; the audio sink just moves. Both reachable states say exactly what happened.
+
+### Changed
+- Version bumped 2.14.0 → 2.15.0 single-sourced across `package.json`, `package-lock.json`, `VERSION`, `api/_lib/http.js`, `renderer/index.html`, `renderer/app.js` fallback, `renderer/sw.js` (`gemair-shell-v2.15.0-release`), `download.html`, `scripts/selfcheck.js`.
+
+### Tests & docs
+- New suites in `npm run check`: `power-actions-test.js` (9 — tiering, aliases, per-OS commands, unforgeable confirm/result wording, **no-bypass statics**), `hardware-watch-test.js` (10 — spike-vs-sustain, re-alert cooldown, honest unavailability, timer teardown, sampler shape), `language-memory-test.js` (6 — changed-only persistence, explicit-wins ordering, auto-visible chip, device continuity + speaker no-reconnect), `memory-panel-test.js` (5 — learned-at rows, irreversibility wording, journal+count, **no bulk-delete tool for the model**).
+- `GUIDE.md` gains the confirmation/hardware-watch/language/memory-transparency sections; `ARCHITECTURE.md` §9e documents the pipelines; `THIRD_PARTY_NOTICES.md` concept list extended.
+
 ## [2.14.0] — 2026-09-17
 
 **The \"knows what it hears, knows what it sees\" release — the remaining three items from the Mark-LIV study.** An honest **audio device picker** (mic and speakers by name, measured before you trust them), the **face as a status channel** (Gem's avatar now glances, listens, thinks and sleeps with its body, not just its words), and **source-labelled vision** (every frame stream declares where it came from, so a screenshot of GemAir itself is never read as a photo of you). Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).

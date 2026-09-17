@@ -185,6 +185,7 @@ const api = {
   async memoryClearTranscript() { if (window.gemair) return window.gemair.memoryClearTranscript(); if (window.webStore) await window.webStore.clearTranscript(); },
   async memoryAddFact(fact) { if (window.gemair) return window.gemair.memoryAddFact(fact); if (window.webStore) await window.webStore.addFact(fact); },
   async memoryDeleteFact(id) { if (window.gemair) return window.gemair.memoryDeleteFact(id); if (window.webStore) await window.webStore.deleteFact(id); },
+  async memoryClearFacts() { if (window.gemair && window.gemair.memoryClearFacts) return window.gemair.memoryClearFacts(); if (window.webStore) { const n = (await window.webStore.get()).facts.length; (await window.webStore.get()).facts = []; return { ok: true, forgotten: n }; } return { ok: false }; },
   async memoryAddNote(text) { if (window.gemair) return window.gemair.memoryAddNote(text); if (window.webStore) await window.webStore.addNote(text); },
   async memoryDeleteNote(id) { if (window.gemair) return window.gemair.memoryDeleteNote(id); if (window.webStore) await window.webStore.deleteNote(id); },
   async memoryAddReminder(text, at, repeat) { if (window.gemair) return window.gemair.memoryAddReminder(text, at, repeat); if (window.webStore) await window.webStore.addReminder(text, at, repeat); },
@@ -251,7 +252,7 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.14.0'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.15.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
@@ -3433,6 +3434,10 @@ async function handleMessage(text) {
   const emo = await api.analyzeEmotion(text);
   const lang = detectLanguage(text);
   currentLang = lang;
+  // Silent language memory (2.15): remember the language they actually
+  // type/speak in so future sessions adapt — it never overrides an explicit
+  // STT language pick (updateSttLanguageUi honours sttLang first).
+  if (lang && lang !== profile.lastSpokenLang) { profile.lastSpokenLang = lang; persistProfile(); }
   if (emo) {
     currentEmotion = emo;
     updateMoodIndicator(emo);
@@ -5489,7 +5494,9 @@ function renderFacts() {
   facts.forEach((f) => {
     const div = document.createElement('div');
     div.className = 'memory-item';
-    div.innerHTML = `<span class="tag">${escapeHtml((f.category || 'fact').toUpperCase())}</span><span class="body">${escapeHtml(f.text)}</span><button class="del-btn" title="Forget">✕</button>`;
+    div.innerHTML = `<span class="tag">${escapeHtml((f.category || 'fact').toUpperCase())}` +
+      `${f.created ? `<span class="meta" style="opacity:.55;font-size:10px;" title="Learned ${new Date(f.created).toLocaleString()}${f.updated && f.updated !== f.created ? ' · updated ' + new Date(f.updated).toLocaleString() : ''}">${new Date(f.created).toLocaleDateString()}</span>` : ''}` +
+      `</span><span class="body">${escapeHtml(f.text)}</span><button class="del-btn" title="Forget">✕</button>`;
     div.querySelector('.del-btn').addEventListener('click', async () => { await api.memoryDeleteFact(f.id); await loadMemory(); renderFacts(); animateCircuits(); });
     list.appendChild(div);
   });
@@ -6137,8 +6144,13 @@ function syncVoicePresetUi(presetId) {
 }
 
 function updateSttLanguageUi() {
-  const language = profile.voice?.sttLang || DEFAULTS.sttLang;
-  const chip = $('#sttLangChip'); if (chip) chip.textContent = '🎙 ' + language.toUpperCase();
+  // Silent language memory (2.15): an explicit STT pick ALWAYS wins; when
+  // none was made, the language you actually speak wins over the default.
+  const LANGUAGE_TO_STT = { hi: 'hi-IN', hinglish: 'hi-IN', ur: 'ur' };
+  const auto = (!profile.voice || !profile.voice.sttLang) && profile.lastSpokenLang
+    ? LANGUAGE_TO_STT[profile.lastSpokenLang] : null;
+  const language = (profile.voice && profile.voice.sttLang) || auto || DEFAULTS.sttLang;
+  const chip = $('#sttLangChip'); if (chip) chip.textContent = '🎙 ' + language.toUpperCase() + (auto ? '·auto' : '');
   if (recognition) recognition.lang = language;
   if (wakeRecognition) wakeRecognition.lang = language;
 }
@@ -6671,6 +6683,7 @@ function populateSettings() {
   // 2.13 — push-to-talk / clipboard intelligence / auto-start rows
   { const ptt = $('#setPushToTalk'); if (ptt) ptt.checked = !!profile.pushToTalk; }
   { const ci = $('#setClipboardIntel'); if (ci) ci.checked = !!profile.clipboardIntel; }
+  { const hw = $('#setHardwareWatch'); if (hw) hw.checked = !!profile.hardwareWatch; } // 2.15
   refreshAutostartRow();
   populateAudioDevices(); // 2.14 — refresh the short live lists on open
   populateVoices(); populateNeuralVoices(); populateEdgeVoices(); updateAiHint();
@@ -7354,6 +7367,21 @@ function bindEvents() {
   });
 
   $('#factAdd').addEventListener('click', async () => { const v = $('#factInput').value.trim(); if (v) { await api.memoryAddFact({ text: v, category: 'fact' }); $('#factInput').value = ''; await loadMemory(); renderAllMemory(); animateCircuits(); } });
+  // 2.15 — memory transparency: one human click deletes every stored fact.
+  // The dialog says exactly what this is (irreversible, not on the undo
+  // stack); the model can never reach this path itself.
+  { const fab = $('#forgetAllFacts'); if (fab) fab.addEventListener('click', async () => {
+    const n = (memory.facts || []).length;
+    if (!n) { toast('MEMORY', 'No facts stored — nothing to forget.', '🧠'); return; }
+    const ok = window.confirm(
+      'Forget ALL ' + n + ' stored facts about you?\n\n' +
+      'This deletes the entire long-term fact memory at once. It is irreversible — it is NOT on the undo stack, on purpose. Continue?');
+    if (!ok) return;
+    if (!api.memoryClearFacts) { toast('MEMORY', 'Bulk forget needs the desktop app.', '⚠'); return; }
+    const r = await api.memoryClearFacts();
+    await loadMemory(); renderAllMemory(); animateCircuits();
+    toast('MEMORY', 'Forgot ' + (r && r.forgotten != null ? r.forgotten : n) + ' facts. Gem keeps nothing it was told to drop.', '🧠');
+  }); }
   $('#factInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#factAdd').click(); });
   $('#noteAdd').addEventListener('click', async () => { const v = $('#noteInput').value.trim(); if (v) { await api.memoryAddNote(v); $('#noteInput').value = ''; await loadMemory(); renderNotes(); } });
   $('#noteInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#noteAdd').click(); });
@@ -7707,6 +7735,7 @@ function bindEvents() {
     { const ptt = $('#setPushToTalk'); if (ptt) profile.pushToTalk = ptt.checked; }
     { const ci = $('#setClipboardIntel'); if (ci) profile.clipboardIntel = ci.checked; }
     { const as_ = $('#setAutoStart'); if (as_ && !as_.disabled) { try { const r = await api.autostartSet(as_.checked); if (r && r.error) toast('AUTO-START', r.error, '⚠'); else profile.autoStart = as_.checked; } catch {} } }
+    { const hw = $('#setHardwareWatch'); if (hw) profile.hardwareWatch = hw.checked; } // 2.15
     try { await api.automationApply(); } catch {} // sync main-side loops (clipboard watcher)
     // 2.14 — audio devices (select change already persists; re-sync the sink)
     syncSpeakerSink();
@@ -8337,6 +8366,9 @@ function bindEvents() {
         onResumption: () => { try { liveState('live (session resumable — drops resume, never restart)'); } catch {} },
         onGoAway: (timeLeft) => { try { toast('LIVE VOICE', 'Live server rotating the session — auto-resuming…', '🔄'); } catch {} liveState('goAway — resuming'); }
       });
+      // 2.15: expose the active session so the device picker can reconnect
+      // (mic changed mid-call → resumption-attached reconnect).
+      if (geminiLiveVoice) window.__gemLiveVoice = geminiLiveVoice;
     } catch (e) {
       liveState('error');
       liveVoiceButtons(false);
@@ -8349,6 +8381,7 @@ function bindEvents() {
     stopAllLiveVision();
     try { geminiLiveVoice && geminiLiveVoice.close(1000); } catch {}
     geminiLiveVoice = null;
+    window.__gemLiveVoice = null;
     liveState('closed');
     liveVoiceButtons(false);
     liveMeter('#geminiLiveMeterIn', 0); liveMeter('#geminiLiveMeterOut', 0);
@@ -9122,6 +9155,7 @@ async function boot() {
   safe('pluginsPanel', setupPluginsPanel);             // 2.12 drop-in plugins
   safe('wakeModelInstall', setupWakeModelInstall);     // 2.12 one-click wake model
   safe('instantAck', setupInstantAck);                 // 2.13 "on it" acks
+  safe('hardwareWatch', setupHardwareWatch);           // 2.15 sustained-heat alerts
   safe('pushToTalk', setupPushToTalk);                 // 2.13 Ctrl+Space hold-to-talk
   safe('clipIntel', setupClipboardIntel);              // 2.13 floating clipboard panel
   safe('selfKnowledge', refreshSelfKnowledgeCache);    // 2.13 live self-knowledge
@@ -10632,6 +10666,34 @@ function setupInstantAck() {
 // final transcript sends on release, like the mic button does). Bound to this
 // window by design — no dependency-free global key read exists outside
 // Windows native code, and the Settings hint says so.
+// Hardware watch alerts (2.15): main samples every 20s while opted in,
+// fires only on SUSTAINED heat, and re-speaks at most every 15 minutes.
+// Here we surface it honestly: unavailable sensors toast once (never
+// pretended data), real conditions speak one short line in the user's
+// language, mid-answer → toast instead of talking over Gem.
+function setupHardwareWatch() {
+  if (!api.onHardwareAlert) return;
+  api.onHardwareAlert((a) => {
+    if (!a || !a.kind) return;
+    if (a.kind.startsWith('unavailable:')) {
+      toast('HARDWARE', 'No ' + a.kind.slice('unavailable:'.length) +
+        ' sensor reading on this OS — that metric stays off rather than guess.', '🌡');
+      return;
+    }
+    const kind = ({ cpu: 'warn-cpu', mem: 'warn-ram', temp: 'warn-temp', battery: 'warn-battery' })[a.kind];
+    if (!kind) return;
+    const langMap = { hinglish: 'hi', ur: 'hi', hi: 'hi', en: 'en' };
+    const language = langMap[currentLang] || (typeof currentLang === 'string' ? currentLang : 'en');
+    const line = ackPicker ? ackPicker.pick({ language, kind }).line : a.kind;
+    const icons = { cpu: '🔥', mem: '🧠', temp: '🌡', battery: '🔋' };
+    if (document.body.classList.contains('rgb-speaking')) {
+      toast('HARDWARE', line, icons[a.kind] || '⚠');
+    } else {
+      try { speak(line); } catch { toast('HARDWARE', line, icons[a.kind] || '⚠'); }
+    }
+  });
+}
+
 let pttHeld = false;
 function setupPushToTalk() {
   const isChord = (e) => e.code === 'Space' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey;
@@ -10765,6 +10827,7 @@ function setupAudioDevicePicker() {
   });
   const persistPick = () => {
     const micSel = $('#setMicDevice'), spkSel = $('#setSpeakerDevice');
+    const prevMic = (profile.audioDevices && profile.audioDevices.micId) || '';
     profile.audioDevices = {
       micId: micSel ? micSel.value : '',
       micLabel: micSel ? selectedDeviceLabel(micSel, micSel.value) : '',
@@ -10774,10 +10837,28 @@ function setupAudioDevicePicker() {
     syncSpeakerSink();
     persistProfile();
     const note = $('#audioDeviceNote');
-    if (note) note.textContent = 'Pick saved — new mic feed applies the next time the microphone opens (dictation, wake listener and Live voice all share it).';
+    // Session continuity (2.15): a LIVE voice call should not end because you
+    // changed the mic — reconnect with the resumption handle instead.
+    const micChanged = (profile.audioDevices.micId || '') !== prevMic;
+    const live = window.__gemLiveVoice || null; // exposed when a live call is up (2.15)
+    if (micChanged && live && live.ready && typeof live.reconnect === 'function') {
+      try {
+        live._opts.micDeviceId = profile.audioDevices.micId || null;
+        live._opts.speakerDeviceId = profile.audioDevices.speakerId || null;
+        live.reconnect(); // re-runs connect with the resumption handle attached
+        if (note) note.textContent = 'Mic changed mid-call — reconnecting with your conversation kept (resumption).';
+        toast('AUDIO', 'Mic changed — live call reconnects with the conversation intact.', '🎧');
+      } catch {
+        if (note) note.textContent = 'Mic saved — live reconnect failed; the new mic applies on the next call (conversation may pause).';
+      }
+    } else if (note) note.textContent = 'Pick saved — new mic feed applies the next time the microphone opens (dictation, wake listener and Live voice all share it).';
   };
   $('#setMicDevice')?.addEventListener('change', persistPick);
-  $('#setSpeakerDevice')?.addEventListener('change', persistPick);
+  $('#setSpeakerDevice')?.addEventListener('change', () => {
+    persistPick();
+    // Speaker change is live-safe: no reconnect needed, only the sink moves.
+    syncSpeakerSink();
+  });
 }
 
 // Read OS autostart state honestly into the Settings row.

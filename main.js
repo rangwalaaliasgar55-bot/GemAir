@@ -818,7 +818,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'get_system_status', description: 'Read live system status (CPU, memory, uptime).', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'control_volume', description: 'Change system volume.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['up', 'down', 'mute', 'unmute', 'set'] }, level: { type: 'number', description: '0-100 volume level when action=set' } } } } },
   { type: 'function', function: { name: 'take_screenshot', description: 'Capture a screenshot of the screen.', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'control_system', description: 'Lock, sleep, shutdown or restart the computer.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['lock', 'sleep', 'shutdown', 'restart'] } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'control_system', description: 'Lock or sleep the computer instantly. Shutdown and restart are power-tier: they ALWAYS wait for a human clicking the confirmation dialog and cannot be self-confirmed — ask the user before calling either.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['lock', 'sleep', 'shutdown', 'restart'] } }, required: ['action'] } } },
   { type: 'function', function: { name: 'open_url', description: 'Open a URL in the default browser.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'fetch_webpage', description: 'Fetch a web page and return its readable text content (full web access).', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'search_wikipedia', description: 'Search Wikipedia for a topic.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
@@ -2326,17 +2326,26 @@ function controlVolume(args) {
   if (cmd) exec(cmd, () => {});
   return { ok: true, action: action || level };
 }
-function controlSystem(action) {
-  const p = process.platform;
-  const map = {
-    lock: { win32: 'rundll32.exe user32.dll,LockWorkStation', darwin: '/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession -suspend', linux: 'loginctl lock-session' },
-    sleep: { win32: 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0', darwin: 'pmset sleepnow', linux: 'systemctl suspend' },
-    shutdown: { win32: 'shutdown /s /t 10', darwin: 'osascript -e \'tell app "System Events" to shut down\'', linux: 'systemctl poweroff' },
-    restart: { win32: 'shutdown /r /t 10', darwin: 'osascript -e \'tell app "System Events" to restart\'', linux: 'systemctl reboot' }
-  };
-  const cmd = (map[action] && map[action][p]) || (map[action] && map[action].win32);
-  if (cmd) exec(cmd, () => {});
-  return { ok: true, action };
+// Power tier (2.15): shutdown/restart ALWAYS wait for a button a human
+// presses — the model cannot confirm its own irreversible actions, and no
+// auto-approve setting may bypass this (Mark-LIV confirm.py concept,
+// GemAir implementation in lib/power-actions.js).
+const powerActions = require('./lib/power-actions');
+async function controlSystem(action) {
+  const a = powerActions.normalizeAction(action);
+  const cmd = powerActions.commandFor(a, process.platform);
+  if (!cmd) return { error: 'Unknown action: ' + a, ok: false };
+  if (powerActions.tierFor(a) === 'power') {
+    const text = powerActions.confirmTextFor(a);
+    const approved = await confirmAction(text.title, text.detail);
+    logAction('control_system', a + (approved ? ' approved by user' : ' declined by user'));
+    if (!approved) return { ok: false, cancelled: true, message: powerActions.resultTextFor(a, false) };
+    exec(cmd, () => {});
+    return { ok: true, action: a, message: powerActions.resultTextFor(a, true) };
+  }
+  exec(cmd, () => {});
+  logAction('control_system', a + ' (convenience tier)');
+  return { ok: true, action: a, message: powerActions.resultTextFor(a, true) };
 }
 async function takeScreenshot() {
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
@@ -3301,7 +3310,7 @@ async function executeToolNow(name, args) {
       case 'take_screenshot':
         return await takeScreenshot();
       case 'control_system':
-        return controlSystem(args.action);
+        return await controlSystem(args.action);
       // 2.4 new tools
       case 'launch_app':
         return await windowTools.launchApp(args.name, args.args);
@@ -4002,8 +4011,8 @@ async function offlineBrain(text) {
   }
   if (/screenshot|screen shot/.test(q)) { const r = await takeScreenshot(); return r.error || `Screenshot saved to ${r.file}.`; }
   if (/lock/.test(q) && /computer|screen|pc/.test(q)) { controlSystem('lock'); return 'Locking the screen.'; }
-  if (/shutdown|power off/.test(q)) { controlSystem('shutdown'); return 'Shutting down in 10 seconds.'; }
-  if (/restart|reboot/.test(q)) { controlSystem('restart'); return 'Restarting in 10 seconds.'; }
+  if (/shutdown|power off/.test(q)) { const r = await controlSystem('shutdown'); return r.message; }
+  if (/restart|reboot/.test(q)) { const r = await controlSystem('restart'); return r.message; }
   if (/system|status|cpu|memory|ram|health|stats/.test(q)) {
     const i = await getSystemInfo();
     return `CPU ${i.cpuLoad}%, memory ${i.memPercent}% used, up ${Math.floor(i.uptime / 3600)}h ${Math.floor((i.uptime % 3600) / 60)}m. Full readout is on the System Core panel.`;
@@ -4403,10 +4412,40 @@ ipcMain.handle('autostart:set', (_e, enabled) => {
 ipcMain.handle('undo:list', () => undoStack.list());
 
 /** Called at boot and after Settings toggles that need main-process loops. */
+// ---------------------------------------------------------------------------
+// Hardware Watch (2.15) — continuous CPU/RAM/temp/battery telemetry with
+// debounced alerts. Opt-in; the poll loop only exists while enabled.
+// ---------------------------------------------------------------------------
+const hardwareWatchLib = require('./lib/hardware-watch');
+let hardwareWatch = null;
+function getHardwareWatch() {
+  if (hardwareWatch) return hardwareWatch;
+  hardwareWatch = hardwareWatchLib.createHardwareWatch({
+    sample: hardwareWatchLib.createSampler({ os, fs, platform: process.platform }),
+    alert: (a) => {
+      logAction('hardware_watch', a.kind);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.webContents.send('hardware:alert', a); } catch {}
+      }
+    }
+  });
+  return hardwareWatch;
+}
+function syncHardwareWatch() {
+  const p = readProfile();
+  // The renderer may store it under the automation flags the settings file ships.
+  const enabled = !!(p && p.hardwareWatch === true);
+  const hw = getHardwareWatch();
+  if (enabled && !hw.isRunning()) hw.start();
+  if (!enabled && hw.isRunning()) hw.stop();
+  return hw.status();
+}
 function applyAutomationSettings() {
   try { syncClipboardIntel(); } catch (error) { console.warn('[clipIntel] sync failed:', error.message); }
+  try { syncHardwareWatch(); } catch (error) { console.warn('[hardwareWatch] sync failed:', error.message); }
   try { refreshSelfKnowledge(); } catch {}
 }
+ipcMain.handle('hardware:status', () => getHardwareWatch().status());
 ipcMain.handle('automation:apply', () => { applyAutomationSettings(); return { ok: true }; });
 
 // ---------------------------------------------------------------------------
@@ -5806,6 +5845,17 @@ ipcMain.handle('memory:append', (_e, role, content) => {
 ipcMain.handle('memory:clearTranscript', () => { const m = readMemory(); m.transcript = []; writeMemory(m); return true; });
 ipcMain.handle('memory:addFact', (_e, fact) => { upsertFact(fact); return true; });
 ipcMain.handle('memory:deleteFact', (_e, id) => { const m = readMemory(); m.facts = m.facts.filter(f => f.id !== id); writeMemory(m); return true; });
+// 2.15 — "Forget everything": only reachable after the renderer's explicit
+// human confirmation. Irreversible by design; not on the undo stack (the
+// UI says so before you click).
+ipcMain.handle('memory:clearFacts', () => {
+  const m = readMemory();
+  const count = (m.facts || []).length;
+  m.facts = [];
+  writeMemory(m);
+  logAction('memory_clear_facts', count + ' facts forgotten at user request');
+  return { ok: true, forgotten: count };
+});
 ipcMain.handle('memory:addNote', (_e, text) => { const m = readMemory(); m.notes.unshift({ id: uid(), text, created: Date.now() }); writeMemory(m); return true; });
 ipcMain.handle('memory:deleteNote', (_e, id) => { const m = readMemory(); m.notes = m.notes.filter(n => n.id !== id); writeMemory(m); return true; });
 ipcMain.handle('memory:addReminder', (_e, text, at, repeat) => {

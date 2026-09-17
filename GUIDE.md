@@ -212,6 +212,39 @@ frames are labelled as camera. The same annotation rides on one-shot
 `see_screen` captures. The model can't confuse your desktop for your face
 anymore.
 
+## ⚠️ Shutdown needs YOU (2.15)
+
+Ask Gem to shut down or restart and a real system dialog appears — the
+model cannot click it, and no Settings toggle can approve it in advance.
+That's deliberate: irreversible power actions wait for a human hand,
+always. Lock and sleep stay instant (you can undo those with a key). A
+declined dialog leaves the computer on and the log says so.
+
+## 📊 Hardware watch (2.15)
+
+Settings → **Hardware watch** samples CPU/RAM (plus temperature and battery
+where your OS honestly exposes them) every 20 seconds. It stays quiet
+through spikes — heat must persist about a minute before it speaks, in
+your language, and each warning repeats at most every 15 minutes. If a
+sensor doesn't exist on your OS it says so once instead of inventing
+numbers, and switching the toggle off stops the loop entirely.
+
+## 🗣️ It remembers your language (2.15), and your mic pick 🎧 (2.14→2.15)
+
+Speak Hindi once and the next session's speech recognition opens in
+Hindi — unless you explicitly pinned a language, which always wins (the
+mic chip says `·auto` when it's guessing along with you). And if you
+change microphones **mid-Live-call**, the call reconnects with the whole
+conversation intact instead of dying — speaker swaps don't even blip.
+
+## 👁️ What Gem knows about you (2.15)
+
+The MEMORY panel now shows **when** every fact was learned — hover for the
+full timestamp. **Forget everything** wipes the entire fact store in one
+click after a dialog that warns, on purpose, that this one is *not*
+undoable. Gem itself has no bulk-delete-memory tool; only you, on that
+panel, can do it.
+
 ## 🌅 Proactive Gem (2.12)
 
 On launch, Gem greets you with the time of day, any reminders due in the next

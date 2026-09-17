@@ -435,6 +435,42 @@ user\"). Both call sites are ordered before their send loops and the
 one-shot `see_screen` tool annotates its result (`source:'screen'`) the
 same way, so one-shot and streaming vision share the contract.
 
+## 9e. The 2.15 consent surface — power, hardware, language, memory
+
+**Power tier (`lib/power-actions.js`).** The rule \"the model cannot
+confirm its own irreversible actions\" is enforced structurally:
+`controlSystem` consults a pure tiering module, and the power branch
+(shutdown/restart) contains no settings conditionals at all — it always
+`await confirmAction(...)`, journals either outcome, and returns wording
+that cannot claim an action a human declined. Both entry points (the
+`control_system` tool and the typed shortcut regexes) funnel through the
+same gate, and lock/sleep are classified convenience-tier (reversible, no
+dialog).
+
+**Hardware watch (`lib/hardware-watch.js`).** Pure rule engine +
+injectable sampler: three consecutive 20s samples must breach a threshold
+before an alert fires (spike discipline), re-alerts are cooled down 15
+minutes per condition, and sensors the OS cannot report (temp/battery
+without native deps) surface exactly one \"unavailable\" event instead of a
+fabricated number. `stop()` clears the interval — the settings toggle is a
+real lifecycle, not a mute. Alerts ride the existing `hardware:alert` IPC
+into the renderer, where they speak one localized line through the
+instant-ack rotation (or toast over speech).
+
+**Silent language memory.** `detectLanguage`'s per-message result now
+persists (`profile.lastSpokenLang`, changed-only writes).
+`updateSttLanguageUi` resolves in strict order — explicit `sttLang` →
+remembered language → default — and marks automatic picks `·auto` in the
+chip so the adaptation is visible.
+
+**Memory transparency & device continuity.** Fact rows render learned-at
+timestamps; `memory:clearFacts` exists only as an IPC behind the panel's
+own human confirmation (no model tool exposes bulk deletion). Microphone
+changes during a live voice call mutate `session._opts` and invoke
+`reconnect()`, which re-attaches the resumption handle — the device swap
+inherits 2.12's session-continuity machinery for free; speaker changes
+skip the socket entirely (sink-only move).
+
 ## 10. Where to add things
 
 | I want to… | Touch |

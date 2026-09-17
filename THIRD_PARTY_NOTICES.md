@@ -89,7 +89,13 @@ plus transcript de-dup / resumption-handle hardening from its own fix list),
 and 2.14 completed the set with an honest audio-device picker with probing,
 gaze/presence behaviour for the avatar (look away while thinking, meet the
 eyes while listening, lids falling while asleep), and source-labelled vision
-frames so screen captures are never confused with photos of the user.
+frames so screen captures are never confused with photos of the user. A
+September 2026 refresh of the README added concepts ported in 2.15:
+irreversible-action confirmation the model cannot self-approve (power
+tier), continuous hardware telemetry with localized, debounced alerts,
+spoken-language memory across sessions, a memory panel with learned-at
+transparency and one-click deletion, and conversation-preserving device
+changes.
 
 The Mark series is licensed Creative Commons BY-NC 4.0 (personal,
 non-commercial use). **No Mark source code, prompts, assets, or tests are
