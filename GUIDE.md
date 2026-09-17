@@ -245,6 +245,51 @@ click after a dialog that warns, on purpose, that this one is *not*
 undoable. Gem itself has no bulk-delete-memory tool; only you, on that
 panel, can do it.
 
+## 📱 Gem, from your phone (2.16)
+
+Settings → **Phone remote dashboard** shows a QR. Scan it on the same
+Wi-Fi and you get a page with Gem's live status and a *Say to Gem* box —
+what you type pipes into your conversation, tagged 📱 so you can tell
+phone from keyboard later. It runs over plain LAN HTTP (the page says so),
+the token lives only in the QR/link, and the moment the toggle is off the
+lane is dead. Remote misses are rate-limited and everything it does is in
+the action log.
+
+## 🔗 The browser actually links now (2.16)
+
+Install the **Gem Air Browser Link** extension, enter the 6-digit pairing
+code from Settings, and: **(1)** Gem sees your active tab (the Settings
+card shows the last site as pairing proof), **(2)** your **site blocks**
+(`host | reason`, one per line in Settings) are enforced — attempts are
+blocked, toasted, and journaled, and **(3)** *"open example.com in my
+browser"* via Gem's `navigate_browser` really happens — the extension
+polls the command queue every second. Commands with no paired browser
+just wait harmlessly, and Gem says so.
+
+## 🔍 Search with a mode (2.16) and a scrollable panel 🗺️
+
+Say *"news mode: …"* or *"compare these two"*: `web_search` now routes
+through `search / news / research / price / compare`. News leads with
+what changed (outlet + date); research cross-checks; price mode **may
+only quote prices that appear in sources**; compare marks unknowns as
+"not in sources". Every search also lands in the **content panel** under
+the HUD — scrollable cards with OPEN (direct) and → BROWSER (through the
+paired extension).
+
+## 📶🔆🎵 The remaining system controls (2.16)
+
+- **Wi-Fi**: *status* anytime; *on/off* always waits for you at a dialog —
+  and the OFF dialog warns that you'd be cutting Gem's own brains off too.
+- **Brightness**: Windows WMI and Linux `brightnessctl` for real; the Linux
+  xrandr fallback is software gamma and says so. On macOS the tool says
+  what it can't do instead of pretending.
+- **🎵 Media keys**: *play/pause, next, previous* — real media virtual-key
+  codes on Windows, Spotify/Music targeting on macOS, `playerctl` on Linux
+  (with an install hint when it's missing).
+- **📨 WhatsApp/Telegram**: Gem composes and pre-opens the message — **you
+  press send**, and the tool result itself says `sent: false`. It can't be
+  made to claim otherwise.
+
 ## 🌅 Proactive Gem (2.12)
 
 On launch, Gem greets you with the time of day, any reminders due in the next

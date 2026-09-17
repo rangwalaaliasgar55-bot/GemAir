@@ -95,7 +95,12 @@ irreversible-action confirmation the model cannot self-approve (power
 tier), continuous hardware telemetry with localized, debounced alerts,
 spoken-language memory across sessions, a memory panel with learned-at
 transparency and one-click deletion, and conversation-preserving device
-changes.
+changes. The 2.16 wave completed coverage of the same capability table:
+phone remote dashboard (QR-paired, LAN-only), browser link with pairing /
+site-policy / desktop-commanded navigation, Wi-Fi and brightness controls
+with platform-truthful behavior, multi-mode web search (news / research /
+price / compare), a dynamic content panel for search results, media-key
+control, and compose-only messaging links.
 
 The Mark series is licensed Creative Commons BY-NC 4.0 (personal,
 non-commercial use). **No Mark source code, prompts, assets, or tests are

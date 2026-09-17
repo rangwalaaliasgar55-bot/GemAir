@@ -819,6 +819,11 @@ const TOOLS = [
   { type: 'function', function: { name: 'control_volume', description: 'Change system volume.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['up', 'down', 'mute', 'unmute', 'set'] }, level: { type: 'number', description: '0-100 volume level when action=set' } } } } },
   { type: 'function', function: { name: 'take_screenshot', description: 'Capture a screenshot of the screen.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'control_system', description: 'Lock or sleep the computer instantly. Shutdown and restart are power-tier: they ALWAYS wait for a human clicking the confirmation dialog and cannot be self-confirmed — ask the user before calling either.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['lock', 'sleep', 'shutdown', 'restart'] } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'control_wifi', description: 'Read Wi-Fi status (always safe) or turn Wi-Fi on/off (toggle-tier: ALWAYS waits for a human clicking the confirmation dialog — warn the user first that turning Wi-Fi OFF cuts GemAir\'s own cloud brains).', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['status', 'on', 'off'] } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'control_brightness', description: 'Read or set screen brightness 1-100 percent (omit level to read). Where the OS exposes no API (macOS) or no hardware backlight, the tool says so honestly instead of pretending.', parameters: { type: 'object', properties: { level: { type: 'number' } } } } },
+  { type: 'function', function: { name: 'media_control', description: 'Send play/pause/next/previous media keys to the active player (Spotify, Music, or any MPRIS player on Linux with playerctl).', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['playpause', 'next', 'previous'] } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'prepare_message', description: 'Compose a WhatsApp or Telegram message and open it prefilled — the USER presses send. Never claims to have sent; sending without the user is not possible by design.', parameters: { type: 'object', properties: { channel: { type: 'string', enum: ['whatsapp', 'telegram'] }, target: { type: 'string', description: 'WhatsApp: phone in international format (+91…). Telegram: @username (optional).' }, text: { type: 'string', description: 'Message text (max 800 chars)' } }, required: ['channel', 'text'] } } },
+  { type: 'function', function: { name: 'navigate_browser', description: 'Navigate the paired desktop browser (Gem Air Browser Link extension) to a URL — polled by the extension within ~1s. Without a paired extension the command just queues and the tool says so.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'open_url', description: 'Open a URL in the default browser.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'fetch_webpage', description: 'Fetch a web page and return its readable text content (full web access).', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'search_wikipedia', description: 'Search Wikipedia for a topic.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
@@ -1018,8 +1023,12 @@ function unwrapDdg(href) {
 // EMPTY results for most queries (it is not a general search engine). Primary
 // source is now the DDG HTML results page (free, keyless), ads filtered,
 // with Wikipedia and Instant-Answers fallbacks.
-async function webSearch(query) {
-  const q = String(query || '').slice(0, 300);
+async function webSearch(query, rawMode) {
+  // 2.16 multi-mode search: modes shape the request + the presentation
+  // contract — they never invent data (see lib/search-modes.js).
+  const shaped = searchModes.shape(rawMode, query);
+  const q = shaped.query;
+  const maxResults = shaped.maxResults;
   let results = [];
   try {
     const res = await fetchDeadline('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q), {
@@ -1068,7 +1077,13 @@ async function webSearch(query) {
     try { source = new URL(results[0].url).hostname.replace(/^www\./, ''); } catch { source = null; }
     answerUrl = results[0].url;
   }
-  return { answer, source, url: answerUrl, results: results.slice(0, 8), searched: true };
+  const out = { answer, source, url: answerUrl, results: results.slice(0, maxResults), searched: true, mode: shaped.mode, modeHint: shaped.hint };
+  // Dynamic content panel (2.16): every search's structured results render as
+  // a scrollable card layer under the chat — nothing is hidden in prose only.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.send('content:results', { query, mode: shaped.mode, results: out.results, at: Date.now() }); } catch {}
+  }
+  return out;
 }
 function stripHtml(html) {
   return String(html || '').replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
@@ -2331,6 +2346,193 @@ function controlVolume(args) {
 // auto-approve setting may bypass this (Mark-LIV confirm.py concept,
 // GemAir implementation in lib/power-actions.js).
 const powerActions = require('./lib/power-actions');
+// --- 2.16 connectivity wave modules (pure helpers; honest per-OS behavior) ---
+const wifiTools = require('./lib/wifi-tools');
+const brightnessTools = require('./lib/brightness-tools');
+const mediaTools = require('./lib/media-tools');
+const messageLinks = require('./lib/message-links');
+const searchModes = require('./lib/search-modes');
+const localServerLib = require('./lib/local-server');
+
+async function controlWifiTool(action) {
+  const a = wifiTools.normalizeAction(action);
+  if (!a) return { error: 'wifi action must be status|on|off', ok: false };
+  const cmd = wifiTools.commandFor(a, process.platform);
+  if (!cmd) return { ok: false, error: 'Wi-Fi control is not supported on ' + process.platform + ' — no dependency-free way exists, and GemAir will not fake it.' };
+  if (a === 'status') {
+    const out = await execOut(cmd, 9000);
+    if (!out.trim()) return { ok: false, error: 'Wi-Fi status command returned nothing (Wi-Fi tooling may be missing on this machine).' };
+    const parsed = wifiTools.parseStatus(out, process.platform);
+    return { ok: parsed.ok, state: parsed.state, message: parsed.summary };
+  }
+  // Toggle-tier: human confirms, always — pulling the network under a running
+  // assistant is a self-serve outage, so the rule matches the power tier.
+  if (wifiTools.needsConfirmation(a)) {
+    const t = wifiTools.confirmTextFor(a, process.platform);
+    const approved = await confirmAction(t.title, t.detail);
+    logAction('control_wifi', a + (approved ? ' approved by user' : ' declined by user'));
+    if (!approved) return { ok: false, cancelled: true, message: a === 'off' ? 'Wi-Fi stays on — toggle cancelled.' : 'Wi-Fi unchanged — toggle cancelled.' };
+    const out = await execOut(cmd, 9000);
+    const err = /error|fail|not recognized|denied|requires|permission/i.test(out) ? out.trim().split('\n')[0].slice(0, 120) : null;
+    const r = wifiTools.resultText(a, !err, err);
+    if (!r.ok && process.platform === 'win32') r.message += ' (toggling needs an elevated shell on Windows).';
+    if (!r.ok && process.platform === 'linux') r.message += ' (nmcli + NetworkManager are required).';
+    return r;
+  }
+  return { error: 'unreachable', ok: false };
+}
+
+async function controlBrightnessTool(level) {
+  if (level === undefined || level === null) { // READ current
+    const cmd = brightnessTools.reads(process.platform);
+    if (!cmd) return { ok: false, error: brightnessTools.unsupportedText(process.platform) };
+    const out = await execOut(cmd, 9000);
+    const n = brightnessTools.parseLevel(out, process.platform);
+    if (n === null) return { ok: false, error: 'Could not read brightness (' + String(out).trim().split('\n')[0].slice(0, 80) + ').' };
+    return { ok: true, level: n, message: 'Brightness is ' + n + '%.' };
+  }
+  const n = brightnessTools.clampLevel(level);
+  if (n === null) return { ok: false, error: 'Brightness needs a number 1–100.' };
+  const plan = brightnessTools.sets(n, process.platform);
+  if (!plan) return { ok: false, error: brightnessTools.unsupportedText(process.platform) };
+  const out = await execOut(plan.cmd, 9000);
+  const err = /error|fail|denied|No such/i.test(out) ? out.trim().split('\n')[0].slice(0, 120) : null;
+  if (err) return { ok: false, error: 'Brightness set failed: ' + err };
+  logAction('control_brightness', 'set ' + n + '% via ' + plan.method);
+  return { ok: true, level: n, method: plan.method, message: 'Brightness set to ' + n + '% via ' + plan.method + '.' };
+}
+
+async function mediaControlTool(action) {
+  const a = mediaTools.normalizeAction(action);
+  if (!a) return { ok: false, error: 'media action must be playpause|next|previous' };
+  const cmd = mediaTools.commandFor(a, process.platform);
+  if (!cmd) return { ok: false, error: 'Media control is not supported on ' + process.platform + ' — reported rather than faked.' };
+  const { exitCode, stderr } = await new Promise((resolve) => {
+    exec(cmd, { timeout: 9000 }, (e, so, se) => resolve({ exitCode: e ? e.code || 1 : 0, stderr: e ? String(se || e.message || '') : String(se || '') }));
+  });
+  if (exitCode !== 0) return { ok: false, error: mediaTools.failureText(process.platform, stderr) };
+  logAction('media_control', a);
+  return { ok: true, message: mediaTools.successText(a) };
+}
+
+// ---------------------------------------------------------------------------
+// Local control server (2.16): browser extension pair + optional phone
+// remote dashboard. Loopback listener always available; the LAN phone lane
+// only listens while Settings enables it.
+// ---------------------------------------------------------------------------
+const localSrvTokens = { ext: localServerLib.genToken(), phone: localServerLib.genToken() };
+const localSrvPairCode = localServerLib.genPairCode();
+const appBootAt = Date.now();
+let localSrv = null, localSrvRunning = { loop: false, lane: false, error: null };
+const navCommands = [];                                                     // {i, url} queue for paired browser extension
+let lastExternalTab = null;                                                 // last tab the extension reported
+function ensureLocalServer() {
+  if (localSrv) return localSrv;
+  localSrv = localServerLib.createLocalServer({
+    pairCode: localSrvPairCode,
+    tokens: localSrvTokens,
+    getPolicy: () => {
+      try {
+        const p = readProfile();
+        return { blocked: Array.isArray(p.siteBlocks) ? p.siteBlocks.slice(0, 200) : [], exceptions: [] };
+      } catch { return { blocked: [], exceptions: [] }; }
+    },
+    onAttempt: (a) => {
+      logAction('browser_block_attempt', String((a && a.subject) || '').slice(0, 120));
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.webContents.send('localsrv:blockedAttempt', { subject: String(a.subject || '').slice(0, 120), at: Date.now() }); } catch {}
+      }
+    },
+    onTab: (t) => {
+      lastExternalTab = { url: String(t.url || '').slice(0, 300), title: String(t.title || '').slice(0, 200), at: Date.now() };
+      try { require('./lib/self-knowledge').markCapability && null; } catch {}
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.webContents.send('localsrv:lastTab', lastExternalTab); } catch {}
+      }
+    },
+    getStatus: () => ({
+      version: app.getVersion(), uptime: Math.round((Date.now() - appBootAt) / 1000) + 's',
+      lastTab: lastExternalTab,
+      lastMessage: (() => { try { const e = (readMemory().actionLog || [])[0]; return e ? (e.action + (e.detail ? ' — ' + e.detail : '')).slice(0, 120) : ''; } catch { return ''; } })()
+    }),
+    onSay: (text) => {
+      logAction('remote_say', text.slice(0, 120));
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.webContents.send('dashboard:say', { text, at: Date.now() }); } catch {}
+      }
+    },
+    commands: {
+      since: (after) => { const rows = navCommands.filter((c) => c.i > after).slice(-10); return rows; }
+    }
+  });
+  return localSrv;
+}
+async function syncLocalServer() {
+  const srv = ensureLocalServer();
+  // loopback lane is built-in (extension contract) and harmless unpaired.
+  if (!localSrvRunning.loop) {
+    const r = await srv.startLoop();
+    localSrvRunning.loop = !!r.ok; if (!r.ok) localSrvRunning.error = r.error;
+  }
+  const wantLane = (() => { try { return readProfile().remoteDashboard === true; } catch { return false; } })();
+  if (wantLane && !localSrvRunning.lane) {
+    const r = await srv.startLane();
+    localSrvRunning.lane = !!r.ok; if (!r.ok) localSrvRunning.error = r.error;
+  }
+  return localSrvRunning;
+}
+function lanAddresses() {
+  const out = [];
+  try {
+    for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
+      for (const a of (addrs || [])) {
+        if (a.family === 'IPv4' && !a.internal) out.push({ name, address: a.address });
+      }
+    }
+  } catch {}
+  return out;
+}
+ipcMain.handle('localsrv:info', async () => {
+  const running = await syncLocalServer();
+  const lan = lanAddresses()[0];
+  return {
+    ok: true, running, extPort: localServerLib.EXT_PORT, phonePort: localServerLib.PHONE_PORT,
+    pairCode: localSrvPairCode,
+    phoneUrl: lan ? ('http://' + lan.address + ':' + localServerLib.PHONE_PORT + '/m#' + localSrvTokens.phone) : null,
+    lanFound: !!lan, lastTab: lastExternalTab
+  };
+});
+function queueBrowserNav(url) {
+  const u = String(url || '').trim();
+  if (!/^https?:\/\//i.test(u)) return { ok: false, error: 'Only http(s) URLs can be navigated.' };
+  navCommands.push({ i: (navCommands.length ? navCommands[navCommands.length - 1].i : 0) + 1, url: u.slice(0, 300) });
+  if (navCommands.length > 50) navCommands.splice(0, navCommands.length - 50);
+  logAction('navigate_browser', u.slice(0, 120));
+  return { ok: true, queued: true, note: 'Queued for the paired Gem Air browser extension (1s poll). No extension paired = it sits in the queue, harmlessly — GemAir says so rather than pretend a navigation happened.' };
+}
+ipcMain.handle('localsrv:nav', async (_e, url) => queueBrowserNav(url));
+ipcMain.handle('localsrv:qr', async () => {
+  try {
+    const lan = lanAddresses()[0];
+    if (!lan) return { ok: false, error: 'No LAN address found — connect the computer to the same Wi-Fi as the phone.' };
+    const url = 'http://' + lan.address + ':' + localServerLib.PHONE_PORT + '/m#' + localSrvTokens.phone;
+    const qr = require('qrcode');
+    const dataUrl = await qr.toDataURL(url, { margin: 1, width: 220, color: { dark: '#0b1c30', light: '#cfe6ff' } });
+    return { ok: true, dataUrl, url };
+  } catch (e) {
+    return { ok: false, error: 'QR unavailable (' + (e && e.message || 'module missing') + ') — use the printed URL instead.' };
+  }
+});
+
+// tool_ 2.16 full handler body ------------------------------------------------
+async function prepareMessageTool(args) {
+  const msg = messageLinks.build(args && args.channel, args && args.target, args && args.text);
+  if (!msg.ok) return { ok: false, error: msg.error };
+  try { await shell.openExternal(msg.url); } catch (e) { return { ok: false, error: 'Could not open the share link (' + e.message + ').' }; }
+  logAction('prepare_message', msg.channel + ' (composed, not sent)');
+  // The tool RESULT says the truth: composed, opened, NOT sent.
+  return { ok: true, channel: msg.channel, sent: false, opened: true, message: msg.note };
+}
 async function controlSystem(action) {
   const a = powerActions.normalizeAction(action);
   const cmd = powerActions.commandFor(a, process.platform);
@@ -3120,7 +3322,7 @@ async function executeToolNow(name, args) {
       case 'get_weather':
         return await getWeather(args.city);
       case 'web_search':
-        return await webSearch(args.query);
+        return await webSearch(args.query, args.mode);
       case 'open_application': {
         const n = String(args.name || '');
         return await windowTools.launchApp(n);
@@ -3307,6 +3509,16 @@ async function executeToolNow(name, args) {
       }
       case 'control_volume':
         return controlVolume(args);
+      case 'control_wifi':
+        return await controlWifiTool(args.action);
+      case 'control_brightness':
+        return await controlBrightnessTool(args.level);
+      case 'media_control':
+        return await mediaControlTool(args.action);
+      case 'prepare_message':
+        return await prepareMessageTool(args);
+      case 'navigate_browser':
+        return queueBrowserNav(args.url);
       case 'take_screenshot':
         return await takeScreenshot();
       case 'control_system':
@@ -4443,6 +4655,7 @@ function syncHardwareWatch() {
 function applyAutomationSettings() {
   try { syncClipboardIntel(); } catch (error) { console.warn('[clipIntel] sync failed:', error.message); }
   try { syncHardwareWatch(); } catch (error) { console.warn('[hardwareWatch] sync failed:', error.message); }
+  try { syncLocalServer(); } catch (error) { console.warn('[localsrv] sync failed:', error.message); }
   try { refreshSelfKnowledge(); } catch {}
 }
 ipcMain.handle('hardware:status', () => getHardwareWatch().status());

@@ -252,7 +252,7 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.15.0'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.16.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
@@ -6686,6 +6686,7 @@ function populateSettings() {
   { const hw = $('#setHardwareWatch'); if (hw) hw.checked = !!profile.hardwareWatch; } // 2.15
   refreshAutostartRow();
   populateAudioDevices(); // 2.14 — refresh the short live lists on open
+  populateLocalServerCard(); // 2.16 — pair code, phone QR, site blocks on open
   populateVoices(); populateNeuralVoices(); populateEdgeVoices(); updateAiHint();
   syncVoicePresetUi(profile.voice?.preset || 'gem');
   renderCostPanel();
@@ -9156,6 +9157,8 @@ async function boot() {
   safe('wakeModelInstall', setupWakeModelInstall);     // 2.12 one-click wake model
   safe('instantAck', setupInstantAck);                 // 2.13 "on it" acks
   safe('hardwareWatch', setupHardwareWatch);           // 2.15 sustained-heat alerts
+  safe('contentPanel', setupContentPanel);             // 2.16 search → scrollable cards
+  safe('localServerCard', setupLocalServerCard);       // 2.16 browser link + phone remote
   safe('pushToTalk', setupPushToTalk);                 // 2.13 Ctrl+Space hold-to-talk
   safe('clipIntel', setupClipboardIntel);              // 2.13 floating clipboard panel
   safe('selfKnowledge', refreshSelfKnowledgeCache);    // 2.13 live self-knowledge
@@ -10666,6 +10669,104 @@ function setupInstantAck() {
 // final transcript sends on release, like the mic button does). Bound to this
 // window by design — no dependency-free global key read exists outside
 // Windows native code, and the Settings hint says so.
+// 2.16 — Dynamic Content Panel: every search result set renders as cards.
+function setupContentPanel() {
+  const close = $('#contentPanelClose');
+  if (close) close.addEventListener('click', () => { const p = $('#contentPanel'); if (p) p.hidden = true; });
+  if (!api.onContentResults) return;
+  api.onContentResults(({ query, mode, results }) => {
+    const panel = $('#contentPanel'), strip = $('#contentStrip'), title = $('#contentPanelTitle');
+    if (!panel || !strip) return;
+    strip.innerHTML = '';
+    const rows = Array.isArray(results) ? results : [];
+    if (!rows.length) { panel.hidden = true; return; }
+    if (title) title.textContent = String(mode || 'search').toUpperCase() + ' · ' + rows.length;
+    for (const r of rows.slice(0, 10)) {
+      const card = document.createElement('div');
+      card.className = 'content-card';
+      let host = '';
+      try { host = new URL(r.url).hostname.replace(/^www\./, ''); } catch {}
+      card.innerHTML =
+        '<span class="cc-host">' + escapeHtml(host || 'source') + '</span>' +
+        '<span class="cc-title">' + escapeHtml(r.title || host || 'result') + '</span>' +
+        '<span class="cc-snippet">' + escapeHtml(r.snippet || 'no snippet from the source') + '</span>' +
+        '<span class="cc-actions"><button class="qc cc-open">OPEN</button><button class="qc cc-nav" title="Navigate the paired desktop browser">→ BROWSER</button></span>';
+      card.querySelector('.cc-open').addEventListener('click', () => { try { api.openExternal(r.url); } catch {} });
+      card.querySelector('.cc-nav').addEventListener('click', async () => {
+        try {
+          const res = api.localsrvNav ? await api.localsrvNav(r.url) : null;
+          toast('BROWSER LINK', res && res.ok ? 'Navigating the paired browser…' : ((res && res.error) || 'browser link not paired'), '🔗');
+        } catch (e) { toast('BROWSER LINK', 'Nav failed (' + e.message + ')', '⚠'); }
+      });
+      strip.appendChild(card);
+    }
+    panel.hidden = false;
+    // Gaze: something new landed below — the 2.14 face reacts for real.
+    try { if (window.gemAvatar && window.gemAvatar.glance) window.gemAvatar.glance(600); } catch {}
+  });
+}
+
+// 2.16 — Browser link + phone remote settings card
+async function populateLocalServerCard() {
+  if (!api.localsrvInfo) return;
+  try {
+    const info = await api.localsrvInfo();
+    const code = $('#extPairCode');
+    if (code && info.pairCode) code.textContent = info.pairCode;
+    const lt = $('#extLastTab');
+    if (lt) lt.textContent = info.lastTab
+      ? ('Paired browser active: ' + (info.lastTab.title || info.lastTab.url))
+      : 'Extension not paired — load the extension, enter this code in its popup.';
+    const rd = $('#setRemoteDashboard');
+    if (rd) rd.checked = !!profile.remoteDashboard;
+    const row = $('#remoteDashRow');
+    if (profile.remoteDashboard && row) {
+      row.hidden = false;
+      const qr = api.localsrvQr ? await api.localsrvQr() : null;
+      if (qr && qr.ok) {
+        const img = $('#remoteDashQr'); if (img) img.src = qr.dataUrl;
+        const u = $('#remoteDashUrl'); if (u) u.textContent = qr.url;
+      } else {
+        const hint = $('#remoteDashHint'); if (hint) hint.textContent = (qr && qr.error) || 'QR unavailable — disable/re-enable or use the URL shown.';
+      }
+    } else if (row) row.hidden = true;
+  } catch {}
+}
+
+function setupLocalServerCard() {
+  if (api.onExternalTab) api.onExternalTab((t) => {
+    const lt = $('#extLastTab');
+    if (lt) lt.textContent = 'Paired browser active: ' + (t.title || t.url || '');
+  });
+  if (api.onBlockedAttempt) api.onBlockedAttempt((a) => {
+    toast('SITE BLOCK', 'Blocked visit attempt: ' + (a.subject || '?'), '🚫');
+  });
+  const rd = $('#setRemoteDashboard');
+  if (rd) rd.addEventListener('change', () => {
+    profile.remoteDashboard = rd.checked; persistProfile();
+    try { api.automationApply(); } catch {}
+    populateLocalServerCard(); // shows QR / hides it, honestly reporting port problems
+  });
+  const sb = $('#siteBlocksEdit');
+  if (sb) {
+    if (Array.isArray(profile.siteBlocks)) {
+      sb.value = profile.siteBlocks.map((b) => b.target + (b.reason ? ' | ' + b.reason : '')).join('\n');
+    }
+    sb.addEventListener('change', () => {
+      profile.siteBlocks = sb.value.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 100)
+        .map((line) => { const [t, ...rest] = line.split('|'); return { target: t.trim().slice(0, 120), reason: rest.join('|').trim().slice(0, 160) }; });
+      persistProfile();
+      toast('BROWSER LINK', profile.siteBlocks.length + ' site block rule(s) saved — served to the paired extension.', '🔗');
+    });
+  }
+  if (api.onDashboardSay) api.onDashboardSay(({ text }) => {
+    const t = String(text || '').trim();
+    if (!t) return;
+    toast('PHONE', 'Phone remote sent: “' + t.slice(0, 60) + '”', '📱');
+    try { sendMessage(t); } catch (e) { toast('PHONE', 'Could not deliver to Gem (' + e.message + ')', '⚠'); }
+  });
+}
+
 // Hardware watch alerts (2.15): main samples every 20s while opted in,
 // fires only on SUSTAINED heat, and re-speaks at most every 15 minutes.
 // Here we surface it honestly: unavailable sensors toast once (never

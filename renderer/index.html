@@ -80,7 +80,7 @@
         </div>
         <div class="brand-text">
           <h1>GemAir</h1>
-          <p>Personal assistant <span class="ver" id="verTag">v2.15.0</span></p>
+          <p>Personal assistant <span class="ver" id="verTag">v2.16.0</span></p>
         </div>
       </div>
 
@@ -398,6 +398,15 @@
                       <div class="tool-feed" id="toolFeed">
                         <div class="empty">Gem’s actions and results will appear here.</div>
                       </div>
+                    </div>
+                    <!-- 2.16 Dynamic Content Panel: scrollable result cards beneath the HUD -->
+                    <div class="content-panel" id="contentPanel" hidden>
+                      <div class="content-panel-head">
+                        <span class="content-panel-title" id="contentPanelTitle">CONTENT</span>
+                        <span class="dim" style="font-size:10px;" id="contentPanelHint">latest search renders here — nothing is prose-only</span>
+                        <button class="qc" id="contentPanelClose" title="Hide content panel" style="margin-left:auto;">✕</button>
+                      </div>
+                      <div class="content-strip" id="contentStrip"></div>
                     </div>
                     <div class="chat-input-row">
                       <button class="mic-btn" id="micBtn" title="Talk to Gem (Speech Recognition)" aria-label="Talk to Gem">
@@ -1726,6 +1735,36 @@
               <input type="checkbox" id="setAutoStart" /> Launch GemAir at login
             </label>
             <span class="hint" id="autoStartHint" style="font-size:10px;display:block;margin-bottom:4px;">Registers with the OS (Windows Run key / macOS Login Item / Linux XDG autostart). State is read back from the OS, not guessed.</span>
+          </fieldset>
+
+          <fieldset id="localServerCard">
+            <legend>🔗 BROWSER LINK + PHONE REMOTE (2.16)</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+              One pairing code this session for the <b>Gem Air Browser Link</b> extension (It then reports the active site and enforces your site blocks below).
+              The phone remote listens on your <b>LAN only, plain HTTP — never the internet</b>. Everything a paired device does is journaled in the action log.
+            </p>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;">
+              <div style="min-width:170px;">
+                <div class="dim" style="font-size:10px;letter-spacing:2px;">EXTENSION PAIR CODE (this session)</div>
+                <div id="extPairCode" style="font-size:24px;letter-spacing:6px;color:var(--accent);">------</div>
+                <div class="hint" style="font-size:10px;" id="extLastTab">Extension not paired — load the extension, enter this code in its popup.</div>
+              </div>
+              <div>
+                <label class="check-label" style="margin-bottom:6px;">
+                  <input type="checkbox" id="setRemoteDashboard" /> Phone remote dashboard — type to Gem from your phone
+                </label>
+                <div id="remoteDashRow" hidden>
+                  <img id="remoteDashQr" alt="QR for the phone remote" style="border-radius:8px;border:1px solid #1d3350;" />
+                  <div class="hint" style="font-size:10px;word-break:break-all;max-width:280px;" id="remoteDashUrl"></div>
+                </div>
+                <div class="hint" id="remoteDashHint" style="font-size:10px;">Enable to show the QR. Phone and computer must share the same Wi-Fi. Token lives only in this link — don't paste it anywhere.</div>
+              </div>
+            </div>
+            <div style="margin-top:10px;">
+              <div class="dim" style="font-size:10px;letter-spacing:2px;">SITE BLOCKS — one per line: <code>host</code> or <code>host | reason</code></div>
+              <textarea id="siteBlocksEdit" rows="3" style="width:100%;max-width:480px;" placeholder="doomscroll.example | stops me at 2am"></textarea>
+              <span class="hint" style="font-size:10px;">Served to the paired extension from this profile. Attempts-to-visit are journaled + toasted here.</span>
+            </div>
           </fieldset>
 
           <fieldset id="desktopAgentCard">

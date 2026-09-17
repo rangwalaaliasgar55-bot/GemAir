@@ -1,5 +1,45 @@
 # Changelog
 
+## [2.16.0] — 2026-09-17
+
+**The connectivity release — the README is now fully covered.** Every remaining row of the refreshed Mark-LIV capability table has a real, honest GemAir counterpart: a **phone remote dashboard** with per-session QR pairing, **browser link completion** (the extension now has its server), **Wi-Fi control** behind a human dialog, **brightness control** with platform-truthful fallbacks, **multi-mode web search** (`news` / `research` / `price` / `compare` / `search`), a **dynamic content panel**, **media-key control**, and **compose-only messaging**. Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).
+
+### Added — 📱 Phone remote dashboard (`lib/local-server.js`)
+- **Scan-and-type**: Settings → *Phone remote dashboard* shows a QR (per-session token) of a `http://<lan-ip>:8680/m#token` page. Your phone sees live status and a *Say to Gem* box whose text pipes into the normal chat pipeline, tagged 📱 in the UI.
+- **Honest boundaries, enforced in the router**: the phone lane serves **only** the `/m` route family — it cannot mint tokens (no `/pair`), cannot read policy, cannot act as the extension. Tokens are per-session random, constant-time compared; pairing+say are rate-limited (5/10 per minute) and every remote say and blocked-visit attempt is journaled in the action log. Plain HTTP on LAN only — the page and Settings say so; the lane only listens while the toggle is on.
+- Zero new runtime services: Node `http` only; the QR comes from the new declared `qrcode` dependency (bundled in the installer).
+
+### Added — 🔗 Browser link completion (`extension/chrome` + loopback server)
+- The **Gem Air Browser Link** extension finally meets its server: `http://127.0.0.1:8677` (loopback-only) answers `GET /pair` (6-digit code from Settings), `GET /policy`, `POST /attempt`, `POST /tab`, and new `GET /commands`.
+- **Site blocks**: a per-line editor in Settings (`host | reason`) feeds the policy the extension already enforces; blocked visits toast + journal.
+- **`navigate_browser` tool**: queues an http(s) URL the paired extension navigates its active tab to within ~1s. The tool result is honest that without a paired extension the command just waits — no pretending. The extension refuses non-http(s) URLs even from its own queue.
+- First pairing evidence shows in Settings ("Paired browser active: <last tab title>").
+
+### Added — 📶 Wi-Fi control (`lib/wifi-tools.js` + `control_wifi`)
+- `status` reads free (netsh / networksetup / nmcli parsed per OS). `on`/`off` are **toggle-tier**: always wait on a human dialog — and the OFF dialog warns that cutting Wi-Fi cuts GemAir's own cloud brains. No auto-approve flag can appear in the path (test-asserted). Windows elevation / missing NetworkManager failures come back as honest error text, not silence.
+
+### Added — 🔆 Brightness control (`lib/brightness-tools.js` + `control_brightness`)
+- Read (omit level) or set 1–100%. **Windows**: WMI monitor brightness. **Linux**: `brightnessctl`, with an always-labelled **software-gamma xrandr fallback** ("the panel itself is unchanged"). **macOS**: no dependency-free API exists, so the tool *says it refuses to fake it* — the honest row in the table.
+
+### Added — 🔍 Multi-mode web search (`lib/search-modes.js`)
+- `web_search` gains an **optional `mode`** (`search` default, `news`, `research`, `price`, `compare`): news asks for recency with outlet/date; research cross-compares; **price mode may only quote prices that appear in fetched sources**; **compare mode fills cells from sources only, unknowns marked "not in sources"**. The mode's contract rides the tool result as `modeHint` so the model can't silently drift.
+
+### Added — 🗺️ Dynamic Content Panel
+- Every search now also pushes its structured results to a **scrollable card strip under the HUD** (title / host / snippet), with `OPEN` (direct URL) and `→ BROWSER` (nav-queue) actions. Empty result sets never show a fake panel; the avatar glances down when new results land.
+
+### Added — 🎵 Media control (`lib/media-tools.js` + `media_control`)
+- Media keys done right per OS: Windows sends the real **virtual media key codes** via a dependency-free PowerShell/keybd_event shim; macOS targets Spotify / Music and says exactly that when neither runs; Linux uses `playerctl` and its absence is reported as an install hint.
+
+### Added — 📨 Compose-only messaging (`lib/message-links.js` + `prepare_message`)
+- WhatsApp (`wa.me` with number + prefilled text) and Telegram (direct chat or share-sheet) — **composition, never sending**. The tool result is machine-truthful (`sent: false`) and the description states sending without you is not possible by design. Unknown channels and malformed numbers are honest errors.
+
+### Changed
+- Version bumped 2.15.0 → 2.16.0 single-sourced (10 files; sw cache `gemair-shell-v2.16.0-release`). New declared dependency: `qrcode` (+`pngjs`, `dijkstrajs`; all bundled).
+
+### Tests & docs
+- New suites in `npm run check`: `search-modes-test.js` (6 — mode set, shaping caps, no-invented-prices contract, content:results wiring), `system-controls-test.js` (10 — wifi tiers/commands/parsers, brightness clamp+honesty matrix+unsupported macOS, media keys + failure text, no-bypass wifi dialog), `message-links-test.js` (4 — link builders, prefill caveats, sent:false wrapper), `local-server-test.js` (10 — routing scoping loopback-vs-lane, token compare, cursors, rate limits, journaling, binding statics), `content-panel-test.js` (6 — DOM/CSS, card rendering, open+nav actions, phone-say pipeline, site-blocks editing).
+- `GUIDE.md` gains the phone-remote, browser-link, wifi/brightness/media, search-mode, content-panel and messaging sections; `ARCHITECTURE.md` §9f documents the connectivity surfaces; `THIRD_PARTY_NOTICES.md` extended.
+
 ## [2.15.0] — 2026-09-17
 
 **The \"only a human can say yes\" release — the freshly-updated Mark-LIV checklist.** The upstream README was refreshed Sept 16; this wave closes the remaining gaps between it and GemAir: **power-tier real confirmation** (the one place the model could previously act irreversibly on its own), **continuous hardware watch** with localized voice alerts, **silent language memory** (it notices how you actually speak, and remembers), **memory transparency** (every fact shows when it was learned + \"forget everything\"), and **live session continuity across device changes**. Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).

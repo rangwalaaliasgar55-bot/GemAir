@@ -471,6 +471,51 @@ changes during a live voice call mutate `session._opts` and invoke
 inherits 2.12's session-continuity machinery for free; speaker changes
 skip the socket entirely (sink-only move).
 
+## 9f. The 2.16 connectivity surfaces — one server, one pairing discipline
+
+**Local control server (`lib/local-server.js`).** A single zero-dependency
+router backs both external surfaces. The **loopback scope** (port 8677,
+`127.0.0.1` only) is the browser extension's contract: `GET /pair` (6-digit
+session code → token), `GET /policy`, `POST /attempt`, `POST /tab`,
+`GET /commands`. The **lane scope** (port 8680, LAN, only while
+`profile.remoteDashboard`) serves **only** `/m` routes — phone pairing is
+structurally impossible there and policy data never crosses scopes.
+Tokens are per-session, `crypto.timingSafeEqual`-compared, and rate
+limits apply to both pairing (5/min) and phone says (10/min); every
+sensitive act is journaled via `logAction`.
+
+**Remote dashboard.** QR → `http://<lan-ip>:8680/m#<phone-token>`; the
+static page (hash-fragment key, never in the URL path) polls `/m/status`
+and POSTs `/m/say`, which the main process forwards through
+`dashboard:say` into the standard `sendMessage()` pipeline — remote text
+gets normal permissions, tagging (📱), and logging.
+
+**Browser link.** The long-dormant extension finally has its server. Site
+blocks are edited in Settings as `host | reason` lines into
+`profile.siteBlocks`, served to the extension through `GET /policy`.
+`navigate_browser` enqueues http(s)-only URLs; the extension polls
+`/commands?after=cursor` every second and navigates its active tab,
+rejecting non-http(s) even from its own queue. Both directions fail soft
+when the other side is absent — and the tool results say so.
+
+**System controls trio.** `lib/wifi-tools.js` (status free, toggle
+human-gated with no settings conditionals — same tier discipline as the
+2.15 power tier), `lib/brightness-tools.js` (WMI / brightnessctl / labelled
+xrandr-gamma fallback / honest macOS refusal), `lib/media-tools.js`
+(virtual media-key keybd_event on Windows, Spotify/Music osascript on
+macOS, playerctl on Linux).
+
+**Search modes + content panel.** `lib/search-modes.js` shapes
+`web_search` per mode and returns a `modeHint` the model cannot silently
+ignore (price/compare contracts forbid unstated numbers). Every search
+also emits `content:results`; the renderer renders a scrollable card
+strip (open-direct / navigate-paired actions) and the 2.14 avatar
+acknowledges it with a glance.
+
+**Compose-only messaging.** `lib/message-links.js` builds `wa.me` /
+`t.me` links; `prepare_message` only ever `shell.openExternal`s them and
+returns `sent: false` — there is no send code path at all.
+
 ## 10. Where to add things
 
 | I want to… | Touch |

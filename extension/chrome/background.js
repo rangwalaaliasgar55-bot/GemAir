@@ -162,3 +162,23 @@ setInterval(refreshPolicy, POLICY_REFRESH_MS);
 // Cold start (worker revival, browser launch): restore policy + report the
 // current tab immediately instead of waiting for the user to navigate.
 reportActiveFromQuery();
+
+/* 2.16 — desktop-commanded navigation: GemAir's navigate_browser tool queues
+   commands on the desktop server; the extension polls and navigates the
+   ACTIVE tab. Same token gates it; a dead app just means no commands. */
+let navCursor = 0;
+async function pollNavCommands() {
+  let data;
+  try { data = await call('/commands?after=' + navCursor); } catch (e) { return; } // app closed / unpaired — do nothing, never error-spam
+  const rows = (data && data.commands) || [];
+  if (!rows.length) return;
+  navCursor = rows[rows.length - 1].i;
+  const last = rows[rows.length - 1];
+  if (!/^https?:\/\//i.test(last.url || '')) return; // never execute odd URLs — http(s) only, same rule as the desktop side
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.id) await chrome.tabs.update(tab.id, { url: last.url });
+  } catch (e) { /* navigation rights are ours per manifest; a vanished tab fails silently */ }
+}
+pollNavCommands();
+setInterval(pollNavCommands, 1000);
