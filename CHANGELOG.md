@@ -1,5 +1,205 @@
 # Changelog
 
+## [2.16.0] — 2026-09-17
+
+**The connectivity release — the README is now fully covered.** Every remaining row of the refreshed Mark-LIV capability table has a real, honest GemAir counterpart: a **phone remote dashboard** with per-session QR pairing, **browser link completion** (the extension now has its server), **Wi-Fi control** behind a human dialog, **brightness control** with platform-truthful fallbacks, **multi-mode web search** (`news` / `research` / `price` / `compare` / `search`), a **dynamic content panel**, **media-key control**, and **compose-only messaging**. Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).
+
+### Added — 📱 Phone remote dashboard (`lib/local-server.js`)
+- **Scan-and-type**: Settings → *Phone remote dashboard* shows a QR (per-session token) of a `http://<lan-ip>:8680/m#token` page. Your phone sees live status and a *Say to Gem* box whose text pipes into the normal chat pipeline, tagged 📱 in the UI.
+- **Honest boundaries, enforced in the router**: the phone lane serves **only** the `/m` route family — it cannot mint tokens (no `/pair`), cannot read policy, cannot act as the extension. Tokens are per-session random, constant-time compared; pairing+say are rate-limited (5/10 per minute) and every remote say and blocked-visit attempt is journaled in the action log. Plain HTTP on LAN only — the page and Settings say so; the lane only listens while the toggle is on.
+- Zero new runtime services: Node `http` only; the QR comes from the new declared `qrcode` dependency (bundled in the installer).
+
+### Added — 🔗 Browser link completion (`extension/chrome` + loopback server)
+- The **Gem Air Browser Link** extension finally meets its server: `http://127.0.0.1:8677` (loopback-only) answers `GET /pair` (6-digit code from Settings), `GET /policy`, `POST /attempt`, `POST /tab`, and new `GET /commands`.
+- **Site blocks**: a per-line editor in Settings (`host | reason`) feeds the policy the extension already enforces; blocked visits toast + journal.
+- **`navigate_browser` tool**: queues an http(s) URL the paired extension navigates its active tab to within ~1s. The tool result is honest that without a paired extension the command just waits — no pretending. The extension refuses non-http(s) URLs even from its own queue.
+- First pairing evidence shows in Settings ("Paired browser active: <last tab title>").
+
+### Added — 📶 Wi-Fi control (`lib/wifi-tools.js` + `control_wifi`)
+- `status` reads free (netsh / networksetup / nmcli parsed per OS). `on`/`off` are **toggle-tier**: always wait on a human dialog — and the OFF dialog warns that cutting Wi-Fi cuts GemAir's own cloud brains. No auto-approve flag can appear in the path (test-asserted). Windows elevation / missing NetworkManager failures come back as honest error text, not silence.
+
+### Added — 🔆 Brightness control (`lib/brightness-tools.js` + `control_brightness`)
+- Read (omit level) or set 1–100%. **Windows**: WMI monitor brightness. **Linux**: `brightnessctl`, with an always-labelled **software-gamma xrandr fallback** ("the panel itself is unchanged"). **macOS**: no dependency-free API exists, so the tool *says it refuses to fake it* — the honest row in the table.
+
+### Added — 🔍 Multi-mode web search (`lib/search-modes.js`)
+- `web_search` gains an **optional `mode`** (`search` default, `news`, `research`, `price`, `compare`): news asks for recency with outlet/date; research cross-compares; **price mode may only quote prices that appear in fetched sources**; **compare mode fills cells from sources only, unknowns marked "not in sources"**. The mode's contract rides the tool result as `modeHint` so the model can't silently drift.
+
+### Added — 🗺️ Dynamic Content Panel
+- Every search now also pushes its structured results to a **scrollable card strip under the HUD** (title / host / snippet), with `OPEN` (direct URL) and `→ BROWSER` (nav-queue) actions. Empty result sets never show a fake panel; the avatar glances down when new results land.
+
+### Added — 🎵 Media control (`lib/media-tools.js` + `media_control`)
+- Media keys done right per OS: Windows sends the real **virtual media key codes** via a dependency-free PowerShell/keybd_event shim; macOS targets Spotify / Music and says exactly that when neither runs; Linux uses `playerctl` and its absence is reported as an install hint.
+
+### Added — 📨 Compose-only messaging (`lib/message-links.js` + `prepare_message`)
+- WhatsApp (`wa.me` with number + prefilled text) and Telegram (direct chat or share-sheet) — **composition, never sending**. The tool result is machine-truthful (`sent: false`) and the description states sending without you is not possible by design. Unknown channels and malformed numbers are honest errors.
+
+### Changed
+- Version bumped 2.15.0 → 2.16.0 single-sourced (10 files; sw cache `gemair-shell-v2.16.0-release`). New declared dependency: `qrcode` (+`pngjs`, `dijkstrajs`; all bundled).
+
+### Tests & docs
+- New suites in `npm run check`: `search-modes-test.js` (6 — mode set, shaping caps, no-invented-prices contract, content:results wiring), `system-controls-test.js` (10 — wifi tiers/commands/parsers, brightness clamp+honesty matrix+unsupported macOS, media keys + failure text, no-bypass wifi dialog), `message-links-test.js` (4 — link builders, prefill caveats, sent:false wrapper), `local-server-test.js` (10 — routing scoping loopback-vs-lane, token compare, cursors, rate limits, journaling, binding statics), `content-panel-test.js` (6 — DOM/CSS, card rendering, open+nav actions, phone-say pipeline, site-blocks editing).
+- `GUIDE.md` gains the phone-remote, browser-link, wifi/brightness/media, search-mode, content-panel and messaging sections; `ARCHITECTURE.md` §9f documents the connectivity surfaces; `THIRD_PARTY_NOTICES.md` extended.
+
+## [2.15.0] — 2026-09-17
+
+**The \"only a human can say yes\" release — the freshly-updated Mark-LIV checklist.** The upstream README was refreshed Sept 16; this wave closes the remaining gaps between it and GemAir: **power-tier real confirmation** (the one place the model could previously act irreversibly on its own), **continuous hardware watch** with localized voice alerts, **silent language memory** (it notices how you actually speak, and remembers), **memory transparency** (every fact shows when it was learned + \"forget everything\"), and **live session continuity across device changes**. Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).
+
+### Fixed — ⚠️ Real confirmation (power tier) (`lib/power-actions.js` + `control_system`)
+- **Shutdown and restart had NO confirmation anywhere**: the `control_system` tool executed them directly, the typed shortcuts fired on a regex match, and no dialog stood between a model decision and your power button.
+- Now both paths wait on a **human clicking a system dialog** that states the consequence (\"in 10 seconds\"), the unrecoverability, and the rule itself: \"no assistant setting can approve it for you — only this button can.\" The power path contains **zero profile/auto-approve conditionals** — test-asserted, so a future auto-approve flag can never open that door.
+- The tool's own description tells the model it cannot self-confirm; a declined power call is journaled and the reply says the computer stayed on — reply text can never claim an action a human refused. Lock and sleep stay confirmation-free (reversible by nature).
+- Policy lives in pure `lib/power-actions.js` (per-OS commands, tiering, confirm wording) so it's testable without Electron.
+
+### Added — 📊 Hardware watch (`lib/hardware-watch.js` + alerts)
+- Opt-in (Settings): **sustained-heat alerts** — CPU ≥90%, RAM ≤5% free, core temp ≥85°C must persist ~a minute (3 samples × 20s) before saying a word; a lone spike never speaks. Each condition re-speaks at most every 15 minutes. Low battery alerts only when not charging.
+- **Honest instrumentation**: temperature/battery read Linux `/sys` only; on Windows/macOS (no native deps shipped) it says \"no temperature sensor reading on this OS\" **once**, then stays silent rather than guess. Toggling off kills the interval entirely — off means genuinely off.
+- Alerts **speak one short localized line** (en/hi/tr/es/de/fr/ru/uk/el/pt, via the instant-ack engine rotation) or toast when Gem is mid-sentence — never both.
+
+### Added — 🧑‍💻 Silent language memory
+- Every typed/spoken message already detected its language; now the result **persists** (`lastSpokenLang`, written to the profile only when it changes). With no explicit STT language picked, speech recognition/wake word boot in the language you actually speak (hi-IN for Hindi/Hinglish, ur for Urdu) — an **explicit pick always wins**.
+- The mic chip marks auto picks (`·auto`) so adaptation is visible, never hidden.
+
+### Added — 👁️ Memory transparency
+- Every fact row in the MEMORY panel now shows **when Gem learned it** (full \"Learned/updated\" timestamp on hover), closing the \"when did it learn this?\" gap.
+- **Forget everything**: one button deletes the entire fact store — gated by a dialog that says *before* the click that this is irreversible and, on purpose, **not on the undo stack**. The wipe is journaled with a truthful count, and **no bulk-delete memory tool exists for the model** — test-asserted; the panel is the only way in.
+
+### Added — 🔗 Device-change continuity
+- Changing the mic **mid-Live-voice-call** reconnects the session with its **resumption handle attached** — the conversation carries over instead of ending because you switched hardware. Speaker changes don't reconnect at all; the audio sink just moves. Both reachable states say exactly what happened.
+
+### Changed
+- Version bumped 2.14.0 → 2.15.0 single-sourced across `package.json`, `package-lock.json`, `VERSION`, `api/_lib/http.js`, `renderer/index.html`, `renderer/app.js` fallback, `renderer/sw.js` (`gemair-shell-v2.15.0-release`), `download.html`, `scripts/selfcheck.js`.
+
+### Tests & docs
+- New suites in `npm run check`: `power-actions-test.js` (9 — tiering, aliases, per-OS commands, unforgeable confirm/result wording, **no-bypass statics**), `hardware-watch-test.js` (10 — spike-vs-sustain, re-alert cooldown, honest unavailability, timer teardown, sampler shape), `language-memory-test.js` (6 — changed-only persistence, explicit-wins ordering, auto-visible chip, device continuity + speaker no-reconnect), `memory-panel-test.js` (5 — learned-at rows, irreversibility wording, journal+count, **no bulk-delete tool for the model**).
+- `GUIDE.md` gains the confirmation/hardware-watch/language/memory-transparency sections; `ARCHITECTURE.md` §9e documents the pipelines; `THIRD_PARTY_NOTICES.md` concept list extended.
+
+## [2.14.0] — 2026-09-17
+
+**The \"knows what it hears, knows what it sees\" release — the remaining three items from the Mark-LIV study.** An honest **audio device picker** (mic and speakers by name, measured before you trust them), the **face as a status channel** (Gem's avatar now glances, listens, thinks and sleeps with its body, not just its words), and **source-labelled vision** (every frame stream declares where it came from, so a screenshot of GemAir itself is never read as a photo of you). Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).
+
+### Added — 🎛️ Audio device picker (`renderer/audio-devices.js` + Settings rows)
+- **Mic and speakers by name**: two short, honest lists (max 8 per kind, deduplicated, default first, labels trimmed) under Settings → Avatar & Voice. Chromium hides device names until the mic has been granted once, so the first list quietly touches the mic **once**, re-enumerates, and lets it go — permission-denied says so instead of showing a dead list.
+- **Refresh & probe**: the refresh button re-lists and *probes* the selected mic — opens it, measures open latency, reports the live track label (`✓ USB Microphone — opened in 41ms`) and always releases it. The mic is never left held open and a probe failure is an error line, not a crash.
+- **Honest fallback**: a saved device that has vanished falls back to the system default **and names what it lost** (\"Saved mic unplugged; using system default — 'Old USB Mic'\") — never a silent substitution and never a guessed device. Picks apply to the mic meter, the Live voice session, the wake word, and the speaker route on next open; the note is honest that the OS web-speech voice cannot be routed at all.
+- Routing is by `deviceId: { ideal }` for normal capture (unplugged devices degrade gracefully) and `{ exact }` for probes (the label must be truthful about which device opened). Speaker routing goes through guarded `setSinkId` everywhere audio is played.
+
+### Added — 🎭 Face as a status channel (`renderer/avatar.js` presence)
+- **Presence modes** drive the whole body, not a caption: **thinking** looks away (less pointer tracking, slower blinks), **listening** meets your eyes (it follows your pointer more closely — the way Mark meets the user's gaze), **sleeping** lets the lids fall and the breath slow to a third, and **glance** looks down when something new lands.
+- The app drives it from real events, no theatre: 2 minutes of silence on the wake word → lids fall; any spoken loop or re-enabled wake word → eyes open; a new AI reply or system card while idle → a 500–650ms downward glance. Glance **refuses to interrupt thought or sleep** — rests outrank politeness.
+- Priority is total order (glance > sleeping > thinking > listening > base), durations clamped to a natural 250ms–2.5s, all of it in `presenceFor(mode)` — pure, testable, and exported for the tests.
+
+### Added — 🏷️ Source-labelled vision (`labelVisionSource` + see_screen annotation)
+- Before the first screen-share or camera frame flows to a Gemini Live session, an in-band `clientContent` note declares the source: *screen* frames \"may contain the GemAir window itself, including its avatar face — that face is the app, never a photo of the user\"; *camera* frames are declared as surroundings, possibly the user. The two notes say different things on purpose, and the call has to precede the send loop (test-asserted).
+- The one-shot `see_screen` tool now annotates its result the same way (`source: 'screen'` plus the avatar warning) — the fix from Mark-LIV's own fix list, applied to both live and one-shot vision.
+
+### Changed
+- Version bumped 2.13.0 → 2.14.0 single-sourced across `package.json`, `package-lock.json`, `VERSION`, `api/_lib/http.js`, `renderer/index.html`, `renderer/app.js` fallback, `renderer/sw.js` (`gemair-shell-v2.14.0-release`), `download.html`, and `scripts/selfcheck.js`.
+
+### Tests & docs
+- New suites in `npm run check`: `audio-device-test.js` (14: filtering/dedupe/trim/cap, resolve-fallback honesty, label-permission flow, probe open/measure/release, full routing-site wiring), `avatar-presence-test.js` (8: mode map physiology, priority order, glance no-op under sleep/thought, app wiring), `vision-source-test.js` (7: wire shape, screen-vs-camera notes, graceful failure, call-site ordering, see_screen annotation).
+- `GUIDE.md` gains the audio-devices and presence sections; `ARCHITECTURE.md` §9d documents the routing, presence and labelling pipelines.
+
+## [2.13.0] — 2026-09-17
+
+**The "take it back" release.** A second deep pass over FatihMakes/Mark-LIV lands the features that make an assistant feel accountable: a shared **undo stack** for every file it touches, **clipboard intelligence** with a floating Translate/Summarise/Explain/Fix panel, **push-to-talk**, a **self-echo guard** (it no longer answers its own voice ringing in the room), **runtime self-knowledge** assembled live (including honest limits), **instant acknowledgment** in your language, **auto-start at login**, and two transport-hardening fixes straight off Mark-LIV's fix list. Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).
+
+### Added — ↩️ Undo (`lib/undo-stack.js` + tools)
+- Say **"undo"** and GemAir reverses its own most recent reversible action: file writes (created files removed only while unchanged — your later edits are never destroyed; overwrites roll back to an exact ≤1 MB snapshot), batch organizes, batch renames, moves, archive sweeps, and folder trees (folders removed only while still empty).
+- **It does not guess**: files over 1 MB report "undo snapshots skip this" instead of quiet hoarding; move-backs refuse when the origin is occupied; failed undos stay on the stack and say why, and you can retry them.
+- New tools: `undo_last` (human-confirmed — reversal is still a state change), `list_undoable`. Live stack capped at 25 with evictions archived — the record of what it did is never silently forgotten.
+- `write_file`, `organize_folder`, `rename_files`, `move_files`, `archive_old_files`, `create_folder_tree` now journal their reversal at the moment they act and report `reversible` back to the model.
+
+### Added — 📋 Clipboard intelligence (`lib/clipboard-intel.js` + floating panel)
+- Opt-in (Settings): copy any text and a card floats up with **TRANSLATE / SUMMARISE / EXPLAIN / FIX** — one click stages the prompt; nothing sends itself.
+- **Secret quarantine**: copies that look like API keys/tokens are stored **redacted at rest**, never open the panel, and fire a lock toast instead.
+- History ring of 30 with `list_clipboard_entries` / `recall_clipboard_entry` tools; evictions flow to the memory archive; the watcher only polls while enabled — off means genuinely off.
+
+### Added — 🎚️ Push-to-talk
+- Hold **Ctrl+Space** (⌘Space on macOS) and the mic opens; release sends. Repeat-guarded, text-field safe (with a chat-input exception), and force-releases on window blur or tab hide — the mic can never stay open in the background. Halts the wake loop while held.
+- Honest scope: bound to the app window on every platform (there is no dependency-free global key-read outside Windows native code), and the Settings hint says so — Mark's approach (global on Windows only, windowed elsewhere, logged) adapted to Electron without native dependencies.
+
+### Added — 🔇 Self-echo guard (`renderer/echo-guard.js`)
+- After Gem speaks, its own last sentence is still "in the room" for a moment. `echoGuard` normalizes and matches fresh STT text against the tail of Gem's own voice: exact and partial echoes — even shot through a real-time buffer — are dropped; an echo **prefix + your continuation** is trimmed to just your words. The microphone is never muted; the window expires in 8s so coincidence never silences real speech.
+
+### Added — 🪪 Runtime self-knowledge (`lib/self-knowledge.js`)
+- "What it is, and what it isn't", assembled at boot and after every plugin reload from the *live* registry: identity/version/machine, the tools actually registered (plugins included the moment they load, broken ones disclaimed), session capability state, memory+archive counts — and the honest limits ("sight is a frame on demand, not a feed", "acts on this machine only").
+- Injected into every system prompt as `RUNTIME SELF-KNOWLEDGE` (trust-this-over-older-text), plus a `get_assistant_capabilities` tool for mid-session freshness.
+
+### Added — ⚡ Instant acknowledgment (`renderer/instant-ack.js`)
+- When a gap-prone tool **starts** (long desktop tasks, searches, file sweeps, system scans), the shell speaks one short line in your language — en/hi/tr/es/de/fr/ru/uk/el/pt with deliberate conservatism (unknowns fall back to English), task-kind routed, rotation guaranteed no repeats back-to-back. If Gem is mid-sentence it toasts instead of talking over the answer. The model keeps its "never narrate tool use" contract — the ack comes from the app, not the model.
+
+### Added — ⚡ Auto-start at login (`lib/autostart.js`)
+- Settings toggle registers launch-at-login natively: Windows Run key, macOS Login Item, Linux XDG autostart `.desktop` — the row reads its state **back from the OS** on open, never starts hidden, and the Linux hint is honest about dev-mode vs packaged installs.
+
+### Fixed — Gemini Live transport hardening (from Mark-LIV's own fix list)
+- **Transcript tail de-dup**: the Live API re-sends the tail of a transcript across the turn-completes a tool call produces, so answers could be logged and spoken twice. Now suppressed at both chunk and flush level (verbatim, clipped-suffix, tail-resend, long-containment; bounded 600-char window).
+- **Rejected resumption handles are dropped after one replay**: an expired handle can no longer be re-offered on every retry and block the reconnect it exists to protect.
+- **Socket-epoch guard**: a previous socket's asynchronous close can no longer consume a new attempt's settlement (watchdog theft) or poison the resume handle — a race the first two fixes surfaced while testing.
+
+### Changed
+- Version bumped 2.12.0 → 2.13.0 single-sourced across `package.json`, `package-lock.json`, `VERSION`, `api/_lib/http.js`, `renderer/index.html`, `renderer/app.js` fallback, `renderer/sw.js` (`gemair-shell-v2.13.0-release`), `download.html`, and `scripts/selfcheck.js`.
+
+### Tests & docs
+- New suites in `npm run check`: `undo-stack-test.js`, `clipboard-intel-test.js`, `self-knowledge-test.js`, `autostart-test.js`, `echo-guard-test.js`, `instant-ack-test.js`, `push-to-talk-test.js`; `gemini-live-test.js` extended (+2: transcript de-dup, rejected-handle drop).
+- `GUIDE.md` gains the undo/clipboard/PTT/ack sections; `ARCHITECTURE.md` §9b extended with the undo stack, echo guard, and self-knowledge pipeline.
+
+## [2.12.0] — 2026-09-17
+
+**The JARVIS-grade voice release.** GemAir studied what makes FatihMakes/Mark-LIV feel like a real-time voice Jarvis and closed the gap on its own stack — a hardened long-horizon Gemini Live loop, screen+camera fused into the same conversation, a drop-in single-file plugin system with a template, a proactive engine that remembers last session exactly once, a memory model that never silently forgets, local-privacy hardening with a startup git-leak guard, and a one-command OS-aware installer. Everything ships end-to-end (main → IPC → preload → renderer → tests → docs), no stubs. Concepts were reimplemented on GemAir's own engine — no upstream code copied (Mark-LIV is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).
+
+### Added — long-horizon duplex voice loop (`renderer/gemini-live.js`)
+- **Session resumption**: the Live setup now offers `session_resumption`; server `sessionResumptionUpdate` handles are stashed, reported via `onResumption`, and re-attached automatically on reconnect, manual reconnect, and voice-change — a dropped socket no longer wipes the conversation.
+- **Sliding-window context compression**: `context_window_compression: { sliding_window: {} }` is on by default, so one live conversation can run for hours without dying on a full context window.
+- **Graceful capability degradation**: if a live model refuses the enhanced setup (closes the socket before `setupComplete`), the session retries exactly once with the plain setup and flags itself degraded — Mark's `_enhanced_live` fallback, applied to the same session instead of a reload.
+- **GoAway pre-emption**: the server's `goAway.timeLeft` warning triggers an early, resumption-attached reconnect plus a UI toast — no audible dead-air gap.
+- **True interruption handling**: `serverContent.interrupted` now flushes the playback queue instantly and fires `onInterrupted`, complementing the existing VAD barge-in.
+- **Output transcription stream**: `output_audio_transcription` feeds `onOutputTranscript` — captions and the avatar's phoneme lip-sync now work on the native-audio voice too; input transcription is opt-in.
+- **Voice/prompt passthrough**: `startVoice` accepts `voiceName` and a `systemPrompt` so the live voice matches the configured identity.
+
+### Added — fused live vision (screen + camera in the same call)
+- Two toggles in the Live voice card — **SHARE SCREEN** and **SHARE CAMERA** — stream ~1 fps JPEG frames into the running voice session as `realtimeInput.video`, so "what's on my screen right now?" and "what am I holding up?" work mid-call instead of being a separate screenshot feature.
+- Screen frames come from a new `vision:screenFrame` IPC: `desktopCapturer`-based, **gated on the existing Screen Awareness permission**, throttled main-side, JPEG-compressed, honest errors (`SCREEN_AWARENESS_OFF` / `THROTTLED` / `CAPTURE_FAILED`), never a second socket. Camera frames use `getUserMedia` in the renderer with full track release on hang-up, stop, or error.
+
+### Added — drop-in plugins (`plugins/` + `lib/plugin-loader.js`)
+- **One file = one skill.** Any top-level `.js` file in `plugins/` exporting a `PLUGIN` declaration (`name`, `description`, JSON-Schema `parameters`, `risk`) plus an async `run(args, context)` becomes a callable tool on next launch — or instantly via Settings → Plugins → RELOAD.
+- Declarations merge into the model-facing catalog at every call site (`getAllTools()`); dispatch runs inside the existing permission gates — `risk: 'sensitive'` plugins get a human confirmation dialog like built-in sensitive tools.
+- Broken files, bad names, name collisions with built-ins, and throws at load- or run-time degrade to reported errors, never crashes. `_`-prefixed files are documentation; GemAir never downloads plugin code.
+- Ships `plugins/_template.js` (a validating canonical example) and a Settings → Plugins panel listing live skills, skipped files with reasons, and hot-memory archive stats.
+
+### Added — proactive engagement (`lib/proactive.js`)
+- **Once-per-launch greeting**: time-of-day aware (morning/afternoon/evening/late-night), mentions reminders due in the next 24h, names the topic monitors that found new headlines overnight, and — when a previous session exists — recalls its topics naturally and then marks them **consumed**, so it is said exactly once, never repeated.
+- **Optional idle check-ins** (`profile.proactiveCheckIns`): rotation-aware (never the same angle twice in a row), rate-limited to one per 3 hours, silent 22:00–07:00, and can mirror to an OS notification (`proactiveNotifications`).
+- **Session memory**: quitting records a distilled topic summary (`before-quit`), guarded against clobbering an un-consumed summary after a crash.
+
+### Added — memory cold archive (the end of silent forgetting)
+- New `lib/memory-archive.js`: an append-only, redaction-on-write cold store at `<userData>/gemair-memory-archive.json` with bounded rotation that folds the oldest half into per-kind **checkpoints** — the raw lines rotate, the evidence of what was learned never disappears.
+- Every hot-memory cap now archives before it trims: facts (300, importance-sorted), transcript (2000), action log (200), mood (500). `search_memory` automatically falls back to the archive (results marked `archived: true`).
+- GemCore's scoped `MemoryStore` reports evictions on `remember()`, archives them, and `recall()` merges archived hits (marked) after hot results — the documented fix for Mark-LII/LIII's capped-blob memory that deleted the oldest entries without telling anyone.
+- New IPC: `memory:archiveStats`, `memory:searchArchive`; stats surface in Settings → Plugins → MEMORY ARCHIVE.
+
+### Added — local-privacy hardening
+- `SECURITY.md`: the local-first inventory (what never leaves, what leaves while you use it, the `.gitignore` contract) and the blunt rule — **if you ever push a key, revoke and rotate it; deleting the file later does not remove it from git history.**
+- `lib/local-secret-check.js`: a startup guard that, inside source checkouts, asks `git ls-files` whether any secrets-shaped file (`.env*`, `api_keys.json`, certs, keys, memory exports…) is *tracked* — `.gitignore` cannot protect a tracked file — and warns in chat + logs with the untrack command. Missing git, non-git folders, and timeouts all degrade to silence.
+- `.gitignore` hardened: `.env.*` (`!.env.example`), `**/api_keys.json`, cert/key extensions, `config/certs/`, memory/profile export patterns, `plugins/local/`.
+
+### Added — one-command OS-aware setup (`scripts/setup.js`)
+- `npm run setup` validates Node ≥ 22.12 **before** npm runs (a wrong interpreter exits with one sentence, not a wall of engine warnings), checks the checkout is complete, installs only what the current OS needs, and prints per-OS notes (Electron system libraries on Linux, Xcode CLT on macOS, nothing extra on Windows).
+- `--with-browser` additionally installs the Playwright Chromium browser-automation engine; `--check` validates without installing (CI-friendly).
+
+### Added — wake-word one-click model install
+- Settings → Avatar & Voice gains **INSTALL ON-DEVICE WAKE MODEL**: `GemWakeWord.installModel()` precaches the ~40 MB on-device recognizer model **without opening the microphone**, with a live status line (`modelStatus()`), so enabling "Hey Gem" later starts instantly. The automatic download-on-first-enable path still works.
+
+### Changed
+- **Phoneme lip-sync goes language-free**: the avatar's `visemesForWord` now derives mouth shapes by Unicode reduction — NFD strips accents (à→a, ü→u) and Cyrillic/Greek letters map onto the same measured-shape rig (м/μπ→closure, у/ου→round, и/ι→spread), so non-Latin transcripts articulate instead of falling silent. CJK and other unmapped scripts fall back cleanly.
+- **Live voice captions + lip-sync**: the Live loop drives the avatar word-by-word from output transcription (a 120 ms word pump) instead of volume-only jaw motion. Transcripts also update the live caption.
+- **Reminder notifications**: OS-native reminders now carry the due time in the body and focus the GemAir window when clicked.
+- **Background monitor integration**: monitor alerts now set an `alertPending` flag the next-launch greeting consumes, completing the "tell me overnight changes when I come back" loop.
+- Version bumped 2.11.0 → 2.12.0 across `package.json`, `package-lock.json`, `VERSION`, `api/_lib/http.js`, `renderer/index.html`, `renderer/app.js` fallback, `renderer/sw.js` (`gemair-shell-v2.12.0-release`), `download.html`, and `scripts/selfcheck.js`.
+
+### Tests & docs
+- New suites in `npm run check`: `plugin-system-test.js`, `proactive-test.js`, `memory-archive-test.js`, `privacy-local-files-test.js`, `setup-script-test.js`, `avatar-viseme-test.js`, `live-vision-test.js`, `personalization-ritual-test.js`; extended `gemini-live-test.js` (+6: resumption/compression/degradation/goAway/interruption/video frames) and `wake-word-test.js` (+installModel/modelStatus + Settings wiring).
+- `GUIDE.md` gains the plugins/proactive/live-vision/memory-archive sections; `ARCHITECTURE.md` documents the new modules and the long-horizon live loop.
+
 ## [2.11.0] — 2026-09-14
 
 **Release pipeline fix + stable installers.** v2.10.0 was tagged correctly but the Build & Release workflow never ran for that tag — GitHub Actions does not trigger other workflows when a tag is created via `GITHUB_TOKEN` in some runners, leaving the GitHub Release empty with no Setup.exe. This release re-publishes the full artifact set and hardens the release flow.

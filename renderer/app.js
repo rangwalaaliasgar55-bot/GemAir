@@ -185,6 +185,7 @@ const api = {
   async memoryClearTranscript() { if (window.gemair) return window.gemair.memoryClearTranscript(); if (window.webStore) await window.webStore.clearTranscript(); },
   async memoryAddFact(fact) { if (window.gemair) return window.gemair.memoryAddFact(fact); if (window.webStore) await window.webStore.addFact(fact); },
   async memoryDeleteFact(id) { if (window.gemair) return window.gemair.memoryDeleteFact(id); if (window.webStore) await window.webStore.deleteFact(id); },
+  async memoryClearFacts() { if (window.gemair && window.gemair.memoryClearFacts) return window.gemair.memoryClearFacts(); if (window.webStore) { const n = (await window.webStore.get()).facts.length; (await window.webStore.get()).facts = []; return { ok: true, forgotten: n }; } return { ok: false }; },
   async memoryAddNote(text) { if (window.gemair) return window.gemair.memoryAddNote(text); if (window.webStore) await window.webStore.addNote(text); },
   async memoryDeleteNote(id) { if (window.gemair) return window.gemair.memoryDeleteNote(id); if (window.webStore) await window.webStore.deleteNote(id); },
   async memoryAddReminder(text, at, repeat) { if (window.gemair) return window.gemair.memoryAddReminder(text, at, repeat); if (window.webStore) await window.webStore.addReminder(text, at, repeat); },
@@ -251,12 +252,21 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.11.0'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.16.0'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
   onTopicMonitorAlert(cb) { return registerRendererDisposer(window.gemair && window.gemair.onTopicMonitorAlert ? window.gemair.onTopicMonitorAlert(cb) : null); },
   onWakeToggle(cb) { return registerRendererDisposer(window.gemair && window.gemair.onWakeToggle ? window.gemair.onWakeToggle(cb) : null); },
+  onProactiveGreeting(cb) { return registerRendererDisposer(window.gemair && window.gemair.onProactiveGreeting ? window.gemair.onProactiveGreeting(cb) : null); },
+  onProactiveCheckIn(cb) { return registerRendererDisposer(window.gemair && window.gemair.onProactiveCheckIn ? window.gemair.onProactiveCheckIn(cb) : null); },
+  onLocalSecretsWarning(cb) { return registerRendererDisposer(window.gemair && window.gemair.onLocalSecretsWarning ? window.gemair.onLocalSecretsWarning(cb) : null); },
+  async pluginsList() { return window.gemair && window.gemair.pluginsList ? window.gemair.pluginsList() : { ok: false, plugins: [], errors: [{ file: '-', message: 'Desktop app required for plugins.' }] }; },
+  async pluginsReload() { return window.gemair && window.gemair.pluginsReload ? window.gemair.pluginsReload() : { ok: false, plugins: [], errors: [{ file: '-', message: 'Desktop app required for plugins.' }] }; },
+  async pluginsOpenFolder() { return window.gemair && window.gemair.pluginsOpenFolder ? window.gemair.pluginsOpenFolder() : { ok: false, error: 'DESKTOP_ONLY' }; },
+  async visionCaptureScreenFrame() { return window.gemair && window.gemair.visionCaptureScreenFrame ? window.gemair.visionCaptureScreenFrame() : { ok: false, error: 'DESKTOP_ONLY' }; },
+  async memoryArchiveStats() { return window.gemair && window.gemair.memoryArchiveStats ? window.gemair.memoryArchiveStats() : { totalLive: 0, byKind: {} }; },
+  async memorySearchArchive(query, limit) { return window.gemair && window.gemair.memorySearchArchive ? window.gemair.memorySearchArchive(query, limit) : []; },
   onActivity(cb) { return registerRendererDisposer(window.gemair && window.gemair.onActivity ? window.gemair.onActivity(cb) : null); },
   async collaborateAgents(task) {
     if (window.gemair && window.gemair.collaborateAgents) return window.gemair.collaborateAgents(task);
@@ -657,6 +667,7 @@ function makeDefaultProfile() {
     dailyDigest: { enabled: false, time: '08:00' },
     ambientScore: false, ambientTrack: DEFAULTS.ambientTrack, ambientVolume: DEFAULTS.ambientVolume,
     screenAwareness: false,
+    pushToTalk: false, clipboardIntel: false, autoStart: false,
     modes: {}
   };
 }
@@ -2444,7 +2455,14 @@ function trimChatDom(log) {
   }
 }
 function addMessage(role, text, opts = {}) {
-  if (role === 'ai' && !opts.typing) playSfx('message');
+  if (role === 'ai' && !opts.typing) {
+    playSfx('message');
+    // 2.14: the face glances down at new content — a wordless "that landed".
+    try { window.gemAvatar && window.gemAvatar.glance && window.gemAvatar.glance(650); } catch (e) {}
+  }
+  if (role === 'system-msg') {
+    try { window.gemAvatar && window.gemAvatar.glance && window.gemAvatar.glance(500); } catch (e) {}
+  }
   const log = $('#chatLog');
   const div = chatNodePool.pop() || document.createElement('div');
   div.className = 'msg ' + role;
@@ -2881,6 +2899,7 @@ User: "play soft music" -> open lofi playlist + set volume 35 + apply theme viol
       (instructions ? `THE USER'S STANDING INSTRUCTIONS (always follow these):\n${instructions}\n\n` : '') +
       (modes ? `AVAILABLE MODES:\n${modes}\n\n` : '') +
       `INPUT HANDLING: The user often types fast with misspellings, missing letters, no punctuation, or mixed Hindi/Urdu romanisation. Silently infer what they meant and answer that. Never correct their spelling, never comment on it, and never ask "did you mean" unless the intent is genuinely ambiguous between two real options.\n` +
+      (selfKnowledgeText ? `\n${selfKnowledgeText}\n` : '') +
       `ANSWER STYLE (follow strictly):\n` +
       `- Lead with the answer. No preamble, no "Great question", no restating what was asked.\n` +
       `- Default to 1-3 sentences. Expand only when the user asks for detail, or the task genuinely needs steps.\n` +
@@ -3415,6 +3434,10 @@ async function handleMessage(text) {
   const emo = await api.analyzeEmotion(text);
   const lang = detectLanguage(text);
   currentLang = lang;
+  // Silent language memory (2.15): remember the language they actually
+  // type/speak in so future sessions adapt — it never overrides an explicit
+  // STT language pick (updateSttLanguageUi honours sttLang first).
+  if (lang && lang !== profile.lastSpokenLang) { profile.lastSpokenLang = lang; persistProfile(); }
   if (emo) {
     currentEmotion = emo;
     updateMoodIndicator(emo);
@@ -3808,6 +3831,9 @@ function ttsOptionsFor(clean, gen, mode) {
 function speak(text) {
   const clean = String(text || '').replace(/```[\s\S]*?```/g, '(code).').replace(/[#*_`]/g, '').replace(/\s+/g, ' ').trim();
   if (!clean) return;
+  // 2.13 echo guard: remember exactly what Gem is about to say so fresh STT
+  // text that IS this sentence gets dropped, not answered.
+  try { echoGuard && echoGuard.noteSpoken(clean); } catch {}
   stopSpeaking(); // interrupt prior speech so new replies cut in cleanly
   const gen = ++speechGen;
   const mode = profile.voice?.mode || DEFAULTS.voiceMode;
@@ -3973,7 +3999,12 @@ async function startMicMeter() {
   const canvas = $('#micVuCanvas');
   if (!canvas || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
   try {
-    if (!micStream) micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (!micStream) {
+      const micId = String(profile.audioDevices?.micId || '').trim();
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: micId ? { deviceId: { ideal: micId }, echoCancellation: true } : true
+      });
+    }
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = globalAudioCtx || new AudioCtx(); globalAudioCtx = ctx;
@@ -4029,9 +4060,26 @@ function initRecognition() {
       }
       if (event.results[i].isFinal) finalText += text; else interim += text;
     }
+    // 2.13 echo guard: if what the mic just heard is (the tail of) Gem's own
+    // last sentence, drop it instead of answering ourselves. Continuations in
+    // your voice are kept — the mic was never muted, only the echo is.
+    if (interim && echoGuard) {
+      try {
+        const g = echoGuard.inspect(interim);
+        if (g.dropped) interim = '';
+        else if (g.remainder) interim = g.remainder;
+      } catch {}
+    }
     if (interim) {
       $('#chatInput').value = interim;
       setCaption('user', interim, { autoHide: 1200 });
+    }
+    if (finalText.trim() && echoGuard) {
+      try {
+        const g = echoGuard.inspect(finalText.trim());
+        if (g.dropped) finalText = '';
+        else if (g.remainder) finalText = g.remainder;
+      } catch {}
     }
     if (finalText.trim()) { $('#chatInput').value = finalText.trim(); sendMessage(finalText.trim()); }
   };
@@ -5446,7 +5494,9 @@ function renderFacts() {
   facts.forEach((f) => {
     const div = document.createElement('div');
     div.className = 'memory-item';
-    div.innerHTML = `<span class="tag">${escapeHtml((f.category || 'fact').toUpperCase())}</span><span class="body">${escapeHtml(f.text)}</span><button class="del-btn" title="Forget">✕</button>`;
+    div.innerHTML = `<span class="tag">${escapeHtml((f.category || 'fact').toUpperCase())}` +
+      `${f.created ? `<span class="meta" style="opacity:.55;font-size:10px;" title="Learned ${new Date(f.created).toLocaleString()}${f.updated && f.updated !== f.created ? ' · updated ' + new Date(f.updated).toLocaleString() : ''}">${new Date(f.created).toLocaleDateString()}</span>` : ''}` +
+      `</span><span class="body">${escapeHtml(f.text)}</span><button class="del-btn" title="Forget">✕</button>`;
     div.querySelector('.del-btn').addEventListener('click', async () => { await api.memoryDeleteFact(f.id); await loadMemory(); renderFacts(); animateCircuits(); });
     list.appendChild(div);
   });
@@ -6094,8 +6144,13 @@ function syncVoicePresetUi(presetId) {
 }
 
 function updateSttLanguageUi() {
-  const language = profile.voice?.sttLang || DEFAULTS.sttLang;
-  const chip = $('#sttLangChip'); if (chip) chip.textContent = '🎙 ' + language.toUpperCase();
+  // Silent language memory (2.15): an explicit STT pick ALWAYS wins; when
+  // none was made, the language you actually speak wins over the default.
+  const LANGUAGE_TO_STT = { hi: 'hi-IN', hinglish: 'hi-IN', ur: 'ur' };
+  const auto = (!profile.voice || !profile.voice.sttLang) && profile.lastSpokenLang
+    ? LANGUAGE_TO_STT[profile.lastSpokenLang] : null;
+  const language = (profile.voice && profile.voice.sttLang) || auto || DEFAULTS.sttLang;
+  const chip = $('#sttLangChip'); if (chip) chip.textContent = '🎙 ' + language.toUpperCase() + (auto ? '·auto' : '');
   if (recognition) recognition.lang = language;
   if (wakeRecognition) wakeRecognition.lang = language;
 }
@@ -6625,6 +6680,13 @@ function populateSettings() {
   applyAppearance(profile.appearance || DEFAULTS.appearance);
   $('#setWakeWord').checked = !!profile.wakeWord;
   $('#setWakeWordText').value = profile.wakeWordText || 'Hey Gem';
+  // 2.13 — push-to-talk / clipboard intelligence / auto-start rows
+  { const ptt = $('#setPushToTalk'); if (ptt) ptt.checked = !!profile.pushToTalk; }
+  { const ci = $('#setClipboardIntel'); if (ci) ci.checked = !!profile.clipboardIntel; }
+  { const hw = $('#setHardwareWatch'); if (hw) hw.checked = !!profile.hardwareWatch; } // 2.15
+  refreshAutostartRow();
+  populateAudioDevices(); // 2.14 — refresh the short live lists on open
+  populateLocalServerCard(); // 2.16 — pair code, phone QR, site blocks on open
   populateVoices(); populateNeuralVoices(); populateEdgeVoices(); updateAiHint();
   syncVoicePresetUi(profile.voice?.preset || 'gem');
   renderCostPanel();
@@ -7306,6 +7368,21 @@ function bindEvents() {
   });
 
   $('#factAdd').addEventListener('click', async () => { const v = $('#factInput').value.trim(); if (v) { await api.memoryAddFact({ text: v, category: 'fact' }); $('#factInput').value = ''; await loadMemory(); renderAllMemory(); animateCircuits(); } });
+  // 2.15 — memory transparency: one human click deletes every stored fact.
+  // The dialog says exactly what this is (irreversible, not on the undo
+  // stack); the model can never reach this path itself.
+  { const fab = $('#forgetAllFacts'); if (fab) fab.addEventListener('click', async () => {
+    const n = (memory.facts || []).length;
+    if (!n) { toast('MEMORY', 'No facts stored — nothing to forget.', '🧠'); return; }
+    const ok = window.confirm(
+      'Forget ALL ' + n + ' stored facts about you?\n\n' +
+      'This deletes the entire long-term fact memory at once. It is irreversible — it is NOT on the undo stack, on purpose. Continue?');
+    if (!ok) return;
+    if (!api.memoryClearFacts) { toast('MEMORY', 'Bulk forget needs the desktop app.', '⚠'); return; }
+    const r = await api.memoryClearFacts();
+    await loadMemory(); renderAllMemory(); animateCircuits();
+    toast('MEMORY', 'Forgot ' + (r && r.forgotten != null ? r.forgotten : n) + ' facts. Gem keeps nothing it was told to drop.', '🧠');
+  }); }
   $('#factInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#factAdd').click(); });
   $('#noteAdd').addEventListener('click', async () => { const v = $('#noteInput').value.trim(); if (v) { await api.memoryAddNote(v); $('#noteInput').value = ''; await loadMemory(); renderNotes(); } });
   $('#noteInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#noteAdd').click(); });
@@ -7655,6 +7732,14 @@ function bindEvents() {
     if (setCodingAgentSteps) profile.codingAgentMaxSteps = Math.max(1, Math.min(20, Number(setCodingAgentSteps.value) || 10));
     profile.wakeWord = $('#setWakeWord').checked;
     profile.wakeWordText = ($('#setWakeWordText').value || 'Hey Gem').trim().replace(/\s+/g, ' ').slice(0, 40) || 'Hey Gem';
+    // 2.13 — push-to-talk / clipboard intelligence / auto-start at login
+    { const ptt = $('#setPushToTalk'); if (ptt) profile.pushToTalk = ptt.checked; }
+    { const ci = $('#setClipboardIntel'); if (ci) profile.clipboardIntel = ci.checked; }
+    { const as_ = $('#setAutoStart'); if (as_ && !as_.disabled) { try { const r = await api.autostartSet(as_.checked); if (r && r.error) toast('AUTO-START', r.error, '⚠'); else profile.autoStart = as_.checked; } catch {} } }
+    { const hw = $('#setHardwareWatch'); if (hw) profile.hardwareWatch = hw.checked; } // 2.15
+    try { await api.automationApply(); } catch {} // sync main-side loops (clipboard watcher)
+    // 2.14 — audio devices (select change already persists; re-sync the sink)
+    syncSpeakerSink();
     if (geminiKeyInput) {
       const secure = await api.connectionsSetGeminiApiKey(geminiKeyInput, geminiTextModel);
       if (secure && secure.error) {
@@ -8117,6 +8202,124 @@ function bindEvents() {
     return { apiKey, model, usedStoredKey: !($('#setGeminiLiveKey')?.value || '').trim() && !!apiKey };
   }
 
+  // --- Live vision sharing (screen + camera fused into the voice loop) -----
+  // Frames stream at ~1 fps into the SAME live session as the mic audio, so
+  // "what's on my screen right now?" / "what am I holding up?" work mid-call
+  // instead of being a separate screenshot feature (Mark-style fused vision,
+  // routed through GemAir's own capture paths and permission gates).
+  const liveVision = { screenTimer: null, cameraTimer: null, cameraStream: null, cameraTrack: null, videoEl: null, canvas: null };
+  const visionState = (text) => { const el = $('#geminiLiveVisionState'); if (el) el.textContent = text; };
+
+  // One deferred word pump so output transcription drives avatar visemes
+  // phonetically (speakWord -> viseme sequence in avatar.js) at a readable
+  // cadence instead of 50 shapes a second of noise.
+  const liveLipSync = { queue: [], timer: null };
+  function pumpLiveLipSync() {
+    if (liveLipSync.timer) return;
+    liveLipSync.timer = setInterval(() => {
+      const word = liveLipSync.queue.shift();
+      if (!word) {
+        clearInterval(liveLipSync.timer);
+        liveLipSync.timer = null;
+        return;
+      }
+      try { if (window.gemAvatar && window.gemAvatar.speakWord) window.gemAvatar.speakWord(word); } catch {}
+    }, 120);
+  }
+
+  function startLiveScreenShare() {
+    if (liveVision.screenTimer) return;
+    // 2.14: label the source before the first frame — the model then KNOWS
+    // the avatar in a screenshot is GemAir itself, never a photo of the user.
+    try { window.geminiLive && window.geminiLive.labelVisionSource && window.geminiLive.labelVisionSource(geminiLiveVoice, 'screen'); } catch (e) {}
+    const send = async () => {
+      const session = geminiLiveVoice;
+      if (!session || !session.ready || !session.sendVideoFrame) return;
+      try {
+        const frame = await api.visionCaptureScreenFrame();
+        if (frame && frame.ok && frame.data) {
+          if (!session.sendVideoFrame(frame.data, frame.mimeType || 'image/jpeg')) return;
+          visionState('sharing screen' + (($('#geminiLiveShareCamera') || {}).checked ? ' + camera' : '') + ' (@ ~1 fps) — ask what Gem sees');
+        } else if (frame && frame.error === 'SCREEN_AWARENESS_OFF') {
+          visionState('screen sharing needs Settings → “Optional screen awareness” enabled');
+          const box = $('#geminiLiveShareScreen');
+          if (box) box.checked = false;
+          stopLiveScreenShare();
+        }
+      } catch {}
+    };
+    send();
+    liveVision.screenTimer = setInterval(send, 1200);
+  }
+  function stopLiveScreenShare() {
+    if (liveVision.screenTimer) clearInterval(liveVision.screenTimer);
+    liveVision.screenTimer = null;
+  }
+
+  async function startLiveCameraShare() {
+    if (liveVision.cameraTimer) return true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { visionState('camera unavailable in this environment'); return false; }
+    try {
+      liveVision.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }, audio: false });
+    } catch (e) {
+      visionState('camera permission denied — nothing was shared');
+      return false;
+    }
+    // 2.14: camera frames are labelled as camera before they start flowing —
+    // surroundings, possibly the user; mirroring Mark's source-labelled images.
+    try { window.geminiLive && window.geminiLive.labelVisionSource && window.geminiLive.labelVisionSource(geminiLiveVoice, 'camera'); } catch (e) {}
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = liveVision.cameraStream;
+    try { await video.play(); } catch {}
+    liveVision.videoEl = video;
+    const canvas = document.createElement('canvas');
+    liveVision.canvas = canvas;
+    const grab = () => {
+      const session = geminiLiveVoice;
+      if (!session || !session.ready || !session.sendVideoFrame) return;
+      if (!video.videoWidth || !video.videoHeight) return;
+      const scale = Math.min(1, 480 / video.videoWidth);
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.55);
+      const base64 = dataUrl.includes(',') ? dataUrl.slice(dataUrl.indexOf(',') + 1) : dataUrl;
+      if (session.sendVideoFrame(base64, 'image/jpeg')) {
+        visionState('sharing camera' + (($('#geminiLiveShareScreen') || {}).checked ? ' + screen' : '') + ' (@ ~1 fps) — ask what Gem sees');
+      }
+    };
+    liveVision.cameraTimer = setInterval(grab, 1400);
+    setTimeout(grab, 600);
+    return true;
+  }
+  function stopLiveCameraShare() {
+    if (liveVision.cameraTimer) clearInterval(liveVision.cameraTimer);
+    liveVision.cameraTimer = null;
+    try { liveVision.videoEl && liveVision.videoEl.pause(); } catch {}
+    liveVision.videoEl = null;
+    try { liveVision.cameraStream && liveVision.cameraStream.getTracks().forEach((t) => t.stop()); } catch {}
+    liveVision.cameraStream = null;
+  }
+  function stopAllLiveVision() {
+    stopLiveScreenShare();
+    stopLiveCameraShare();
+    const boxS = $('#geminiLiveShareScreen'); if (boxS) boxS.checked = false;
+    const boxC = $('#geminiLiveShareCamera'); if (boxC) boxC.checked = false;
+    visionState('vision off — enable a share, then ask “what’s on my screen?” mid-call');
+  }
+
+  $('#geminiLiveShareScreen')?.addEventListener('change', (e) => {
+    if (e.target.checked) startLiveScreenShare(); else { stopLiveScreenShare(); visionState('screen share paused'); }
+  });
+  $('#geminiLiveShareCamera')?.addEventListener('change', async (e) => {
+    if (e.target.checked) { const ok = await startLiveCameraShare(); if (!ok) e.target.checked = false; }
+    else { stopLiveCameraShare(); visionState('camera share paused'); }
+  });
+
   $('#startGeminiLiveVoiceBtn')?.addEventListener('click', async () => {
     const hint = $('#geminiLiveHint');
     const say = (text, ok) => {
@@ -8128,8 +8331,13 @@ function bindEvents() {
     if (!apiKey) { say('Enter your AI Studio API key in Settings → Siri & Voice first (it is then remembered, encrypted).', false); return; }
     liveState('connecting');
     try {
+      const name = (profile.name || '').trim();
+      const assistantName = (profile.assistantName || 'Gem').trim() || 'Gem';
       geminiLiveVoice = await window.geminiLive.startVoice({
         apiKey, model, timeoutMs: 25000,
+        micDeviceId: profile.audioDevices?.micId || '',     // 2.14: the Settings pick drives Live too
+        speakerDeviceId: profile.audioDevices?.speakerId || '',
+        systemPrompt: `You are ${assistantName}, the voice assistant inside the GemAir desktop app.${name ? ` The user's name is ${name}.` : ''} Keep spoken answers short and natural. When the user shares their screen or camera, describe only what is actually visible.`,
         onLog: (message) => { liveState(message); },
         onText: (text, done) => { if (text && done !== true) setCaption('ai', text); },
         onError: (message) => { say('✗ ' + message, false); },
@@ -8139,23 +8347,42 @@ function bindEvents() {
           if (state === 'closed' || state === 'error') {
             liveVoiceButtons(false);
             liveMeter('#geminiLiveMeterIn', 0); liveMeter('#geminiLiveMeterOut', 0);
+            stopAllLiveVision();
             const recon = $('#reconnectGeminiLiveBtn');
             if (recon) recon.hidden = false;
           }
         },
         onLevel: ({ in: input, out }) => { liveMeter('#geminiLiveMeterIn', input); liveMeter('#geminiLiveMeterOut', out); },
-        onBargeIn: () => { try { toast('LIVE VOICE', 'Barged in — Gem stopped to listen.', '🎙'); } catch {} }
+        onBargeIn: () => { try { toast('LIVE VOICE', 'Barged in — Gem stopped to listen.', '🎙'); } catch {} },
+        onInterrupted: () => { try { setCaption('ai', ''); } catch {} },
+        // The model's own transcript drives captions + phoneme lip-sync.
+        onOutputTranscript: (text) => {
+          if (!text) return;
+          try { setCaption('ai', text); } catch {}
+          for (const word of String(text).trim().split(/\s+/g).filter(Boolean).slice(0, 40)) {
+            liveLipSync.queue.push(word);
+          }
+          if (liveLipSync.queue.length) pumpLiveLipSync();
+        },
+        onResumption: () => { try { liveState('live (session resumable — drops resume, never restart)'); } catch {} },
+        onGoAway: (timeLeft) => { try { toast('LIVE VOICE', 'Live server rotating the session — auto-resuming…', '🔄'); } catch {} liveState('goAway — resuming'); }
       });
+      // 2.15: expose the active session so the device picker can reconnect
+      // (mic changed mid-call → resumption-attached reconnect).
+      if (geminiLiveVoice) window.__gemLiveVoice = geminiLiveVoice;
     } catch (e) {
       liveState('error');
       liveVoiceButtons(false);
+      stopAllLiveVision();
       say('✗ ' + (e.message === 'MIC_UNAVAILABLE' ? 'Microphone unavailable — grant mic permission and retry.' : (e.message || 'Live voice failed')), false);
       geminiLiveVoice = null;
     }
   });
   const stopLiveVoice = () => {
+    stopAllLiveVision();
     try { geminiLiveVoice && geminiLiveVoice.close(1000); } catch {}
     geminiLiveVoice = null;
+    window.__gemLiveVoice = null;
     liveState('closed');
     liveVoiceButtons(false);
     liveMeter('#geminiLiveMeterIn', 0); liveMeter('#geminiLiveMeterOut', 0);
@@ -8240,6 +8467,26 @@ function bindEvents() {
     if (!alert || !alert.title) return;
     addMessage('system-msg', `📰 ${alert.topic}: ${alert.title}`);
     speak(`Update on ${alert.topic}: ${alert.title}`);
+  });
+
+  // Proactive engine (Mark-heritage, rebuilt on GemAir memory): the launch
+  // greeting recalls last session once (never repeats); idle check-ins only
+  // arrive when enabled in Settings → voice & identity.
+  if (api.onProactiveGreeting) api.onProactiveGreeting((greeting) => {
+    if (!greeting || !greeting.text) return;
+    addMessage('ai', greeting.text);
+  });
+  if (api.onProactiveCheckIn) api.onProactiveCheckIn((checkIn) => {
+    if (!checkIn || !checkIn.text) return;
+    addMessage('ai', '💭 ' + checkIn.text);
+  });
+
+  // Local-secret git guard — only ever fires inside a dev checkout; tells the
+  // developer to untrack + rotate instead of letting a fork leak by accident.
+  if (api.onLocalSecretsWarning) api.onLocalSecretsWarning((payload) => {
+    const hits = payload && Array.isArray(payload.hits) ? payload.hits : [];
+    if (!hits.length) return;
+    addMessage('system-msg', `⚠️ SECURITY: ${hits.length} sensitive file(s) are tracked by git in this checkout (${hits.slice(0, 3).map((h) => h.file).join(', ')}${hits.length > 3 ? '…' : ''}). Run \`git rm --cached <file>\` to untrack them — and if any was ever pushed, revoke and rotate the credential; deleting the file does not remove it from history. See SECURITY.md.`);
   });
 
   // visible reasoning: live tool-activity chips (single global listener)
@@ -8359,6 +8606,7 @@ function configureScreenAwareness(enabled) {
 function startAiLoop() {
   isRunning = true;
   listening = true;
+  avatar({ sleeping: false }); // 2.14: eyes open the instant you call
   startMicMeter();
   if (profile.screenAwareness) inspectActiveScreen();
   $('#startBtn').classList.add('running');
@@ -8385,6 +8633,7 @@ function armWakeAutoSleep() {
     $('#orbStatus').classList.remove('active');
     stopListening();
     addMessage('system-msg', `Going quiet after 2 minutes of silence — say “${profile.wakeWordText || 'Hey Gem'}” to wake me.`);
+    avatar({ sleeping: true }); // 2.14: lids fall while asleep
     configureWakeWord(true);
   }, WAKE_AUTO_SLEEP_MS);
 }
@@ -8408,10 +8657,59 @@ let localWakeActive = false;
 function useLocalWakeWord() {
   return !!(window.GemWakeWord && window.GemWakeWord.isSupported());
 }
+// One-click wake-model install (Settings → AVATAR & VOICE): downloads the
+// on-device recognizer model ahead of time so enabling the wake word starts
+// instantly — Mark's "grab it in one click from ⚙ → WAKE WORD" flow. The
+// button is a no-op in environments without the local engine.
+function updateWakeModelStatus() {
+  const statusEl = $('#wakeModelStatus');
+  if (!statusEl) return;
+  if (!window.GemWakeWord || !window.GemWakeWord.modelStatus) {
+    statusEl.textContent = 'Local wake engine unavailable in this environment — the cloud wake loop will be used instead.';
+    return;
+  }
+  const status = window.GemWakeWord.modelStatus();
+  if (!status.supported) {
+    statusEl.textContent = 'Local wake engine unavailable in this environment — the cloud wake loop will be used instead.';
+  } else if (status.installed) {
+    statusEl.textContent = '✓ On-device wake model installed — the wake listener never sends audio anywhere.';
+  } else if (status.downloading) {
+    statusEl.textContent = 'Downloading the on-device wake model…';
+  } else {
+    statusEl.textContent = 'Not installed yet — optional one-time ~40 MB download, stays on this device.';
+  }
+}
+function setupWakeModelInstall() {
+  const btn = $('#wakeModelInstallBtn');
+  if (!btn) return;
+  updateWakeModelStatus();
+  btn.addEventListener('click', async () => {
+    if (!window.GemWakeWord || !window.GemWakeWord.installModel) {
+      toast('WAKE WORD', 'The on-device wake engine is not available in this environment.', '⚠');
+      return;
+    }
+    playSfx('click');
+    btn.disabled = true;
+    try {
+      await window.GemWakeWord.installModel((message) => {
+        const statusEl = $('#wakeModelStatus');
+        if (statusEl) statusEl.textContent = message;
+      });
+      toast('WAKE WORD', 'On-device wake model installed — the wake listener stays fully local.', '✓');
+      addMessage('system-msg', 'On-device wake-word model installed. The wake listener never sends microphone audio anywhere.');
+    } catch (error) {
+      toast('WAKE WORD', 'Model install failed: ' + (error && error.message ? error.message : error), '⚠');
+    } finally {
+      btn.disabled = false;
+      updateWakeModelStatus();
+    }
+  });
+}
 async function armLocalWakeWord(phrase) {
   try {
     await window.GemWakeWord.start({
       phrase,
+      micDeviceId: profile.audioDevices?.micId || '', // 2.14: same pick as dictation + Live
       onStatus: (message) => addMessage('system-msg', message),
       onWake: (heard) => {
         addMessage('system-msg', `Wake phrase “${phrase}” detected (on-device) — listening.`);
@@ -8436,6 +8734,7 @@ async function armLocalWakeWord(phrase) {
 function configureWakeWord(enabled) {
   document.body.classList.toggle('wake-armed', !!enabled);
   if (!enabled) {
+    avatar({ sleeping: false });
     if (localWakeActive && window.GemWakeWord) { try { window.GemWakeWord.stop(); } catch (e) {} }
     localWakeActive = false;
     if (wakeRecognition) { try { wakeRecognition.stop(); } catch (e) {} }
@@ -8444,6 +8743,7 @@ function configureWakeWord(enabled) {
     stopMicMeter();
     return;
   }
+  if (!isRunning) avatar({ sleeping: true }); // armed, quiet, eyes resting
   if (useLocalWakeWord() && !localWakeActive && !wakeArmed) {
     const phrase = profile.wakeWordText || 'Hey Gem';
     armLocalWakeWord(phrase).then((started) => { if (!started) configureWakeWordCloud(); });
@@ -8853,6 +9153,17 @@ async function boot() {
   safe('desktopTools', setupDesktopTools);             // 2.4 A
   safe('planAct', setupPlanAct);                       // 2.4 A1
   safe('settingsReorg', setupSettingsReorg);           // 2.4 U3
+  safe('pluginsPanel', setupPluginsPanel);             // 2.12 drop-in plugins
+  safe('wakeModelInstall', setupWakeModelInstall);     // 2.12 one-click wake model
+  safe('instantAck', setupInstantAck);                 // 2.13 "on it" acks
+  safe('hardwareWatch', setupHardwareWatch);           // 2.15 sustained-heat alerts
+  safe('contentPanel', setupContentPanel);             // 2.16 search → scrollable cards
+  safe('localServerCard', setupLocalServerCard);       // 2.16 browser link + phone remote
+  safe('pushToTalk', setupPushToTalk);                 // 2.13 Ctrl+Space hold-to-talk
+  safe('clipIntel', setupClipboardIntel);              // 2.13 floating clipboard panel
+  safe('selfKnowledge', refreshSelfKnowledgeCache);    // 2.13 live self-knowledge
+  safe('audioDevices', setupAudioDevicePicker);        // 2.14 mic/speaker picker
+  safe('audioDevicesBoot', () => { syncSpeakerSink(); populateAudioDevices(); }); // 2.14
   safe('circuitWires', startCircuitWires);
   safe('townPreview', startTownPreview);
   safe('townChrome', initTownChrome);
@@ -10265,6 +10576,410 @@ function setupPlanAct() {
 // ---------------------------------------------------------------------------
 // Settings reorg (U3) + search
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Plugins panel (U-plugins): single-file drop-in skills discovered from
+// plugins/. Lists live plugins + skipped files, reloads on demand, and shows
+// the hot-memory archive stats so the user can see that evictions are kept,
+// not silently deleted (the Mark-LII memory lesson, fixed).
+// ---------------------------------------------------------------------------
+async function renderPluginsPanel() {
+  const list = $('#pluginsList');
+  const errorsBox = $('#pluginsErrors');
+  const hint = $('#pluginsHint');
+  if (!list) return;
+  const result = await api.pluginsList();
+  const plugins = (result && Array.isArray(result.plugins)) ? result.plugins : [];
+  const errors = (result && Array.isArray(result.errors)) ? result.errors : [];
+  list.innerHTML = plugins.length
+    ? plugins.map((p) => `<div class="memory-item" role="listitem"><div><b>${escapeHtml(p.name)}</b> <span class="dim">(${p.file})</span><div class="dim" style="font-size:11px;">${escapeHtml(p.description)}${p.risk === 'sensitive' ? ' · <span style="color:var(--warn,#ffb347)">sensitive — asks before running</span>' : ' · safe'}</div></div></div>`).join('')
+    : '<div class="empty">No plugins loaded. Copy <b>plugins/_template.js</b> to a new file in the plugins folder, edit it, and press RELOAD.</div>';
+  if (errorsBox) {
+    errorsBox.innerHTML = errors.length
+      ? errors.map((e) => `<div class="memory-item" role="listitem"><div class="dim" style="font-size:11px;color:var(--warn,#ffb347);">⚠ skipped ${escapeHtml(e.file)}: ${escapeHtml(e.message)}</div></div>`).join('')
+      : '';
+  }
+  if (hint) hint.textContent = plugins.length ? `${plugins.length} plugin skill${plugins.length === 1 ? '' : 's'} live in the tool catalog.` : '';
+  const stats = await api.memoryArchiveStats();
+  const statsBox = $('#memoryArchiveStats');
+  if (statsBox && stats) {
+    const kinds = Object.entries(stats.byKind || {});
+    statsBox.innerHTML = stats.totalLive === 0 && !kinds.length
+      ? 'Archive is empty — no hot-memory caps have been hit yet.'
+      : `<b>${stats.totalLive.toLocaleString()}</b> archived entries on this device${kinds.length ? ' — ' + kinds.map(([k, n]) => `${escapeHtml(k)}: ${n.toLocaleString()}`).join(' · ') : ''}.`;
+  }
+}
+function setupPluginsPanel() {
+  $('#pluginsReloadBtn')?.addEventListener('click', async () => {
+    await api.pluginsReload();
+    playSfx('click');
+    try { refreshSelfKnowledgeCache(); } catch {} // a plugin (dis)appeared — update what Gem claims
+    await renderPluginsPanel();
+  });
+  $('#pluginsOpenFolderBtn')?.addEventListener('click', async () => {
+    playSfx('click');
+    const res = await api.pluginsOpenFolder();
+    if (res && res.ok === false) toast('Plugins', res.error || 'Could not open the plugins folder.', '⚠');
+  });
+  // Load lazily the first time the Plugins section opens.
+  document.querySelector('.settings-nav-btn[data-ssection="plugins"]')?.addEventListener('click', () => { renderPluginsPanel(); });
+}
+
+// ---------------------------------------------------------------------------
+// 2.13 — echo guard · instant ack · push-to-talk · clipboard intel ·
+// self-knowledge prompt injection (Mark-LIV concept ports)
+// ---------------------------------------------------------------------------
+
+// Self-echo guard: the tail of Gem's own voice is recognised in fresh STT
+// text and dropped — without ever muting you. noteSpoken() runs in speak();
+// inspect() runs in the SpeechRecognition onresult handler.
+const echoGuard = (typeof window !== 'undefined' && window.GemEchoGuard) ? window.GemEchoGuard.createEchoGuard() : null;
+
+// Self-knowledge cache: the live "what it is and isn't" snapshot from main,
+// injected into every system prompt instead of stale hand-written claims.
+let selfKnowledgeText = '';
+async function refreshSelfKnowledgeCache() {
+  try {
+    const info = await api.selfKnowledge();
+    selfKnowledgeText = (info && typeof info.text === 'string') ? info.text : '';
+  } catch { selfKnowledgeText = ''; }
+}
+
+// Instant acknowledgment: when main says a gap-prone tool just STARTED, say
+// one short line in the user's language so the wait never feels dead. The
+// model itself never narrates — this comes from the shell.
+const ackPicker = (typeof window !== 'undefined' && window.GemInstantAck) ? window.GemInstantAck.createAckPicker() : null;
+function setupInstantAck() {
+  if (!ackPicker) return;
+  if (!api.onToolStarted) return; // bridge missing (unsupported env) — degrade silently
+  api.onToolStarted((info) => {
+    if (!info || !info.name) return;
+    const langMap = { hinglish: 'hi', ur: 'hi', hi: 'hi', en: 'en' };
+    const language = langMap[currentLang] || (typeof currentLang === 'string' ? currentLang : 'en');
+    const ack = ackPicker.pick({ language, tool: info.name });
+    // Never talk over an answer already being spoken — toast only then.
+    if (document.body.classList.contains('rgb-speaking')) {
+      toast('GEM', ack.line, '⏳');
+    } else {
+      try { speak(ack.line); } catch { toast('GEM', ack.line, '⏳'); }
+    }
+  });
+}
+
+// Push-to-talk: Ctrl+Space hold opens the mic, release ends dictation (the
+// final transcript sends on release, like the mic button does). Bound to this
+// window by design — no dependency-free global key read exists outside
+// Windows native code, and the Settings hint says so.
+// 2.16 — Dynamic Content Panel: every search result set renders as cards.
+function setupContentPanel() {
+  const close = $('#contentPanelClose');
+  if (close) close.addEventListener('click', () => { const p = $('#contentPanel'); if (p) p.hidden = true; });
+  if (!api.onContentResults) return;
+  api.onContentResults(({ query, mode, results }) => {
+    const panel = $('#contentPanel'), strip = $('#contentStrip'), title = $('#contentPanelTitle');
+    if (!panel || !strip) return;
+    strip.innerHTML = '';
+    const rows = Array.isArray(results) ? results : [];
+    if (!rows.length) { panel.hidden = true; return; }
+    if (title) title.textContent = String(mode || 'search').toUpperCase() + ' · ' + rows.length;
+    for (const r of rows.slice(0, 10)) {
+      const card = document.createElement('div');
+      card.className = 'content-card';
+      let host = '';
+      try { host = new URL(r.url).hostname.replace(/^www\./, ''); } catch {}
+      card.innerHTML =
+        '<span class="cc-host">' + escapeHtml(host || 'source') + '</span>' +
+        '<span class="cc-title">' + escapeHtml(r.title || host || 'result') + '</span>' +
+        '<span class="cc-snippet">' + escapeHtml(r.snippet || 'no snippet from the source') + '</span>' +
+        '<span class="cc-actions"><button class="qc cc-open">OPEN</button><button class="qc cc-nav" title="Navigate the paired desktop browser">→ BROWSER</button></span>';
+      card.querySelector('.cc-open').addEventListener('click', () => { try { api.openExternal(r.url); } catch {} });
+      card.querySelector('.cc-nav').addEventListener('click', async () => {
+        try {
+          const res = api.localsrvNav ? await api.localsrvNav(r.url) : null;
+          toast('BROWSER LINK', res && res.ok ? 'Navigating the paired browser…' : ((res && res.error) || 'browser link not paired'), '🔗');
+        } catch (e) { toast('BROWSER LINK', 'Nav failed (' + e.message + ')', '⚠'); }
+      });
+      strip.appendChild(card);
+    }
+    panel.hidden = false;
+    // Gaze: something new landed below — the 2.14 face reacts for real.
+    try { if (window.gemAvatar && window.gemAvatar.glance) window.gemAvatar.glance(600); } catch {}
+  });
+}
+
+// 2.16 — Browser link + phone remote settings card
+async function populateLocalServerCard() {
+  if (!api.localsrvInfo) return;
+  try {
+    const info = await api.localsrvInfo();
+    const code = $('#extPairCode');
+    if (code && info.pairCode) code.textContent = info.pairCode;
+    const lt = $('#extLastTab');
+    if (lt) lt.textContent = info.lastTab
+      ? ('Paired browser active: ' + (info.lastTab.title || info.lastTab.url))
+      : 'Extension not paired — load the extension, enter this code in its popup.';
+    const rd = $('#setRemoteDashboard');
+    if (rd) rd.checked = !!profile.remoteDashboard;
+    const row = $('#remoteDashRow');
+    if (profile.remoteDashboard && row) {
+      row.hidden = false;
+      const qr = api.localsrvQr ? await api.localsrvQr() : null;
+      if (qr && qr.ok) {
+        const img = $('#remoteDashQr'); if (img) img.src = qr.dataUrl;
+        const u = $('#remoteDashUrl'); if (u) u.textContent = qr.url;
+      } else {
+        const hint = $('#remoteDashHint'); if (hint) hint.textContent = (qr && qr.error) || 'QR unavailable — disable/re-enable or use the URL shown.';
+      }
+    } else if (row) row.hidden = true;
+  } catch {}
+}
+
+function setupLocalServerCard() {
+  if (api.onExternalTab) api.onExternalTab((t) => {
+    const lt = $('#extLastTab');
+    if (lt) lt.textContent = 'Paired browser active: ' + (t.title || t.url || '');
+  });
+  if (api.onBlockedAttempt) api.onBlockedAttempt((a) => {
+    toast('SITE BLOCK', 'Blocked visit attempt: ' + (a.subject || '?'), '🚫');
+  });
+  const rd = $('#setRemoteDashboard');
+  if (rd) rd.addEventListener('change', () => {
+    profile.remoteDashboard = rd.checked; persistProfile();
+    try { api.automationApply(); } catch {}
+    populateLocalServerCard(); // shows QR / hides it, honestly reporting port problems
+  });
+  const sb = $('#siteBlocksEdit');
+  if (sb) {
+    if (Array.isArray(profile.siteBlocks)) {
+      sb.value = profile.siteBlocks.map((b) => b.target + (b.reason ? ' | ' + b.reason : '')).join('\n');
+    }
+    sb.addEventListener('change', () => {
+      profile.siteBlocks = sb.value.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 100)
+        .map((line) => { const [t, ...rest] = line.split('|'); return { target: t.trim().slice(0, 120), reason: rest.join('|').trim().slice(0, 160) }; });
+      persistProfile();
+      toast('BROWSER LINK', profile.siteBlocks.length + ' site block rule(s) saved — served to the paired extension.', '🔗');
+    });
+  }
+  if (api.onDashboardSay) api.onDashboardSay(({ text }) => {
+    const t = String(text || '').trim();
+    if (!t) return;
+    toast('PHONE', 'Phone remote sent: “' + t.slice(0, 60) + '”', '📱');
+    try { sendMessage(t); } catch (e) { toast('PHONE', 'Could not deliver to Gem (' + e.message + ')', '⚠'); }
+  });
+}
+
+// Hardware watch alerts (2.15): main samples every 20s while opted in,
+// fires only on SUSTAINED heat, and re-speaks at most every 15 minutes.
+// Here we surface it honestly: unavailable sensors toast once (never
+// pretended data), real conditions speak one short line in the user's
+// language, mid-answer → toast instead of talking over Gem.
+function setupHardwareWatch() {
+  if (!api.onHardwareAlert) return;
+  api.onHardwareAlert((a) => {
+    if (!a || !a.kind) return;
+    if (a.kind.startsWith('unavailable:')) {
+      toast('HARDWARE', 'No ' + a.kind.slice('unavailable:'.length) +
+        ' sensor reading on this OS — that metric stays off rather than guess.', '🌡');
+      return;
+    }
+    const kind = ({ cpu: 'warn-cpu', mem: 'warn-ram', temp: 'warn-temp', battery: 'warn-battery' })[a.kind];
+    if (!kind) return;
+    const langMap = { hinglish: 'hi', ur: 'hi', hi: 'hi', en: 'en' };
+    const language = langMap[currentLang] || (typeof currentLang === 'string' ? currentLang : 'en');
+    const line = ackPicker ? ackPicker.pick({ language, kind }).line : a.kind;
+    const icons = { cpu: '🔥', mem: '🧠', temp: '🌡', battery: '🔋' };
+    if (document.body.classList.contains('rgb-speaking')) {
+      toast('HARDWARE', line, icons[a.kind] || '⚠');
+    } else {
+      try { speak(line); } catch { toast('HARDWARE', line, icons[a.kind] || '⚠'); }
+    }
+  });
+}
+
+let pttHeld = false;
+function setupPushToTalk() {
+  const isChord = (e) => e.code === 'Space' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey;
+  window.addEventListener('keydown', (e) => {
+    if (!profile.pushToTalk || pttHeld || e.repeat || !isChord(e)) return;
+    if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) && e.target.id !== 'chatInput') return;
+    e.preventDefault();
+    pttHeld = true;
+    if (!listening && recognition) {
+      try { window.GemWakeWord && window.GemWakeWord.stop && window.GemWakeWord.stop(); } catch {}
+      listening = true;
+      startMicMeter(); avatar({ listening: true });
+      $('#micBtn')?.classList.add('recording'); document.body.classList.add('rgb-recording');
+      try { recognition.start(); } catch (err) {}
+      setCaption('user', 'Listening — release Ctrl+Space to send');
+    }
+  });
+  const release = () => {
+    if (!pttHeld) return;
+    pttHeld = false;
+    if (listening && recognition) {
+      listening = false;
+      try { recognition.stop(); } catch (e) {} // onresult final fires, then onend cleans up
+    }
+  };
+  window.addEventListener('keyup', (e) => { if (e.code === 'Space' || !e.ctrlKey) release(); });
+  window.addEventListener('blur', release);           // never leave the mic open in the background
+  document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
+}
+
+// Clipboard intelligence card: floating Translate/Summarise/Explain/FIX on
+// new copies (opt-in via Settings; secrets never reach this panel).
+let clipIntelCurrentId = 0;
+let clipIntelHideTimer = null;
+function clipIntelHide() {
+  const card = $('#clipIntelCard');
+  if (card) card.hidden = true;
+  clipIntelCurrentId = 0;
+  clearTimeout(clipIntelHideTimer); clipIntelHideTimer = null;
+}
+const CLIP_INTEL_PROMPTS = {
+  translate: 'Translate this into natural English (if already English, translate to Hindi):\n',
+  summarise: 'Summarise this in 3 short bullets:\n',
+  explain: 'Explain this simply — what is it, and why does it matter:\n',
+  fix: 'Fix any grammar/spelling problems in this text and return the corrected version:\n'
+};
+function setupClipboardIntel() {
+  const card = $('#clipIntelCard');
+  if (!card) return;
+  if (!api.onClipIntelNew || !api.clipIntelRecall) return; // bridge missing (unsupported env) — degrade silently
+  $('#clipIntelClose')?.addEventListener('click', clipIntelHide);
+  $('#clipIntelActions')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn || !clipIntelCurrentId) return;
+    const act = btn.dataset.act;
+    playSfx('click');
+    const entry = await api.clipIntelRecall(clipIntelCurrentId);
+    clipIntelHide();
+    if (!entry || entry.error || !entry.text) { toast('Clipboard', (entry && entry.error) || 'Entry unavailable.', '⚠'); return; }
+    $('#chatInput').value = (CLIP_INTEL_PROMPTS[act] || CLIP_INTEL_PROMPTS.explain) + entry.text;
+    $('#chatInput').focus();
+  });
+  api.onClipIntelNew((entry) => {
+    if (!entry || !entry.preview) return;
+    clipIntelCurrentId = entry.id;
+    const textEl = $('#clipIntelText');
+    if (textEl) textEl.textContent = entry.preview + (entry.chars > 140 ? '…' : '');
+    card.hidden = false;
+    clearTimeout(clipIntelHideTimer);
+    clipIntelHideTimer = setTimeout(clipIntelHide, 15000);
+  });
+  api.onClipIntelSecret(() => {
+    toast('CLIPBOARD', 'That copy looked like a key or token — stored redacted; the floating panel was skipped.', '🔒');
+  });
+}
+
+// Audio device picker (2.14): the OS "default" moves when a headset plugs
+// in — pick the hardware once, by name, and every audio path in the app
+// (dictation, wake listener, Live voice, Edge/Live playback) follows it.
+function syncSpeakerSink() {
+  try { window.__gemSpeakerDeviceId = String(profile.audioDevices?.speakerId || ''); } catch (e) {}
+}
+function selectedDeviceLabel(sel, id) {
+  if (!id) return 'System default';
+  const opt = sel && sel.querySelector(`option[value="${CSS.escape(id)}"]`);
+  return opt ? opt.textContent : id;
+}
+async function populateAudioDevices() {
+  const micSel = $('#setMicDevice'), spkSel = $('#setSpeakerDevice');
+  if (!micSel || !spkSel || !window.GemAudioDevices) return;
+  const result = await window.GemAudioDevices.listAudioDevices();
+  if (!result.ok) {
+    const note = $('#audioDeviceNote');
+    if (note && result.error) note.textContent = result.error;
+  }
+  const fill = (sel, list, preferred) => {
+    const current = preferred || sel.value || '';
+    sel.innerHTML = '<option value="">System default</option>' +
+      (list || []).filter((d) => !d.isDefault).map((d) => `<option value="${escapeHtml(d.deviceId)}">${escapeHtml(d.label)}</option>`).join('');
+    const stillThere = current && (list || []).some((d) => d.deviceId === current);
+    sel.value = stillThere ? current : '';
+    return { current, stillThere, had: !!current };
+  };
+  const micRes = fill(micSel, result.inputs, profile.audioDevices?.micId);
+  const spkRes = fill(spkSel, result.outputs, profile.audioDevices?.speakerId);
+  // Honest fallback, like Mark: an unplugged device → default, and we say so.
+  const note = $('#audioDeviceNote');
+  if (note && (micRes.had && !micRes.stillThere || spkRes.had && !spkRes.stillThere)) {
+    const what = [
+      micRes.had && !micRes.stillThere ? `microphone “${profile.audioDevices?.micLabel || 'saved'}”` : '',
+      spkRes.had && !spkRes.stillThere ? `speaker “${profile.audioDevices?.speakerLabel || 'saved'}”` : ''
+    ].filter(Boolean).join(' and ');
+    note.textContent = `Saved ${what} not present — using the system default for ${micRes.had && !micRes.stillThere && spkRes.had && !spkRes.stillThere ? 'both' : 'it'} instead. Plug it back in and press REFRESH.`;
+  }
+}
+function setupAudioDevicePicker() {
+  if (!window.GemAudioDevices) return;
+  $('#audioDeviceRefresh')?.addEventListener('click', async () => {
+    playSfx('click');
+    await populateAudioDevices();
+    // Measure the CURRENT mic pick so every listed device actually works:
+    const micSel = $('#setMicDevice');
+    const status = $('#micProbeStatus');
+    if (micSel && status) {
+      status.textContent = 'Measuring picked microphone…';
+      const probe = await window.GemAudioDevices.probeMic(micSel.value || '');
+      status.textContent = probe.ok
+        ? `✓ works — opened in ${probe.latencyMs} ms${probe.trackLabel ? ` (${probe.trackLabel})` : ''}`
+        : `✗ could not open: ${probe.error}. Falls back to the OS default automatically.`;
+    }
+  });
+  const persistPick = () => {
+    const micSel = $('#setMicDevice'), spkSel = $('#setSpeakerDevice');
+    const prevMic = (profile.audioDevices && profile.audioDevices.micId) || '';
+    profile.audioDevices = {
+      micId: micSel ? micSel.value : '',
+      micLabel: micSel ? selectedDeviceLabel(micSel, micSel.value) : '',
+      speakerId: spkSel ? spkSel.value : '',
+      speakerLabel: spkSel ? selectedDeviceLabel(spkSel, spkSel.value) : ''
+    };
+    syncSpeakerSink();
+    persistProfile();
+    const note = $('#audioDeviceNote');
+    // Session continuity (2.15): a LIVE voice call should not end because you
+    // changed the mic — reconnect with the resumption handle instead.
+    const micChanged = (profile.audioDevices.micId || '') !== prevMic;
+    const live = window.__gemLiveVoice || null; // exposed when a live call is up (2.15)
+    if (micChanged && live && live.ready && typeof live.reconnect === 'function') {
+      try {
+        live._opts.micDeviceId = profile.audioDevices.micId || null;
+        live._opts.speakerDeviceId = profile.audioDevices.speakerId || null;
+        live.reconnect(); // re-runs connect with the resumption handle attached
+        if (note) note.textContent = 'Mic changed mid-call — reconnecting with your conversation kept (resumption).';
+        toast('AUDIO', 'Mic changed — live call reconnects with the conversation intact.', '🎧');
+      } catch {
+        if (note) note.textContent = 'Mic saved — live reconnect failed; the new mic applies on the next call (conversation may pause).';
+      }
+    } else if (note) note.textContent = 'Pick saved — new mic feed applies the next time the microphone opens (dictation, wake listener and Live voice all share it).';
+  };
+  $('#setMicDevice')?.addEventListener('change', persistPick);
+  $('#setSpeakerDevice')?.addEventListener('change', () => {
+    persistPick();
+    // Speaker change is live-safe: no reconnect needed, only the sink moves.
+    syncSpeakerSink();
+  });
+}
+
+// Read OS autostart state honestly into the Settings row.
+async function refreshAutostartRow() {
+  const el = $('#setAutoStart');
+  if (!el || !api.autostartGet) return;
+  try {
+    const state = await api.autostartGet();
+    el.checked = !!(state && state.enabled);
+    const hint = $('#autoStartHint');
+    if (hint && state) {
+      hint.textContent = state.supported
+        ? (state.note || '') + (state.devMode ? ' (Dev-mode note: this registers the Electron binary — most reliable from an installed package.)' : '')
+        : 'Auto-start is not available on this platform.';
+      el.disabled = !state.supported;
+    }
+  } catch {}
+}
+
+
 function setupSettingsReorg() {
   $$('.settings-nav-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{

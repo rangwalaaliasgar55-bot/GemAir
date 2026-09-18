@@ -16,3 +16,26 @@ out/
 # Python bytecode from the bundled OpenJarvis sidecar sources
 __pycache__/
 *.pyc
+
+# --- Local-secrets hardening (never commit; see SECURITY.md) ----------
+# If any of these ever gets tracked anyway, GemAir warns at startup.
+# If one is ever PUSHED, revoke/rotate the credential — deleting the
+# file later does not remove it from git history.
+.env.*
+!.env.example
+**/api_keys.json
+**/api-keys.json
+**/*.pem
+**/*.crt
+**/*.key
+**/*.p12
+**/*.pfx
+config/certs/
+config/secrets.*
+config/credentials.*
+gemair-memory*.json
+gemair-profile*.json
+gemair-backup*.json
+gemair-secrets*.json
+memory-backup*.json
+plugins/local/

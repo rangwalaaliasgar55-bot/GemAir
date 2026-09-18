@@ -858,6 +858,29 @@ body[data-appearance='light'] .hud-dock { background: rgba(255, 255, 255, 0.72) 
 }
 body[data-dnd='on'] .toasts { opacity: 0.35; }
 
+/* Clipboard intelligence floating panel */
+.clip-intel-card {
+  position: fixed; right: 18px; bottom: 96px; width: 300px; z-index: 9500;
+  border-radius: 12px; border: 1px solid var(--apple-hairline);
+  background: rgba(24, 28, 38, 0.92);
+  -webkit-backdrop-filter: var(--apple-blur); backdrop-filter: var(--apple-blur);
+  box-shadow: var(--apple-shadow); padding: 10px 12px 12px; font-size: 12.5px;
+  animation: ci-in .18s ease-out;
+}
+.clip-intel-card[hidden] { display: none; }
+@keyframes ci-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.ci-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.ci-title { font-weight: 700; letter-spacing: .06em; font-size: 11px; color: var(--accent, #7cc4ff); }
+.ci-close { background: none; border: none; color: #98a2b8; cursor: pointer; font-size: 12px; padding: 2px 4px; }
+.ci-close:hover { color: #fff; }
+.ci-text { color: #cfd7e6; line-height: 1.45; max-height: 84px; overflow: hidden; word-break: break-word; }
+.ci-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+.ci-actions button {
+  background: rgba(255,255,255,.06); border: 1px solid var(--apple-hairline); border-radius: 8px;
+  color: #dbe4f2; font-size: 10px; font-weight: 600; letter-spacing: .04em; padding: 6px 2px; cursor: pointer;
+}
+.ci-actions button:hover { background: var(--accent, #7cc4ff); color: #0b0f16; }
+
 /* Thin Apple scrollbars */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: rgba(140, 148, 162, 0.45); border-radius: 8px; }

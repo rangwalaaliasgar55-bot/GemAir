@@ -27,6 +27,10 @@ const islandWindow = require('./lib/attention/island-window');
 const flightFinder = require('./lib/flight-finder');
 const gameUpdater = require('./lib/game-updater');
 const gemcore = require('./lib/gemcore');
+const pluginLoader = require('./lib/plugin-loader');
+const proactiveLib = require('./lib/proactive');
+const { MemoryArchive } = require('./lib/memory-archive');
+const localSecretCheck = require('./lib/local-secret-check');
 
 const isDev = process.argv.includes('--dev');
 const userDataDir = app.getPath('userData');
@@ -37,6 +41,29 @@ const RECOVERY_FILE = path.join(userDataDir, 'gemair-recovery.json');
 const USAGE_STATS_FILE = path.join(userDataDir, 'gemair-usage-stats.json');
 const DAILY_DIGEST_STATE_FILE = path.join(userDataDir, 'gemair-daily-digest.json');
 const OPENJARVIS_RUNTIME_DIR = path.join(userDataDir, 'openjarvis');
+const MEMORY_ARCHIVE_FILE = path.join(userDataDir, 'gemair-memory-archive.json');
+const PLUGINS_DIR = path.join(__dirname, 'plugins');
+// Cold overflow store for hot-memory evictions (facts / transcript /
+// actionLog / mood): nothing the assistant learned is silently deleted.
+const memoryArchive = new MemoryArchive(MEMORY_ARCHIVE_FILE);
+// ---------------------------------------------------------------------------
+// 2.13 additions (Mark-LIV concept ports — no upstream code):
+//  - UndoStack: one shared "take back what GemAir did" journal; file tools
+//    register their reversal at the moment they act. In-memory, capped,
+//    evictions go to the cold archive.
+//  - ClipboardIntel: opt-in clipboard watcher → floating action panel; secrets
+//    redacted at rest; evictions archived (see lib/clipboard-intel.js).
+//  - autoStart: OS-native launch-at-login (registry / LoginItem / XDG).
+//  - Self-knowledge: live "what it is and isn't" snapshot for the prompt.
+// ---------------------------------------------------------------------------
+const { UndoStack, snapshotFile, fileWriteEntry, fileMoveEntry, organizeEntry, folderCreateEntry } = require('./lib/undo-stack.js');
+const { ClipboardIntel } = require('./lib/clipboard-intel.js');
+const { createAutoStart } = require('./lib/autostart.js');
+const selfKnowledge = require('./lib/self-knowledge.js');
+const undoStack = new UndoStack({ cap: 25, archive: memoryArchive });
+const autoStart = createAutoStart(app, { name: 'GemAir' });
+let selfKnowledgeCache = null; // {text, oneLine, builtAt} rebuilt below
+let clipboardIntel = null;     // constructed lazily after mainWindow exists
 openJarvisSidecar.configure({
   runtimeRoot: OPENJARVIS_RUNTIME_DIR,
   resourceRoot: app.isPackaged ? process.resourcesPath : __dirname
@@ -405,6 +432,11 @@ app.whenReady().then(() => {
   startReminderScheduler();
   try { startTopicMonitorScheduler(); } catch (e) { console.error('[topic-monitor] disabled:', e.message); }
   try { startDailyDigestScheduler(); } catch (e) { console.error('[daily-digest] disabled:', e.message); }
+  try { startProactiveScheduler(); } catch (e) { console.error('[proactive] disabled:', e.message); }
+  try { runLocalSecretGuard(); } catch (e) { console.error('[security] guard disabled:', e.message); }
+  // 2.13: self-knowledge snapshot + opt-in clipboard watcher + auto-start.
+  try { refreshSelfKnowledge(); } catch (e) { console.error('[self-knowledge] disabled:', e.message); }
+  try { applyAutomationSettings(); } catch (e) { console.error('[automation] disabled:', e.message); }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     else mainWindow.show();
@@ -412,6 +444,7 @@ app.whenReady().then(() => {
 });
 app.on('before-quit', () => {
   isQuitting = true;
+  try { recordSessionEnd(); } catch {}
   try { if (attention) attention.stop(); } catch {}
   try { freeGPT35Sidecar.stop(); } catch {}
   try { openJarvisSidecar.stop(); } catch {}
@@ -785,7 +818,12 @@ const TOOLS = [
   { type: 'function', function: { name: 'get_system_status', description: 'Read live system status (CPU, memory, uptime).', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'control_volume', description: 'Change system volume.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['up', 'down', 'mute', 'unmute', 'set'] }, level: { type: 'number', description: '0-100 volume level when action=set' } } } } },
   { type: 'function', function: { name: 'take_screenshot', description: 'Capture a screenshot of the screen.', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'control_system', description: 'Lock, sleep, shutdown or restart the computer.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['lock', 'sleep', 'shutdown', 'restart'] } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'control_system', description: 'Lock or sleep the computer instantly. Shutdown and restart are power-tier: they ALWAYS wait for a human clicking the confirmation dialog and cannot be self-confirmed — ask the user before calling either.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['lock', 'sleep', 'shutdown', 'restart'] } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'control_wifi', description: 'Read Wi-Fi status (always safe) or turn Wi-Fi on/off (toggle-tier: ALWAYS waits for a human clicking the confirmation dialog — warn the user first that turning Wi-Fi OFF cuts GemAir\'s own cloud brains).', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['status', 'on', 'off'] } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'control_brightness', description: 'Read or set screen brightness 1-100 percent (omit level to read). Where the OS exposes no API (macOS) or no hardware backlight, the tool says so honestly instead of pretending.', parameters: { type: 'object', properties: { level: { type: 'number' } } } } },
+  { type: 'function', function: { name: 'media_control', description: 'Send play/pause/next/previous media keys to the active player (Spotify, Music, or any MPRIS player on Linux with playerctl).', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['playpause', 'next', 'previous'] } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'prepare_message', description: 'Compose a WhatsApp or Telegram message and open it prefilled — the USER presses send. Never claims to have sent; sending without the user is not possible by design.', parameters: { type: 'object', properties: { channel: { type: 'string', enum: ['whatsapp', 'telegram'] }, target: { type: 'string', description: 'WhatsApp: phone in international format (+91…). Telegram: @username (optional).' }, text: { type: 'string', description: 'Message text (max 800 chars)' } }, required: ['channel', 'text'] } } },
+  { type: 'function', function: { name: 'navigate_browser', description: 'Navigate the paired desktop browser (Gem Air Browser Link extension) to a URL — polled by the extension within ~1s. Without a paired extension the command just queues and the tool says so.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'open_url', description: 'Open a URL in the default browser.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'fetch_webpage', description: 'Fetch a web page and return its readable text content (full web access).', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'search_wikipedia', description: 'Search Wikipedia for a topic.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
@@ -824,6 +862,11 @@ const TOOLS = [
   { type: 'function', function: { name: 'get_power_storage', description: 'Read live battery charging state and primary disk capacity/free-space sensors.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'see_screen', description: 'Capture the current screen so the AI is aware of what is on it.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'get_action_log', description: 'Get the recent log of actions the AI has performed (transparency).', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'undo_last', description: 'Take back GemAir\'s own most recent reversible action (file written/moved/renamed/organized). Only its own actions are reversible, and only while the entries are in the live undo stack. Use when the user says undo/take it back/put it back in any language.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'list_undoable', description: 'List what GemAir can still take back right now (its own recent reversible file/folder actions), newest first.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'recall_clipboard_entry', description: 'Fetch the (secret-redacted) text of a clipboard-intelligence entry by id from list_clipboard_entries. Only available while clipboard intelligence is enabled.', parameters: { type: 'object', properties: { id: { type: 'number' } }, required: ['id'] } } },
+  { type: 'function', function: { name: 'list_clipboard_entries', description: 'List recently copied text snippets with ids, kinds and previews (secrets redacted). Empty unless the user enabled clipboard intelligence in Settings.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'get_assistant_capabilities', description: 'Get Gem\'s live self-knowledge: who it is, what machine it runs on, the tools and plugins actually registered right now, and its honest limits. Use when asked "what can you do" or what it cannot do.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'add_skill', description: 'Remember a reusable skill / ability the user has taught you (persistent).', parameters: { type: 'object', properties: { text: { type: 'string' }, name: { type: 'string' } }, required: ['text'] } } },
   { type: 'function', function: { name: 'list_skills', description: 'List the skills you have learned.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'add_instruction', description: 'Remember a standing instruction / rule / preference the user wants you to always follow.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
@@ -980,8 +1023,12 @@ function unwrapDdg(href) {
 // EMPTY results for most queries (it is not a general search engine). Primary
 // source is now the DDG HTML results page (free, keyless), ads filtered,
 // with Wikipedia and Instant-Answers fallbacks.
-async function webSearch(query) {
-  const q = String(query || '').slice(0, 300);
+async function webSearch(query, rawMode) {
+  // 2.16 multi-mode search: modes shape the request + the presentation
+  // contract — they never invent data (see lib/search-modes.js).
+  const shaped = searchModes.shape(rawMode, query);
+  const q = shaped.query;
+  const maxResults = shaped.maxResults;
   let results = [];
   try {
     const res = await fetchDeadline('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q), {
@@ -1030,7 +1077,13 @@ async function webSearch(query) {
     try { source = new URL(results[0].url).hostname.replace(/^www\./, ''); } catch { source = null; }
     answerUrl = results[0].url;
   }
-  return { answer, source, url: answerUrl, results: results.slice(0, 8), searched: true };
+  const out = { answer, source, url: answerUrl, results: results.slice(0, maxResults), searched: true, mode: shaped.mode, modeHint: shaped.hint };
+  // Dynamic content panel (2.16): every search's structured results render as
+  // a scrollable card layer under the chat — nothing is hidden in prose only.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.send('content:results', { query, mode: shaped.mode, results: out.results, at: Date.now() }); } catch {}
+  }
+  return out;
 }
 function stripHtml(html) {
   return String(html || '').replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
@@ -1147,9 +1200,15 @@ async function writeFile(path_, content) {
     const safePath = resolveUserPath(path_);
     const text = String(content);
     if (Buffer.byteLength(text, 'utf8') > 1024 * 1024) return { error: 'File content exceeds the 1 MB tool limit.' };
+    // Undo journal (2.13): snapshot BEFORE we touch anything, then register
+    // how to take this exact write back. The 1 MB snapshot guard matches the
+    // tool's own limit, so tool writes are always reversible.
+    const before = await snapshotFile(fs.promises, safePath);
     await fs.promises.mkdir(path.dirname(safePath), { recursive: true });
     await fs.promises.writeFile(safePath, text, { encoding: 'utf8', mode: 0o600 });
-    return { ok: true, path: safePath };
+    try { undoStack.push(fileWriteEntry(safePath, before, Buffer.from(text, 'utf8'))); } catch {}
+    const reversible = !before.excluded;
+    return { ok: true, path: safePath, reversible, note: reversible ? undefined : before.reason };
   } catch (error) { return { error: error.message }; }
 }
 async function searchFiles(root, query) {
@@ -1448,7 +1507,12 @@ function searchMemory(query) {
     score += (f.importance || 0) * 0.1;
     return { f, score };
   }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
-  return scored.length ? { matches: scored.map((x) => x.f.text) } : { matches: [], note: 'No matching memories.' };
+  // Cold-archive fallback: facts etc. evicted from the hot caps stay findable
+  // — memory is a lookup-on-demand store, not a silently-shrinking blob.
+  const archived = memoryArchive.search(q, { limit: 5 }).map((x) => ({ text: x.text, archivedAt: x.archivedAt, archived: true }));
+  const matches = scored.map((x) => x.f.text);
+  if (archived.length) return { matches, archived };
+  return scored.length ? { matches } : { matches: [], note: 'No matching memories.' };
 }
 function listTodos() {
   const m = readMemory();
@@ -1493,6 +1557,7 @@ function logMood(emotion, note) {
   const e = analyzeEmotion(emotion);
   const entry = { emotion: e.emotion, valence: e.valence, note: note || '', ts: Date.now() };
   m.mood.push(entry);
+  if (m.mood.length > 500) memoryArchive.append('mood', m.mood.slice(0, m.mood.length - 500), { reason: 'mood-cap' });
   if (m.mood.length > 500) m.mood = m.mood.slice(-500);
   writeMemory(m);
   return { ok: true, entry };
@@ -1619,6 +1684,7 @@ function moodNeedsCheckIn() {
 function logAction(action, detail) {
   const m = readMemory();
   m.actionLog.unshift({ action, detail: String(detail || '').slice(0, 300), ts: Date.now() });
+  if (m.actionLog.length > 200) memoryArchive.append('actionLog', m.actionLog.slice(200).reverse(), { reason: 'actionlog-cap' });
   if (m.actionLog.length > 200) m.actionLog = m.actionLog.slice(0, 200);
   writeMemory(m);
 }
@@ -1652,7 +1718,7 @@ async function organizeFolder(dir) {
     if (!entries.length) return { ok: true, total: 0, categories: {}, base, note: 'Nothing to organize.' };
     const ok = await confirmAction('Organize folder?', `GemAir will sort ${entries.length} files in:\n${base}\n\ninto subfolders by type (images, documents, videos, etc.). Files are moved, not deleted.`);
     if (!ok) return { error: 'Cancelled by user.' };
-    const moved = {}, failures = [];
+    const moved = {}, failures = [], journalMoves = [], journalDirs = new Set();
     for (const entry of entries) {
       const category = categorizeFile(entry.name);
       const destination = path.join(base, category);
@@ -1660,11 +1726,18 @@ async function organizeFolder(dir) {
         await fs.promises.mkdir(destination, { recursive: true });
         await fs.promises.rename(path.join(base, entry.name), path.join(destination, entry.name));
         moved[category] = (moved[category] || 0) + 1;
+        journalMoves.push({ from: path.join(base, entry.name), to: path.join(destination, entry.name) });
+        journalDirs.add(destination);
       } catch (error) { failures.push({ file: entry.name, error: error.message }); }
+    }
+    // Undo journal (2.13): one batch entry reverses the whole organize in one
+    // go and prunes the category folders it created while still empty.
+    if (journalMoves.length) {
+      try { undoStack.push(organizeEntry(`organize ${journalMoves.length} files in ${base}`, journalMoves, [...journalDirs])); } catch {}
     }
     const total = Object.values(moved).reduce((sum, count) => sum + count, 0);
     logAction('organize_folder', `Organized ${total} files into ${Object.keys(moved).length} categories in ${base}`);
-    return { ok: failures.length === 0, total, categories: moved, base, failures: failures.slice(0, 20) };
+    return { ok: failures.length === 0, total, categories: moved, base, failures: failures.slice(0, 20), reversible: journalMoves.length > 0 };
   } catch (error) { return { error: error.message }; }
 }
 async function findDuplicates(dir) {
@@ -1718,12 +1791,17 @@ async function renameFiles(dir, pattern) {
     }
     let renamed = 0;
     const failures = [];
+    const journalMoves = [];
     for (const item of staged) {
-      try { await fs.promises.rename(item.temporary, item.final); renamed++; }
+      try { await fs.promises.rename(item.temporary, item.final); renamed++; journalMoves.push({ from: item.source, to: item.final }); }
       catch (error) { failures.push({ file: path.basename(item.source), temporary: item.temporary, error: error.message }); }
     }
+    // Undo journal (2.13): the rename batch is one reversible entry.
+    if (journalMoves.length) {
+      try { undoStack.push(organizeEntry(`rename ${journalMoves.length} files in ${base} to "${safePattern}-NNN"`, journalMoves, [])); } catch {}
+    }
     logAction('rename_files', `Renamed ${renamed} files with pattern "${safePattern}"`);
-    return { ok: failures.length === 0, renamed, pattern: safePattern, failures: failures.slice(0, 20) };
+    return { ok: failures.length === 0, renamed, pattern: safePattern, failures: failures.slice(0, 20), reversible: journalMoves.length > 0 };
   } catch (error) { return { error: error.message }; }
 }
 
@@ -1745,12 +1823,16 @@ async function archiveOldFiles(dir, days) {
     await fs.promises.mkdir(archive, { recursive: true });
     let archived = 0;
     const failures = [];
+    const journalMoves = [];
     for (const entry of candidates) {
-      try { await fs.promises.rename(path.join(base, entry.name), path.join(archive, entry.name)); archived++; }
+      try { await fs.promises.rename(path.join(base, entry.name), path.join(archive, entry.name)); archived++; journalMoves.push({ from: path.join(base, entry.name), to: path.join(archive, entry.name) }); }
       catch (error) { failures.push({ file: entry.name, error: error.message }); }
     }
+    if (journalMoves.length) {
+      try { undoStack.push(organizeEntry(`archive ${journalMoves.length} old files into ${archive}`, journalMoves, [archive])); } catch {}
+    }
     logAction('archive_old_files', `Archived ${archived} files older than ${ageDays} days`);
-    return { ok: failures.length === 0, archived, archive, failures: failures.slice(0, 20) };
+    return { ok: failures.length === 0, archived, archive, failures: failures.slice(0, 20), reversible: journalMoves.length > 0 };
   } catch (error) { return { error: error.message }; }
 }
 
@@ -1868,8 +1950,17 @@ async function createFolderTree(root, folders) {
     if (!withinBase(dest)) { skipped.push(raw); continue; }
     try { await fs.promises.mkdir(dest, { recursive: true }); created.push(dest); } catch { skipped.push(raw); }
   }
+  // Undo journal (2.13): deepest-first, each created folder is removed ONLY
+  // while still empty — Mark parity: undoing a create never deletes content.
+  if (created.length) {
+    try {
+      for (const dir of created.slice().sort((a, b) => b.length - a.length)) {
+        undoStack.push(folderCreateEntry(dir));
+      }
+    } catch {}
+  }
   logAction('create_folder_tree', `Created ${created.length} folder(s) under ${base}${skipped.length ? ` (${skipped.length} rejected as unsafe)` : ''}`);
-  return { ok: true, base, created, count: created.length, skipped, rejected: skipped.length };
+  return { ok: true, base, created, count: created.length, skipped, rejected: skipped.length, reversible: created.length > 0 };
 }
 async function moveFiles(source, dest, filter) {
   const from = resolveUserPath(source, path.join(os.homedir(), 'Downloads'));
@@ -1892,12 +1983,16 @@ async function moveFiles(source, dest, filter) {
     await fs.promises.mkdir(to, { recursive: true });
     let moved = 0;
     const failures = [];
+    const journalMoves = [];
     for (const entry of candidates) {
-      try { await fs.promises.rename(path.join(from, entry.name), path.join(to, entry.name)); moved++; }
+      try { await fs.promises.rename(path.join(from, entry.name), path.join(to, entry.name)); moved++; journalMoves.push({ from: path.join(from, entry.name), to: path.join(to, entry.name) }); }
       catch (error) { failures.push({ file: entry.name, error: error.message }); }
     }
+    if (journalMoves.length) {
+      try { undoStack.push(organizeEntry(`move ${journalMoves.length} files to ${to}`, journalMoves, [to])); } catch {}
+    }
     logAction('move_files', `Moved ${moved} file(s) matching "${filter || 'all'}" to ${to}`);
-    return { ok: failures.length === 0, moved, to, failures: failures.slice(0, 20) };
+    return { ok: failures.length === 0, moved, to, failures: failures.slice(0, 20), reversible: journalMoves.length > 0 };
   } catch (error) { return { error: error.message }; }
 }
 
@@ -2129,7 +2224,13 @@ async function seeScreen() {
   const file = path.join(app.getPath('pictures'), `gemair-screen-${Date.now()}.png`);
   await fs.promises.writeFile(file, source.thumbnail.toPNG());
   logAction('see_screen', `Captured screen to ${file}`);
-  return { ok: true, file, note: 'Screen captured. If your AI model supports vision, it can analyze this image.' };
+  // Source-labelled (2.14): the capture MAY contain GemAir's own avatar
+  // window — the model must never read it as a photo of the user.
+  return {
+    ok: true, file,
+    source: 'screen',
+    note: 'This is a SCREEN capture of the user\'s desktop (it may show the GemAir app itself, including its avatar — that is the app, not a photo of the user). If your AI model supports vision, it can analyze this image.'
+  };
 }
 let lastScreenFingerprint = null;
 async function inspectScreenChange() {
@@ -2240,17 +2341,213 @@ function controlVolume(args) {
   if (cmd) exec(cmd, () => {});
   return { ok: true, action: action || level };
 }
-function controlSystem(action) {
-  const p = process.platform;
-  const map = {
-    lock: { win32: 'rundll32.exe user32.dll,LockWorkStation', darwin: '/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession -suspend', linux: 'loginctl lock-session' },
-    sleep: { win32: 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0', darwin: 'pmset sleepnow', linux: 'systemctl suspend' },
-    shutdown: { win32: 'shutdown /s /t 10', darwin: 'osascript -e \'tell app "System Events" to shut down\'', linux: 'systemctl poweroff' },
-    restart: { win32: 'shutdown /r /t 10', darwin: 'osascript -e \'tell app "System Events" to restart\'', linux: 'systemctl reboot' }
+// Power tier (2.15): shutdown/restart ALWAYS wait for a button a human
+// presses — the model cannot confirm its own irreversible actions, and no
+// auto-approve setting may bypass this (Mark-LIV confirm.py concept,
+// GemAir implementation in lib/power-actions.js).
+const powerActions = require('./lib/power-actions');
+// --- 2.16 connectivity wave modules (pure helpers; honest per-OS behavior) ---
+const wifiTools = require('./lib/wifi-tools');
+const brightnessTools = require('./lib/brightness-tools');
+const mediaTools = require('./lib/media-tools');
+const messageLinks = require('./lib/message-links');
+const searchModes = require('./lib/search-modes');
+const localServerLib = require('./lib/local-server');
+
+async function controlWifiTool(action) {
+  const a = wifiTools.normalizeAction(action);
+  if (!a) return { error: 'wifi action must be status|on|off', ok: false };
+  const cmd = wifiTools.commandFor(a, process.platform);
+  if (!cmd) return { ok: false, error: 'Wi-Fi control is not supported on ' + process.platform + ' — no dependency-free way exists, and GemAir will not fake it.' };
+  if (a === 'status') {
+    const out = await execOut(cmd, 9000);
+    if (!out.trim()) return { ok: false, error: 'Wi-Fi status command returned nothing (Wi-Fi tooling may be missing on this machine).' };
+    const parsed = wifiTools.parseStatus(out, process.platform);
+    return { ok: parsed.ok, state: parsed.state, message: parsed.summary };
+  }
+  // Toggle-tier: human confirms, always — pulling the network under a running
+  // assistant is a self-serve outage, so the rule matches the power tier.
+  if (wifiTools.needsConfirmation(a)) {
+    const t = wifiTools.confirmTextFor(a, process.platform);
+    const approved = await confirmAction(t.title, t.detail);
+    logAction('control_wifi', a + (approved ? ' approved by user' : ' declined by user'));
+    if (!approved) return { ok: false, cancelled: true, message: a === 'off' ? 'Wi-Fi stays on — toggle cancelled.' : 'Wi-Fi unchanged — toggle cancelled.' };
+    const out = await execOut(cmd, 9000);
+    const err = /error|fail|not recognized|denied|requires|permission/i.test(out) ? out.trim().split('\n')[0].slice(0, 120) : null;
+    const r = wifiTools.resultText(a, !err, err);
+    if (!r.ok && process.platform === 'win32') r.message += ' (toggling needs an elevated shell on Windows).';
+    if (!r.ok && process.platform === 'linux') r.message += ' (nmcli + NetworkManager are required).';
+    return r;
+  }
+  return { error: 'unreachable', ok: false };
+}
+
+async function controlBrightnessTool(level) {
+  if (level === undefined || level === null) { // READ current
+    const cmd = brightnessTools.reads(process.platform);
+    if (!cmd) return { ok: false, error: brightnessTools.unsupportedText(process.platform) };
+    const out = await execOut(cmd, 9000);
+    const n = brightnessTools.parseLevel(out, process.platform);
+    if (n === null) return { ok: false, error: 'Could not read brightness (' + String(out).trim().split('\n')[0].slice(0, 80) + ').' };
+    return { ok: true, level: n, message: 'Brightness is ' + n + '%.' };
+  }
+  const n = brightnessTools.clampLevel(level);
+  if (n === null) return { ok: false, error: 'Brightness needs a number 1–100.' };
+  const plan = brightnessTools.sets(n, process.platform);
+  if (!plan) return { ok: false, error: brightnessTools.unsupportedText(process.platform) };
+  const out = await execOut(plan.cmd, 9000);
+  const err = /error|fail|denied|No such/i.test(out) ? out.trim().split('\n')[0].slice(0, 120) : null;
+  if (err) return { ok: false, error: 'Brightness set failed: ' + err };
+  logAction('control_brightness', 'set ' + n + '% via ' + plan.method);
+  return { ok: true, level: n, method: plan.method, message: 'Brightness set to ' + n + '% via ' + plan.method + '.' };
+}
+
+async function mediaControlTool(action) {
+  const a = mediaTools.normalizeAction(action);
+  if (!a) return { ok: false, error: 'media action must be playpause|next|previous' };
+  const cmd = mediaTools.commandFor(a, process.platform);
+  if (!cmd) return { ok: false, error: 'Media control is not supported on ' + process.platform + ' — reported rather than faked.' };
+  const { exitCode, stderr } = await new Promise((resolve) => {
+    exec(cmd, { timeout: 9000 }, (e, so, se) => resolve({ exitCode: e ? e.code || 1 : 0, stderr: e ? String(se || e.message || '') : String(se || '') }));
+  });
+  if (exitCode !== 0) return { ok: false, error: mediaTools.failureText(process.platform, stderr) };
+  logAction('media_control', a);
+  return { ok: true, message: mediaTools.successText(a) };
+}
+
+// ---------------------------------------------------------------------------
+// Local control server (2.16): browser extension pair + optional phone
+// remote dashboard. Loopback listener always available; the LAN phone lane
+// only listens while Settings enables it.
+// ---------------------------------------------------------------------------
+const localSrvTokens = { ext: localServerLib.genToken(), phone: localServerLib.genToken() };
+const localSrvPairCode = localServerLib.genPairCode();
+const appBootAt = Date.now();
+let localSrv = null, localSrvRunning = { loop: false, lane: false, error: null };
+const navCommands = [];                                                     // {i, url} queue for paired browser extension
+let lastExternalTab = null;                                                 // last tab the extension reported
+function ensureLocalServer() {
+  if (localSrv) return localSrv;
+  localSrv = localServerLib.createLocalServer({
+    pairCode: localSrvPairCode,
+    tokens: localSrvTokens,
+    getPolicy: () => {
+      try {
+        const p = readProfile();
+        return { blocked: Array.isArray(p.siteBlocks) ? p.siteBlocks.slice(0, 200) : [], exceptions: [] };
+      } catch { return { blocked: [], exceptions: [] }; }
+    },
+    onAttempt: (a) => {
+      logAction('browser_block_attempt', String((a && a.subject) || '').slice(0, 120));
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.webContents.send('localsrv:blockedAttempt', { subject: String(a.subject || '').slice(0, 120), at: Date.now() }); } catch {}
+      }
+    },
+    onTab: (t) => {
+      lastExternalTab = { url: String(t.url || '').slice(0, 300), title: String(t.title || '').slice(0, 200), at: Date.now() };
+      try { require('./lib/self-knowledge').markCapability && null; } catch {}
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.webContents.send('localsrv:lastTab', lastExternalTab); } catch {}
+      }
+    },
+    getStatus: () => ({
+      version: app.getVersion(), uptime: Math.round((Date.now() - appBootAt) / 1000) + 's',
+      lastTab: lastExternalTab,
+      lastMessage: (() => { try { const e = (readMemory().actionLog || [])[0]; return e ? (e.action + (e.detail ? ' — ' + e.detail : '')).slice(0, 120) : ''; } catch { return ''; } })()
+    }),
+    onSay: (text) => {
+      logAction('remote_say', text.slice(0, 120));
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.webContents.send('dashboard:say', { text, at: Date.now() }); } catch {}
+      }
+    },
+    commands: {
+      since: (after) => { const rows = navCommands.filter((c) => c.i > after).slice(-10); return rows; }
+    }
+  });
+  return localSrv;
+}
+async function syncLocalServer() {
+  const srv = ensureLocalServer();
+  // loopback lane is built-in (extension contract) and harmless unpaired.
+  if (!localSrvRunning.loop) {
+    const r = await srv.startLoop();
+    localSrvRunning.loop = !!r.ok; if (!r.ok) localSrvRunning.error = r.error;
+  }
+  const wantLane = (() => { try { return readProfile().remoteDashboard === true; } catch { return false; } })();
+  if (wantLane && !localSrvRunning.lane) {
+    const r = await srv.startLane();
+    localSrvRunning.lane = !!r.ok; if (!r.ok) localSrvRunning.error = r.error;
+  }
+  return localSrvRunning;
+}
+function lanAddresses() {
+  const out = [];
+  try {
+    for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
+      for (const a of (addrs || [])) {
+        if (a.family === 'IPv4' && !a.internal) out.push({ name, address: a.address });
+      }
+    }
+  } catch {}
+  return out;
+}
+ipcMain.handle('localsrv:info', async () => {
+  const running = await syncLocalServer();
+  const lan = lanAddresses()[0];
+  return {
+    ok: true, running, extPort: localServerLib.EXT_PORT, phonePort: localServerLib.PHONE_PORT,
+    pairCode: localSrvPairCode,
+    phoneUrl: lan ? ('http://' + lan.address + ':' + localServerLib.PHONE_PORT + '/m#' + localSrvTokens.phone) : null,
+    lanFound: !!lan, lastTab: lastExternalTab
   };
-  const cmd = (map[action] && map[action][p]) || (map[action] && map[action].win32);
-  if (cmd) exec(cmd, () => {});
-  return { ok: true, action };
+});
+function queueBrowserNav(url) {
+  const u = String(url || '').trim();
+  if (!/^https?:\/\//i.test(u)) return { ok: false, error: 'Only http(s) URLs can be navigated.' };
+  navCommands.push({ i: (navCommands.length ? navCommands[navCommands.length - 1].i : 0) + 1, url: u.slice(0, 300) });
+  if (navCommands.length > 50) navCommands.splice(0, navCommands.length - 50);
+  logAction('navigate_browser', u.slice(0, 120));
+  return { ok: true, queued: true, note: 'Queued for the paired Gem Air browser extension (1s poll). No extension paired = it sits in the queue, harmlessly — GemAir says so rather than pretend a navigation happened.' };
+}
+ipcMain.handle('localsrv:nav', async (_e, url) => queueBrowserNav(url));
+ipcMain.handle('localsrv:qr', async () => {
+  try {
+    const lan = lanAddresses()[0];
+    if (!lan) return { ok: false, error: 'No LAN address found — connect the computer to the same Wi-Fi as the phone.' };
+    const url = 'http://' + lan.address + ':' + localServerLib.PHONE_PORT + '/m#' + localSrvTokens.phone;
+    const qr = require('qrcode');
+    const dataUrl = await qr.toDataURL(url, { margin: 1, width: 220, color: { dark: '#0b1c30', light: '#cfe6ff' } });
+    return { ok: true, dataUrl, url };
+  } catch (e) {
+    return { ok: false, error: 'QR unavailable (' + (e && e.message || 'module missing') + ') — use the printed URL instead.' };
+  }
+});
+
+// tool_ 2.16 full handler body ------------------------------------------------
+async function prepareMessageTool(args) {
+  const msg = messageLinks.build(args && args.channel, args && args.target, args && args.text);
+  if (!msg.ok) return { ok: false, error: msg.error };
+  try { await shell.openExternal(msg.url); } catch (e) { return { ok: false, error: 'Could not open the share link (' + e.message + ').' }; }
+  logAction('prepare_message', msg.channel + ' (composed, not sent)');
+  // The tool RESULT says the truth: composed, opened, NOT sent.
+  return { ok: true, channel: msg.channel, sent: false, opened: true, message: msg.note };
+}
+async function controlSystem(action) {
+  const a = powerActions.normalizeAction(action);
+  const cmd = powerActions.commandFor(a, process.platform);
+  if (!cmd) return { error: 'Unknown action: ' + a, ok: false };
+  if (powerActions.tierFor(a) === 'power') {
+    const text = powerActions.confirmTextFor(a);
+    const approved = await confirmAction(text.title, text.detail);
+    logAction('control_system', a + (approved ? ' approved by user' : ' declined by user'));
+    if (!approved) return { ok: false, cancelled: true, message: powerActions.resultTextFor(a, false) };
+    exec(cmd, () => {});
+    return { ok: true, action: a, message: powerActions.resultTextFor(a, true) };
+  }
+  exec(cmd, () => {});
+  logAction('control_system', a + ' (convenience tier)');
+  return { ok: true, action: a, message: powerActions.resultTextFor(a, true) };
 }
 async function takeScreenshot() {
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
@@ -2859,6 +3156,7 @@ const TOOL_RISK = {
   run_command: 'sensitive', write_file: 'sensitive', control_system: 'sensitive',
   organize_folder: 'sensitive', archive_old_files: 'sensitive', send_email: 'sensitive',
   close_app: 'sensitive', move_files: 'sensitive', create_folder_tree: 'sensitive', optimize_gaming: 'sensitive',
+  undo_last: 'safe', list_undoable: 'safe', recall_clipboard_entry: 'safe', list_clipboard_entries: 'safe', get_assistant_capabilities: 'safe',
   find_large_files: 'safe',
   show_panel: 'safe', hide_panel: 'safe',
   launch_app: 'safe', focus_app: 'safe', snap_window: 'safe', minimize_all: 'safe',
@@ -2875,12 +3173,46 @@ const TOOL_RISK = {
   find_flights: 'safe', update_game: 'safe', list_installed_epic_games: 'safe',
   add_topic_monitor: 'safe', remove_topic_monitor: 'safe', list_topic_monitors: 'safe', check_topic_monitors: 'safe'
 };
+// Tools whose run (or whose tool-call composing) leaves an audible gap: the
+// shell says one short "on it" line the moment they START. The model itself
+// is never asked to narrate — the ack is emitted by the app, keeping the
+// existing "never narrate tool use" prompt rule intact.
+const ACK_TOOLS = new Set([
+  'run_desktop_task', 'run_coding_cli', 'web_search', 'fetch_webpage',
+  'organize_folder', 'move_files', 'rename_files', 'archive_old_files',
+  'create_folder_tree', 'find_duplicates', 'find_large_files',
+  'system_scan', 'optimize_gaming', 'close_app', 'search_files', 'search_youtube'
+]);
+
+// ---------------------------------------------------------------------------
+// Drop-in plugins (single-file skills, Mark-heritage "adding a skill is
+// moving a file"): discovered from plugins/ at boot, merged into the tool
+// catalog the model sees, dispatched below inside the same risk gates as
+// built-ins. A broken or throwing plugin can never take the app down.
+// ---------------------------------------------------------------------------
+const pluginRegistry = pluginLoader.createPluginRegistry(PLUGINS_DIR, {
+  homeDir: os.homedir(),
+  platform: process.platform,
+  version: app.getVersion(),
+  get userName() { return String(readProfile().name || '').slice(0, 80); },
+  notify: (title, body) => { try { if (Notification.isSupported()) new Notification({ title: String(title || 'GemAir plugin').slice(0, 120), body: String(body || '').slice(0, 400) }).show(); } catch {} },
+  log: (message) => console.log('[plugin]', String(message || '').slice(0, 300))
+});
+pluginRegistry.setBuiltins(new Set(TOOLS.map((tool) => tool.function.name)));
+pluginRegistry.reload();
+if (pluginRegistry.errors().length) {
+  console.warn('[plugins] skipped plugin files:', JSON.stringify(pluginRegistry.errors()));
+}
+// The merged catalog the model is offered (built-ins + live plugins).
+function getAllTools() {
+  return TOOLS.concat(pluginRegistry.declarations());
+}
 
 const TOOL_SCHEMAS = new Map(TOOLS.map((tool) => [tool.function.name, tool.function.parameters || { type: 'object', properties: {} }]));
 const TOOL_DEFAULT_STRING_LIMIT = 20000;
 const TOOL_STRING_LIMITS = { path: 4096, content: 1024 * 1024, query: 2000, prompt: 10000, text: 20000, command: 400, url: 2048, topic: 120, origin: 120, destination: 120, date: 40, returnDate: 40 };
 function validateToolInput(name, input) {
-  const schema = TOOL_SCHEMAS.get(name);
+  const schema = TOOL_SCHEMAS.get(name) || (pluginRegistry.has(name) ? (pluginRegistry.get(name).parameters || { type: 'object', properties: {} }) : null);
   if (!schema) return { error: `Unknown tool: ${name}` };
   if (input == null) input = {};
   if (typeof input !== 'object' || Array.isArray(input)) return { error: 'Tool arguments must be an object.' };
@@ -2936,8 +3268,26 @@ function executeTool(name, args) {
 
 async function executeToolNow(name, args) {
   try {
-    const risk = TOOL_RISK[name] || 'safe';
+    const risk = TOOL_RISK[name] || pluginRegistry.risk(name) || 'safe';
     const profile = readProfile();
+    // Drop-in plugin dispatch: runs inside the same risk gates as built-ins.
+    // A risky plugin (marked `risk: 'sensitive'`) gets the same human
+    // confirmation the built-in sensitive tools get.
+    if (pluginRegistry.has(name)) {
+      if (risk === 'sensitive' && !codingAutoApprove) {
+        const ok = await confirmAction('Run plugin skill?', `The plugin "${name}" was granted these arguments:\n\n${JSON.stringify(args || {}).slice(0, 600)}\n\nIt is marked sensitive (may change files or system state). Proceed?`);
+        if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
+      }
+      const output = await pluginRegistry.run(name, args);
+      try {
+        const m = readMemory();
+        m.actionLog.unshift({ action: `plugin:${name}`, detail: (output && output.error) ? `failed: ${String(output.error).slice(0, 200)}` : 'completed', ts: Date.now() });
+        if (m.actionLog.length > 200) memoryArchive.append('actionLog', m.actionLog.slice(200).reverse(), { reason: 'actionlog-cap' });
+        if (m.actionLog.length > 200) m.actionLog = m.actionLog.slice(0, 200);
+        writeMemory(m);
+      } catch {}
+      return output;
+    }
     if (risk === 'sensitive' && profile.allowShell === false && name === 'run_command') {
       return { error: 'Permission denied: shell command execution is disabled in Settings.' };
     }
@@ -2957,6 +3307,12 @@ async function executeToolNow(name, args) {
       const ok = await confirmAction(name === 'send_email' ? 'Open email draft?' : 'Open WhatsApp draft?', `GemAir wants to open a message draft for:\n\n    ${target}\n\nYou will review and send it yourself. Proceed?`);
       if (!ok) return { error: 'Cancelled by user (human-in-the-loop confirmation).' };
     }
+    // Instant acknowledgment (2.13): every gate has passed, the tool is about
+    // to run — for gap-prone tools tell the renderer to speak one short line
+    // in the user's language so the wait never feels dead.
+    if (ACK_TOOLS.has(name)) {
+      sendToRenderer('tool:started', { name, ts: Date.now() });
+    }
 
     switch (name) {
       case 'get_current_time':
@@ -2966,7 +3322,7 @@ async function executeToolNow(name, args) {
       case 'get_weather':
         return await getWeather(args.city);
       case 'web_search':
-        return await webSearch(args.query);
+        return await webSearch(args.query, args.mode);
       case 'open_application': {
         const n = String(args.name || '');
         return await windowTools.launchApp(n);
@@ -3070,6 +3426,32 @@ async function executeToolNow(name, args) {
         const m = readMemory();
         return { log: (m.actionLog || []).slice(0, 30) };
       }
+      case 'undo_last': {
+        const list = undoStack.list();
+        if (!list.length) return { error: 'Nothing of mine to undo right now. Only file changes I made this session are reversible, and the live stack holds at most 25.' };
+        const target = list[0];
+        const ok = await confirmAction('Take this back?', `GemAir will internally reverse its own action:\n\n    ${target.label}\n\n(specifically: ${target.kind}, id ${target.id}). I never touch anything else. Proceed?`);
+        if (!ok) return { error: 'Cancelled by user.' };
+        const result = await undoStack.undoLast();
+        if (result.ok) logAction('undo', `Reversed: ${result.label} — ${result.detail}`);
+        return result.ok ? result : { ok: false, error: result.error || result.detail, note: result.note };
+      }
+      case 'list_undoable': {
+        const list = undoStack.list();
+        return { undoable: list, count: list.length, note: list.length ? 'Reversal is session-scoped; evicted entries are archived but no longer runnable.' : 'Nothing reversible right now.' };
+      }
+      case 'recall_clipboard_entry': {
+        const intel = ensureClipboardIntel();
+        if (!intel.enabled) return { error: 'Clipboard intelligence is off — enable it in Settings → Assistant first.' };
+        return intel.recall(args.id);
+      }
+      case 'list_clipboard_entries': {
+        const intel = ensureClipboardIntel();
+        if (!intel.enabled) return { entries: [], count: 0, note: 'Clipboard intelligence is off; enable it in Settings for the floating panel + history.' };
+        return { entries: intel.history(), stats: intel.stats() };
+      }
+      case 'get_assistant_capabilities':
+        return (refreshSelfKnowledge() || selfKnowledgeCache || {});
       case 'add_skill':
         return addSkill(args.text, args.name);
       case 'list_skills':
@@ -3127,10 +3509,20 @@ async function executeToolNow(name, args) {
       }
       case 'control_volume':
         return controlVolume(args);
+      case 'control_wifi':
+        return await controlWifiTool(args.action);
+      case 'control_brightness':
+        return await controlBrightnessTool(args.level);
+      case 'media_control':
+        return await mediaControlTool(args.action);
+      case 'prepare_message':
+        return await prepareMessageTool(args);
+      case 'navigate_browser':
+        return queueBrowserNav(args.url);
       case 'take_screenshot':
         return await takeScreenshot();
       case 'control_system':
-        return controlSystem(args.action);
+        return await controlSystem(args.action);
       // 2.4 new tools
       case 'launch_app':
         return await windowTools.launchApp(args.name, args.args);
@@ -3351,7 +3743,13 @@ function upsertFact(fact) {
   const existing = m.facts.find(f => normalizeFact(f.text) === norm);
   if (existing) { existing.updated = Date.now(); existing.importance = (existing.importance || 1) + 1; }
   else m.facts.push({ id: uid(), text: fact.text, category: fact.category || 'fact', importance: 1, created: Date.now(), updated: Date.now() });
-  if (m.facts.length > 300) m.facts = m.facts.sort((a, b) => (b.importance || 0) - (a.importance || 0)).slice(0, 300);
+  if (m.facts.length > 300) {
+    // Importance-sorted cap — but evicted facts are archived, never silently
+    // forgotten (search_memory can still surface them on demand).
+    m.facts.sort((a, b) => (b.importance || 0) - (a.importance || 0));
+    memoryArchive.append('facts', m.facts.slice(300).map((f) => f.text), { reason: 'facts-cap' });
+    m.facts = m.facts.slice(0, 300);
+  }
   writeMemory(m);
 }
 function factsForPrompt() {
@@ -3591,7 +3989,7 @@ async function aiChat(config, messages) {
   }
   const msgs = [...plannedMessages];
   for (let i = 0; i < 6; i++) {
-    const msg = await callChat(base, key, model, msgs, TOOLS);
+    const msg = await callChat(base, key, model, msgs, getAllTools());
     const toolCalls = msg.tool_calls || [];
     if (toolCalls.length) {
       msgs.push(msg);
@@ -3617,7 +4015,7 @@ async function streamRequest(base, key, model, messages, onDelta) {
   const STREAM_TIMEOUT_MS = 120000;
   const runStream = (withTools) => {
     const body = { model, messages, temperature: 0.6, max_tokens: 1200, stream: true, stream_options: { include_usage: true } };
-    if (withTools) { body.tools = TOOLS; body.tool_choice = 'auto'; }
+    if (withTools) { body.tools = getAllTools(); body.tool_choice = 'auto'; }
     let content = '';
     const toolCalls = [];
     return gemcore.requestManager.providerRequestStream({
@@ -3825,8 +4223,8 @@ async function offlineBrain(text) {
   }
   if (/screenshot|screen shot/.test(q)) { const r = await takeScreenshot(); return r.error || `Screenshot saved to ${r.file}.`; }
   if (/lock/.test(q) && /computer|screen|pc/.test(q)) { controlSystem('lock'); return 'Locking the screen.'; }
-  if (/shutdown|power off/.test(q)) { controlSystem('shutdown'); return 'Shutting down in 10 seconds.'; }
-  if (/restart|reboot/.test(q)) { controlSystem('restart'); return 'Restarting in 10 seconds.'; }
+  if (/shutdown|power off/.test(q)) { const r = await controlSystem('shutdown'); return r.message; }
+  if (/restart|reboot/.test(q)) { const r = await controlSystem('restart'); return r.message; }
   if (/system|status|cpu|memory|ram|health|stats/.test(q)) {
     const i = await getSystemInfo();
     return `CPU ${i.cpuLoad}%, memory ${i.memPercent}% used, up ${Math.floor(i.uptime / 3600)}h ${Math.floor((i.uptime % 3600) / 60)}m. Full readout is on the System Core panel.`;
@@ -3940,7 +4338,14 @@ function startReminderScheduler() {
         }
         changed = true;
         if (mainWindow) mainWindow.webContents.send('reminder:due', due);
-        if (Notification.isSupported()) new Notification({ title: 'GemAir Reminder', body: r.text }).show();
+        if (Notification.isSupported()) {
+          // OS-native notification (toast / NC / notify-send) with the due
+          // time; clicking it brings GemAir to the front.
+          const dueTime = new Date(dueAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+          const notification = new Notification({ title: 'GemAir Reminder', body: `⏰ ${dueTime} — ${String(r.text || '').slice(0, 180)}` });
+          notification.on('click', () => { try { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } } catch {} });
+          notification.show();
+        }
       }
     }
     if (changed) writeMemory(m);
@@ -3956,6 +4361,14 @@ function startTopicMonitorScheduler() {
       const m = readMemory();
       if (!Array.isArray(m.monitors) || !m.monitors.length) return;
       const alerts = await backgroundMonitor.checkMonitors(m, fetchTopicHeadline, { force: false });
+      if (alerts.length) {
+        // Mark entries so the next-launch proactive greeting can mention
+        // exactly which monitor found something new (consumed on delivery).
+        for (const alert of alerts) {
+          const entry = (m.monitors || []).find((mon) => mon && String(mon.topic || '').toLowerCase() === String(alert.topic || '').toLowerCase());
+          if (entry) entry.alertPending = true;
+        }
+      }
       writeMemory(m);
       for (const alert of alerts) {
         if (mainWindow) mainWindow.webContents.send('monitor:alert', alert);
@@ -4020,6 +4433,255 @@ function startDailyDigestScheduler() {
   setInterval(run, 60 * 1000);
 }
 
+// ---------------------------------------------------------------------------
+// Proactive engagement (concept shaped by Mark's "Proactive 2.0" — reimplemented
+// on GemAir's memory model). Two surfaces:
+//   • once-per-launch greeting: time-of-day aware, consumes the stored
+//     previous-session summary exactly once, mentions due reminders and
+//     monitors that found something new overnight;
+//   • optional idle check-ins during long sessions (profile.proactiveCheckIns),
+//     rotation-aware and quiet at night — never more than one per 3 hours.
+// ---------------------------------------------------------------------------
+const proactiveState = { lastCheckInAt: 0, lastAngle: null };
+
+function deliverProactiveGreeting() {
+  try {
+    const memory = readMemory();
+    const profile = readProfile();
+    const greeting = proactiveLib.buildGreeting({ now: Date.now(), memory, profile });
+    // Monitor alert flags + consumed session summary are one-shot state;
+    // clear them regardless of whether a greeting sentence got built.
+    let dirty = false;
+    if (Array.isArray(memory.monitors)) {
+      for (const mon of memory.monitors) {
+        if (mon && mon.alertPending) { mon.alertPending = false; dirty = true; }
+      }
+    }
+    if (greeting && greeting.consumedSession) dirty = true;
+    if (dirty) writeMemory(memory);
+    if (greeting && mainWindow) sendToRenderer('proactive:greeting', greeting);
+  } catch (error) {
+    console.error('[proactive] greeting failed:', error.message);
+  }
+}
+
+function startProactiveScheduler() {
+  // One greeting per launch — a touch after window creation so the renderer
+  // listeners exist by the time it lands.
+  setTimeout(deliverProactiveGreeting, 12000);
+  setInterval(() => {
+    try {
+      const profile = readProfile();
+      if (profile.proactiveCheckIns !== true) return;
+      const memory = readMemory();
+      const checkIn = proactiveLib.buildCheckIn({ now: Date.now(), memory, profile, state: proactiveState });
+      if (!checkIn) return;
+      proactiveState.lastCheckInAt = Date.now();
+      proactiveState.lastAngle = checkIn.angle;
+      sendToRenderer('proactive:checkin', { text: checkIn.text });
+      if (Notification.isSupported() && profile.proactiveNotifications === true) {
+        new Notification({ title: 'Gem check-in', body: checkIn.text }).show();
+      }
+    } catch (error) {
+      console.error('[proactive] check-in failed:', error.message);
+    }
+  }, 5 * 60 * 1000);
+}
+
+// Session memory: snapshot the conversation's topics at quit so the next
+// launch can recall them once (Mark-style "Session Memory", consumed once).
+function recordSessionEnd() {
+  try {
+    const memory = readMemory();
+    // Don't clobber an un-consumed summary from a crash with a second one —
+    // merge: keep whichever has more topics.
+    const existing = memory.lastSession;
+    const record = proactiveLib.recordSessionSummary(memory, { now: Date.now() });
+    if (!record) return;
+    if (existing && existing.consumed === false && Array.isArray(existing.topics) && existing.topics.length > record.topics.length) {
+      memory.lastSession = existing;
+    }
+    writeMemory(memory);
+  } catch {}
+}
+
+// ---------------------------------------------------------------------------
+// Local-secret git guard (Mark-style local-first hardening): when running
+// from a source checkout, warn if a secrets-shaped file is tracked by git —
+// .gitignore cannot protect a file that is already tracked.
+// ---------------------------------------------------------------------------
+let localSecretGuardRan = false;
+async function runLocalSecretGuard() {
+  if (localSecretGuardRan) return;
+  localSecretGuardRan = true;
+  try {
+    const result = await localSecretCheck.findTrackedSecrets(__dirname);
+    if (!result.checked || !result.hits.length) return;
+    console.warn('[security] sensitive files tracked by git in this checkout:', result.hits.map((h) => h.file).join(', '));
+    sendToRenderer('security:localSecrets', { hits: result.hits });
+  } catch (error) {
+    console.error('[security] local-secret guard failed:', error.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Live vision frame IPC (screen capture for the Gemini Live voice loop).
+// Permission-gated on the same screenAwareness setting the see_screen tool
+// uses; throttled so a chatty renderer cannot capture more than ~1 fps.
+// ---------------------------------------------------------------------------
+let lastVisionFrameAt = 0;
+ipcMain.handle('vision:screenFrame', async () => {
+  try {
+    const profile = readProfile();
+    if (profile.screenAwareness !== true) return { ok: false, error: 'SCREEN_AWARENESS_OFF' };
+    const now = Date.now();
+    if (now - lastVisionFrameAt < 900) return { ok: false, error: 'THROTTLED' };
+    lastVisionFrameAt = now;
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 960, height: 540 } });
+    if (!sources || !sources.length) return { ok: false, error: 'NO_SCREEN_SOURCE' };
+    const primary = sources[0];
+    const jpeg = primary.thumbnail.toJPEG(60);
+    if (!jpeg || !jpeg.length) return { ok: false, error: 'FRAME_FAILED' };
+    const size = primary.thumbnail.getSize();
+    trackUsage('vision.frame', { ok: true });
+    return { ok: true, data: jpeg.toString('base64'), mimeType: 'image/jpeg', width: size.width, height: size.height, name: String(primary.name || '').slice(0, 120) };
+  } catch (error) {
+    return { ok: false, error: 'CAPTURE_FAILED', message: String(error.message || error).slice(0, 300) };
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 2.13 — clipboard intelligence / self-knowledge / auto-start / undo IPC
+// ---------------------------------------------------------------------------
+let clipboardTimer = null;
+function ensureClipboardIntel() {
+  if (clipboardIntel) return clipboardIntel;
+  clipboardIntel = new ClipboardIntel({
+    readText: () => clipboard.readText(),
+    archive: memoryArchive,
+    onEvent: (evt) => {
+      if (evt.type === 'new' && evt.showPanel) sendToRenderer('clipIntel:new', evt.entry);
+      if (evt.type === 'secret') {
+        sendToRenderer('clipIntel:secret', evt.entry);
+        logAction('clipboard_intel', 'Clipboard copy looked like a key/token — stored redacted.');
+      }
+    }
+  });
+  return clipboardIntel;
+}
+function syncClipboardIntel() {
+  const intel = ensureClipboardIntel();
+  const p = readProfile();
+  const on = p.clipboardIntel === true;
+  intel.setEnabled(on);
+  if (on && !clipboardTimer) {
+    clipboardTimer = setInterval(() => { try { intel.tick(); } catch {} }, 1200);
+    if (clipboardTimer.unref) clipboardTimer.unref();
+  } else if (!on && clipboardTimer) {
+    clearInterval(clipboardTimer); clipboardTimer = null;
+  }
+  return on;
+}
+
+function refreshSelfKnowledge() {
+  try {
+    const p = readProfile(); const m = readMemory();
+    let brainConnected = false;
+    try { const status = connections.getSanitizedStatus(); brainConnected = !!(status && (status.geminiKey || status.hasGeminiKey || status.chatgpt || status.byok)); } catch {}
+    const caps = {
+      liveReady: brainConnected || !!p.apiKey || !!p.groqKey,
+      wakeEnabled: p.wakeWord === true,
+      visionReady: p.screenAwareness === true,
+      lowResource: false
+    };
+    selfKnowledgeCache = selfKnowledge.gatherFacts({
+      assistantName: 'Gem', userName: String(p.name || '').slice(0, 80),
+      version: app.getVersion(),
+      toolNames: getAllTools().map((t) => t.function.name),
+      pluginNames: pluginRegistry.list().map((pl) => pl.name),
+      pluginErrors: pluginRegistry.errors().map((e) => `${e.file}: ${e.error}`),
+      memory: m, archiveStats: memoryArchive.stats(), capabilities: caps
+    });
+  } catch (error) { selfKnowledgeCache = { text: '', oneLine: '', builtAt: Date.now(), error: error.message }; }
+  return selfKnowledgeCache;
+}
+
+ipcMain.handle('clipIntel:list', () => ensureClipboardIntel().history());
+ipcMain.handle('clipIntel:recall', (_e, id) => ensureClipboardIntel().recall(id));
+ipcMain.handle('clipIntel:clear', () => { ensureClipboardIntel().clear(); return { ok: true }; });
+ipcMain.handle('clipIntel:stats', () => ensureClipboardIntel().stats());
+ipcMain.handle('self:knowledge', () => selfKnowledgeCache || refreshSelfKnowledge());
+ipcMain.handle('autostart:get', () => autoStart.getState());
+ipcMain.handle('autostart:set', (_e, enabled) => {
+  const result = autoStart.setEnabled(enabled === true);
+  if (result.ok) {
+    const p = readProfile(); p.autoStart = !!enabled; writeProfile(p);
+    logAction('autostart', enabled ? 'Registered GemAir for launch at login.' : 'Removed GemAir from login items.');
+    console.log('[autostart]', enabled ? 'enabled —' : 'disabled —', result.note);
+  }
+  return result;
+});
+ipcMain.handle('undo:list', () => undoStack.list());
+
+/** Called at boot and after Settings toggles that need main-process loops. */
+// ---------------------------------------------------------------------------
+// Hardware Watch (2.15) — continuous CPU/RAM/temp/battery telemetry with
+// debounced alerts. Opt-in; the poll loop only exists while enabled.
+// ---------------------------------------------------------------------------
+const hardwareWatchLib = require('./lib/hardware-watch');
+let hardwareWatch = null;
+function getHardwareWatch() {
+  if (hardwareWatch) return hardwareWatch;
+  hardwareWatch = hardwareWatchLib.createHardwareWatch({
+    sample: hardwareWatchLib.createSampler({ os, fs, platform: process.platform }),
+    alert: (a) => {
+      logAction('hardware_watch', a.kind);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.webContents.send('hardware:alert', a); } catch {}
+      }
+    }
+  });
+  return hardwareWatch;
+}
+function syncHardwareWatch() {
+  const p = readProfile();
+  // The renderer may store it under the automation flags the settings file ships.
+  const enabled = !!(p && p.hardwareWatch === true);
+  const hw = getHardwareWatch();
+  if (enabled && !hw.isRunning()) hw.start();
+  if (!enabled && hw.isRunning()) hw.stop();
+  return hw.status();
+}
+function applyAutomationSettings() {
+  try { syncClipboardIntel(); } catch (error) { console.warn('[clipIntel] sync failed:', error.message); }
+  try { syncHardwareWatch(); } catch (error) { console.warn('[hardwareWatch] sync failed:', error.message); }
+  try { syncLocalServer(); } catch (error) { console.warn('[localsrv] sync failed:', error.message); }
+  try { refreshSelfKnowledge(); } catch {}
+}
+ipcMain.handle('hardware:status', () => getHardwareWatch().status());
+ipcMain.handle('automation:apply', () => { applyAutomationSettings(); return { ok: true }; });
+
+// ---------------------------------------------------------------------------
+// Plugins IPC — renderer Settings lists/reloads drop-in skills.
+// ---------------------------------------------------------------------------
+ipcMain.handle('plugins:list', () => ({ ok: true, plugins: pluginRegistry.list(), errors: pluginRegistry.errors() }));
+ipcMain.handle('plugins:reload', () => {
+  pluginRegistry.reload();
+  try { refreshSelfKnowledge(); } catch {} // the live registry changed — so does what Gem claims it can do
+  return { ok: true, plugins: pluginRegistry.list(), errors: pluginRegistry.errors() };
+});
+ipcMain.handle('plugins:openFolder', async () => {
+  try {
+    fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+    await shell.openPath(PLUGINS_DIR);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error).slice(0, 200) };
+  }
+});
+ipcMain.handle('memory:archiveStats', () => memoryArchive.stats());
+ipcMain.handle('memory:searchArchive', (_e, query, limit) => memoryArchive.search(query, { limit }));
+
 function startFocusPolling() {
   if (focusPollTimer) clearInterval(focusPollTimer);
   focusPollTimer = setInterval(async () => {
@@ -4059,7 +4721,7 @@ function agentSystemPrompt(name) {
 }
 function toolsForAgent(name) {
   const brain = AGENT_BRAINS[name] || AGENT_BRAINS.Alice;
-  return TOOLS.filter((tool) => brain.tools.includes(tool.function.name));
+  return getAllTools().filter((tool) => brain.tools.includes(tool.function.name));
 }
 async function agentChat(name, config, messages) {
   const base = normalizeBaseURL(config.baseURL);
@@ -4339,7 +5001,7 @@ async function callConnectedBrain(provider, messages, onDelta, onTool) {
     return err;
   };
   const reasonedMessages = await withOpenJarvisReasoning(Array.isArray(messages) ? messages : [], onTool);
-  const selectedTools = selectRelevantTools(TOOLS, reasonedMessages, { limit: 24 });
+  const selectedTools = selectRelevantTools(getAllTools(), reasonedMessages, { limit: 24 });
   const toolPrompt = connections.buildToolPrompt(selectedTools);
   const nowStamp = new Date().toLocaleString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   const baseInstructions = `You are Gem, the personal AI inside the GemAir desktop app — warm, direct, and precise. It is ${nowStamp}; use that for "today/tomorrow" and distrust stale training data (search instead). Use tools silently when action or current facts are needed. Never paste raw tool JSON; synthesize results into a natural reply with sources. Default to 1-3 sentences; expand only when asked or when steps are genuinely needed. Never say "as an AI".`;
@@ -5044,7 +5706,7 @@ ipcMain.handle('gemcore:chatStream', async (event, payload) => {
   const budget = gemcoreEngine.budgets.create(requestId, { maxTokens: 90000, maxToolCalls: 24, maxDurationMs: 8 * 60 * 1000 });
 
   const allMessages = [{ role: 'system', content: systemPrompt }, ...messages];
-  const selectedTools = useTools ? selectRelevantTools(TOOLS, allMessages, { limit: 16 }) : [];
+  const selectedTools = useTools ? selectRelevantTools(getAllTools(), allMessages, { limit: 16 }) : [];
 
   (async () => {
     try {
@@ -5389,12 +6051,24 @@ ipcMain.handle('memory:get', () => readMemory());
 ipcMain.handle('memory:append', (_e, role, content) => {
   const m = readMemory();
   m.transcript.push({ role, content, ts: Date.now() });
+  if (m.transcript.length > 2000) memoryArchive.append('transcript', m.transcript.slice(0, m.transcript.length - 2000), { reason: 'transcript-cap' });
   if (m.transcript.length > 2000) m.transcript = m.transcript.slice(-2000);
   writeMemory(m); return true;
 });
 ipcMain.handle('memory:clearTranscript', () => { const m = readMemory(); m.transcript = []; writeMemory(m); return true; });
 ipcMain.handle('memory:addFact', (_e, fact) => { upsertFact(fact); return true; });
 ipcMain.handle('memory:deleteFact', (_e, id) => { const m = readMemory(); m.facts = m.facts.filter(f => f.id !== id); writeMemory(m); return true; });
+// 2.15 — "Forget everything": only reachable after the renderer's explicit
+// human confirmation. Irreversible by design; not on the undo stack (the
+// UI says so before you click).
+ipcMain.handle('memory:clearFacts', () => {
+  const m = readMemory();
+  const count = (m.facts || []).length;
+  m.facts = [];
+  writeMemory(m);
+  logAction('memory_clear_facts', count + ' facts forgotten at user request');
+  return { ok: true, forgotten: count };
+});
 ipcMain.handle('memory:addNote', (_e, text) => { const m = readMemory(); m.notes.unshift({ id: uid(), text, created: Date.now() }); writeMemory(m); return true; });
 ipcMain.handle('memory:deleteNote', (_e, id) => { const m = readMemory(); m.notes = m.notes.filter(n => n.id !== id); writeMemory(m); return true; });
 ipcMain.handle('memory:addReminder', (_e, text, at, repeat) => {

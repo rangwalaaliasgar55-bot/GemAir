@@ -32,9 +32,17 @@ Or run from source (requires **Node.js 22.12+**):
 ```bash
 git clone https://github.com/rangwalaaliasgar55-bot/GemAir.git
 cd GemAir
-npm install
+npm run setup   # OS-aware installer: validates Node first, installs only what this OS needs
 npm start
 ```
+
+`npm run setup` checks your Node version *before* npm runs (a wrong
+interpreter fails with one sentence, not a wall of npm warnings), installs
+dependencies, and prints any OS-specific notes (Electron's system libraries
+on Linux, Xcode CLT on macOS — nothing extra on Windows). The optional
+browser-automation engine installs on demand with:
+`npm run setup --with-browser`. `npm install && npm start` still works too —
+setup just makes first run kinder.
 
 > Full walkthrough: **[GUIDE.md](GUIDE.md)** — architecture, every module, teaching GemAir, extending it, and the build/deploy guide.
 > How it all works: **[ARCHITECTURE.md](ARCHITECTURE.md)** — the message pipeline, the tool-calling loop, the memory model, and how Gem's 3D avatar is rendered.

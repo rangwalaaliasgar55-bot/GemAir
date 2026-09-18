@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('gemair', {
   memoryClearTranscript: () => ipcRenderer.invoke('memory:clearTranscript'),
   memoryAddFact: (fact) => ipcRenderer.invoke('memory:addFact', fact),
   memoryDeleteFact: (id) => ipcRenderer.invoke('memory:deleteFact', id),
+  memoryClearFacts: () => ipcRenderer.invoke('memory:clearFacts'),
   memoryAddNote: (text) => ipcRenderer.invoke('memory:addNote', text),
   memoryDeleteNote: (id) => ipcRenderer.invoke('memory:deleteNote', id),
   memoryAddReminder: (text, at, repeat) => ipcRenderer.invoke('memory:addReminder', text, at, repeat),
@@ -171,6 +172,44 @@ contextBridge.exposeInMainWorld('gemair', {
   onReminder: (cb) => subscribeIpc('reminder:due', cb),
   onTopicMonitorAlert: (cb) => subscribeIpc('monitor:alert', cb),
   onWakeToggle: (cb) => subscribeIpc('wake:toggle', cb),
+  // Proactive engine: once-per-launch greeting + opt-in idle check-ins
+  onProactiveGreeting: (cb) => subscribeIpc('proactive:greeting', cb),
+  onProactiveCheckIn: (cb) => subscribeIpc('proactive:checkin', cb),
+  // Local-secret git guard warning (only fires inside source checkouts)
+  onLocalSecretsWarning: (cb) => subscribeIpc('security:localSecrets', cb),
+  // Drop-in plugins (single-file skills discovered from plugins/)
+  pluginsList: () => ipcRenderer.invoke('plugins:list'),
+  pluginsReload: () => ipcRenderer.invoke('plugins:reload'),
+  pluginsOpenFolder: () => ipcRenderer.invoke('plugins:openFolder'),
+  // Live vision frames for the Gemini Live voice loop (screen side;
+  // permission-gated on Screen Awareness, throttled main-side)
+  visionCaptureScreenFrame: () => ipcRenderer.invoke('vision:screenFrame'),
+  // Memory cold-archive introspection (Settings → Memory)
+  memoryArchiveStats: () => ipcRenderer.invoke('memory:archiveStats'),
+  memorySearchArchive: (query, limit) => ipcRenderer.invoke('memory:searchArchive', query, limit),
+  // 2.13 — clipboard intelligence panel + self-knowledge + auto-start + undo
+  clipIntelList: () => ipcRenderer.invoke('clipIntel:list'),
+  clipIntelRecall: (id) => ipcRenderer.invoke('clipIntel:recall', id),
+  clipIntelClear: () => ipcRenderer.invoke('clipIntel:clear'),
+  clipIntelStats: () => ipcRenderer.invoke('clipIntel:stats'),
+  onClipIntelNew: (callback) => { const h = (_e, entry) => callback(entry); ipcRenderer.on('clipIntel:new', h); return () => ipcRenderer.removeListener('clipIntel:new', h); },
+  onClipIntelSecret: (callback) => { const h = (_e, entry) => callback(entry); ipcRenderer.on('clipIntel:secret', h); return () => ipcRenderer.removeListener('clipIntel:secret', h); },
+  selfKnowledge: () => ipcRenderer.invoke('self:knowledge'),
+  autostartGet: () => ipcRenderer.invoke('autostart:get'),
+  autostartSet: (enabled) => ipcRenderer.invoke('autostart:set', enabled),
+  undoList: () => ipcRenderer.invoke('undo:list'),
+  automationApply: () => ipcRenderer.invoke('automation:apply'),
+  hardwareStatus: () => ipcRenderer.invoke('hardware:status'),
+  onHardwareAlert: (callback) => { const h = (_e, a) => callback(a); ipcRenderer.on('hardware:alert', h); return () => ipcRenderer.removeListener('hardware:alert', h); },
+  // 2.16 — local server (extension pair + phone remote), content panel, nav
+  localsrvInfo: () => ipcRenderer.invoke('localsrv:info'),
+  localsrvNav: (url) => ipcRenderer.invoke('localsrv:nav', url),
+  localsrvQr: () => ipcRenderer.invoke('localsrv:qr'),
+  onContentResults: (cb) => subscribeIpc('content:results', cb),
+  onDashboardSay: (cb) => subscribeIpc('dashboard:say', cb),
+  onBlockedAttempt: (cb) => subscribeIpc('localsrv:blockedAttempt', cb),
+  onExternalTab: (cb) => subscribeIpc('localsrv:lastTab', cb),
+  onToolStarted: (callback) => { const h = (_e, info) => callback(info); ipcRenderer.on('tool:started', h); return () => ipcRenderer.removeListener('tool:started', h); },
   onActivity: (cb) => subscribeIpc('ai:activity', cb),
   onHudPanel: (cb) => subscribeIpc('hud:panel', cb),
   onConnectionsUpdated: (cb) => subscribeIpc('connections:updated', cb),

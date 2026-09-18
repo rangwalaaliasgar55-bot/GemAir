@@ -1841,3 +1841,15 @@ body.sys-degraded #sysChipText { color: var(--warn); }
 .fm-use { justify-self: end; grid-column: 1 / -1; }
 @media (min-width: 480px) { .fm-use { grid-column: 2; grid-row: 1; } .fm-note { grid-column: 1; } .free-model-row { grid-template-columns: 1fr auto; } }
 #setModelSelect { width: 100%; background: rgba(0,0,0,.28); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px 10px; font: 11px var(--font-body); }
+
+/* 2.16 — Dynamic Content Panel */
+.content-panel { margin: 6px 14px 0; border: 1px solid var(--border); border-radius: 12px; background: rgba(6,12,22,.6); overflow: hidden; }
+.content-panel-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.content-panel-title { font: 700 10px var(--font-mono); letter-spacing: 2px; color: var(--accent); }
+.content-strip { display: flex; gap: 8px; overflow-x: auto; padding: 8px 10px; scrollbar-width: thin; }
+.content-card { flex: 0 0 220px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: rgba(10,18,32,.55); display: flex; flex-direction: column; gap: 4px; }
+.content-card .cc-title { font: 600 12px var(--font-body); color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.content-card .cc-snippet { font-size: 10px; color: var(--text-dim); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.content-card .cc-host { font: 700 9px var(--font-mono); color: var(--accent); letter-spacing: 1px; }
+.content-card .cc-actions { display: flex; gap: 6px; margin-top: auto; }
+.content-card .cc-actions button { font-size: 9px; padding: 3px 8px; }

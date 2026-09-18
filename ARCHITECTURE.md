@@ -132,7 +132,7 @@ free tier is not a demo.
 
 ## 5. Memory — how Gem "remembers everything about you"
 
-Memory is **local-first**, then mirrored. Nine collections:
+Memory is **local-first**, then mirrored. Nine live collections:
 
 | Collection | Meaning |
 |---|---|
@@ -149,6 +149,17 @@ Memory is **local-first**, then mirrored. Nine collections:
 **Write path:** every mutation writes to the local store first (file or
 `localStorage`) and *then* fires a best-effort Supabase upsert. The UI never
 waits on the network, and going offline loses nothing.
+
+**Caps without amnesia (2.12):** the hot collections are bounded (facts 300,
+transcript 2000, action log 200, mood 500) — but since 2.12 every eviction is
+archived before it trims, into `lib/memory-archive.js`
+(`<userData>/gemair-memory-archive.json`): an append-only cold store with
+redaction-on-write and checkpoint rotation. `search_memory` falls back to it
+automatically (answers marked `archived: true`), and GemCore's scoped
+`MemoryStore` does the same per-scope with `remember()` reporting what it
+evicted. The earlier "capped blob that silently deleted the oldest entries"
+failure mode (documented upstream in Mark-LII/LIII) is explicitly designed
+out: memory is a lookup-on-demand store, not a shrinking blob.
 
 **Read path on startup:** load local; if a collection is empty and Supabase is
 connected, seed it from the cloud.
@@ -172,6 +183,7 @@ Gem's portrait is rendered on a high-performance 2D/2.5D canvas with real-time W
 When speech audio plays (Google Neural TTS or Web Speech API), an `AudioContext` and `AnalyserNode` extract real-time frequency FFT spectra (64/128 bands):
 - **Aperture (`mouth`)**: Scaled dynamically by real-time audio RMS volume.
 - **Visemes (`mouthW`, `mouthR`)**: High vs. low frequency energy ratio maps mouth width, rounding, and vowel shapes.
+- **Transcript-driven phonemes (2.12)**: word-boundary events (system voice `onboundary`, Edge `WordBoundary`) and the Gemini Live *output transcription* feed `visemesForWord` → `speakWord`, so the mouth articulates the actual words — bilabial closures on m/b/p (`MM`), spread on i (`EE`), rounding on u (`OO`), teeth-on-lip on f/v (`FV`) — not just a jaw tracking volume. Letter mapping is **Unicode-reduced**: NFD strips accents, Cyrillic and Greek letters map onto the same measured-shape rig (Greek ου → one rounded shape), and unmapped scripts fall back to a neutral open shape — one rule set articulates Latin, Cyrillic and Greek transcripts.
 - **Micro-movements**: Micro head-nods and subtle eye tracking react to voice intensity surges.
 - **Radial Audio Spectrum Ring**: An interactive circular frequency ring renders around Gem's head during speech and microphone input.
 
@@ -284,12 +296,233 @@ all it takes for "Get the app" to go live.
 
 ---
 
+## 9b. The 2.12 voice-loop & autonomy layer
+
+**Long-horizon Gemini Live (`renderer/gemini-live.js`).** One WebSocket
+carries mic PCM upstream, model PCM downstream, typed turns, and — new in
+2.12 — video frames (`realtimeInput.video`) and long-horizon session state:
+
+- `session_resumption`: handles from `sessionResumptionUpdate` are stashed and
+  re-attached on every reconnect path (drop, goAway, manual reconnect).
+- `context_window_compression: { sliding_window: {} }`: on by default —
+  hours-long live conversations without the full-context death.
+- Enhanced-vs-degraded setup: if the server closes the socket before
+  `setupComplete`, the session retries once with the plain setup and flags
+  `_degraded` (never loops the enhancement).
+- `serverContent.interrupted` → immediate playback-queue flush + UI callback;
+  `goAway.timeLeft` → early reconnect before the server walks away.
+- Output transcription → captions + avatar visemes (see §6), input
+  transcription opt-in.
+
+**Fused live vision.** `vision:screenFrame` IPC (main): `desktopCapturer`
+~1 fps JPEG, gated on the Screen Awareness permission, throttled, honest
+error vocabulary. The renderer's Live card toggles stream screen/camera
+frames into the *running* session as media chunks — one socket, so "what's
+on my screen?" is answered in the same breath as everything else.
+
+**Plugins (`plugins/` → `lib/plugin-loader.js`).** Single-file skills:
+`{ PLUGIN: { name, description, parameters, risk }, run(args, context) }`
+discovered at boot and merged into the model catalog via `getAllTools()` at
+every call site. Dispatch happens before the built-in switch inside the same
+risk gates; `risk: 'sensitive'` plugins prompt the human. Failures (invalid
+shape, name collision, throw inside `run`) become tool errors, never crashes.
+`plugins/_template.js` is the canonical, self-validating example; an
+underscore prefix means "docs, don't load".
+
+**Proactive engine (`lib/proactive.js`).** Pure functions over the memory
+file: `recordSessionSummary` (quit-time topic distillation),
+`buildGreeting` (once-per-launch, time-of-day/reminders/monitors/last-session,
+consumed exactly once), `buildCheckIn` (opt-in, 3h rate limit, quiet
+22:00–07:00, rotation-aware). The main process hosts a 5-minute scheduler
+and pushes `proactive:greeting` / `proactive:checkin` to the renderer.
+
+**Local-secret guard (`lib/local-secret-check.js`).** At startup in source
+checkouts: `git ls-files` is scanned for secrets-shaped paths (`.env*`,
+`api_keys.json`, certs/keys, memory exports). Hits warn in-chat with
+`git rm --cached` guidance and the revoke-and-rotate rule from `SECURITY.md`.
+Non-git installs skip silently.
+
+**OS-aware installer (`scripts/setup.js`, `npm run setup`).** Interpreter
+gate (Node ≥ 22.12 with a one-sentence failure), checkout completeness,
+per-OS dependency plan + system notes, optional `--with-browser` Playwright
+Chromium install, `--check` validation mode for CI.
+
+---
+
+## 9c. The 2.13 accountability layer
+
+**Undo stack (`lib/undo-stack.js`).** One shared journal where every
+reversible file tool registers its reversal at the moment it acts. Semantics
+ported from Mark-LIV's `core/undo.py`: reversal runs only on demand; >1 MB
+snapshots are refused with a note (no hoarding); created files are removed
+only while byte-identical to what we wrote (user edits are never destroyed);
+folders only while empty; move-backs refuse on collisions and stay on the
+stack with their reason. `undo_last` still passes a human confirm — reversal
+is itself a state change. Live cap 25; evictions go to the memory archive.
+
+**Clipboard intelligence (`lib/clipboard-intel.js`).** An opt-in 1.2 s poll in
+main (`electron.clipboard.readText` — the loop exists only while enabled).
+Classification (url/secret/long/text), secrets redacted at rest via
+`lib/privacy-redaction.js` and never shown in the floating panel, ring of 30
+with archive-on-evict. Bridge: `clipIntel:list/recall/clear/stats` +
+`clipIntel:new/secret` pushes; renderer card stages prompts, never sends.
+
+**Self-echo guard (`renderer/echo-guard.js`).** Transcript-level echo
+suppression: `speak()` registers normalized text; the SpeechRecognition
+handler drops exact/partial echoes and strips echo prefixes, keeping genuine
+continuations. 8 s expiry window, bounded 12-entry ring, mic never muted.
+
+**Runtime self-knowledge (`lib/self-knowledge.js`).** `refreshSelfKnowledge()`
+(main) snapshots the live registry after boot and every plugin reload — tool
+names, plugin names+errors, capability flags, memory/archive counts — and the
+honest limits, injected into every system prompt as
+`RUNTIME SELF-KNOWLEDGE`. Tool: `get_assistant_capabilities` for
+mid-session freshness.
+
+**Instant acknowledgment (`renderer/instant-ack.js`).** `executeToolNow`
+emits `tool:started` for the gap-prone set AFTER all confirm gates pass;
+the picker renders one line in the user's language (10 locales shipped),
+rotated, spoken unless Gem is already mid-sentence (then a toast).
+
+**Auto-start (`lib/autostart.js`).** Electron `setLoginItemSettings` per-OS
+(Run key / Login Item / XDG `.desktop`), state read back from the OS,
+never hidden, dev-mode caveat on unpackaged Linux.
+
+**Live-loop fixes.** Transcript-tail de-dup against a 600-char turn
+accumulator (Live API re-sends tails across tool-call turn-completes);
+rejected resumption handles dropped after exactly one replay; socket-epoch
+guard so a previous socket's trailing close can't consume a new attempt's
+settlement.
+
+---
+
+## 9d. The 2.14 honesty surface — devices, presence, labelled vision
+
+**Audio device picking (`renderer/audio-devices.js`).** `listAudioDevices()`
+wraps `enumerateDevices` with Chromium's label problem solved honestly:
+names are hidden until the mic has been granted once, so it opens the mic
+one time, re-enumerates, and stops every track — a denied grant returns
+`{ok:false, error}` instead of a dead list. `filterDeviceList()` keeps the
+picker short and truthful (dedupe by `deviceId`, default first, synthesized
+names for empty labels, 48-char trim, 8 per kind). `resolveSaved()` treats
+`''` as \"system default\" and reports `fellBack:true` with the lost
+device's name when a saved pick has vanished — never a silent substitution.
+`probeMic()` opens the candidate with `deviceId:{exact}` (the reported
+track label must be truthful about *which* device answered), measures open
+latency, and releases in `finally`. Capture sites (`app.js` mic meter,
+`gemini-live.js`, `wake-word.js`) use `{ideal}` instead — unplugged
+hardware degrades to default instead of erroring. Speaker routing flows
+through `window.__gemSpeakerDeviceId` + guarded `setSinkId` on every
+playback element; the UI note is explicit that the OS web-speech voice
+cannot be routed at all.
+
+**Avatar presence (`renderer/avatar.js`).** A pure `presenceFor(mode)` map
+turns intent into physiology: `thinking` damps pointer tracking and slows
+blinks; `listening` raises pointer damping so the eyes meet the cursor;
+`sleeping` caps the eyelids low and the breath at a third rate; `glance`
+leans gaze down. `currentPresenceMode()` resolves a total priority
+(glance > sleeping > thinking > listening > base) from state the app
+already knows, and `glance(ms)` is edge-triggered, clamped 250ms–2.5s, and
+refuses to interrupt thought or sleep. The renderer drives it from real
+events (auto-sleep timeout, wake-word re-arm, ai/system cards landing) —
+the face is a status channel, not decoration.
+
+**Source-labelled vision (`labelVisionSource` in `gemini-live.js`).**
+Before the first frames of a screen share or camera share flow, one in-band
+`clientContent` note declares the source — and the screen note names the
+trap (\"may contain the GemAir window itself … never a photo of the
+user\"). Both call sites are ordered before their send loops and the
+one-shot `see_screen` tool annotates its result (`source:'screen'`) the
+same way, so one-shot and streaming vision share the contract.
+
+## 9e. The 2.15 consent surface — power, hardware, language, memory
+
+**Power tier (`lib/power-actions.js`).** The rule \"the model cannot
+confirm its own irreversible actions\" is enforced structurally:
+`controlSystem` consults a pure tiering module, and the power branch
+(shutdown/restart) contains no settings conditionals at all — it always
+`await confirmAction(...)`, journals either outcome, and returns wording
+that cannot claim an action a human declined. Both entry points (the
+`control_system` tool and the typed shortcut regexes) funnel through the
+same gate, and lock/sleep are classified convenience-tier (reversible, no
+dialog).
+
+**Hardware watch (`lib/hardware-watch.js`).** Pure rule engine +
+injectable sampler: three consecutive 20s samples must breach a threshold
+before an alert fires (spike discipline), re-alerts are cooled down 15
+minutes per condition, and sensors the OS cannot report (temp/battery
+without native deps) surface exactly one \"unavailable\" event instead of a
+fabricated number. `stop()` clears the interval — the settings toggle is a
+real lifecycle, not a mute. Alerts ride the existing `hardware:alert` IPC
+into the renderer, where they speak one localized line through the
+instant-ack rotation (or toast over speech).
+
+**Silent language memory.** `detectLanguage`'s per-message result now
+persists (`profile.lastSpokenLang`, changed-only writes).
+`updateSttLanguageUi` resolves in strict order — explicit `sttLang` →
+remembered language → default — and marks automatic picks `·auto` in the
+chip so the adaptation is visible.
+
+**Memory transparency & device continuity.** Fact rows render learned-at
+timestamps; `memory:clearFacts` exists only as an IPC behind the panel's
+own human confirmation (no model tool exposes bulk deletion). Microphone
+changes during a live voice call mutate `session._opts` and invoke
+`reconnect()`, which re-attaches the resumption handle — the device swap
+inherits 2.12's session-continuity machinery for free; speaker changes
+skip the socket entirely (sink-only move).
+
+## 9f. The 2.16 connectivity surfaces — one server, one pairing discipline
+
+**Local control server (`lib/local-server.js`).** A single zero-dependency
+router backs both external surfaces. The **loopback scope** (port 8677,
+`127.0.0.1` only) is the browser extension's contract: `GET /pair` (6-digit
+session code → token), `GET /policy`, `POST /attempt`, `POST /tab`,
+`GET /commands`. The **lane scope** (port 8680, LAN, only while
+`profile.remoteDashboard`) serves **only** `/m` routes — phone pairing is
+structurally impossible there and policy data never crosses scopes.
+Tokens are per-session, `crypto.timingSafeEqual`-compared, and rate
+limits apply to both pairing (5/min) and phone says (10/min); every
+sensitive act is journaled via `logAction`.
+
+**Remote dashboard.** QR → `http://<lan-ip>:8680/m#<phone-token>`; the
+static page (hash-fragment key, never in the URL path) polls `/m/status`
+and POSTs `/m/say`, which the main process forwards through
+`dashboard:say` into the standard `sendMessage()` pipeline — remote text
+gets normal permissions, tagging (📱), and logging.
+
+**Browser link.** The long-dormant extension finally has its server. Site
+blocks are edited in Settings as `host | reason` lines into
+`profile.siteBlocks`, served to the extension through `GET /policy`.
+`navigate_browser` enqueues http(s)-only URLs; the extension polls
+`/commands?after=cursor` every second and navigates its active tab,
+rejecting non-http(s) even from its own queue. Both directions fail soft
+when the other side is absent — and the tool results say so.
+
+**System controls trio.** `lib/wifi-tools.js` (status free, toggle
+human-gated with no settings conditionals — same tier discipline as the
+2.15 power tier), `lib/brightness-tools.js` (WMI / brightnessctl / labelled
+xrandr-gamma fallback / honest macOS refusal), `lib/media-tools.js`
+(virtual media-key keybd_event on Windows, Spotify/Music osascript on
+macOS, playerctl on Linux).
+
+**Search modes + content panel.** `lib/search-modes.js` shapes
+`web_search` per mode and returns a `modeHint` the model cannot silently
+ignore (price/compare contracts forbid unstated numbers). Every search
+also emits `content:results`; the renderer renders a scrollable card
+strip (open-direct / navigate-paired actions) and the 2.14 avatar
+acknowledges it with a glance.
+
+**Compose-only messaging.** `lib/message-links.js` builds `wa.me` /
+`t.me` links; `prepare_message` only ever `shell.openExternal`s them and
+returns `sent: false` — there is no send code path at all.
+
 ## 10. Where to add things
 
 | I want to… | Touch |
 |---|---|
 | add a free web tool | `api/<name>.js` + a branch in `offlineBrain()` |
 | add an LLM tool | tool schema + handler in `main.js` |
+| **add a skill with zero core changes** | one file in `plugins/` (copy `_template.js`) |
 | change Gem's personality | `buildSystemPrompt()` in `app.js` |
 | change how Gem looks | `renderer/avatar.js` |
 | add a memory collection | `store.js`, `main.js`, a new migration |

@@ -194,16 +194,124 @@
     };
   }
 
+  // Long-horizon session fields (concept inherited from Mark's core loop —
+  // "session_resumption" + "context_window_compression with a SlidingWindow"
+  // keep one live conversation running for hours instead of dying on a full
+  // context window or a dropped socket). Field names follow the Live API's
+  // snake_case wire form, consistent with the rest of this file's setup.
+  //
+  // When the server rejects the enhanced setup (older/newer live models that
+  // do not know these fields yet), the session auto-degrades: one reload
+  // attempt with the plain setup, mirroring Mark's `_enhanced_live` flag.
+  function applyEnhancedFields(session, opts, { audio = false } = {}) {
+    const setup = opts.setup || (opts.setup = {});
+    delete setup.session_resumption;
+    delete setup.context_window_compression;
+    delete setup.output_audio_transcription;
+    delete setup.input_audio_transcription;
+    if (session._degraded) { session._resumeAttached = false; return setup; }
+    setup.context_window_compression = { sliding_window: {} };
+    setup.session_resumption = session._resumptionHandle ? { handle: session._resumptionHandle } : {};
+    // Remember whether THIS attempt carries a handle: if setup then fails,
+    // the handle was rejected and must be dropped after exactly one replay
+    // (Mark-LIV fix: an expired handle can never be re-offered on every
+    // retry, paradoxically blocking the reconnect it exists to protect).
+    session._resumeAttached = !!session._resumptionHandle;
+    if (audio) {
+      // Output transcription drives phoneme-accurate avatar lip-sync and the
+      // caption line; input transcription powers the "you said" echo line.
+      setup.output_audio_transcription = {};
+      if (opts._wantInputTranscript) setup.input_audio_transcription = {};
+    }
+    return setup;
+  }
+
+  /** One-shot: drop a resumption handle that the server just failed on. */
+  function dropRejectedResumeHandle(session) {
+    if (session._resumeAttached && session._resumptionHandle) {
+      sessionLog(session, 'Resumption handle rejected by server — dropping it so the next reconnect starts fresh.');
+      session._resumptionHandle = null;
+    }
+    session._resumeAttached = false;
+  }
+
+  // Transcript-tail de-dup (Mark-LIV fix list: the Live API re-sends the
+  // tail of a transcript across the several turn-completes a tool call
+  // produces, so answers got logged and spoken twice). We accumulate the
+  // turn's delivered text and suppress a chunk that is — at ANY level —
+  // content we just delivered: verbatim resend, clipped-chunk resend
+  // (old ends with new), whole-tail resend (new equals/is inside the turn
+  // accumulator), or long-chunk containment. Bounded to the last ~600
+  // normalized chars so hours-long sessions never grow it.
+  function normalizeTranscript(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+  function dedupeTranscript(session, raw) {
+    const clean = normalizeTranscript(raw);
+    if (!clean) return raw; // whitespace-only chunks pass through untouched
+    const acc = session._outAcc || '';
+    const prev = session._outPrev || '';
+    if ((prev && prev === clean) ||
+        (prev && prev.endsWith(clean)) ||
+        (acc && (acc === clean || acc.endsWith(clean))) ||
+        (clean.length >= 12 && ((prev && prev.includes(clean)) || (acc && acc.includes(clean))))) {
+      return null;
+    }
+    session._outPrev = clean;
+    session._outAcc = (acc ? acc + ' ' : '') + clean;
+    if (session._outAcc.length > 600) session._outAcc = session._outAcc.slice(-600).replace(/^\S*\s/, '');
+    return raw;
+  }
+
   function handleMessage(session, opts, raw, emit) {
     let msg = null;
     try { msg = JSON.parse(raw); } catch { return; }
     if (!msg || typeof msg !== 'object') return;
     if (msg.setupComplete !== undefined) {
+      session._resumeAttached = false; // resume accepted — the handle is good
       session._finishSetup && session._finishSetup();
+      return;
+    }
+    // Session resumption: the server hands us an opaque handle whenever the
+    // context shifts; stash it so a reconnect (drop, goAway, manual) resumes
+    // the same conversation instead of starting cold.
+    if (msg.sessionResumptionUpdate !== undefined) {
+      const update = msg.sessionResumptionUpdate || {};
+      if (update && update.newHandle && update.resumable !== false) {
+        session._resumptionHandle = String(update.newHandle);
+        try { opts.onResumption && opts.onResumption(session._resumptionHandle); } catch {}
+      }
+      return;
+    }
+    // GoAway: the server warns the connection will be torn down. Reconnect
+    // *immediately* (with the resumption handle attached) so the user never
+    // hears a dead session.
+    if (msg.goAway !== undefined) {
+      const timeLeft = msg.goAway && msg.goAway.timeLeft;
+      try { opts.onGoAway && opts.onGoAway(timeLeft || null); } catch {}
+      if (session._autoRetry && !session._userClosed && session.state === 'live') {
+        scheduleReconnect(session, 1012, 'server goAway');
+      }
       return;
     }
     const content = msg.serverContent;
     if (!content) return;
+    // Model-side interruption (the user talked over the model): flush the
+    // playback queue so the tail of the old answer never bleeds into the new
+    // turn — the audio layer registers _onInterrupted to do the flushing.
+    if (content.interrupted === true) {
+      try { session._onInterrupted && session._onInterrupted(); } catch {}
+      try { opts.onInterrupted && opts.onInterrupted(); } catch {}
+    }
+    if (content.outputTranscription && typeof content.outputTranscription.text === 'string') {
+      const text = dedupeTranscript(session, content.outputTranscription.text);
+      if (text !== null) {
+        try { opts.onOutputTranscript && opts.onOutputTranscript(text, content.turnComplete === true); } catch {}
+      }
+    }
+    if (content.inputTranscription && typeof content.inputTranscription.text === 'string') {
+      try { opts.onInputTranscript && opts.onInputTranscript(content.inputTranscription.text, content.turnComplete === true); } catch {}
+    }
     const parts = (content.modelTurn && content.modelTurn.parts) || [];
     for (const part of parts) {
       if (!part || typeof part !== 'object') continue;
@@ -220,6 +328,12 @@
     return new Promise((resolve, reject) => {
       session._settled = false;
       session._reject = reject;
+      // Socket epoch: the PREVIOUS socket's asynchronous close can land while
+      // this attempt is live. Without a guard it consumes the new attempt's
+      // settlement (steals the watchdog timeout, poisons the resume handle).
+      // Every handler below ignores events from an earlier epoch.
+      const epoch = (session._socketEpoch = (session._socketEpoch || 0) + 1);
+      const stale = () => session._socketEpoch !== epoch;
       setState(session, 'connecting');
       let ws = null;
       try {
@@ -247,10 +361,12 @@
       };
       ws.onmessage = (event) => handleMessage(session, opts, event.data, emit);
       ws.onerror = () => {
+        if (stale()) return;
         try { opts.onError && opts.onError('Live socket error — check the API key, model ID, and network.'); } catch {}
         if (!session._settled) {
           session._settled = true;
           clearTimeout(session._timer);
+          dropRejectedResumeHandle(session); // handle refused by server — never replay
           setState(session, 'error');
           reject(new Error('Live socket error — the API key, the live model ID, or the network is refusing the connection.'));
         } else {
@@ -258,6 +374,7 @@
         }
       };
       ws.onclose = (event) => {
+        if (stale()) return; // old epoch's trailing close — not this attempt
         const wasLive = session.state === 'live';
         const userClosed = !!session._userClosed;
         const code = event && typeof event.code === 'number' ? event.code : 0;
@@ -275,6 +392,7 @@
         if (!session._settled) {
           session._settled = true;
           clearTimeout(session._timer);
+          dropRejectedResumeHandle(session); // handle refused by server — never replay
           reject(new Error('Live connection closed' + (code ? ' (code ' + code + ')' : '') + reason + closeHint));
           return;
         }
@@ -304,13 +422,37 @@
       _reconnectTimer: null,
       _watchdog: null,
       _retryGen: 0,
+      _degraded: false,          // true once enhanced setup has been refused
+      _resumptionHandle: null,    // latest sessionResumption handle (if any)
       get ready() { return session.state === 'live' && session._ws && session._ws.readyState === WebSocket.OPEN; },
       reconnect() {
         session._userClosed = false;
         session._reconnectAttempts = 0;
         clearReconnect(session);
         try { session._ws && session._ws.close(); } catch {}
+        // Re-attach the last resumption handle (if the server offered one) so
+        // the reconnected session continues the same conversation.
+        applyEnhancedFields(session, session._opts, { audio: !!session._opts._audio });
         return openSocket(session, session._opts, session._emit);
+      },
+      // Send one video frame (JPEG/PNG, base64) into the live conversation —
+      // screen or camera — so "what's on my screen?" / "what am I holding?"
+      // works mid-voice without leaving the audio loop.
+      sendVideoFrame(base64Data, mimeType) {
+        if (!session.ready) return false;
+        const data = String(base64Data || '');
+        if (!data) return false;
+        try {
+          session._ws.send(JSON.stringify({
+            realtimeInput: {
+              video: {
+                data,
+                mimeType: (typeof mimeType === 'string' && mimeType) ? mimeType : 'image/jpeg'
+              }
+            }
+          }));
+          return true;
+        } catch { return false; }
       },
       close(code) {
         session._userClosed = true;
@@ -325,7 +467,7 @@
     return session;
   }
 
-  function connect(options = {}) {
+  async function connect(options = {}) {
     const apiKey = String(options.apiKey || '').trim();
     const model = String(options.model || '').trim();
     if (!apiKey) return Promise.reject(new Error('MISSING_API_KEY'));
@@ -335,8 +477,13 @@
       apiKey, model,
       timeoutMs: Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 30000,
       onText: options.onText, onError: options.onError, onLog: options.onLog,
+      onResumption: options.onResumption, onGoAway: options.onGoAway,
+      onInterrupted: options.onInterrupted,
+      onOutputTranscript: options.onOutputTranscript, onInputTranscript: options.onInputTranscript,
+      _audio: false,
       setup: { generation_config: { response_modalities: ['TEXT'] } }
     };
+    if (options && typeof options.onAudio === 'function') opts.onAudio = options.onAudio;
     const session = baseSession(opts, options.onState);
     session.send = (text) => {
       if (!session.ready) throw new Error('SESSION_NOT_READY');
@@ -344,7 +491,20 @@
         clientContent: { turns: [{ role: 'user', parts: [{ text: String(text) }] }], turnComplete: true }
       }));
     };
-    return openSocket(session, opts, null);
+    applyEnhancedFields(session, opts, { audio: false });
+    try {
+      return await openSocket(session, opts, null);
+    } catch (error) {
+      // Enhanced config refused -> degrade once and retry with the plain
+      // setup (long-horizon fields off), before giving up.
+      if (!session._degraded && !session._userClosed) {
+        session._degraded = true;
+        sessionLog(session, 'Enhanced live setup refused — retrying without resumption/compression.');
+        applyEnhancedFields(session, opts, { audio: false });
+        return openSocket(session, opts, null);
+      }
+      throw error;
+    }
   }
 
   // --- voice pipeline ------------------------------------------------------
@@ -383,12 +543,17 @@
       apiKey, model,
       timeoutMs: Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 30000,
       onText: options.onText, onError: options.onError, onLog: options.onLog,
+      onResumption: options.onResumption, onGoAway: options.onGoAway,
+      onInterrupted: options.onInterrupted,
+      onOutputTranscript: options.onOutputTranscript, onInputTranscript: options.onInputTranscript,
+      _audio: true,
+      _wantInputTranscript: options.inputTranscript === true,
       setup: {
         generation_config: {
           response_modalities: ['AUDIO'],
-          speech_config: { voice_config: { prebuilt_voice_config: { voice_name: 'Kore' } } }
+          speech_config: { voice_config: { prebuilt_voice_config: { voice_name: (options && typeof options.voiceName === 'string' && options.voiceName.trim()) ? options.voiceName.trim().slice(0, 40) : 'Kore' } } }
         },
-        system_instruction: { parts: [{ text: 'You are a helpful voice assistant.' }] }
+        system_instruction: { parts: [{ text: (options && typeof options.systemPrompt === 'string' && options.systemPrompt.trim()) ? options.systemPrompt.trim().slice(0, 20000) : 'You are a helpful voice assistant.' }] }
       }
     };
     // NOTE: model travels in setup.model via opts.model (see openSocket);
@@ -462,9 +627,13 @@
     };
 
     // 1. microphone first, so a denied permission fails fast with MIC_UNAVAILABLE
+    const micId = String(options.micDeviceId || '').trim();
+    const speakerId = String(options.speakerDeviceId || '').trim();
     try {
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { sampleRate: { ideal: MIC_RATE }, channelCount: { ideal: 1 }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        audio: Object.assign(
+          { sampleRate: { ideal: MIC_RATE }, channelCount: { ideal: 1 }, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          micId ? { deviceId: { ideal: micId } } : {})
       });
     } catch (e) {
       setState(session, 'error');
@@ -473,6 +642,11 @@
 
     inCtx = new AudioContext({ sampleRate: MIC_RATE });
     outCtx = new AudioContext({ sampleRate: OUT_RATE });
+    // Route the model's voice to the chosen output when supported
+    // (AudioContext.setSinkId, Chromium ≥110). Unsupported/no-pick → default.
+    if (speakerId && typeof outCtx.setSinkId === 'function') {
+      try { outCtx.setSinkId(speakerId).catch(() => {}); } catch {}
+    }
     try { await inCtx.resume(); await outCtx.resume(); } catch {}
     micSource = inCtx.createMediaStreamSource(micStream);
     micAnalyser = inCtx.createAnalyser();
@@ -502,9 +676,33 @@
     try { micAnalyser.getFloatTimeDomainData(meterBuf); } catch {}
 
     session._onSocketClosed = () => session._teardown();
+    // Server-driven interruption: flush playback immediately (do not fire
+    // onBargeIn here — the user's own VAD barge-in already did that path).
+    session._onInterrupted = () => { try { stopOutput(false); } catch {} };
     session._emit = (b64) => playPcm24k(b64);
     session._autoRetry = true;
-    await openSocket(session, opts, (b64) => playPcm24k(b64));
+    applyEnhancedFields(session, opts, { audio: true });
+    try {
+      await openSocket(session, opts, (b64) => playPcm24k(b64));
+    } catch (error) {
+      // A live model that predates/resists the long-horizon fields closes the
+      // socket during setup; degrade once and retry with the plain setup
+      // (Mark's `_enhanced_live` fallback, applied to the same session).
+      if (!session._degraded && !stopped && !session._userClosed) {
+        session._degraded = true;
+        sessionLog(session, 'Enhanced live setup refused — continuing without resumption/compression/transcription.');
+        applyEnhancedFields(session, opts, { audio: true });
+        try {
+          await openSocket(session, opts, (b64) => playPcm24k(b64));
+        } catch (retryError) {
+          session._teardown();
+          throw retryError;
+        }
+      } else {
+        session._teardown();
+        throw error;
+      }
+    }
     startWatchdog(session);
     return session;
   }
@@ -552,10 +750,32 @@
     return (models || []).filter((m) => m && set.has(m.id));
   }
 
+  /**
+   * Source-labelled vision (Mark-LIV fix list: unlabelled screen captures
+   * meant a screenshot of this app — which has a face in the middle — could
+   * be read as a photo of the user). A short in-band text note marks where
+   * frames come from before they start flowing.
+   */
+  function labelVisionSource(session, source) {
+    if (!session || !session.ready) return false;
+    const note = source === 'screen'
+      ? '[GemAir context note: the video frames that follow are SCREEN captures of the desktop. A screenshot may contain the GemAir window itself, including its avatar face — that face is the app, never a photo of the user.]'
+      : '[GemAir context note: the video frames that follow come from the device CAMERA and show what is captured nearby — surroundings, possibly the user.]';
+    try {
+      session._ws.send(JSON.stringify({
+        clientContent: { turns: [{ role: 'user', parts: [{ text: note }] }], turnComplete: true
+      }}));
+      sessionLog(session, 'vision source labelled: ' + source);
+      return true;
+    } catch (e) { return false; }
+  }
+
   window.geminiLive = {
-    connect, startVoice, listModels, filterFreeModels, ENDPOINT,
+    connect, startVoice, listModels, filterFreeModels, ENDPOINT, labelVisionSource,
     audio: { floatToPcm16, chunkFrames, encodeBase64, decodeBase64ToInt16, pcm16ToFloat, resampleTo16k, rms, MIC_RATE, MIC_FRAME, OUT_RATE },
-    // Exposed for unit tests: backoff schedule, liveness probe, intervals.
-    _internals: { computeBackoff, checkLiveness, RECONNECT_MAX, RECONNECT_BASE_MS, RECONNECT_CAP_MS, HEARTBEAT_MS }
+    // Exposed for unit tests: backoff schedule, liveness probe, intervals,
+    // and the long-horizon setup merge (resumption + sliding-window
+    // compression + transcription, with the degraded-retry escape hatch).
+    _internals: { computeBackoff, checkLiveness, applyEnhancedFields, RECONNECT_MAX, RECONNECT_BASE_MS, RECONNECT_CAP_MS, HEARTBEAT_MS }
   };
 })();

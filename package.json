@@ -1,7 +1,7 @@
 {
   "name": "gemair",
-  "version": "2.11.0",
-  "description": "GemAir \u2014 a free, open-source personal assistant. Voice, memory, tools, automations, and a calm workspace for your PC.",
+  "version": "2.16.0",
+  "description": "GemAir — a free, open-source personal assistant. Voice, memory, tools, automations, and a calm workspace for your PC.",
   "main": "main.js",
   "author": {
     "name": "GemAir",
@@ -10,12 +10,13 @@
   "license": "MIT",
   "homepage": "https://github.com/rangwalaaliasgar55-bot/GemAir",
   "scripts": {
+    "setup": "node scripts/setup.js",
     "start": "electron .",
     "dev": "electron . --dev",
     "preview": "electron . --dev --no-sandbox",
     "web": "npx serve renderer -l 8080",
     "serve": "node scripts/dev-server.js",
-    "check": "node scripts/daily-digest-test.js && node scripts/privacy-redaction-test.js && node scripts/globe-location-test.js && node scripts/recurrence-test.js && node scripts/site-presets-test.js && node scripts/openjarvis-workflow-test.js && node scripts/selfcheck.js && node scripts/workflow-test.js && node scripts/security-test.js && node scripts/performance-test.js && node scripts/appearance-test.js && node scripts/quick-access-test.js && node scripts/progress-test.js && node scripts/context-test.js && node scripts/adaptive-personality-test.js && node scripts/update-test.js && node scripts/recovery-test.js && node scripts/usage-test.js && node scripts/process-management-test.js && node scripts/network-boundary-test.js && node scripts/renderer-lifecycle-test.js && node scripts/aux-storage-test.js && node scripts/electron-boundary-test.js && node scripts/computer-agent-test.js && node scripts/mark3-ports-test.js && node scripts/wake-word-test.js && node scripts/attention-test.js && node scripts/attention-service-test.js && node scripts/attention-contract-test.js && node scripts/catalog-currency-test.js && node scripts/desktop-autonomy-test.js && node scripts/gemcore-provider-test.js && node scripts/gemcore-agent-test.js && node scripts/gemcore-core-test.js && node scripts/web-desktop-only-test.js",
+    "check": "node scripts/daily-digest-test.js && node scripts/privacy-redaction-test.js && node scripts/globe-location-test.js && node scripts/recurrence-test.js && node scripts/site-presets-test.js && node scripts/openjarvis-workflow-test.js && node scripts/selfcheck.js && node scripts/workflow-test.js && node scripts/security-test.js && node scripts/performance-test.js && node scripts/appearance-test.js && node scripts/quick-access-test.js && node scripts/progress-test.js && node scripts/context-test.js && node scripts/adaptive-personality-test.js && node scripts/update-test.js && node scripts/recovery-test.js && node scripts/usage-test.js && node scripts/process-management-test.js && node scripts/network-boundary-test.js && node scripts/renderer-lifecycle-test.js && node scripts/aux-storage-test.js && node scripts/electron-boundary-test.js && node scripts/computer-agent-test.js && node scripts/mark3-ports-test.js && node scripts/wake-word-test.js && node scripts/plugin-system-test.js && node scripts/proactive-test.js && node scripts/memory-archive-test.js && node scripts/privacy-local-files-test.js && node scripts/setup-script-test.js && node scripts/avatar-viseme-test.js && node scripts/live-vision-test.js && node scripts/personalization-ritual-test.js && node scripts/audio-device-test.js && node scripts/avatar-presence-test.js && node scripts/vision-source-test.js && node scripts/power-actions-test.js && node scripts/hardware-watch-test.js && node scripts/language-memory-test.js && node scripts/memory-panel-test.js && node scripts/search-modes-test.js && node scripts/system-controls-test.js && node scripts/message-links-test.js && node scripts/local-server-test.js && node scripts/content-panel-test.js && node scripts/undo-stack-test.js && node scripts/clipboard-intel-test.js && node scripts/self-knowledge-test.js && node scripts/autostart-test.js && node scripts/echo-guard-test.js && node scripts/instant-ack-test.js && node scripts/push-to-talk-test.js && node scripts/attention-test.js && node scripts/attention-service-test.js && node scripts/attention-contract-test.js && node scripts/catalog-currency-test.js && node scripts/desktop-autonomy-test.js && node scripts/gemcore-provider-test.js && node scripts/gemcore-agent-test.js && node scripts/gemcore-core-test.js && node scripts/web-desktop-only-test.js",
     "test": "npm run check && node scripts/chat-transport-test.js && node scripts/product-experience-test.js && node scripts/production-surface-test.js && node scripts/connection-surface-test.js && node scripts/connection-store-test.js && node scripts/catalog-currency-test.js && node scripts/desktop-autonomy-test.js && node scripts/connection-mock-e2e-test.js && node scripts/gemini-tts-test.js && node scripts/commander-automation-test.js && node scripts/gemini-live-test.js && node scripts/chatgpt-refresh-test.js && node scripts/chatgpt-codex-test.js && node --test test/*.test.js && node scripts/release-verification.js",
     "verify:release": "node scripts/release-verification.js",
     "test:smoke": "electron scripts/electron-smoke-test.js",
@@ -38,7 +39,8 @@
   "dependencies": {
     "@opencoredev/loginwithchatgpt-core": "0.2.0",
     "@supabase/supabase-js": "^2.45.0",
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "electron": "^44.3.0",
@@ -57,6 +59,9 @@
       "preload.js",
       "lib/**/*",
       "node_modules/@opencoredev/loginwithchatgpt-core/**/*",
+      "node_modules/qrcode/**/*",
+      "node_modules/pngjs/**/*",
+      "node_modules/dijkstrajs/**/*",
       "renderer/**/*",
       "assets/**/*",
       "THIRD_PARTY_NOTICES.md",

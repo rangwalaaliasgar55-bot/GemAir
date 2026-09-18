@@ -16,7 +16,7 @@
 // ============================================================
 'use strict';
 
-const VERSION = '2.11.0';
+const VERSION = '2.16.0';
 
 function env(key) {
   try { return String(process.env[key] || '').trim(); } catch { return ''; }

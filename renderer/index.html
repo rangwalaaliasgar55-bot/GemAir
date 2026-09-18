@@ -43,6 +43,16 @@
 
   <canvas id="bgCanvas" aria-hidden="true"></canvas>
   <div class="toasts" id="toasts"></div>
+  <div class="clip-intel-card" id="clipIntelCard" role="dialog" aria-label="Clipboard intelligence" hidden>
+    <div class="ci-head"><span class="ci-title">📋 CLIPBOARD</span><button class="ci-close" id="clipIntelClose" aria-label="Dismiss" title="Dismiss">✕</button></div>
+    <div class="ci-text" id="clipIntelText"></div>
+    <div class="ci-actions" id="clipIntelActions">
+      <button type="button" data-act="translate">TRANSLATE</button>
+      <button type="button" data-act="summarise">SUMMARISE</button>
+      <button type="button" data-act="explain">EXPLAIN</button>
+      <button type="button" data-act="fix">FIX</button>
+    </div>
+  </div>
   <div id="appleDim" aria-hidden="true"></div>
   <section class="apple-cc" id="appleControlPanel" aria-label="Control Center" hidden>
     <h3>CONTROL CENTER</h3>
@@ -70,7 +80,7 @@
         </div>
         <div class="brand-text">
           <h1>GemAir</h1>
-          <p>Personal assistant <span class="ver" id="verTag">v2.11.0</span></p>
+          <p>Personal assistant <span class="ver" id="verTag">v2.16.0</span></p>
         </div>
       </div>
 
@@ -389,6 +399,15 @@
                         <div class="empty">Gem’s actions and results will appear here.</div>
                       </div>
                     </div>
+                    <!-- 2.16 Dynamic Content Panel: scrollable result cards beneath the HUD -->
+                    <div class="content-panel" id="contentPanel" hidden>
+                      <div class="content-panel-head">
+                        <span class="content-panel-title" id="contentPanelTitle">CONTENT</span>
+                        <span class="dim" style="font-size:10px;" id="contentPanelHint">latest search renders here — nothing is prose-only</span>
+                        <button class="qc" id="contentPanelClose" title="Hide content panel" style="margin-left:auto;">✕</button>
+                      </div>
+                      <div class="content-strip" id="contentStrip"></div>
+                    </div>
                     <div class="chat-input-row">
                       <button class="mic-btn" id="micBtn" title="Talk to Gem (Speech Recognition)" aria-label="Talk to Gem">
                         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M19 11a7 7 0 01-14 0M12 18v3"/></svg>
@@ -504,6 +523,7 @@
                   <input type="text" id="factFilter" placeholder="Filter memories by keyword…" style="width:160px;" />
                   <input type="text" id="factInput" placeholder="Add a fact to remember…" />
                   <button class="mini-btn" id="factAdd">+</button>
+                  <button class="mini-btn danger" id="forgetAllFacts" title="Delete ALL stored facts — irreversible, not undoable">Forget everything</button>
                 </div>
                 <div class="category-filters" id="memoryCatFilters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
                   <button class="qc active" data-cat="all">ALL</button>
@@ -1148,6 +1168,7 @@
             <button class="settings-nav-btn" data-ssection="brain"><span class="sico">⚙️</span>General &amp; Memory</button>
             <button class="settings-nav-btn" data-ssection="voice"><span class="sico">🎙</span>Siri &amp; Voice</button>
             <button class="settings-nav-btn" data-ssection="desktop"><span class="sico">🖥</span>Desktop &amp; Focus</button>
+            <button class="settings-nav-btn" data-ssection="plugins"><span class="sico">🧩</span>Plugins</button>
             <button class="settings-nav-btn" data-ssection="appearance"><span class="sico">🎨</span>Appearance &amp; About</button>
             <button class="settings-nav-btn" data-ssection="apple"><span class="sico">🍎</span>Apple &amp; System</button>
           </div>
@@ -1524,6 +1545,25 @@
             <label>Wake phrase
               <input id="setWakeWordText" type="text" maxlength="40" placeholder="Hey Gem" aria-label="Custom wake phrase" />
             </label>
+            <div class="field-row" style="margin-bottom:12px;">
+              <button class="ghost-btn" id="wakeModelInstallBtn" type="button">⬇ INSTALL ON-DEVICE WAKE MODEL</button>
+              <span class="hint" id="wakeModelStatus" role="status" style="font-size:10px;">Local model keeps the wake listener fully on this device — one-time ~40 MB download, nothing leaves the machine while asleep.</span>
+            </div>
+            <label class="check-label">
+              <input type="checkbox" id="setPushToTalk" /> Push-to-talk (hold Ctrl+Space)
+            </label>
+            <span class="hint" id="pushToTalkHint" style="font-size:10px;display:block;margin-bottom:12px;">Mic stays closed until you hold Ctrl+Space — release to send. Bound to this window (honest note: there is no dependency-free global hotkey on macOS/Linux, so the chord lives in the app window everywhere).</span>
+            <label>Microphone
+              <select id="setMicDevice"><option value="">System default</option></select>
+            </label>
+            <label>Speakers / headphones
+              <select id="setSpeakerDevice"><option value="">System default</option></select>
+            </label>
+            <div class="field-row" style="margin-bottom:12px">
+              <button class="ghost-btn" id="audioDeviceRefresh" type="button">↻ REFRESH &amp; MEASURE</button>
+              <span class="hint" id="audioDeviceNote" role="status" style="font-size:10px;">One entry per device, the short list your OS shows — not the ×host-API duplicates. The system voice (web-speech) always follows the OS output; only Edge/mp3 and Live audio route to the pick. Missing devices fall back to default and say so.</span>
+            </div>
+            <span class="hint" id="micProbeStatus" style="font-size:10px;display:block;margin-bottom:12px;"></span>
             <div class="voice-presets" id="voicePresets" role="group" aria-label="Voice preset">
               <button type="button" class="voice-preset active" data-voice-preset="gem"><b>GEM</b><span>warm · balanced</span></button>
               <button type="button" class="voice-preset" data-voice-preset="jarvis"><b>JARVIS</b><span>deep · measured</span></button>
@@ -1624,6 +1664,11 @@
                 <div style="flex:1;height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;"><i id="geminiLiveMeterOut" style="display:block;height:100%;width:0%;background:var(--good,#3dff9a);"></i></div>
               </div>
               <span class="dim" id="geminiLiveState" role="status" style="font-size:10px;">idle</span>
+              <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;" aria-label="Live vision sharing">
+                <label class="dim" style="font-size:10px;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="geminiLiveShareScreen" /> SHARE SCREEN</label>
+                <label class="dim" style="font-size:10px;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="geminiLiveShareCamera" /> SHARE CAMERA</label>
+                <span class="dim" id="geminiLiveVisionState" role="status" style="font-size:10px;">vision off — enable a share, then ask “what’s on my screen?” mid-call</span>
+              </div>
             </div>
             <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;" aria-label="Live text chat">
               <div class="memory-list" id="geminiLiveTextLog" role="log" aria-label="Gemini Live text chat" style="max-height:180px;overflow:auto;"><div class="empty">No Live text yet — type below and Send. Works with Live voice models too (native-audio), over the same socket as voice.</div></div>
@@ -1678,6 +1723,48 @@
               <input type="checkbox" id="setLocalBrain" /> Local AI fallback — run a small language model in your browser (WebGPU)
             </label>
             <span class="hint" id="localBrainHint">Optional. Downloads roughly 800 MB once, then answers general questions locally. Live/current questions still use sources first.</span>
+            <label class="check-label" style="margin-top:10px">
+              <input type="checkbox" id="setClipboardIntel" /> Clipboard intelligence — floating Translate / Summarise / Explain / Fix panel on new copies
+            </label>
+            <span class="hint" style="font-size:10px;display:block;margin-bottom:10px;">Opt-in and local-first: the watcher only runs while this is on; entries that look like API keys or tokens are stored <b>redacted</b>; history is a small ring, evictions go to the memory archive — never silently dropped.</span>
+            <label class="check-label">
+              <input type="checkbox" id="setHardwareWatch" /> Hardware watch — alert on sustained high CPU / tight RAM / overheating / low battery
+            </label>
+            <span class="hint" style="font-size:10px;display:block;margin-bottom:10px;" id="hardwareWatchHint">Opt-in: it samples every 20s and only keeps polling while this is on. Spikes stay silent — heat must persist about a minute before it speaks, and each condition re-speaks at most every 15 minutes. Temperature and battery are honest: your OS may not expose them (Windows/macOS need native tools GemAir doesn't ship) — then it says so once instead of guessing.</span>
+            <label class="check-label">
+              <input type="checkbox" id="setAutoStart" /> Launch GemAir at login
+            </label>
+            <span class="hint" id="autoStartHint" style="font-size:10px;display:block;margin-bottom:4px;">Registers with the OS (Windows Run key / macOS Login Item / Linux XDG autostart). State is read back from the OS, not guessed.</span>
+          </fieldset>
+
+          <fieldset id="localServerCard">
+            <legend>🔗 BROWSER LINK + PHONE REMOTE (2.16)</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+              One pairing code this session for the <b>Gem Air Browser Link</b> extension (It then reports the active site and enforces your site blocks below).
+              The phone remote listens on your <b>LAN only, plain HTTP — never the internet</b>. Everything a paired device does is journaled in the action log.
+            </p>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;">
+              <div style="min-width:170px;">
+                <div class="dim" style="font-size:10px;letter-spacing:2px;">EXTENSION PAIR CODE (this session)</div>
+                <div id="extPairCode" style="font-size:24px;letter-spacing:6px;color:var(--accent);">------</div>
+                <div class="hint" style="font-size:10px;" id="extLastTab">Extension not paired — load the extension, enter this code in its popup.</div>
+              </div>
+              <div>
+                <label class="check-label" style="margin-bottom:6px;">
+                  <input type="checkbox" id="setRemoteDashboard" /> Phone remote dashboard — type to Gem from your phone
+                </label>
+                <div id="remoteDashRow" hidden>
+                  <img id="remoteDashQr" alt="QR for the phone remote" style="border-radius:8px;border:1px solid #1d3350;" />
+                  <div class="hint" style="font-size:10px;word-break:break-all;max-width:280px;" id="remoteDashUrl"></div>
+                </div>
+                <div class="hint" id="remoteDashHint" style="font-size:10px;">Enable to show the QR. Phone and computer must share the same Wi-Fi. Token lives only in this link — don't paste it anywhere.</div>
+              </div>
+            </div>
+            <div style="margin-top:10px;">
+              <div class="dim" style="font-size:10px;letter-spacing:2px;">SITE BLOCKS — one per line: <code>host</code> or <code>host | reason</code></div>
+              <textarea id="siteBlocksEdit" rows="3" style="width:100%;max-width:480px;" placeholder="doomscroll.example | stops me at 2am"></textarea>
+              <span class="hint" style="font-size:10px;">Served to the paired extension from this profile. Attempts-to-visit are journaled + toasted here.</span>
+            </div>
           </fieldset>
 
           <fieldset id="desktopAgentCard">
@@ -1878,6 +1965,34 @@
             <div class="cost-note">
               AI core = Vercel serverless · TTS = Microsoft Edge neural voices · STT = Web Speech API · images = pollinations.ai · search = DuckDuckGo Lite + Wikipedia · weather = Open-Meteo · news = Google News RSS · crypto = CoinGecko · currency = Frankfurter (free FX) · translation = MyMemory · dictionary = Free Dictionary API. If a feature ever needs a paid key, GemAir swaps it for a free path automatically.
             </div>
+          </fieldset>
+        </div>
+        <!-- PLUGINS SECTION: single-file drop-in skills, Mark-heritage "adding a skill is moving a file" -->
+        <div class="settings-section" data-section="plugins">
+          <fieldset>
+            <legend>DROP-IN PLUGINS — ONE FILE = ONE SKILL</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+              Every <code>.js</code> file in the app's <code>plugins/</code> folder that exports a <code>PLUGIN</code> declaration plus a
+              <code>run()</code> handler becomes a tool the AI can call — discovered at launch, dispatched through the same
+              permission gates as built-in tools. Copy <code>plugins/_template.js</code> to write your own; files whose name
+              starts with <code>_</code> are documentation, never loaded. GemAir never downloads plugin code — only files
+              you consciously place there are registered.
+            </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+              <button class="ghost-btn" id="pluginsReloadBtn" type="button">↻ RELOAD PLUGINS</button>
+              <button class="ghost-btn" id="pluginsOpenFolderBtn" type="button">📂 OPEN PLUGINS FOLDER</button>
+            </div>
+            <div class="memory-list" id="pluginsList" role="list" aria-label="Loaded plugins"><div class="empty">Loading plugin list…</div></div>
+            <div class="memory-list" id="pluginsErrors" role="list" aria-label="Skipped plugin files"></div>
+            <span class="hint" id="pluginsHint" role="status" style="font-size:10px;"></span>
+          </fieldset>
+          <fieldset>
+            <legend>MEMORY ARCHIVE — NOTHING SILENTLY FORGOTTEN</legend>
+            <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+              When hot memory collections hit their caps, evicted entries move to a cold archive on this device instead of
+              being deleted. <code>search_memory</code> falls back to it automatically, so old facts stay recallable.
+            </p>
+            <div id="memoryArchiveStats" class="dim" style="font-size:11px;line-height:1.7;">Archive stats appear here in the desktop app.</div>
           </fieldset>
         </div>
         <div class="settings-section" data-section="apple">
@@ -2084,6 +2199,9 @@
   <script src="apple.js"></script>
   <script src="wake-word.js"></script>
   <script src="gemcore-ui.js"></script>
+  <script src="echo-guard.js"></script>
+  <script src="instant-ack.js"></script>
+  <script src="audio-devices.js"></script>
   <script src="app.js"></script>
   <script src="air/attention-ui.js"></script>
   <script src="interface.js"></script>

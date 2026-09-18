@@ -80,6 +80,228 @@ Dave = planning) injected as its own system prompt.
 
 ---
 
+## 🧩 Plugins — one file, one skill (2.12)
+
+Drop a single `.js` file into the app's `plugins/` folder and Gem learns a new
+tool on next launch — no restart wiring, no registry edits. Copy
+`plugins/_template.js` to start; every plugin is just:
+
+```js
+module.exports = {
+  PLUGIN: {
+    name: 'my_skill',                 // lowercase snake_case, unique
+    description: 'When to call this and with what arguments.',
+    parameters: { type: 'object', properties: { /* JSON Schema */ } },
+    risk: 'safe'                      // or 'sensitive' → user confirms each run
+  },
+  async run(args, context) {
+    return { /* any JSON-serializable result, sent back to the model */ };
+  }
+};
+```
+
+- Files whose name starts with `_` (like the template) are documentation and
+  never load; nested folders are ignored. GemAir **never downloads plugin
+  code** — only files you consciously place there run.
+- Broken plugins can't break the app: invalid declarations show up in
+  Settings → **Plugins** with the exact reason, and run-time throws become
+  clean tool errors instead of crashes.
+- `context` is deliberately small: `homeDir`, `platform`, app `version`, your
+  saved `userName`, and `notify(title, body)`. Plugins never receive API keys
+  or other plugins' state.
+- The Plugins settings panel also shows the **memory archive** stats (below).
+
+## 👁 Live vision — "what's on my screen?" mid-call (2.12, hardened 2.13)
+
+
+
+In Settings → Siri & Voice, the Live voice card has two toggles:
+**SHARE SCREEN** and **SHARE CAMERA**. While a Gemini Live voice session is
+running they stream ~1 fps JPEG frames into the *same* conversation as your
+voice, so you can ask "what error is on my screen?" or "what's this cable I'm
+holding?" in the middle of talking — no screenshot dance, no separate feature.
+Screen sharing follows the same **Screen Awareness** permission as the
+`see_screen` tool and stops the instant you hang up, untoggle, or the socket
+closes. While the wake word sleeps, nothing is captured or sent at all.
+
+The Live loop itself got the long-horizon treatment in 2.12: session
+resumption handles ride through reconnects, sliding-window compression keeps
+one conversation alive for hours, server interruptions flush playback
+instantly, and Gem's own transcript drives the avatar's mouth — phoneme by
+phoneme, even in Cyrillic and Greek, thanks to Unicode-reduced visemes.
+
+## ↩️ Undo — "take it back" (2.13)
+
+Say **"undo"** and GemAir reverses its own most recent file action: writes
+(fresh files removed only while untouched, overwrites rolled back to an exact
+snapshot), folder organizes, renames, moves, archive sweeps, folder trees —
+each removed only while still empty. It never guesses (files over 1 MB are
+excluded up front and say so), refuses when you edited things since (your
+work is sacred), and a failed undo stays on the list with its reason. Ask
+"what can you undo?" for the live list.
+
+## 📋 Clipboard intelligence (2.13)
+
+Settings → **Clipboard intelligence** (opt-in): copy any text and a floating
+card offers **TRANSLATE / SUMMARISE / EXPLAIN / FIX** — one click stages the
+prompt in chat; you still press send. Keys and tokens are never put in the
+panel: they're stored redacted with a lock toast instead. The history ring is
+small; what ages out goes to the memory archive, not the void.
+
+## 🎚️ Push-to-talk & the echo guard (2.13)
+
+Meetings and noisy rooms: turn on **Push-to-talk** and hold **Ctrl+Space** —
+the mic is closed unless you're holding it (release sends; it follows the
+window honestly: there is no dependency-free global hotkey on macOS/Linux).
+And whether or not you use it, Gem no longer answers the echo of its own
+voice ringing in the room after a reply — the tail of its own sentence is
+recognised and dropped without ever muting you. While it's talking, real
+interruptions still land instantly.
+
+## 🪪 Ask it what it is (2.13)
+
+Ask "what can you do?" and the answer now comes from the **live registry** —
+tools discovered this session, plugins loaded since launch (broken ones
+disclaimed), what the machine is, what Memory holds — plus the honest limits:
+sight is a frame on demand, not a live feed; it acts on this machine only.
+Rename it or drop in a plugin and it knows — the knowledge is rebuilt live,
+never baked into the prompt.
+
+## ⚡ "On it" (2.13)
+
+When a longer job starts — a desktop task, a search, a folder sweep — you hear
+one short line in your language right away ("अभी कर रहा हूँ।", "Hallediyorum.",
+"On it."), and Gem still doesn't narrate its own tool calls: the ack comes
+from the app shell, not the model. If Gem is mid-sentence the line toasts
+instead of talking over the answer.
+
+## ⚡ Launch at login (2.13)
+
+Settings → **Launch GemAir at login** registers with the OS (Windows Run key,
+macOS Login Item, Linux XDG autostart). The toggle reads its state back from
+the OS — what you see is what's registered, never a stored assumption.
+
+## 🎛️ Pick your mic & speakers — honestly (2.14)
+
+Settings → Avatar & Voice now lists your **microphones and speakers by name**
+(short lists, max 8 each, deduplicated, system default first). Hit **Refresh
+devices** and GemAir also *probes* the selected mic — opens it, tells you how
+long that took and which track actually answered, then lets it go. A saved
+device that has been unplugged falls back to the system default **and names
+what it lost** instead of silently swapping hardware. One honest caveat the
+panel states itself: the built-in web-speech voice belongs to the OS and
+can't be routed to a chosen speaker — Edge-quality voices and the Live voice
+respect your pick.
+
+## 🎭 Watch the face — it is a status line now (2.14)
+
+Gem's avatar behaves the way a person at a desk does. Ask something long and
+it **looks away to think**; while it listens it **meets your eyes** (it
+follows your cursor more closely); after two silent minutes with the wake
+word armed its **lids fall and its breath slows** — wake it and they open
+again. When a reply or system card lands while you weren't talking, Gem
+**glances down at it**, a wordless \"that landed\". A glance never interrupts
+thinking or sleep — rests outrank politeness.
+
+## 🏷️ Vision that admits where it came from (2.14)
+
+Screen-share frames now announce themselves *as screen frames* before they
+flow — including the warning that a screenshot may contain GemAir's own
+window and **its avatar face is the app, never a photo of you**. Camera
+frames are labelled as camera. The same annotation rides on one-shot
+`see_screen` captures. The model can't confuse your desktop for your face
+anymore.
+
+## ⚠️ Shutdown needs YOU (2.15)
+
+Ask Gem to shut down or restart and a real system dialog appears — the
+model cannot click it, and no Settings toggle can approve it in advance.
+That's deliberate: irreversible power actions wait for a human hand,
+always. Lock and sleep stay instant (you can undo those with a key). A
+declined dialog leaves the computer on and the log says so.
+
+## 📊 Hardware watch (2.15)
+
+Settings → **Hardware watch** samples CPU/RAM (plus temperature and battery
+where your OS honestly exposes them) every 20 seconds. It stays quiet
+through spikes — heat must persist about a minute before it speaks, in
+your language, and each warning repeats at most every 15 minutes. If a
+sensor doesn't exist on your OS it says so once instead of inventing
+numbers, and switching the toggle off stops the loop entirely.
+
+## 🗣️ It remembers your language (2.15), and your mic pick 🎧 (2.14→2.15)
+
+Speak Hindi once and the next session's speech recognition opens in
+Hindi — unless you explicitly pinned a language, which always wins (the
+mic chip says `·auto` when it's guessing along with you). And if you
+change microphones **mid-Live-call**, the call reconnects with the whole
+conversation intact instead of dying — speaker swaps don't even blip.
+
+## 👁️ What Gem knows about you (2.15)
+
+The MEMORY panel now shows **when** every fact was learned — hover for the
+full timestamp. **Forget everything** wipes the entire fact store in one
+click after a dialog that warns, on purpose, that this one is *not*
+undoable. Gem itself has no bulk-delete-memory tool; only you, on that
+panel, can do it.
+
+## 📱 Gem, from your phone (2.16)
+
+Settings → **Phone remote dashboard** shows a QR. Scan it on the same
+Wi-Fi and you get a page with Gem's live status and a *Say to Gem* box —
+what you type pipes into your conversation, tagged 📱 so you can tell
+phone from keyboard later. It runs over plain LAN HTTP (the page says so),
+the token lives only in the QR/link, and the moment the toggle is off the
+lane is dead. Remote misses are rate-limited and everything it does is in
+the action log.
+
+## 🔗 The browser actually links now (2.16)
+
+Install the **Gem Air Browser Link** extension, enter the 6-digit pairing
+code from Settings, and: **(1)** Gem sees your active tab (the Settings
+card shows the last site as pairing proof), **(2)** your **site blocks**
+(`host | reason`, one per line in Settings) are enforced — attempts are
+blocked, toasted, and journaled, and **(3)** *"open example.com in my
+browser"* via Gem's `navigate_browser` really happens — the extension
+polls the command queue every second. Commands with no paired browser
+just wait harmlessly, and Gem says so.
+
+## 🔍 Search with a mode (2.16) and a scrollable panel 🗺️
+
+Say *"news mode: …"* or *"compare these two"*: `web_search` now routes
+through `search / news / research / price / compare`. News leads with
+what changed (outlet + date); research cross-checks; price mode **may
+only quote prices that appear in sources**; compare marks unknowns as
+"not in sources". Every search also lands in the **content panel** under
+the HUD — scrollable cards with OPEN (direct) and → BROWSER (through the
+paired extension).
+
+## 📶🔆🎵 The remaining system controls (2.16)
+
+- **Wi-Fi**: *status* anytime; *on/off* always waits for you at a dialog —
+  and the OFF dialog warns that you'd be cutting Gem's own brains off too.
+- **Brightness**: Windows WMI and Linux `brightnessctl` for real; the Linux
+  xrandr fallback is software gamma and says so. On macOS the tool says
+  what it can't do instead of pretending.
+- **🎵 Media keys**: *play/pause, next, previous* — real media virtual-key
+  codes on Windows, Spotify/Music targeting on macOS, `playerctl` on Linux
+  (with an install hint when it's missing).
+- **📨 WhatsApp/Telegram**: Gem composes and pre-opens the message — **you
+  press send**, and the tool result itself says `sent: false`. It can't be
+  made to claim otherwise.
+
+## 🌅 Proactive Gem (2.12)
+
+On launch, Gem greets you with the time of day, any reminders due in the next
+24 hours, the topic monitors that found something new overnight — and, from
+the second launch onward, a natural recall of what you last worked on,
+mentioned **once** and then consumed, so it never repeats itself. Long
+sessions optionally get rotation-aware idle check-ins (`profile.proactiveCheckIns`,
+Settings); they are rate-limited to one per 3 hours and stay quiet from
+22:00 to 07:00.
+
+---
+
 ## ⚡ GemCore Engine (any provider, hardened)
 
 GemCore is the engine layer under **Settings → ⚡ GemCore Engine**. It lets you connect
@@ -132,6 +354,7 @@ Run the engine tests with `npm run test:gemcore`.
 | **Transcript** | every message | Restores your full conversation on launch |
 | **Mood** | every meaningful message | The AI sees how you've been trending |
 | **Goals / Notes / Todos / Reminders** | explicit | Life & career management |
+| **Cold archive** | automatic | When hot collections hit their caps, evicted entries move to `<userData>/gemair-memory-archive.json` instead of being silently deleted. `search_memory` searches it automatically; Settings → Plugins shows the counts. Nothing Gem learns is ever dropped without being recoverable. |
 
 ### Teaching GemAir
 ```

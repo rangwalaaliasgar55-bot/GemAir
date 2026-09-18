@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Gem Air Browser Link",
-  "version": "1.0.0",
-  "description": "Lets the Gem Air desktop app see the active tab's site and enforce website blocks. Nothing leaves your machine.",
+  "version": "1.1.0",
+  "description": "Lets the Gem Air desktop app see the active tab's site, enforce website blocks, and navigate the active tab on the desktop's say-so. Nothing leaves your machine.",
   "permissions": ["tabs", "storage", "alarms", "webNavigation"],
   "host_permissions": ["http://127.0.0.1/*", "<all_urls>"],
   "background": { "service_worker": "background.js" },
