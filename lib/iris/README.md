@@ -107,16 +107,38 @@ encrypt, GemAir refuses to store rather than falling back to plain text.
 ## Testing
 
 ```
-npm run test:assist     # this subsystem alone
-npm run check           # the whole suite, which now includes it
+npm run test:assist     # this subsystem's contract with the host
+npm run test:iris       # Iris's own suite, ported (1014 assertions)
+npm run check           # the whole suite, which now includes both
 ```
 
-The suite is pure logic: no Electron, no network. It asserts the free-model gate
+`test/iris/` also mounts the whole subsystem headlessly — windows, tray, deep
+links, capture, maintain card — against a fake Electron
+(`test/iris/fixtures/fake-electron.js`); see `test/iris/README.md`.
+
+The `test:assist` suite is pure logic: no Electron, no network. It asserts the free-model gate
 (including that a paid id is refused by name), route selection and its refusal
 to silently switch providers, that no shipped file reaches publik, that every
 bundled guide is valid on both platforms and links only to allowlisted hosts,
 that every guide derives a runnable recipe, the deep-link grammar, and that the
 host wiring is intact (one tray, Assist mounted, Assist torn down on quit).
+
+## Seeing it without Electron
+
+```
+npm run preview:assist        # http://localhost:4173
+```
+
+Electron cannot run everywhere this repo is checked out, which would otherwise
+make seven renderer windows unreviewable. `scripts/assist-preview.js` serves
+`renderer/iris/**` over HTTP and gives the page a bridge with the same shape as
+`preload.js` — `invoke` over POST, the `on…` callbacks over Server-Sent Events —
+backed by the real main process running on the same fake Electron the tests use.
+The renderers and `lib/iris/` are untouched: a window that would break in
+Electron breaks here too. Model replies are simulated unless you set
+`ASSIST_PREVIEW_OFFLINE=0`, and there is no real screen, so capture hands the
+pointing pipeline a blank display. `scripts/assist-preview-test.js` (part of
+`npm run check`) uses it to assert the renderer → preload → main chain is whole.
 
 ## Differences from upstream, in one place
 

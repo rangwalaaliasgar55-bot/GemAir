@@ -278,7 +278,13 @@ funded tier, balance and account sign-in are not part of this port.
 
 Open it from the tray (**Ask GemAir Assist**, **Install guides**), or from a
 `gemair://guide/<slug>` link. Details and the full list of differences from
-upstream: [`lib/iris/README.md`](lib/iris/README.md). Tests: `npm run test:assist`.
+upstream: [`lib/iris/README.md`](lib/iris/README.md).
+
+Tests: `npm run test:assist` (the host contract) and `npm run test:iris` (Iris's
+own suite, ported — 1014 assertions, including a headless mount of the windows,
+deep links, capture and maintain mode on a fake Electron). To see the Assist
+windows without Electron, `npm run preview:assist` serves them in a browser
+against the real main process.
 
 ## 📦 Vendored upstream source
 
