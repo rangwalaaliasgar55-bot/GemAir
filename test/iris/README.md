@@ -1,6 +1,6 @@
 # The ported Iris suite
 
-`npm run test:iris` — 950 assertions across 42 files, run by `node --test`
+`npm run test:iris` — 1014 assertions across 46 files, run by `node --test`
 (it is also part of `npm test`).
 
 These are Iris's own tests for the subsystem in `lib/iris/`, ported the same way
@@ -8,6 +8,10 @@ the code was: compiled from the upstream TypeScript, then edited by hand where
 GemAir genuinely behaves differently. They are here because a port whose tests
 were left behind is a port nobody can change safely — the interesting failures
 below were all found by running them.
+
+Four of the files are GemAir's own (`integration`, `pointing.e2e`,
+`state.e2e`, `maintain.e2e`): they mount the whole subsystem on a fake Electron.
+See "The four end-to-end files" below.
 
 ## How they run without vitest
 
@@ -49,9 +53,31 @@ Each of these is a deliberate divergence, asserted here so it cannot drift back:
 | `autopilot-recipe`, `guide-recipe` | The clone-build-serve recipe is Excalidraw; recipes that clone nothing must not move the shell at all. |
 | `autopilot-fix-ladder` | The spend cap only exists for a `metered_tier` a reader would have to wire in themselves; GemAir's own routes are free. |
 
+## The four end-to-end files
+
+Everything upstream tests is a pure module — which left the half of the port
+that only runs inside Electron (`lib/iris/main/*`, roughly 2,000 lines: the
+windows, the tray fragment, the deep-link funnel, the IPC surface, the capture
+pipeline) covered by nothing, because Electron cannot run here. Those four files
+close that hole by injecting `fixtures/fake-electron.js` into the module cache
+and then calling the real `integration.mount()`:
+
+| File | What it drives |
+| --- | --- |
+| `integration.test.js` | The host contract GemAir's `main.js` actually uses: mount, the tray fragment, the guide list, the route probe, `ask()` over the free Zen route, every window, the deep-link funnel, and the `NOT_MOUNTED` stub. |
+| `pointing.e2e.test.js` | The eye, end to end on two monitors of different densities: capture → downscale to 1568 → `[POINT]` → refinement crop → overlay. Proves the coordinates the overlay is handed are DISPLAY space, window-relative, and on the right monitor. |
+| `state.e2e.test.js` | What is written to disk, read back as bytes: settings round-trip, a secret refused rather than stored in the clear, and a pre-fork install's plaintext keys removed. |
+| `maintain.e2e.test.js` | A break, a card, an answer: the ask card opens inactive, its snapshot survives the window still loading, the reader's answer reaches it over IPC, and mute/cooldown keep it from nagging. |
+
+`fixtures/fake-electron.js` implements exactly the twenty Electron APIs
+`lib/iris` touches (`grep -rho "electron_1\.[A-Za-z.]*" lib/iris`) and nothing
+else, so a call the port starts making that the fake does not know about fails
+loudly rather than passing quietly. It fires `did-finish-load` after a load, as
+real Electron does, because several windows queue their first message until it.
+
 ## What running them caught
 
-The port had five real defects, each fixed in `lib/iris/`:
+The port had six real defects, each fixed in `lib/iris/`:
 
 1. `main/index.js` broadcast `iris-deep-link-rejected` / `iris-guide-opened`
    while the preload listened for `gemair-*` — deep links reached no window.
@@ -63,3 +89,7 @@ The port had five real defects, each fixed in `lib/iris/`:
    held them in a field called `publikBaseUrl`.
 5. The Excalidraw recipe declared `~/excalidraw` for steps a Windows shell
    would have left in `~`, and its clone was not idempotent on re-run.
+6. `main/settings.js` spread the whole parsed file into its state, so the
+   migration that is supposed to strip a pre-fork install's plaintext
+   `anthropicApiKey` wrote it straight back out again — the key would have sat
+   in the clear forever. Caught by `state.e2e.test.js` reading the file back.
