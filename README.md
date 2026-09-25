@@ -250,6 +250,36 @@ GemAir ships its own local coding agent. It needs **no API key and no vendor** �
 
 It uses the same tools you already have (`list_directory`, `read_file`, `write_file`, `search_files`, `run_command`) plus a `run_coding_cli` tool that delegates to a user-installed local coding CLI when available (also keyless via Ollama). Every edit is confirmed by you unless you enable auto-approve.
 
+## 🛠️ GemAir Assist — point at my screen, and install things for me
+
+A full port of [Blueturboguy07/iris](https://github.com/Blueturboguy07/iris),
+living in `lib/iris/` + `renderer/iris/` and mounted by `main.js` as a
+subsystem. Three things it adds:
+
+- **Ask about what is on screen.** GemAir takes a screenshot, works out *where*
+  the thing you asked about is in two passes, and draws a click-through marker
+  over it — on the right monitor, at the right place, on any DPI.
+- **Install guides that run themselves.** Pick an app; GemAir installs the
+  tools, runs the build, waits at the steps only you can do (a sign-in, a
+  permission prompt), verifies each step actually worked, and repairs a failed
+  step itself instead of stopping. Ollama, the OpenCode CLI and Excalidraw ship
+  with the app; guides are plain JSON in `lib/iris/guides/` and work offline.
+- **Maintain mode (optional, off by default).** Notices when an app GemAir
+  installed crashes or hangs, asks once, and — for a source install it made
+  itself — applies a known fix, verifies it (fails before, passes after, fails
+  again when reverted), and can open the PR upstream.
+
+**Every model it uses is free.** All of it runs on OpenCode's free models: the
+hosted route needs no account and no card, and GemAir refuses a paid model id
+before a request is ever built. Your own OpenCode key is optional and only
+raises your rate limit; an `opencode` CLI or a local `opencode serve` is used in
+preference to the network when you have one. Upstream's hosted publik API,
+funded tier, balance and account sign-in are not part of this port.
+
+Open it from the tray (**Ask GemAir Assist**, **Install guides**), or from a
+`gemair://guide/<slug>` link. Details and the full list of differences from
+upstream: [`lib/iris/README.md`](lib/iris/README.md). Tests: `npm run test:assist`.
+
 ## 📦 Vendored upstream source
 
 GemAir vendors the source of two open-source projects so its capabilities stay auditable and extensible in-repo (see `vendor/README.md`):
@@ -258,6 +288,12 @@ GemAir vendors the source of two open-source projects so its capabilities stay a
 | --- | --- | --- | --- |
 | `vendor/computer-agent/` | [suitedaces/computer-agent](https://github.com/suitedaces/computer-agent) | Apache-2.0 | The "computer-use" desktop agent. GemAir's Desktop Agent (`lib/computer-agent.js`) is its JS port, upgraded to run inside Electron — no API key, no vendor. |
 | `vendor/opencode/` | [sst/opencode](https://github.com/sst/opencode) | MIT | The terminal coding agent. GemAir's Coding Agent reuses its keyless (Ollama) config approach and can delegate to the `opencode` CLI. |
+
+GemAir Assist (`lib/iris/`, `renderer/iris/`) is a **port**, not a vendored
+copy: [Blueturboguy07/iris](https://github.com/Blueturboguy07/iris) is TypeScript
+and ships as its own tray app, and this is that product rewritten as CommonJS and
+mounted inside GemAir, with the hosted/paid tiers replaced by free OpenCode
+routes. It is part of the packaged app.
 
 Both are reference-only and excluded from the packaged app.
 

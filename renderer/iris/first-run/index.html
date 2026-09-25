@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;">
+  <title>Welcome to GemAir</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --panel: rgba(255, 255, 255, 0.04);
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f0f0f5;
+      --text-dim: rgba(255, 255, 255, 0.55);
+      --text-faint: rgba(255, 255, 255, 0.32);
+      --accent: #638cff;
+      --error: #f87171;
+      --ok: #34d399;
+      --radius: 8px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* Resizable like Settings (services/window-geometry.ts), with the same
+       rules: never a horizontal scrollbar, and a thin vertical one in the
+       app's colours rather than Windows' wide grey default. See the
+       settings page for why scrollbar-width/-color must stay unset. */
+    body {
+      font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg); color: var(--text); font-size: 13px;
+      padding: 28px; height: 100vh; overflow-x: hidden; overflow-y: auto;
+      overflow-wrap: anywhere;
+    }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.14); background-clip: padding-box;
+      border: 2px solid transparent; border-radius: 8px; min-height: 40px;
+    }
+    ::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.26); }
+    ::-webkit-scrollbar-corner { background: transparent; }
+    h1 { font-size: 19px; margin-bottom: 6px; }
+    .lede { color: var(--text-dim); margin-bottom: 22px; line-height: 1.55; }
+    .option {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--panel); padding: 14px; margin-bottom: 10px;
+    }
+    .option h2 { font-size: 13px; margin-bottom: 4px; }
+    .option p { color: var(--text-dim); line-height: 1.5; margin-bottom: 10px; }
+    .option.primary { border-color: var(--accent); }
+    button {
+      padding: 8px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--panel); color: var(--text); font-size: 12px;
+      font-family: inherit; cursor: pointer;
+    }
+    button:hover:not(:disabled) { border-color: var(--accent); }
+    button.accent { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    input[type=password], input[type=text] {
+      width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: rgba(0,0,0,0.25); color: var(--text); font-size: 12px;
+      font-family: inherit; outline: none; margin-bottom: 8px;
+    }
+    input:focus { border-color: var(--accent); }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .note { color: var(--text-faint); line-height: 1.5; margin-top: 8px; }
+    .balance { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .why { color: var(--text-dim); line-height: 1.55; margin-bottom: 12px; }
+    .error { color: var(--error); margin-top: 8px; line-height: 1.45; }
+    .hidden { display: none; }
+    .skip {
+      margin-top: 18px; text-align: center;
+    }
+    .skip button { border: none; background: none; color: var(--text-faint); }
+    .skip button:hover { color: var(--text-dim); text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <!-- Step 1: how GemAir will reach a model.
+       Upstream this screen was a fork in the road — set up publik API, paste a
+       publik key, or bring an Anthropic key — because none of the routes worked
+       until the reader chose and paid for one. GemAir's free hosted route works
+       with nothing configured, so this screen mostly CONFIRMS rather than asks,
+       and the two other routes are offered as upgrades, not requirements. It is
+       only ever shown when nothing can answer at all. -->
+  <div id="choose">
+    <h1>Welcome to GemAir Assist</h1>
+    <p class="lede">
+      GemAir installs apps for you and answers questions about what's on your
+      screen. Install guides work right away, offline. To have GemAir
+      <em>answer</em> you, it needs to reach a model — and the models it uses
+      are free.
+    </p>
+
+    <div class="option primary" id="free-option">
+      <h2 id="free-heading">Use the free models</h2>
+      <p id="free-pitch">
+        No account, no card, no key. GemAir talks to opencode.ai's free models.
+      </p>
+      <button class="accent" id="free-start">Use the free models</button>
+      <div class="note" id="free-disclosure">
+        GemAir will send your question — and, when you ask about your screen, a
+        screenshot — to opencode.ai to be answered. Nothing is stored there by
+        GemAir, and no paid model is ever requested.
+      </div>
+      <div class="error hidden" id="free-error"></div>
+    </div>
+
+    <div class="option">
+      <h2>Paste your own OpenCode key</h2>
+      <p>Optional. A key of your own raises your rate limit. Still free models only.</p>
+      <input type="password" id="opencode-key" placeholder="sk-…" autocomplete="off">
+      <div class="row"><button id="opencode-key-save">Save key</button></div>
+      <div class="error hidden" id="opencode-key-error"></div>
+    </div>
+
+    <div class="option">
+      <h2>Use the opencode CLI on this computer</h2>
+      <p id="cli-pitch">
+        Runs through the <code>opencode</code> binary you already have, with
+        whatever it is signed in to. GemAir never sees that sign-in.
+      </p>
+      <div class="row">
+        <button id="cli-use">Use the CLI</button>
+        <button id="cli-recheck">Re-check</button>
+      </div>
+      <div class="error hidden" id="cli-error"></div>
+    </div>
+
+    <div class="skip">
+      <button id="skip">Skip for now — I just want the install guides</button>
+    </div>
+  </div>
+
+  <!-- Step 2: what was actually chosen. Upstream this was the balance card the
+       contract required before any money could be spent; there is no money, so
+       it simply confirms the route. -->
+  <div id="card" class="hidden">
+    <h1>You're set up</h1>
+    <div class="option primary">
+      <div class="balance" id="card-balance"></div>
+      <div class="why" id="card-why"></div>
+    </div>
+    <div class="skip"><button id="card-done">Done</button></div>
+  </div>
+
+  <script>
+    const gemair = window.gemair;
+
+    function show(id) {
+      document.getElementById("choose").classList.toggle("hidden", id !== "choose");
+      document.getElementById("card").classList.toggle("hidden", id !== "card");
+    }
+
+    function showError(elementId, message) {
+      const element = document.getElementById(elementId);
+      element.textContent = message;
+      element.classList.remove("hidden");
+    }
+
+    function clearError(elementId) {
+      document.getElementById(elementId).classList.add("hidden");
+    }
+
+    function showChosen(routeName, why) {
+      document.getElementById("card-balance").textContent = "Answering via " + routeName;
+      document.getElementById("card-why").textContent = why;
+      show("card");
+    }
+
+    async function init() {
+      const settings = await gemair.getSettings();
+      // The CLI option is only real if the binary is there. Saying so up front
+      // beats a button that always fails.
+      const cliUse = document.getElementById("cli-use");
+      cliUse.disabled = !settings.cliAvailable;
+      if (!settings.cliAvailable) {
+        document.getElementById("cli-pitch").textContent =
+          "No opencode binary found on this computer. GemAir can install it for you from its guides, then re-check.";
+      }
+      if (!settings.secretStorageAvailable) {
+        document.getElementById("opencode-key-save").disabled = true;
+        showError(
+          "opencode-key-error",
+          "This machine will not let GemAir encrypt a stored key, so your own key cannot be saved. The free models above still work."
+        );
+      }
+    }
+
+    document.getElementById("free-start").addEventListener("click", async () => {
+      clearError("free-error");
+      const button = document.getElementById("free-start");
+      button.disabled = true;
+      button.textContent = "Checking…";
+      // Empty preference = "pick the first route that works", which starts with
+      // the free hosted one.
+      await gemair.setSetting("providerPreference", "");
+      const route = await gemair.refreshRoute();
+      button.disabled = false;
+      button.textContent = "Use the free models";
+      if (!route || !route.route) {
+        showError("free-error", "GemAir could not reach opencode.ai. Check your connection and try again.");
+        return;
+      }
+      showChosen(route.route, "Free models only — GemAir refuses a paid model id before a request is built.");
+    });
+
+    document.getElementById("opencode-key-save").addEventListener("click", async () => {
+      clearError("opencode-key-error");
+      const key = document.getElementById("opencode-key").value.trim();
+      if (!key) return;
+      const saved = await gemair.setSetting("openCodeApiKey", key);
+      if (!saved) {
+        showError("opencode-key-error", "GemAir could not encrypt that key on this machine, so it was not saved.");
+        return;
+      }
+      await gemair.setSetting("providerPreference", "opencodeZen");
+      const route = await gemair.refreshRoute();
+      showChosen((route && route.route) || "opencode.ai", "Your key is stored encrypted on this computer and only ever sent to opencode.ai.");
+    });
+
+    document.getElementById("cli-use").addEventListener("click", async () => {
+      clearError("cli-error");
+      await gemair.setSetting("providerPreference", "opencodeCli");
+      const route = await gemair.refreshRoute();
+      if (!route || !route.route) {
+        showError("cli-error", "GemAir could not run the opencode binary. Re-check, or pick another option.");
+        return;
+      }
+      showChosen(route.route, "GemAir runs your own opencode binary and never reads its sign-in.");
+    });
+
+    document.getElementById("cli-recheck").addEventListener("click", async () => {
+      await gemair.refreshCli();
+      init();
+    });
+
+    document.getElementById("skip").addEventListener("click", () => {
+      gemair.completeFirstRun();
+    });
+
+    document.getElementById("card-done").addEventListener("click", () => {
+      gemair.completeFirstRun();
+    });
+
+    init();
+  </script>
+</body>
+</html>

@@ -31,6 +31,10 @@ const pluginLoader = require('./lib/plugin-loader');
 const proactiveLib = require('./lib/proactive');
 const { MemoryArchive } = require('./lib/memory-archive');
 const localSecretCheck = require('./lib/local-secret-check');
+// GemAir Assist — the ported Iris subsystem (screen-pointing companion, guided
+// installs, maintain mode). Mounted once below; `mount()` never throws, so a
+// failure inside it leaves the rest of GemAir untouched. See lib/iris/README.md.
+const assistIntegration = require('./lib/iris/integration');
 
 const isDev = process.argv.includes('--dev');
 const userDataDir = app.getPath('userData');
@@ -89,6 +93,8 @@ let islandWin = null;
 let attention = null;
 let tray = null;
 let isQuitting = false;
+/** The Assist subsystem. Inert until `app.whenReady()` mounts it. */
+let assist = assistIntegration.NOT_MOUNTED;
 let authWindow = null;
 let focusPollTimer = null;
 let lastFocused = { app: '', title: '', pid: 0 };
@@ -321,19 +327,29 @@ function createTray() {
   } catch {}
   if (icon.isEmpty()) icon = fallbackTrayIcon();
   tray = new Tray(icon);
-  tray.setToolTip('GemAir — your personal AI');
-  const menu = Menu.buildFromTemplate([
+  rebuildTrayMenu();
+  tray.on('click', () => { mainWindow.show(); mainWindow.focus(); });
+}
+
+/** The tray menu, rebuilt whenever Assist's fragment changes — an Electron menu
+ *  is immutable once built, so "changed" always means "rebuilt". */
+function rebuildTrayMenu() {
+  if (!tray) return;
+  const assistItems = assist.menuItems();
+  const template = [
     { label: 'Open GemAir', click: () => { mainWindow.show(); mainWindow.focus(); if (process.platform === 'darwin') app.dock.show(); } },
     { label: 'Show Gem Air island', click: () => setIslandVisible(true) },
     { label: 'Hide Gem Air island', click: () => setIslandVisible(false) },
     { label: 'Attention dashboard', click: () => { mainWindow.show(); mainWindow.focus(); sendToRenderer('air:navigate', 'dashboard'); } },
     { type: 'separator' },
-    { label: 'Start listening', click: () => mainWindow.webContents.send('wake:toggle', true) },
-    { type: 'separator' },
-    { label: 'Quit', click: () => { isQuitting = true; app.quit(); } }
-  ]);
-  tray.setContextMenu(menu);
-  tray.on('click', () => { mainWindow.show(); mainWindow.focus(); });
+    { label: 'Start listening', click: () => mainWindow.webContents.send('wake:toggle', true) }
+  ];
+  if (assistItems.length > 0) template.push({ type: 'separator' }, ...assistItems);
+  template.push({ type: 'separator' }, { label: 'Quit', click: () => { isQuitting = true; app.quit(); } });
+  tray.setContextMenu(Menu.buildFromTemplate(template));
+  // "GemAir needs you — your turn" while an install is waiting on the reader,
+  // otherwise GemAir's own resting tooltip.
+  tray.setToolTip(assist.trayTooltip() || 'GemAir — your personal AI');
 }
 function fallbackTrayIcon() {
   const size = 16;
@@ -409,6 +425,25 @@ function startAttention() {
     islandWindow.resizeIsland(islandWin, mode === 'expanded' ? 'expanded' : 'compact');
     return { ok: true };
   });
+  // ── GemAir Assist ────────────────────────────────────────────────────────
+  // The main renderer's window onto the ported subsystem. Assist's own windows
+  // talk to it directly through `lib/iris/preload.js`; these are for GemAir's
+  // UI. Every one answers even when Assist failed to mount, because the stub
+  // `integration.js` returns implements the same shape.
+  ipcMain.handle('assist:available', () => ({ ok: assist.available, reason: assist.reason }));
+  ipcMain.handle('assist:openChat', () => { assist.openChat(); return { ok: assist.available }; });
+  ipcMain.handle('assist:openGuides', () => { assist.openGuide(); return { ok: assist.available }; });
+  ipcMain.handle('assist:openGuide', (_e, slug) => { assist.openGuideFor(String(slug || '')); return { ok: assist.available }; });
+  ipcMain.handle('assist:openSettings', () => { assist.openSettings(); return { ok: assist.available }; });
+  ipcMain.handle('assist:install', (_e, slug) => { assist.openAutopilot(String(slug || '')); return { ok: assist.available }; });
+  ipcMain.handle('assist:ask', async (_e, text) => {
+    try { return { ok: true, reply: await assist.ask(String(text || '')) }; }
+    catch (e) { return { ok: false, error: e && e.message ? e.message : String(e) }; }
+  });
+  ipcMain.handle('assist:guides', () => assist.guides());
+  ipcMain.handle('assist:route', () => assist.route());
+  ipcMain.handle('assist:refreshRoute', () => assist.refreshRoute());
+
   ipcMain.handle('air:openMain', (_e, tab) => {
     if (!mainWindow || mainWindow.isDestroyed()) createWindow();
     mainWindow.show();
@@ -425,6 +460,12 @@ function startAttention() {
 app.whenReady().then(() => {
   createWindow();
   try { startAttention(); } catch (e) { console.error('[gem-air] disabled:', e.message); }
+  // Mounted before the tray so the first menu already carries its items, and
+  // before the deep-link forwarding below so a gemair:// link that launched the
+  // app is not dropped.
+  assist = assistIntegration.mount({
+    onTrayChanged: () => { try { rebuildTrayMenu(); } catch (e) { console.error('[assist] tray:', e.message); } }
+  });
   try { createTray(); } catch (e) { console.error('[tray] disabled:', e.message); }
   try { startAutoUpdateWatcher(); } catch (e) { console.error('[auto-update] disabled:', e.message); }
   try { scheduleChatGPTRefresh(); } catch (e) { console.error('[token-refresh] disabled:', e.message); }
@@ -442,8 +483,21 @@ app.whenReady().then(() => {
     else mainWindow.show();
   });
 });
+// A `gemair://guide/<slug>` link. Windows delivers one by launching the app
+// again with the URL in argv; macOS fires `open-url` on the running instance.
+// Both are forwarded into Assist, which owns the scheme's grammar.
+app.on('second-instance', (_event, argv) => {
+  try { assist.receiveDeepLinksFromArgv(argv); } catch {}
+  if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
+});
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  try { assist.receiveDeepLink(url); } catch {}
+});
+
 app.on('before-quit', () => {
   isQuitting = true;
+  try { assist.stop(); } catch {}
   try { recordSessionEnd(); } catch {}
   try { if (attention) attention.stop(); } catch {}
   try { freeGPT35Sidecar.stop(); } catch {}
