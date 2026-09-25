@@ -5544,6 +5544,110 @@ function renderSkills() {
     list.appendChild(div);
   });
 }
+/* ── GemAir Assist ─────────────────────────────────────────────────────────
+   The in-app door to the ported Iris subsystem (lib/iris). The subsystem owns
+   its own windows; this panel is the part of it that lives inside GemAir's own
+   UI — which route is answering, a one-shot question about the screen, and the
+   install catalogue. `window.assist` is exposed by preload.js and always
+   answers, even when the subsystem failed to mount, so nothing here needs a
+   feature check beyond the status line it renders. */
+let assistPanelLoaded = false;
+
+async function renderAssistPanel(force = false) {
+  const statusEl = $('#assistStatus');
+  if (!statusEl) return;
+  if (assistPanelLoaded && !force) return;
+  assistPanelLoaded = true;
+
+  if (!window.assist) {
+    statusEl.innerHTML = '<span class="dim">GemAir Assist is not available in this build.</span>';
+    return;
+  }
+
+  const availability = await window.assist.available().catch(() => ({ ok: false, reason: 'unreachable' }));
+  if (!availability || !availability.ok) {
+    statusEl.innerHTML = `<span class="dim">Assist did not start${availability && availability.reason ? ': ' + escapeHtml(availability.reason) : ''}. The rest of GemAir is unaffected.</span>`;
+    $('#assistGuides').innerHTML = '<div class="empty">Install guides need Assist running.</div>';
+    return;
+  }
+
+  renderAssistRoute(await window.assist.route().catch(() => null));
+  renderAssistGuides(await window.assist.guides().catch(() => []));
+}
+
+function renderAssistRoute(route) {
+  const statusEl = $('#assistStatus');
+  if (!statusEl) return;
+  if (!route || !route.route) {
+    statusEl.innerHTML = '<span class="dim">No model route can answer right now — open Assist settings to pick one.</span>';
+    return;
+  }
+  // Every route is free, so the honest line is which one is answering and on
+  // what model. There is no balance and nothing to buy.
+  statusEl.innerHTML =
+    `<span class="tag">FREE</span> <b>${escapeHtml(route.route)}</b>` +
+    (route.model ? ` <span class="dim">· ${escapeHtml(route.model)}</span>` : '') +
+    (route.cliAvailable ? ' <span class="dim">· opencode CLI found</span>' : '');
+}
+
+function renderAssistGuides(guides) {
+  const list = $('#assistGuides');
+  if (!list) return;
+  if (!Array.isArray(guides) || guides.length === 0) {
+    list.innerHTML = '<div class="empty">This build ships no install guides.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  guides.forEach((guide) => {
+    const row = document.createElement('div');
+    row.className = 'memory-item';
+    const minutes = guide.estimatedMinutes ? `~${guide.estimatedMinutes} min` : '';
+    row.innerHTML =
+      `<span class="tag">${escapeHtml((guide.outputType || 'app').replace('_', ' ').toUpperCase())}</span>` +
+      `<span class="body"><b>${escapeHtml(guide.appName || guide.slug)}</b>` +
+      (guide.summary ? ` — ${escapeHtml(guide.summary)}` : '') +
+      (minutes ? ` <span class="dim">(${minutes})</span>` : '') +
+      '</span>';
+    const read = document.createElement('button');
+    read.className = 'mini-btn';
+    read.textContent = 'GUIDE';
+    read.addEventListener('click', () => window.assist.openGuide(guide.slug));
+    const install = document.createElement('button');
+    install.className = 'mini-btn';
+    install.textContent = 'INSTALL';
+    install.title = 'Run the whole install hands-free, verifying each step';
+    install.addEventListener('click', () => {
+      window.assist.install(guide.slug);
+      toast('GEMAIR ASSIST', `Installing ${guide.appName || guide.slug}…`, '⚙');
+    });
+    row.appendChild(read);
+    row.appendChild(install);
+    list.appendChild(row);
+  });
+}
+
+async function askAssist() {
+  const input = $('#assistAsk');
+  const answerEl = $('#assistAnswer');
+  const button = $('#assistAskBtn');
+  if (!input || !answerEl) return;
+  const question = input.value.trim();
+  if (!question) return;
+  button.disabled = true;
+  answerEl.style.display = '';
+  answerEl.innerHTML = '<span class="dim">Reading your screen…</span>';
+  const result = await window.assist.ask(question).catch((error) => ({ ok: false, error: error.message }));
+  button.disabled = false;
+  if (!result || !result.ok) {
+    // The subsystem turns a transport failure into a sentence meant for a
+    // person before it gets here, so this is shown as-is.
+    answerEl.innerHTML = `<span class="dim">${escapeHtml((result && result.error) || 'Assist could not answer.')}</span>`;
+    return;
+  }
+  input.value = '';
+  answerEl.innerHTML = escapeHtml(result.reply || '(no answer)');
+}
+
 async function renderOpenJarvisSkills() {
   const list = $('#openJarvisSkillsList');
   if (!list) return;
@@ -7259,7 +7363,17 @@ function bindEvents() {
     if (t.dataset.tab === 'audit') renderAuditLog();
     if (t.dataset.tab === 'browser') renderMemoryBrowser();
     if (t.dataset.tab === 'skills') renderOpenJarvisSkills();
+    if (t.dataset.tab === 'assist') renderAssistPanel();
   }));
+
+  // GemAir Assist panel
+  $('#assistAskBtn')?.addEventListener('click', () => askAssist());
+  $('#assistAsk')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); askAssist(); }
+  });
+  $('#assistOpenChat')?.addEventListener('click', () => window.assist?.openChat());
+  $('#assistOpenGuides')?.addEventListener('click', () => window.assist?.openGuides());
+  $('#assistOpenSettings')?.addEventListener('click', () => window.assist?.openSettings());
   $('#loadOpenJarvisSkillsBtn')?.addEventListener('click', () => renderOpenJarvisSkills());
 
   // memory / notes / reminders add

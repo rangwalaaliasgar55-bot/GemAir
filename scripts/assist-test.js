@@ -366,6 +366,34 @@ async function main() {
     assert.ok(main.includes('assist.stop()'), 'Assist is never torn down');
     assert.strictEqual((main.match(/new Tray\(/g) || []).length, 1, 'there must be exactly one tray');
   });
+  test("the UI's Assist panel, the preload bridge and the IPC handlers agree", () => {
+    // The same contract GemAir already enforces for its `air` bridge, applied
+    // to the Assist one: a renderer calling a method nobody registered is a
+    // dead button, and a dead button reads as a broken app.
+    const app = fs.readFileSync(path.join(ROOT, 'renderer', 'app.js'), 'utf8');
+    const preload = fs.readFileSync(path.join(ROOT, 'preload.js'), 'utf8');
+    const main = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+
+    const block = preload.slice(preload.indexOf("exposeInMainWorld('assist'"));
+    const exposed = new Set([...block.slice(0, block.indexOf('});')).matchAll(/^\s{2}([a-zA-Z]+):/gm)].map((m) => m[1]));
+    const called = new Set([...app.matchAll(/window\.assist[?]?\.([a-zA-Z]+)\s*\(/g)].map((m) => m[1]));
+    assert.ok(called.size > 0, 'the panel calls nothing at all');
+    assert.deepStrictEqual([...called].filter((m) => !exposed.has(m)), [], 'called but not exposed');
+
+    const registered = new Set([...main.matchAll(/ipcMain\.handle\('(assist:[a-zA-Z]+)'/g)].map((m) => m[1]));
+    const invoked = new Set([...block.matchAll(/invoke\('(assist:[a-zA-Z]+)'/g)].map((m) => m[1]));
+    assert.deepStrictEqual([...invoked].filter((c) => !registered.has(c)), [], 'invoked but not registered');
+  });
+  test('the Assist panel exists in the UI and every element it drives is there', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'renderer', 'index.html'), 'utf8');
+    const app = fs.readFileSync(path.join(ROOT, 'renderer', 'app.js'), 'utf8');
+    assert.ok(html.includes('data-tab="assist"'), 'no way into the panel');
+    assert.ok(html.includes('data-pane="assist"'), 'no panel');
+    const ids = new Set([...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
+    const used = [...app.matchAll(/\$\('#(assist[A-Za-z]*)'\)/g)].map((m) => m[1]);
+    assert.ok(used.length > 0);
+    assert.deepStrictEqual(used.filter((id) => !ids.has(id)), [], 'the panel drives elements that do not exist');
+  });
   test('the Assist preload exposes no way to read a stored secret back', () => {
     const preload = fs.readFileSync(path.join(IRIS, 'preload.js'), 'utf8');
     assert.ok(!/getOpenCodeApiKey|readSecret|getSecret/.test(preload));
