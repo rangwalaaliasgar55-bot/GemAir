@@ -73,6 +73,30 @@ async function main() {
     assert.ok(!models.knownFreeModelIds().includes('totally-paid-model'));
     assert.ok(models.knownFreeModelIds().length >= before);
   });
+  test('the default model is one the picker actually offers', () => {
+    assert.ok(models.chatCapableFreeModelIds().includes(models.DEFAULT_FREE_MODEL));
+    // The screenshot pipeline sends images, so the vision default must be free too.
+    assert.ok(models.isFreeModelId(models.DEFAULT_FREE_VISION_MODEL));
+  });
+  test('a free id that is not a chat model is never offered as one', () => {
+    for (const id of models.NON_CHAT_FREE_MODEL_IDS) {
+      // Free — the gate is about money, and these cost nothing...
+      assert.ok(models.isFreeModelId(id), `${id} should still pass the free gate`);
+      // ...but they answer on /systemone or /responses, so chat must not offer them.
+      assert.ok(!models.chatCapableFreeModelIds().includes(id), `${id} must not be offered`);
+    }
+  });
+  test("the live catalogue's id-only shape still teaches the gate correctly", () => {
+    // OpenCode's real GET /models returns ids with no prices, so the `-free`
+    // suffix is the only signal available. Anything without it stays paid.
+    models.refreshFreeModelIds(JSON.stringify({
+      object: 'list',
+      data: [{ id: 'claude-opus-5' }, { id: 'promo-model-free' }, { id: 'gpt-6-astra' }],
+    }));
+    assert.ok(models.isFreeModelId('promo-model-free'));
+    assert.ok(!models.isFreeModelId('claude-opus-5'));
+    assert.ok(!models.isFreeModelId('gpt-6-astra'));
+  });
   test('there is no top-up, because there is nothing to buy', () => {
     assert.strictEqual(transport.shouldOfferTopUp(), false);
   });
