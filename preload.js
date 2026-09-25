@@ -308,6 +308,30 @@ contextBridge.exposeInMainWorld('gemcore', {
 });
 
 
+/**
+ * GemAir Assist — the ported Iris subsystem.
+ *
+ * Assist's own windows have their own preload (`lib/iris/preload.js`) with the
+ * full surface. This is the small window GemAir's MAIN renderer gets onto it:
+ * open one of its windows, ask it a question, see which free model route is
+ * answering, and list the install guides that ship with the app.
+ */
+contextBridge.exposeInMainWorld('assist', {
+  available: () => ipcRenderer.invoke('assist:available'),
+  openChat: () => ipcRenderer.invoke('assist:openChat'),
+  openGuides: () => ipcRenderer.invoke('assist:openGuides'),
+  openGuide: (slug) => ipcRenderer.invoke('assist:openGuide', slug),
+  openSettings: () => ipcRenderer.invoke('assist:openSettings'),
+  /** Start a hands-free install of one catalogue app. */
+  install: (slug) => ipcRenderer.invoke('assist:install', slug),
+  /** Ask about what is on screen, without opening the Assist chat window. */
+  ask: (text) => ipcRenderer.invoke('assist:ask', text),
+  guides: () => ipcRenderer.invoke('assist:guides'),
+  route: () => ipcRenderer.invoke('assist:route'),
+  refreshRoute: () => ipcRenderer.invoke('assist:refreshRoute')
+});
+
+
 contextBridge.exposeInMainWorld('air', {
   platform: process.platform,
   snapshot: () => ipcRenderer.invoke('air:snapshot'),
@@ -365,27 +389,4 @@ contextBridge.exposeInMainWorld('air', {
   onAttempt: (cb) => subscribeIpc('air:attempt', cb),
   onEnforced: (cb) => subscribeIpc('air:enforced', cb),
   onNavigate: (cb) => subscribeIpc('air:navigate', cb)
-});
-
-/**
- * GemAir Assist — the ported Iris subsystem.
- *
- * Assist's own windows have their own preload (`lib/iris/preload.js`) with the
- * full surface. This is the small window GemAir's MAIN renderer gets onto it:
- * open one of its windows, ask it a question, see which free model route is
- * answering, and list the install guides that ship with the app.
- */
-contextBridge.exposeInMainWorld('assist', {
-  available: () => ipcRenderer.invoke('assist:available'),
-  openChat: () => ipcRenderer.invoke('assist:openChat'),
-  openGuides: () => ipcRenderer.invoke('assist:openGuides'),
-  openGuide: (slug) => ipcRenderer.invoke('assist:openGuide', slug),
-  openSettings: () => ipcRenderer.invoke('assist:openSettings'),
-  /** Start a hands-free install of one catalogue app. */
-  install: (slug) => ipcRenderer.invoke('assist:install', slug),
-  /** Ask about what is on screen, without opening the Assist chat window. */
-  ask: (text) => ipcRenderer.invoke('assist:ask', text),
-  guides: () => ipcRenderer.invoke('assist:guides'),
-  route: () => ipcRenderer.invoke('assist:route'),
-  refreshRoute: () => ipcRenderer.invoke('assist:refreshRoute')
 });
