@@ -39,8 +39,8 @@
           "id": "clone",
           "kind": "terminal",
           "title": "Copy Excalidraw to this computer",
-          "body": "Clones into your home folder. Nothing outside it is touched.",
-          "command": "git clone https://github.com/excalidraw/excalidraw.git",
+          "body": "Clones into ~/gemair-apps. Nothing outside it is touched.",
+          "command": "New-Item -ItemType Directory -Force ~/gemair-apps | Out-Null; cd ~/gemair-apps; if (-not (Test-Path excalidraw)) { git clone https://github.com/excalidraw/excalidraw.git }; cd excalidraw",
           "workingDirectory": "~"
         },
         {
@@ -49,7 +49,7 @@
           "title": "Install dependencies",
           "body": "This is the slow step — a few minutes on a first run.",
           "command": "yarn.cmd install",
-          "workingDirectory": "~/excalidraw"
+          "workingDirectory": "~/gemair-apps/excalidraw"
         },
         {
           "id": "run",
@@ -57,7 +57,7 @@
           "title": "Start Excalidraw",
           "body": "A dev server that stays up. GemAir waits for the localhost line, then opens it.",
           "command": "yarn.cmd start",
-          "workingDirectory": "~/excalidraw"
+          "workingDirectory": "~/gemair-apps/excalidraw"
         },
         {
           "id": "open",
@@ -100,7 +100,7 @@
           "kind": "terminal",
           "title": "Copy Excalidraw to this computer",
           "body": "Clones into ~/gemair-apps.",
-          "command": "mkdir -p ~/gemair-apps; cd ~/gemair-apps; [ -d excalidraw ] || git clone https://github.com/excalidraw/excalidraw.git",
+          "command": "mkdir -p ~/gemair-apps; cd ~/gemair-apps; [ -d excalidraw ] || git clone https://github.com/excalidraw/excalidraw.git; cd excalidraw",
           "workingDirectory": "~"
         },
         {
