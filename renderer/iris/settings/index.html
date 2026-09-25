@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;">
+  <title>GemAir — Settings</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --panel: rgba(255, 255, 255, 0.04);
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f0f0f5;
+      --text-dim: rgba(255, 255, 255, 0.55);
+      --text-faint: rgba(255, 255, 255, 0.32);
+      --accent: #638cff;
+      --error: #f87171;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --radius: 8px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* The window is resizable (services/window-geometry.ts) and this page
+       must never need a horizontal scrollbar at any width down to its
+       minimum: rows wrap, long unbroken text (an email address) may break,
+       and overflow-x: hidden is only the backstop. The body's overflow
+       carries over to the window itself, so the one scrollbar is the
+       window's own vertical one, styled below. */
+    body {
+      font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg); color: var(--text); font-size: 13px;
+      padding: 22px; height: 100vh; overflow-x: hidden; overflow-y: auto;
+      overflow-wrap: anywhere;
+    }
+    /* A thin scrollbar in the app's colours instead of Windows' wide grey
+       default. Do not add scrollbar-width or scrollbar-color anywhere on this
+       page: Chromium ignores every ::-webkit-scrollbar rule once either is
+       set, and the default comes straight back. */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.14); background-clip: padding-box;
+      border: 2px solid transparent; border-radius: 8px; min-height: 40px;
+    }
+    ::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.26); }
+    ::-webkit-scrollbar-corner { background: transparent; }
+    h1 { font-size: 16px; margin-bottom: 4px; }
+    .lede { color: var(--text-dim); margin-bottom: 20px; line-height: 1.5; }
+    section { border-top: 1px solid var(--border); padding: 16px 0; }
+    section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); margin-bottom: 10px; }
+    .field { margin-bottom: 12px; }
+    label { display: block; margin-bottom: 5px; color: var(--text-dim); }
+    input[type=text], input[type=password], select {
+      width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--panel); color: var(--text); font-size: 12px; font-family: inherit; outline: none;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    .checkbox { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .checkbox label { margin: 0; color: var(--text); }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    /* A key field keeps a usable width and hands the rest of the line to its
+       buttons; when the window is too narrow for both, the buttons wrap. The
+       global width: 100% would otherwise claim the whole line every time. */
+    .row input { flex: 1 1 160px; width: auto; min-width: 0; }
+    .row .status { min-width: 0; }
+    button {
+      padding: 8px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--panel); color: var(--text); cursor: pointer; font-size: 12px; font-family: inherit;
+    }
+    button:hover { background: rgba(255, 255, 255, 0.08); }
+    button.accent { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .note { color: var(--text-faint); font-size: 11px; line-height: 1.5; margin-top: 6px; }
+    .status { font-size: 12px; }
+    .status.ok { color: var(--ok); }
+    .status.warn { color: var(--error); }
+    /* A route that is pinned but unreachable: a warning, never a block. */
+    .status.low, .note.low { color: var(--warn); }
+    .guide-list { display: flex; flex-direction: column; gap: 6px; }
+    .guide-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .guide-row .name { flex: 1 1 140px; min-width: 0; }
+    .guide-row .meta { color: var(--text-faint); font-size: 11px; }
+  </style>
+<body>
+  <h1>GemAir Assist</h1>
+  <div class="lede">
+    Ask about what is on screen, and install apps hands-free. Every model GemAir
+    uses is free.
+  </div>
+
+  <section>
+    <h2>How GemAir answers</h2>
+    <div class="field">
+      <div class="row">
+        <span class="status" id="route-status">Checking…</span>
+        <span style="flex:1"></span>
+        <button id="route-recheck">Re-check</button>
+      </div>
+      <div class="note low" id="route-warning" style="display:none"></div>
+    </div>
+    <div class="field">
+      <label for="providerPreference">Route</label>
+      <select id="providerPreference">
+        <option value="">Pick the first one that works</option>
+        <option value="opencodeZen">The free hosted models (opencode.ai)</option>
+        <option value="opencodeServer">A local OpenCode server</option>
+        <option value="opencodeCli">The opencode CLI on this computer</option>
+      </select>
+      <div class="note">
+        Chosen here, and never switched for you: if the one you pick stops
+        working, GemAir says so instead of quietly answering somewhere else.
+      </div>
+    </div>
+    <div class="field">
+      <label for="openCodeModel">Model</label>
+      <div class="row">
+        <select id="openCodeModel"></select>
+        <button id="refresh-models">Refresh list</button>
+      </div>
+      <div class="note">
+        Free models only. GemAir refuses a paid model id before a request is
+        built, so this list cannot cost you anything. The free line-up changes;
+        "Refresh list" re-reads it from opencode.ai.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Your own OpenCode key — optional</h2>
+    <div class="field">
+      <label for="openCodeApiKey">API key</label>
+      <div class="row">
+        <input type="password" id="openCodeApiKey" placeholder="sk-…">
+        <button class="accent" id="save-key">Save</button>
+        <button id="clear-key">Clear</button>
+      </div>
+      <div class="note" id="key-note">
+        Not required: the free models answer without one. A key of your own
+        raises your rate limit. Stored encrypted by this machine's own secret
+        store (DPAPI on Windows, the Keychain on macOS) via Electron
+        safeStorage — never in plain text, and only ever sent to opencode.ai.
+      </div>
+    </div>
+    <div class="field">
+      <label for="openCodeBaseUrl">Gateway</label>
+      <input type="text" id="openCodeBaseUrl" placeholder="https://opencode.ai/zen/v1">
+      <div class="note">Change this only if you are pointing GemAir at your own gateway.</div>
+    </div>
+    <div class="field">
+      <label for="openCodeServerPort">Local OpenCode server port</label>
+      <input type="text" id="openCodeServerPort" placeholder="4096">
+      <div class="note">
+        <code>opencode serve</code> listens here. GemAir probes it on loopback
+        only; a port that answers becomes the "local server" route above.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The opencode CLI</h2>
+    <div class="field">
+      <div class="row">
+        <span class="status" id="cli-status">Checking…</span>
+        <span style="flex:1"></span>
+        <button id="cli-install">How to install it</button>
+        <button id="cli-recheck">Re-check</button>
+      </div>
+      <div class="note">
+        Uses the <code>opencode</code> binary and whatever it is already signed
+        in to. GemAir never sees or stores that sign-in — the CLI keeps it.
+        Slower than the hosted route, and it works offline against a local model.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Install guides</h2>
+    <div class="field">
+      <div class="guide-list" id="guide-list"></div>
+      <div class="note">
+        These ship inside GemAir and work offline. Opening one runs it
+        hands-free if you have allowed that below.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Behaviour</h2>
+    <div class="checkbox">
+      <input type="checkbox" id="alwaysOnTop">
+      <label for="alwaysOnTop">Keep the GemAir window above other windows</label>
+    </div>
+    <div class="checkbox">
+      <input type="checkbox" id="cursorBuddyEnabled">
+      <label for="cursorBuddyEnabled">Show the cursor companion</label>
+    </div>
+    <div class="checkbox">
+      <input type="checkbox" id="autopilotAutonomyGranted">
+      <label for="autopilotAutonomyGranted">Let GemAir run installs automatically, without approving each step</label>
+    </div>
+    <div class="checkbox">
+      <input type="checkbox" id="maintainEnabled">
+      <label for="maintainEnabled">Watch apps GemAir installed, and offer to fix them when they break</label>
+    </div>
+    <div class="note">
+      Maintain mode only ever watches apps GemAir installed from a guide, and
+      only ever patches a source clone it made itself.
+    </div>
+  </section>
+
+  <section>
+    <h2>Privacy</h2>
+    <div class="note">
+      Screenshots are held in memory, sent only to the model route you are using,
+      and never written to disk. GemAir Assist does not record audio.
+    </div>
+  </section>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+    /** The last settings read, so a route update can re-render the top section
+     *  without reading everything again. */
+    let latestSettings = null;
+
+    async function load() {
+      const settings = await window.gemair.getSettings();
+      latestSettings = settings;
+
+      el('alwaysOnTop').checked = Boolean(settings.alwaysOnTop);
+      el('cursorBuddyEnabled').checked = Boolean(settings.cursorBuddyEnabled);
+      el('autopilotAutonomyGranted').checked = Boolean(settings.autopilotAutonomyGranted);
+      el('maintainEnabled').checked = Boolean(settings.maintainEnabled);
+      el('openCodeBaseUrl').value = settings.openCodeBaseUrl || '';
+      el('openCodeServerPort').value = settings.openCodeServerPort || '';
+
+      el('openCodeApiKey').placeholder = settings.hasOpenCodeApiKey
+        ? 'A key is stored (hidden)'
+        : 'sk-… (optional)';
+
+      renderModels(settings);
+      renderRoute(settings);
+      renderGuides(settings.guides || []);
+
+      el('providerPreference').value = settings.providerPreference || '';
+      // Offering a route the reader cannot use is worse than not offering it:
+      // they pick it, it fails, and GemAir deliberately will not fall back.
+      const cliOption = el('providerPreference').querySelector('option[value="opencodeCli"]');
+      cliOption.disabled = !settings.cliAvailable;
+      cliOption.textContent = settings.cliAvailable
+        ? 'The opencode CLI on this computer'
+        : 'The opencode CLI — not found on this computer';
+      const serverOption = el('providerPreference').querySelector('option[value="opencodeServer"]');
+      serverOption.disabled = !settings.localServer;
+      serverOption.textContent = settings.localServer
+        ? 'A local OpenCode server (' + settings.localServer + ')'
+        : 'A local OpenCode server — nothing listening';
+
+      const cliStatus = el('cli-status');
+      cliStatus.textContent = settings.cliAvailable
+        ? 'opencode CLI found'
+        : 'opencode CLI not found on this computer';
+      cliStatus.className = settings.cliAvailable ? 'status ok' : 'status';
+
+      if (!settings.secretStorageAvailable) {
+        el('key-note').innerHTML =
+          '<span style="color:var(--error)">This machine will not let GemAir encrypt secrets, ' +
+          'so your own key cannot be stored safely. GemAir will not fall back to plain text — ' +
+          'the free hosted models still work without a key.</span>';
+        el('save-key').disabled = true;
+      }
+    }
+
+    /** The free-model picker. The list is data, not code: it comes from the
+     *  main process's gate, so it stays in step with what will be accepted. */
+    function renderModels(settings) {
+      const select = el('openCodeModel');
+      const models = settings.freeModels || [];
+      const current = settings.openCodeModel || settings.defaultFreeModel;
+      select.innerHTML = '';
+      for (const id of models) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = id === settings.defaultFreeModel ? id + ' (default)' : id;
+        select.appendChild(option);
+      }
+      if (current && !models.includes(current)) {
+        const option = document.createElement('option');
+        option.value = current;
+        option.textContent = current + ' — not in today\'s free list';
+        select.appendChild(option);
+      }
+      select.value = current;
+    }
+
+    /** Which free route is answering right now. This is where upstream showed
+     *  a balance and an "Add credit" button; there is nothing to buy. */
+    function renderRoute(settings) {
+      const status = el('route-status');
+      const warning = el('route-warning');
+      const route = settings.route;
+      if (route && route.route) {
+        status.textContent = 'Answering via ' + route.route;
+        status.className = 'status ok';
+        warning.style.display = 'none';
+        return;
+      }
+      status.textContent = 'No route can answer right now';
+      status.className = 'status warn';
+      warning.style.display = '';
+      warning.textContent = settings.providerPreference
+        ? 'You pinned a route that is not available. Pick "first one that works", or start the one you pinned.'
+        : 'GemAir could not reach opencode.ai. Check your connection.';
+    }
+
+    function renderGuides(guides) {
+      const list = el('guide-list');
+      list.innerHTML = '';
+      if (guides.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'note';
+        empty.textContent = 'This build ships no guides.';
+        list.appendChild(empty);
+        return;
+      }
+      for (const guide of guides) {
+        const row = document.createElement('div');
+        row.className = 'guide-row';
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = guide.appName;
+        const meta = document.createElement('span');
+        meta.className = 'meta';
+        meta.textContent =
+          (guide.estimatedMinutes ? '~' + guide.estimatedMinutes + ' min · ' : '') +
+          (guide.platforms || []).join(', ');
+        const open = document.createElement('button');
+        open.textContent = 'Open';
+        open.addEventListener('click', () => window.gemair.showGuide(guide.slug));
+        row.appendChild(name);
+        row.appendChild(meta);
+        row.appendChild(open);
+        list.appendChild(row);
+      }
+    }
+
+    el('route-recheck').addEventListener('click', async () => {
+      el('route-status').textContent = 'Checking…';
+      await window.gemair.refreshRoute();
+      load();
+    });
+    el('cli-recheck').addEventListener('click', async () => {
+      el('cli-status').textContent = 'Checking…';
+      await window.gemair.refreshCli();
+      load();
+    });
+    el('cli-install').addEventListener('click', () => window.gemair.showGuide('opencode'));
+    el('refresh-models').addEventListener('click', async () => {
+      const button = el('refresh-models');
+      button.disabled = true;
+      button.textContent = 'Refreshing…';
+      await window.gemair.refreshFreeModels();
+      button.disabled = false;
+      button.textContent = 'Refresh list';
+      load();
+    });
+
+    el('providerPreference').addEventListener('change', async () => {
+      await window.gemair.setSetting('providerPreference', el('providerPreference').value);
+      load();
+    });
+    el('openCodeModel').addEventListener('change', async (event) => {
+      const result = await window.gemair.setSetting('openCodeModel', event.target.value);
+      // The free-model gate answers here, at the field, rather than failing
+      // later inside a reply nobody can connect to this choice.
+      if (result && result.ok === false) window.alert(result.message);
+      load();
+    });
+    el('openCodeBaseUrl').addEventListener('change', (event) =>
+      window.gemair.setSetting('openCodeBaseUrl', event.target.value.trim()));
+    el('openCodeServerPort').addEventListener('change', (event) =>
+      window.gemair.setSetting('openCodeServerPort', event.target.value.trim()));
+
+    el('save-key').addEventListener('click', async () => {
+      const value = el('openCodeApiKey').value.trim();
+      if (!value) return;
+      const stored = await window.gemair.setSetting('openCodeApiKey', value);
+      el('openCodeApiKey').value = '';
+      if (!stored) window.alert('GemAir could not encrypt that key, so it was not saved.');
+      load();
+    });
+    el('clear-key').addEventListener('click', async () => {
+      await window.gemair.setSetting('openCodeApiKey', '');
+      el('openCodeApiKey').value = '';
+      load();
+    });
+
+    el('alwaysOnTop').addEventListener('change', (event) =>
+      window.gemair.setSetting('alwaysOnTop', event.target.checked));
+    el('cursorBuddyEnabled').addEventListener('change', (event) =>
+      window.gemair.setSetting('cursorBuddyEnabled', event.target.checked));
+    el('autopilotAutonomyGranted').addEventListener('change', (event) =>
+      window.gemair.setSetting('autopilotAutonomyGranted', event.target.checked));
+    el('maintainEnabled').addEventListener('change', (event) =>
+      window.gemair.setSetting('maintainEnabled', event.target.checked));
+
+    window.gemair.onRouteChanged((route) => {
+      if (!latestSettings) return;
+      latestSettings.route = route;
+      renderRoute(latestSettings);
+    });
+    // Opening settings is when the reader looks at what can answer, so the
+    // routes are re-probed rather than shown from the last time.
+    load().then(() => window.gemair.refreshRoute().then((route) => {
+      if (!latestSettings) return;
+      latestSettings.route = route;
+      renderRoute(latestSettings);
+    }));
+  </script>
+</body>
+</html>

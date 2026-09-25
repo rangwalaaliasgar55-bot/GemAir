@@ -1,0 +1,134 @@
+{
+  "appSlug": "excalidraw",
+  "appName": "Excalidraw",
+  "version": 1,
+  "status": "approved",
+  "summary": "A hand-drawn-style whiteboard, built from source and served on your own machine.",
+  "sourceOwner": "excalidraw",
+  "sourceRepo": "excalidraw",
+  "outputType": "local_web",
+  "estimatedMinutes": 12,
+  "readmeSectionIds": ["run-locally"],
+  "branches": [
+    {
+      "platform": "windows",
+      "label": "Windows",
+      "shell": "powershell",
+      "setupSteps": [
+        {
+          "id": "setup-git",
+          "kind": "check",
+          "title": "Git",
+          "body": "The source is a git clone, so Git has to be there first.",
+          "tool": "git",
+          "command": "git --version",
+          "href": "https://git-scm.com/download/win"
+        },
+        {
+          "id": "setup-node",
+          "kind": "check",
+          "title": "Node.js 20 or newer",
+          "body": "Excalidraw builds with Node and Yarn.",
+          "tool": "node",
+          "command": "node --version",
+          "href": "https://nodejs.org/en/download"
+        }
+      ],
+      "steps": [
+        {
+          "id": "clone",
+          "kind": "terminal",
+          "title": "Copy Excalidraw to this computer",
+          "body": "Clones into ~/gemair-apps. Nothing outside it is touched.",
+          "command": "New-Item -ItemType Directory -Force ~/gemair-apps | Out-Null; cd ~/gemair-apps; if (-not (Test-Path excalidraw)) { git clone https://github.com/excalidraw/excalidraw.git }; cd excalidraw",
+          "workingDirectory": "~"
+        },
+        {
+          "id": "dependencies",
+          "kind": "terminal",
+          "title": "Install dependencies",
+          "body": "This is the slow step — a few minutes on a first run.",
+          "command": "yarn.cmd install",
+          "workingDirectory": "~/gemair-apps/excalidraw"
+        },
+        {
+          "id": "run",
+          "kind": "terminal",
+          "title": "Start Excalidraw",
+          "body": "A dev server that stays up. GemAir waits for the localhost line, then opens it.",
+          "command": "yarn.cmd start",
+          "workingDirectory": "~/gemair-apps/excalidraw"
+        },
+        {
+          "id": "open",
+          "kind": "open",
+          "title": "Open Excalidraw",
+          "body": "Your own copy, running on your own machine.",
+          "href": "http://localhost:3000",
+          "actionLabel": "Open the whiteboard",
+          "watch": { "expect": [{ "type": "urlHost", "host": "localhost" }] }
+        }
+      ]
+    },
+    {
+      "platform": "macos",
+      "label": "macOS",
+      "shell": "terminal",
+      "setupSteps": [
+        {
+          "id": "setup-git",
+          "kind": "check",
+          "title": "Git",
+          "tool": "git",
+          "body": "The source is a git clone.",
+          "command": "git --version",
+          "href": "https://git-scm.com/download/mac"
+        },
+        {
+          "id": "setup-node",
+          "kind": "check",
+          "title": "Node.js 20 or newer",
+          "tool": "node",
+          "body": "Excalidraw builds with Node and Yarn.",
+          "command": "node --version",
+          "href": "https://nodejs.org/en/download"
+        }
+      ],
+      "steps": [
+        {
+          "id": "clone",
+          "kind": "terminal",
+          "title": "Copy Excalidraw to this computer",
+          "body": "Clones into ~/gemair-apps.",
+          "command": "mkdir -p ~/gemair-apps; cd ~/gemair-apps; [ -d excalidraw ] || git clone https://github.com/excalidraw/excalidraw.git; cd excalidraw",
+          "workingDirectory": "~"
+        },
+        {
+          "id": "dependencies",
+          "kind": "terminal",
+          "title": "Install dependencies",
+          "body": "A few minutes on a first run.",
+          "command": "yarn install",
+          "workingDirectory": "~/gemair-apps/excalidraw"
+        },
+        {
+          "id": "run",
+          "kind": "terminal",
+          "title": "Start Excalidraw",
+          "body": "A dev server that stays up.",
+          "command": "yarn start",
+          "workingDirectory": "~/gemair-apps/excalidraw"
+        },
+        {
+          "id": "open",
+          "kind": "open",
+          "title": "Open Excalidraw",
+          "body": "Your own copy, on your own machine.",
+          "href": "http://localhost:3000",
+          "actionLabel": "Open the whiteboard",
+          "watch": { "expect": [{ "type": "urlHost", "host": "localhost" }] }
+        }
+      ]
+    }
+  ]
+}

@@ -515,6 +515,7 @@
                 <button class="core-tab" data-tab="audit">AUDIT</button>
                 <button class="core-tab" data-tab="soul">SOUL</button>
                 <button class="core-tab" data-tab="modes">MODES</button>
+                <button class="core-tab" data-tab="assist">ASSIST</button>
               </div>
 
               <div class="hud-panel core-pane active" data-pane="memory">
@@ -672,6 +673,28 @@
                 </div>
               </div>
 
+              <!-- GemAir Assist — the ported Iris subsystem (lib/iris). Reachable
+                   from the tray too; this is the in-app door to it. -->
+              <div class="hud-panel core-pane" data-pane="assist">
+                <h3 class="panel-title">GEMAIR ASSIST <span class="dim">— POINT AT MY SCREEN · INSTALL THINGS FOR ME</span></h3>
+                <div class="assist-status" id="assistStatus" style="margin-bottom:12px;">
+                  <span class="dim">Checking…</span>
+                </div>
+                <div class="inline-add" style="margin-bottom:12px;">
+                  <input type="text" id="assistAsk" placeholder="Ask about what is on your screen…" />
+                  <button class="mini-btn" id="assistAskBtn">ASK</button>
+                </div>
+                <div class="assist-answer" id="assistAnswer" style="display:none;margin-bottom:12px;"></div>
+                <div class="inline-add" style="margin-bottom:14px;flex-wrap:wrap;gap:6px;">
+                  <button class="mini-btn" id="assistOpenChat">OPEN ASSIST CHAT</button>
+                  <button class="mini-btn" id="assistOpenGuides">INSTALL GUIDES</button>
+                  <button class="mini-btn" id="assistOpenSettings">ASSIST SETTINGS</button>
+                </div>
+                <h3 class="panel-title" style="margin-top:4px;">GUIDED INSTALLS <span class="dim">— HANDS-FREE, VERIFIED, OFFLINE</span></h3>
+                <div class="memory-list" id="assistGuides">
+                  <div class="empty">Loading the install catalogue…</div>
+                </div>
+              </div>
               <div class="hud-panel core-pane" data-pane="modes">
                 <h3 class="panel-title">DESKTOP MODES <span class="dim">— ONE SENTENCE ARRANGES EVERYTHING</span></h3>
                 <div class="modes-list" id="modesList">

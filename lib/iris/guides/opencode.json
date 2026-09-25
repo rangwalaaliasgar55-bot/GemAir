@@ -1,0 +1,116 @@
+{
+  "appSlug": "opencode",
+  "appName": "opencode CLI",
+  "version": 1,
+  "status": "approved",
+  "summary": "GemAir's own brain, on your machine: the opencode agent, pointed at free models.",
+  "sourceOwner": "sst",
+  "sourceRepo": "opencode",
+  "outputType": "credential",
+  "estimatedMinutes": 6,
+  "readmeSectionIds": ["install", "providers"],
+  "branches": [
+    {
+      "platform": "windows",
+      "label": "Windows",
+      "shell": "powershell",
+      "setupSteps": [
+        {
+          "id": "setup-node",
+          "kind": "check",
+          "title": "Node.js 20 or newer",
+          "body": "opencode installs through npm, so Node has to be there first. GemAir can install it for you if it is missing.",
+          "tool": "node",
+          "command": "node --version",
+          "href": "https://nodejs.org/en/download"
+        }
+      ],
+      "steps": [
+        {
+          "id": "install",
+          "kind": "terminal",
+          "title": "Install opencode",
+          "body": "One global npm package. No account, no card.",
+          "command": "npm.cmd install -g opencode-ai"
+        },
+        {
+          "id": "verify-cli",
+          "kind": "check",
+          "title": "Check opencode answers",
+          "command": "opencode --version",
+          "body": "A version means it is installed and on PATH.",
+          "verifierLabel": "Check opencode",
+          "watch": { "expect": [{ "type": "toolVersion", "tool": "opencode" }] }
+        },
+        {
+          "id": "sign-in",
+          "kind": "web",
+          "title": "Pick a free model provider",
+          "body": "Run `opencode auth login` and choose OpenCode Zen. Its free model ids end in -free, and GemAir will not use any other kind. You can skip this entirely — GemAir talks to Zen's free models on its own.",
+          "href": "https://opencode.ai/docs/zen/",
+          "actionLabel": "Open the Zen docs",
+          "watch": { "sensitive": true, "expect": [{ "type": "urlHost", "host": "opencode.ai" }] }
+        },
+        {
+          "id": "smoke-test",
+          "kind": "verify",
+          "title": "Ask it something",
+          "body": "A one-word answer proves the CLI, the provider and the model are all wired up.",
+          "command": "opencode run \"reply with the single word: ready\"",
+          "verifierLabel": "Check it answered"
+        }
+      ]
+    },
+    {
+      "platform": "macos",
+      "label": "macOS",
+      "shell": "terminal",
+      "setupSteps": [
+        {
+          "id": "setup-node",
+          "kind": "check",
+          "title": "Node.js 20 or newer",
+          "body": "opencode installs through npm.",
+          "tool": "node",
+          "command": "node --version",
+          "href": "https://nodejs.org/en/download"
+        }
+      ],
+      "steps": [
+        {
+          "id": "install",
+          "kind": "terminal",
+          "title": "Install opencode",
+          "body": "One global npm package.",
+          "command": "npm install -g opencode-ai"
+        },
+        {
+          "id": "verify-cli",
+          "kind": "check",
+          "title": "Check opencode answers",
+          "command": "opencode --version",
+          "body": "A version means it is on PATH.",
+          "verifierLabel": "Check opencode",
+          "watch": { "expect": [{ "type": "toolVersion", "tool": "opencode" }] }
+        },
+        {
+          "id": "sign-in",
+          "kind": "web",
+          "title": "Pick a free model provider",
+          "body": "Run `opencode auth login` and choose OpenCode Zen, then a model whose id ends in -free.",
+          "href": "https://opencode.ai/docs/zen/",
+          "actionLabel": "Open the Zen docs",
+          "watch": { "sensitive": true, "expect": [{ "type": "urlHost", "host": "opencode.ai" }] }
+        },
+        {
+          "id": "smoke-test",
+          "kind": "verify",
+          "title": "Ask it something",
+          "body": "One word back proves the whole path.",
+          "command": "opencode run \"reply with the single word: ready\"",
+          "verifierLabel": "Check it answered"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "appSlug": "ollama",
+  "appName": "Ollama",
+  "version": 1,
+  "status": "approved",
+  "summary": "Run open models on your own machine, so GemAir can think offline.",
+  "sourceOwner": "ollama",
+  "sourceRepo": "ollama",
+  "outputType": "desktop_app",
+  "estimatedMinutes": 8,
+  "readmeSectionIds": ["install", "quickstart"],
+  "branches": [
+    {
+      "platform": "windows",
+      "label": "Windows",
+      "shell": "powershell",
+      "setupSteps": [],
+      "steps": [
+        {
+          "id": "install",
+          "kind": "terminal",
+          "title": "Install Ollama",
+          "body": "winget fetches the signed installer from Ollama and runs it silently. Nothing here needs an account.",
+          "command": "winget install --id Ollama.Ollama --silent --accept-package-agreements --accept-source-agreements"
+        },
+        {
+          "id": "verify-cli",
+          "kind": "check",
+          "title": "Check Ollama answers",
+          "body": "If this prints a version, the service is installed and on PATH.",
+          "command": "ollama --version",
+          "verifierLabel": "Check Ollama",
+          "watch": { "expect": [{ "type": "toolVersion", "tool": "ollama" }] }
+        },
+        {
+          "id": "pull-model",
+          "kind": "terminal",
+          "title": "Download a small model",
+          "body": "llama3.2:3b is about 2 GB and runs on a laptop without a discrete GPU. This is the slow step — it downloads once and is yours afterwards.",
+          "command": "ollama pull llama3.2:3b"
+        },
+        {
+          "id": "smoke-test",
+          "kind": "verify",
+          "title": "Say hello to it",
+          "body": "A one-line answer from the model proves the whole path works: service running, model on disk, GPU or CPU picked.",
+          "command": "ollama run llama3.2:3b \"reply with the single word: ready\"",
+          "verifierLabel": "Check it answered",
+          "watch": { "expect": [{ "type": "toolVersion", "tool": "ollama" }] }
+        }
+      ]
+    },
+    {
+      "platform": "macos",
+      "label": "macOS",
+      "shell": "terminal",
+      "setupSteps": [],
+      "steps": [
+        {
+          "id": "install",
+          "kind": "terminal",
+          "title": "Install Ollama",
+          "body": "Homebrew's cask is the Ollama-published build.",
+          "command": "brew install --cask ollama"
+        },
+        {
+          "id": "verify-cli",
+          "kind": "check",
+          "title": "Check Ollama answers",
+          "command": "ollama --version",
+          "body": "A version means the CLI is on PATH.",
+          "verifierLabel": "Check Ollama",
+          "watch": { "expect": [{ "type": "toolVersion", "tool": "ollama" }] }
+        },
+        {
+          "id": "pull-model",
+          "kind": "terminal",
+          "title": "Download a small model",
+          "body": "About 2 GB, downloaded once.",
+          "command": "ollama pull llama3.2:3b"
+        },
+        {
+          "id": "smoke-test",
+          "kind": "verify",
+          "title": "Say hello to it",
+          "body": "One line back from the model proves the install.",
+          "command": "ollama run llama3.2:3b \"reply with the single word: ready\"",
+          "verifierLabel": "Check it answered"
+        }
+      ]
+    }
+  ]
+}
