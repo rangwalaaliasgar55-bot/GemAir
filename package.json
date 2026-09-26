@@ -1,6 +1,6 @@
 {
   "name": "gemair",
-  "version": "2.16.0",
+  "version": "2.16.1",
   "description": "GemAir — a free, open-source personal assistant. Voice, memory, tools, automations, and a calm workspace for your PC.",
   "main": "main.js",
   "author": {

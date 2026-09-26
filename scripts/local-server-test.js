@@ -160,12 +160,25 @@ test('main binds extension loopback only; the phone lane exists only behind the 
   assert.ok(body.includes("remoteDashboard === true"), 'explicit opt-in only');
 });
 
-test('queueBrowserNav rejects non-http(s) and never claims a completed navigation', () => {
-  const i = mainSrc.indexOf('function queueBrowserNav');
-  const body = mainSrc.slice(i, i + 600);
+test('browser navigation rejects non-http(s) and opens the OS default browser without an extension', () => {
+  const i = mainSrc.indexOf('async function queueBrowserNav');
+  const body = mainSrc.slice(i, i + 900);
   assert.match(body, /Only http\(s\)/);
-  assert.match(body, /No extension paired/);
+  assert.match(body, /await shell\.openExternal\(u\)/);
+  assert.match(body, /opened: true/);
+  assert.doesNotMatch(body, /navCommands\.push|No extension paired/);
   assert.ok(mainSrc.includes("case 'navigate_browser':\n        return queueBrowserNav(args.url);"));
+});
+
+test('settings reports the native foreground browser with no pairing UI', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'renderer', 'index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(ROOT, 'renderer', 'app.js'), 'utf8');
+  assert.match(mainSrc, /attention && attention\.snapshot\(\)\.context/);
+  assert.match(mainSrc, /activeBrowser/);
+  assert.match(html, /no extension, pairing code, or browser setup/i);
+  assert.doesNotMatch(html, /id="extPairCode"|id="siteBlocksEdit"/);
+  assert.match(app, /detected from the desktop \(no extension\)/);
+  assert.match(app, /window\.air\.onUpdate/);
 });
 
 test('the extension polls nav commands and only executes http(s)', () => {

@@ -28,11 +28,12 @@ test('cards render title/snippet/host; empty result sets hide the panel', () => 
   assert.ok(body.includes('panel.hidden = true'), "no false content when a search returns nothing");
 });
 
-test('OPEN goes straight to the URL; BROWSER routes through the nav queue', () => {
+test('OPEN and BROWSER actions use immediate OS browser routes', () => {
   const i = appSrc.indexOf('function setupContentPanel');
   const body = appSrc.slice(i, i + 2400);
   assert.ok(body.includes('api.openExternal(r.url)'), 'open');
-  assert.ok(body.includes('api.localsrvNav(r.url)'), 'navigate paired browser');
+  assert.ok(body.includes('api.localsrvNav(r.url)'), 'default-browser IPC');
+  assert.ok(body.includes('Opened in your default browser.'), 'reports the completed open rather than an extension queue');
   assert.ok(body.includes("gemAvatar.glance"), 'the 2.14 face acknowledges new content');
 });
 
@@ -50,10 +51,10 @@ test('phone-remote text goes through the normal send pipeline, visibly tagged', 
   assert.match(body, /Could not deliver/, 'delivery failure is reported');
 });
 
-test('site blocks edit into the profile that the loopback server serves', () => {
-  const i = appSrc.indexOf('#siteBlocksEdit');
-  assert.ok(i > -1);
-  const region = appSrc.slice(i, i + 900);
-  assert.ok(region.includes('profile.siteBlocks'), 'persisted to profile');
-  assert.match(region, /split\('\\n'\)/, 'line-based editing');
+test('browser awareness is native and has no extension management controls', () => {
+  assert.ok(appSrc.includes('function renderActiveBrowser(browser)'));
+  assert.ok(appSrc.includes('window.air.onUpdate'), 'foreground changes update the browser line');
+  assert.ok(htmlSrc.includes('ACTIVE BROWSER — AUTOMATIC'));
+  assert.ok(!htmlSrc.includes('id="extPairCode"'), 'no pairing code UI');
+  assert.ok(!htmlSrc.includes('id="siteBlocksEdit"'), 'no extension-only policy editor');
 });

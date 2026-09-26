@@ -31,8 +31,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Run test chain
-        run: npm run check
+      - name: Run full release test suite
+        # Nightly installers are user-facing releases. Gate them with the same
+        # complete suite as stable releases, not the shorter source-only check.
+        run: npm test
 
   build:
     needs: test

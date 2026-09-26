@@ -71,9 +71,14 @@ console.log('\nGemAir — proactive engine tests\n');
   console.log('  ok   greeting covers reminders + monitors; never invents content');
 }
 
-// Time-of-day labels
+// Time-of-day labels. Keep the reminder timestamp relative to each simulated
+// clock, not the wall clock: the old Date.now() fixture expired after 24 hours
+// and made every scheduled nightly run fail with a null greeting.
 {
-  const mk = (h) => proactive.buildGreeting({ now: new Date(2026, 8, 17, h, 0, 0).getTime(), memory: { reminders: [{ id: 'x', text: 'ping', at: Date.now() - 1000, done: false }] }, profile: {} });
+  const mk = (h) => {
+    const now = new Date(2026, 8, 17, h, 0, 0).getTime();
+    return proactive.buildGreeting({ now, memory: { reminders: [{ id: 'x', text: 'ping', at: now - 1000, done: false }] }, profile: {} });
+  };
   assert(/Good morning/.test(mk(8).text), 'morning window');
   assert(/Good afternoon/.test(mk(14).text), 'afternoon window');
   assert(/Good evening/.test(mk(19).text), 'evening window');

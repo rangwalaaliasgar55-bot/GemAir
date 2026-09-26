@@ -877,7 +877,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'control_brightness', description: 'Read or set screen brightness 1-100 percent (omit level to read). Where the OS exposes no API (macOS) or no hardware backlight, the tool says so honestly instead of pretending.', parameters: { type: 'object', properties: { level: { type: 'number' } } } } },
   { type: 'function', function: { name: 'media_control', description: 'Send play/pause/next/previous media keys to the active player (Spotify, Music, or any MPRIS player on Linux with playerctl).', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['playpause', 'next', 'previous'] } }, required: ['action'] } } },
   { type: 'function', function: { name: 'prepare_message', description: 'Compose a WhatsApp or Telegram message and open it prefilled — the USER presses send. Never claims to have sent; sending without the user is not possible by design.', parameters: { type: 'object', properties: { channel: { type: 'string', enum: ['whatsapp', 'telegram'] }, target: { type: 'string', description: 'WhatsApp: phone in international format (+91…). Telegram: @username (optional).' }, text: { type: 'string', description: 'Message text (max 800 chars)' } }, required: ['channel', 'text'] } } },
-  { type: 'function', function: { name: 'navigate_browser', description: 'Navigate the paired desktop browser (Gem Air Browser Link extension) to a URL — polled by the extension within ~1s. Without a paired extension the command just queues and the tool says so.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+  { type: 'function', function: { name: 'navigate_browser', description: 'Open an HTTP(S) URL immediately in the user’s default browser. No browser extension or pairing is required.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'open_url', description: 'Open a URL in the default browser.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'fetch_webpage', description: 'Fetch a web page and return its readable text content (full web access).', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'search_wikipedia', description: 'Search Wikipedia for a topic.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
@@ -2549,20 +2549,41 @@ function lanAddresses() {
 ipcMain.handle('localsrv:info', async () => {
   const running = await syncLocalServer();
   const lan = lanAddresses()[0];
+  // Browser identity and the foreground window title are already available from
+  // the native attention detector. Surface that zero-setup signal instead of
+  // asking people to install and maintain an extension merely to learn whether
+  // Chrome, Edge, Firefox, Brave, etc. is in front.
+  let activeBrowser = null;
+  try {
+    const context = attention && attention.snapshot().context;
+    if (context && context.browser) {
+      activeBrowser = {
+        name: String(context.appLabel || context.app || 'Browser').slice(0, 80),
+        process: String(context.app || '').slice(0, 80),
+        title: String(context.tabTitle || context.title || '').slice(0, 200),
+        site: String(context.site || '').slice(0, 160),
+        source: context.urlSource === 'extension' ? 'browser-link' : 'desktop-window'
+      };
+    }
+  } catch {}
   return {
     ok: true, running, extPort: localServerLib.EXT_PORT, phonePort: localServerLib.PHONE_PORT,
-    pairCode: localSrvPairCode,
     phoneUrl: lan ? ('http://' + lan.address + ':' + localServerLib.PHONE_PORT + '/m#' + localSrvTokens.phone) : null,
-    lanFound: !!lan, lastTab: lastExternalTab
+    lanFound: !!lan, activeBrowser
   };
 });
-function queueBrowserNav(url) {
+async function queueBrowserNav(url) {
   const u = String(url || '').trim();
   if (!/^https?:\/\//i.test(u)) return { ok: false, error: 'Only http(s) URLs can be navigated.' };
-  navCommands.push({ i: (navCommands.length ? navCommands[navCommands.length - 1].i : 0) + 1, url: u.slice(0, 300) });
-  if (navCommands.length > 50) navCommands.splice(0, navCommands.length - 50);
-  logAction('navigate_browser', u.slice(0, 120));
-  return { ok: true, queued: true, note: 'Queued for the paired Gem Air browser extension (1s poll). No extension paired = it sits in the queue, harmlessly — GemAir says so rather than pretend a navigation happened.' };
+  try {
+    // Use the OS default browser directly. This works out of the box and avoids
+    // the old extension queue, which could report success while nothing opened.
+    await shell.openExternal(u);
+    logAction('navigate_browser', u.slice(0, 120));
+    return { ok: true, opened: true, note: 'Opened in your default browser.' };
+  } catch (error) {
+    return { ok: false, error: 'Could not open the default browser (' + error.message + ').' };
+  }
 }
 ipcMain.handle('localsrv:nav', async (_e, url) => queueBrowserNav(url));
 ipcMain.handle('localsrv:qr', async () => {
