@@ -252,7 +252,7 @@ const api = {
   async checkForUpdates(force = false) { return window.gemair && window.gemair.checkForUpdates ? window.gemair.checkForUpdates(force) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async installUpdate(url) { return window.gemair && window.gemair.installUpdate ? window.gemair.installUpdate(url) : { ok: false, error: 'DESKTOP_ONLY' }; },
   async applyUpdate() { return window.gemair && window.gemair.applyUpdate ? window.gemair.applyUpdate() : { ok: false, error: 'DESKTOP_ONLY' }; },
-  async version() { return window.gemair ? window.gemair.version() : '2.16.0'; },
+  async version() { return window.gemair ? window.gemair.version() : '2.16.1'; },
   onUpdateAvailable(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdateAvailable ? window.gemair.onUpdateAvailable(cb) : null); },
   onUpdaterEvent(cb) { return registerRendererDisposer(window.gemair && window.gemair.onUpdaterEvent ? window.gemair.onUpdaterEvent(cb) : null); },
   onReminder(cb) { return registerRendererDisposer(window.gemair && window.gemair.onReminder ? window.gemair.onReminder(cb) : null); },
@@ -10809,8 +10809,8 @@ function setupContentPanel() {
       card.querySelector('.cc-nav').addEventListener('click', async () => {
         try {
           const res = api.localsrvNav ? await api.localsrvNav(r.url) : null;
-          toast('BROWSER LINK', res && res.ok ? 'Navigating the paired browser…' : ((res && res.error) || 'browser link not paired'), '🔗');
-        } catch (e) { toast('BROWSER LINK', 'Nav failed (' + e.message + ')', '⚠'); }
+          toast('BROWSER', res && res.ok ? 'Opened in your default browser.' : ((res && res.error) || 'browser could not be opened'), '🌐');
+        } catch (e) { toast('BROWSER', 'Open failed (' + e.message + ')', '⚠'); }
       });
       strip.appendChild(card);
     }
@@ -10821,16 +10821,22 @@ function setupContentPanel() {
 }
 
 // 2.16 — Browser link + phone remote settings card
+function renderActiveBrowser(browser) {
+  const line = $('#extLastTab');
+  if (!line) return;
+  if (!browser) {
+    line.textContent = 'No browser is in the foreground right now.';
+    return;
+  }
+  const detail = browser.title ? ' — ' + browser.title : (browser.site ? ' — ' + browser.site : '');
+  line.textContent = browser.name + detail + ' · detected from the desktop (no extension)';
+}
+
 async function populateLocalServerCard() {
   if (!api.localsrvInfo) return;
   try {
     const info = await api.localsrvInfo();
-    const code = $('#extPairCode');
-    if (code && info.pairCode) code.textContent = info.pairCode;
-    const lt = $('#extLastTab');
-    if (lt) lt.textContent = info.lastTab
-      ? ('Paired browser active: ' + (info.lastTab.title || info.lastTab.url))
-      : 'Extension not paired — load the extension, enter this code in its popup.';
+    renderActiveBrowser(info.activeBrowser);
     const rd = $('#setRemoteDashboard');
     if (rd) rd.checked = !!profile.remoteDashboard;
     const row = $('#remoteDashRow');
@@ -10848,12 +10854,15 @@ async function populateLocalServerCard() {
 }
 
 function setupLocalServerCard() {
-  if (api.onExternalTab) api.onExternalTab((t) => {
-    const lt = $('#extLastTab');
-    if (lt) lt.textContent = 'Paired browser active: ' + (t.title || t.url || '');
-  });
-  if (api.onBlockedAttempt) api.onBlockedAttempt((a) => {
-    toast('SITE BLOCK', 'Blocked visit attempt: ' + (a.subject || '?'), '🚫');
+  // Keep the browser line current as focus changes. The native detector emits
+  // this state; users do not need to install or pair anything in their browser.
+  if (window.air && window.air.onUpdate) window.air.onUpdate((snapshot) => {
+    const context = snapshot && snapshot.context;
+    renderActiveBrowser(context && context.browser ? {
+      name: context.appLabel || context.app || 'Browser',
+      title: context.tabTitle || context.title || '',
+      site: context.site || ''
+    } : null);
   });
   const rd = $('#setRemoteDashboard');
   if (rd) rd.addEventListener('change', () => {
@@ -10861,18 +10870,6 @@ function setupLocalServerCard() {
     try { api.automationApply(); } catch {}
     populateLocalServerCard(); // shows QR / hides it, honestly reporting port problems
   });
-  const sb = $('#siteBlocksEdit');
-  if (sb) {
-    if (Array.isArray(profile.siteBlocks)) {
-      sb.value = profile.siteBlocks.map((b) => b.target + (b.reason ? ' | ' + b.reason : '')).join('\n');
-    }
-    sb.addEventListener('change', () => {
-      profile.siteBlocks = sb.value.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 100)
-        .map((line) => { const [t, ...rest] = line.split('|'); return { target: t.trim().slice(0, 120), reason: rest.join('|').trim().slice(0, 160) }; });
-      persistProfile();
-      toast('BROWSER LINK', profile.siteBlocks.length + ' site block rule(s) saved — served to the paired extension.', '🔗');
-    });
-  }
   if (api.onDashboardSay) api.onDashboardSay(({ text }) => {
     const t = String(text || '').trim();
     if (!t) return;

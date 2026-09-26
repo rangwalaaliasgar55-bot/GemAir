@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.16.1] — 2026-09-26
+
+**Nightly reliability and zero-setup browser awareness.**
+
+- Fixed the date-dependent proactive greeting fixture that expired and caused every scheduled nightly build to fail before packaging.
+- Nightly releases now run the complete stable-release test suite before creating installers.
+- Active browser detection now uses GemAir’s native foreground-window detector. Settings shows Chrome, Edge, Firefox, Brave, and other supported browsers with the visible window title without an extension or pairing code.
+- Browser actions open immediately in the operating system’s default browser instead of waiting forever in an unpaired extension queue.
+- Removed extension pairing and extension-only site-block controls from the user-facing settings surface; the optional LAN phone remote remains available.
+
 ## [2.16.0] — 2026-09-17
 
 **The connectivity release — the README is now fully covered.** Every remaining row of the refreshed Mark-LIV capability table has a real, honest GemAir counterpart: a **phone remote dashboard** with per-session QR pairing, **browser link completion** (the extension now has its server), **Wi-Fi control** behind a human dialog, **brightness control** with platform-truthful fallbacks, **multi-mode web search** (`news` / `research` / `price` / `compare` / `search`), a **dynamic content panel**, **media-key control**, and **compose-only messaging**. Original implementations on GemAir's own engine — no upstream code (Mark is CC BY-NC; see `THIRD_PARTY_NOTICES.md`).

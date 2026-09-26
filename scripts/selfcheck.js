@@ -64,16 +64,18 @@ ok('JSON files parse');
 try {
   const pkg = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
-  if (pkg.version !== '2.16.0') fail(`package version must be 2.16.0 (found ${pkg.version})`);
+  if (!/^\d+\.\d+\.\d+$/.test(pkg.version)) fail(`package version must be stable semver (found ${pkg.version})`);
+  if (read('VERSION').trim() !== pkg.version) fail('VERSION does not match package.json');
   if (lock.version !== pkg.version || (lock.packages && lock.packages[''] && lock.packages[''].version !== pkg.version)) fail('package-lock version does not match package.json');
   for (const asset of ['build/icon.png', 'build/icon.ico', 'build/icons/16x16.png', 'build/icons/256x256.png', 'build/icons/512x512.png', 'build/icons/1024x1024.png']) {
     const full = path.join(ROOT, asset);
     if (!fs.existsSync(full) || fs.statSync(full).size < 100) fail(`missing/empty release icon: ${asset}`);
   }
-  // Derived from package.json: pinning the version here is how this check kept
-  // passing against a two-releases-old CHANGELOG heading.
+  // Derive every comparison from package.json so patch releases do not require
+  // editing the validator itself; VERSION, lockfile, UI and CHANGELOG are the
+  // independently checked copies that catch stale release metadata.
   if (!fs.existsSync(path.join(ROOT, 'CHANGELOG.md')) || !read('CHANGELOG.md').includes(`## [${pkg.version}]`)) fail(`CHANGELOG.md must document ${pkg.version}`);
-  else ok('2.16.0 release metadata and platform icons present');
+  else ok(`${pkg.version} release metadata and platform icons present`);
   // 2.4 new lib files must exist
   for (const f of ['lib/connections.js', 'lib/modes.js', 'lib/window-tools.js', 'CONNECTIONS.md']) {
     if (!fs.existsSync(path.join(ROOT, f))) fail(`missing 2.4 file: ${f}`);
@@ -450,7 +452,7 @@ for (const f of ['renderer/store.js', 'renderer/avatar.js', 'renderer/app.js']) 
  */
 function printManualMatrix() {
   const rows = [
-    ['1', 'Boot', 'Launch GemAir. Boot sequence completes; SYS chip reads SYSTEMS NOMINAL (or names degraded). Version tag v2.16.0'],
+    ['1', 'Boot', `Launch GemAir. Boot sequence completes; SYS chip reads SYSTEMS NOMINAL (or names degraded). Version tag v${JSON.parse(read('package.json')).version}`],
     ['2', 'Free reply', 'With NO API key, send "hello". Real reply streams in. TEST CONNECTION reports free core'],
     ['3', 'Bad key honest', 'Paste bogus key + Groq preset, TEST CONNECTION must FAIL visibly, says free core NOT used'],
     ['4', 'EDGE voice', 'Voice engine = Edge neural. Send message. Gem speaks with Microsoft neural voice'],

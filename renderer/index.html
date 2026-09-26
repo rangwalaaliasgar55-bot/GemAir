@@ -80,7 +80,7 @@
         </div>
         <div class="brand-text">
           <h1>GemAir</h1>
-          <p>Personal assistant <span class="ver" id="verTag">v2.16.0</span></p>
+          <p>Personal assistant <span class="ver" id="verTag">v2.16.1</span></p>
         </div>
       </div>
 
@@ -1761,16 +1761,16 @@
           </fieldset>
 
           <fieldset id="localServerCard">
-            <legend>🔗 BROWSER LINK + PHONE REMOTE (2.16)</legend>
+            <legend>🌐 BROWSER AWARENESS + PHONE REMOTE</legend>
             <p class="hint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
-              One pairing code this session for the <b>Gem Air Browser Link</b> extension (It then reports the active site and enforces your site blocks below).
-              The phone remote listens on your <b>LAN only, plain HTTP — never the internet</b>. Everything a paired device does is journaled in the action log.
+              GemAir detects the foreground browser from the desktop automatically — <b>no extension, pairing code, or browser setup</b>.
+              It reads only the browser name and visible window title supplied by the OS; browser-private tab URLs remain private.
+              The optional phone remote listens on your <b>LAN only, plain HTTP — never the internet</b>.
             </p>
             <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;">
-              <div style="min-width:170px;">
-                <div class="dim" style="font-size:10px;letter-spacing:2px;">EXTENSION PAIR CODE (this session)</div>
-                <div id="extPairCode" style="font-size:24px;letter-spacing:6px;color:var(--accent);">------</div>
-                <div class="hint" style="font-size:10px;" id="extLastTab">Extension not paired — load the extension, enter this code in its popup.</div>
+              <div style="min-width:250px;max-width:420px;">
+                <div class="dim" style="font-size:10px;letter-spacing:2px;">ACTIVE BROWSER — AUTOMATIC</div>
+                <div class="hint" style="font-size:11px;margin-top:6px;" id="extLastTab">No browser is in the foreground right now.</div>
               </div>
               <div>
                 <label class="check-label" style="margin-bottom:6px;">
@@ -1782,11 +1782,6 @@
                 </div>
                 <div class="hint" id="remoteDashHint" style="font-size:10px;">Enable to show the QR. Phone and computer must share the same Wi-Fi. Token lives only in this link — don't paste it anywhere.</div>
               </div>
-            </div>
-            <div style="margin-top:10px;">
-              <div class="dim" style="font-size:10px;letter-spacing:2px;">SITE BLOCKS — one per line: <code>host</code> or <code>host | reason</code></div>
-              <textarea id="siteBlocksEdit" rows="3" style="width:100%;max-width:480px;" placeholder="doomscroll.example | stops me at 2am"></textarea>
-              <span class="hint" style="font-size:10px;">Served to the paired extension from this profile. Attempts-to-visit are journaled + toasted here.</span>
             </div>
           </fieldset>
 
